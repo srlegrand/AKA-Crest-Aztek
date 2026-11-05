@@ -1,0 +1,69 @@
+cmake_minimum_required(VERSION 3.21)
+project(Aztek LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE Release)
+endif()
+
+find_package(Qt6 6.4 REQUIRED COMPONENTS Widgets)
+
+# Python for aztek.cmds and the maya.cmds shim: the interpreter cargo's pyo3 builds against, and its library.
+option(AZTEK_PYTHON "Embed Python" ON)
+set(AZTEK_CARGO_FEATURES "")
+if(AZTEK_PYTHON)
+  find_package(Python3 COMPONENTS Interpreter Development.Embed)
+  if(NOT Python3_FOUND)
+    message(WARNING "Python 3 development files not found: building without Python")
+    set(AZTEK_PYTHON OFF)
+  endif()
+endif()
+if(NOT AZTEK_PYTHON)
+  set(AZTEK_CARGO_FEATURES --no-default-features)
+endif()
+
+# The Rust core, built by cargo as a static library. Release unless this is a Debug build.
+find_program(CARGO cargo REQUIRED)
+set(CARGO_TARGET_DIR ${CMAKE_BINARY_DIR}/cargo)
+set(CARGO_PROFILE "$<IF:$<CONFIG:Debug>,debug,release>")
+set(CARGO_FLAG "$<$<NOT:$<CONFIG:Debug>>:--release>")
+if(WIN32)
+  set(AZTEK_HOST_LIB ${CARGO_TARGET_DIR}/${CARGO_PROFILE}/aztek_host.lib)
+else()
+  set(AZTEK_HOST_LIB ${CARGO_TARGET_DIR}/${CARGO_PROFILE}/libaztek_host.a)
+endif()
+add_custom_target(aztek_host_build
+  COMMAND ${CMAKE_COMMAND} -E env CARGO_TARGET_DIR=${CARGO_TARGET_DIR} PYO3_PYTHON=${Python3_EXECUTABLE}
+          ${CARGO} build -p aztek_host ${CARGO_FLAG} ${AZTEK_CARGO_FEATURES}
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+  BYPRODUCTS ${AZTEK_HOST_LIB}
+  USES_TERMINAL
+  COMMENT "cargo build -p aztek_host")
+
+add_executable(aztek WIN32
+  app/src/main.cpp
+  app/src/host.cpp
+  app/src/icons.cpp
+  app/src/viewport.cpp
+  app/src/panels.cpp
+  app/src/widgets.cpp
+  app/src/markingmenu.cpp
+  app/src/mainwindow.cpp
+  app/src/grapheditor.cpp
+  app/src/uveditor.cpp
+  app/src/resources.qrc)
+add_dependencies(aztek aztek_host_build)
+target_include_directories(aztek PRIVATE app/src)
+target_link_libraries(aztek PRIVATE Qt6::Widgets ${AZTEK_HOST_LIB})
+if(AZTEK_PYTHON)
+  target_link_libraries(aztek PRIVATE Python3::Python)
+  target_compile_definitions(aztek PRIVATE AZTEK_HAS_PYTHON=1)
+endif()
+if(WIN32)
+  target_link_libraries(aztek PRIVATE ws2_32 userenv bcrypt ntdll advapi32 user32 kernel32 ole32 shell32)
+else()
+  target_link_libraries(aztek PRIVATE dl pthread m)
+endif()

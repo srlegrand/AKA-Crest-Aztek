@@ -1,0 +1,29 @@
+[package]
+name = "aztek_host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+aztek_core = { path = "../aztek_core" }
+aztek_geo = { path = "../aztek_geo" }
+aztek_ops = { path = "../aztek_ops" }
+aztek_scene = { path = "../aztek_scene" }
+glam.workspace = true
+serde_json.workspace = true
+log.workspace = true
+ash = "0.38"
+ash-window = "0.13"
+raw-window-handle = "0.6"
+gpu-allocator = { version = "0.28", default-features = false, features = ["vulkan", "std"] }
+naga = { version = "27", features = ["glsl-in", "spv-out"] }
+bytemuck = { version = "1", features = ["derive"] }
+pyo3 = { version = "0.30", optional = true }
+
+[features]
+default = ["python"]
+python = ["dep:pyo3"]

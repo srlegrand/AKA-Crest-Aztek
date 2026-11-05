@@ -1,0 +1,74 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build qt6-base-dev libvulkan-dev python3-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            . -> build/cargo
+
+      - name: Test
+        run: cargo test --workspace
+
+      - name: Build
+        run: ./build.sh
+
+      - name: Package
+        run: tar -czf aztek-linux-x86_64.tar.gz -C build aztek
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aztek-linux-x86_64
+          path: aztek-linux-x86_64.tar.gz
+
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.*"
+          arch: win64_msvc2022_64
+          cache: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> build/cargo"
+
+      - name: Build
+        shell: pwsh
+        run: .\build.ps1 -Qt $env:QT_ROOT_DIR
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aztek-windows-x86_64
+          path: build/dist

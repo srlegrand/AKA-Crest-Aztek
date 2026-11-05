@@ -1,0 +1,52 @@
+//! Aztek's scene graph: dependency graph, transform hierarchy, plugs, node types, naming and the scene document.
+//! Ported from `src/scene` (Graph, Node, Plug, Naming, Transform) and the graph part of `src/io/SceneFile`.
+
+pub mod anim;
+pub mod attr_defs;
+pub mod auto_bevel;
+pub mod booleans;
+pub mod conform_commands;
+pub mod dag;
+pub mod deform;
+pub mod display_layers;
+pub mod duplicate;
+pub mod commands;
+pub mod component_pick;
+pub mod component_query;
+pub mod components;
+pub mod error;
+pub mod extrude_modifier;
+pub mod graph;
+pub mod history;
+pub mod instancing;
+pub mod isolation;
+pub mod last_op;
+pub mod maya_cmds;
+pub mod mesh_boolean;
+pub mod mesh_data;
+pub mod mesh_edit;
+pub mod mesh_files;
+pub mod mesh_nodes;
+pub mod modifiers;
+pub mod naming;
+pub mod node_bounds;
+pub mod object_ops;
+pub mod object_sets;
+pub mod repeat;
+pub mod rig;
+pub mod node;
+pub mod plug;
+pub mod scene_file;
+pub mod session;
+pub mod soft_select;
+pub mod split_rings_modifier;
+pub mod transform;
+pub mod transform_ops;
+pub mod uv_ops;
+
+pub use error::{GraphError, Result};
+pub use graph::{Change, DeferMeshes, DrivenEdit, Graph, SelectMode};
+pub use node::{types, EvalContext, Node, NodeBehavior, NodeData, NodeType, PlaybackExtra};
+pub use plug::{flags, AttrDef, NodeId, PlugRef, PlugType, PlugValue, NO_NODE};
+pub use session::Session;
+pub use transform::{Locator, RotateOrder, Transform};

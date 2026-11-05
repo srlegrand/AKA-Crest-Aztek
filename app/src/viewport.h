@@ -1,0 +1,88 @@
+// Model panels: a native child window the Rust renderer draws into, with Maya's panel menus and icon bar above it.
+#pragma once
+#include <QWidget>
+
+class QMenuBar;
+class QToolBar;
+class QGridLayout;
+
+namespace az {
+
+class ViewportWidget : public QWidget {
+    Q_OBJECT
+public:
+    explicit ViewportWidget(const QString& camera, QWidget* parent = nullptr);
+    ~ViewportWidget() override;
+    int id() const { return id_; }
+    QPaintEngine* paintEngine() const override { return nullptr; }
+    void set(const QString& key, const QString& json);
+    QString get(const QString& key) const;
+    QString camera() const { return camera_; }
+    bool capture(const QString& path);
+signals:
+    void rightClick(QPoint global, int mods);
+    void activated(ViewportWidget* self);
+protected:
+    void showEvent(QShowEvent*) override;
+    void paintEvent(QPaintEvent*) override;
+    void resizeEvent(QResizeEvent*) override;
+    void mousePressEvent(QMouseEvent*) override;
+    void mouseMoveEvent(QMouseEvent*) override;
+    void mouseReleaseEvent(QMouseEvent*) override;
+    void mouseDoubleClickEvent(QMouseEvent*) override;
+    void leaveEvent(QEvent*) override;
+    void wheelEvent(QWheelEvent*) override;
+    bool event(QEvent*) override;
+private:
+    void ensure();
+    void mouse(int kind, QMouseEvent* e);
+    int id_ = 0;
+    QString camera_;
+    bool rmb_pending_ = false;
+    QPoint rmb_pos_;
+    // Maya's virtual slider: middle-drag with channels picked in the channel box changes them.
+    bool sliding_ = false;
+    QPointF slide_start_;
+    QList<QPair<QString, double>> slide_plugs_;
+    int slide_applied_ = 0;
+    void slide_to(double dx, bool final);
+};
+
+class ModelPanel : public QWidget {
+    Q_OBJECT
+public:
+    explicit ModelPanel(const QString& camera, QWidget* parent = nullptr);
+    ViewportWidget* view() const { return view_; }
+private:
+    void build_menus();
+    QMenuBar* menus_;
+    QToolBar* bar_;
+    ViewportWidget* view_;
+};
+
+// The central area: one panel, or the four views. Tracks the panel under the cursor for hotkeys.
+class PanelLayout : public QWidget {
+    Q_OBJECT
+public:
+    explicit PanelLayout(QWidget* parent = nullptr);
+    void set_single(bool single);
+    bool single() const { return single_; }
+    // The view under the cursor, else the last one used.
+    ViewportWidget* active() const;
+    QList<ViewportWidget*> views() const;
+    // Single view of the panel under the cursor, or back to four (space tap).
+    void toggle();
+    void redraw_all();
+    void set_all(const QString& key, const QString& json);
+signals:
+    void rightClick(QPoint global, int mods);
+private:
+    void relayout();
+    QList<ModelPanel*> panels_;
+    QGridLayout* grid_;
+    bool single_ = true;
+    int focus_ = 0;
+    mutable ViewportWidget* last_ = nullptr;
+};
+
+} // namespace az

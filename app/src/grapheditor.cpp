@@ -1,0 +1,508 @@
+#include "grapheditor.h"
+#include "aztek.h"
+#include "host.h"
+#include "icons.h"
+
+#include <QHBoxLayout>
+#include <QHeaderView>
+#include <QKeyEvent>
+#include <QLabel>
+#include <QLineEdit>
+#include <QMouseEvent>
+#include <QPainter>
+#include <QPainterPath>
+#include <QSplitter>
+#include <QToolBar>
+#include <QTreeWidget>
+#include <QVBoxLayout>
+#include <QWheelEvent>
+#include <cmath>
+
+namespace az {
+
+static QColor channel_color(const QString& ch, int component) {
+    if (component == 0 || ch.endsWith("X")) return QColor(232, 74, 74);
+    if (component == 1 || ch.endsWith("Y")) return QColor(102, 214, 82);
+    if (component == 2 || ch.endsWith("Z")) return QColor(82, 140, 236);
+    if (ch == "visibility") return QColor(196, 196, 110);
+    return QColor(110, 210, 210);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Canvas
+
+CurveCanvas::CurveCanvas(QWidget* parent) : QWidget(parent) {
+    setFocusPolicy(Qt::StrongFocus);
+    setMouseTracking(true);
+    setMinimumSize(200, 120);
+}
+
+QPointF CurveCanvas::to_screen(double t, double v) const {
+    return QPointF((t - t0_) / tpp_, (v0_ - v) / vpp_);
+}
+
+QPointF CurveCanvas::to_graph(QPointF p) const {
+    return QPointF(t0_ + p.x() * tpp_, v0_ - p.y() * vpp_);
+}
+
+void CurveCanvas::set_curves(const QVector<CurveView>& c, double time) {
+    // Keep the selection on the same curves where they're still there.
+    QSet<QPair<int, int>> keep;
+    for (auto [ci, ki] : sel_) {
+        if (ci >= curves_.size()) continue;
+        QString name = curves_[ci].curve;
+        for (int j = 0; j < c.size(); ++j)
+            if (c[j].curve == name && ki < c[j].keys.size()) keep.insert({j, ki});
+    }
+    curves_ = c;
+    sel_ = keep;
+    time_ = time;
+    if (!framed_ && !curves_.isEmpty()) {
+        framed_ = true;
+        frame(false);
+    }
+    update();
+}
+
+void CurveCanvas::frame(bool selected_only) {
+    double t_lo = 1e18, t_hi = -1e18, v_lo = 1e18, v_hi = -1e18;
+    for (int ci = 0; ci < curves_.size(); ++ci) {
+        if (!curves_[ci].visible) continue;
+        for (int ki = 0; ki < curves_[ci].keys.size(); ++ki) {
+            if (selected_only && !sel_.contains({ci, ki})) continue;
+            auto& k = curves_[ci].keys[ki];
+            t_lo = qMin(t_lo, k[0]), t_hi = qMax(t_hi, k[0]);
+            v_lo = qMin(v_lo, k[1]), v_hi = qMax(v_hi, k[1]);
+        }
+    }
+    if (t_lo > t_hi) {
+        if (selected_only) frame(false);
+        return;
+    }
+    if (t_hi - t_lo < 1) t_lo -= 5, t_hi += 5;
+    if (v_hi - v_lo < 1e-3) v_lo -= 1, v_hi += 1;
+    double mt = (t_hi - t_lo) * 0.08, mv = (v_hi - v_lo) * 0.12;
+    t_lo -= mt, t_hi += mt, v_lo -= mv, v_hi += mv;
+    tpp_ = (t_hi - t_lo) / qMax(1, width());
+    vpp_ = (v_hi - v_lo) / qMax(1, height() - 20);
+    t0_ = t_lo;
+    v0_ = v_hi + 20 * vpp_;
+    emit selectionChanged();
+    update();
+}
+
+std::array<double, 3> CurveCanvas::sample_window() const {
+    double w = qMax(1, width());
+    double lo = t0_ - w * tpp_ * 0.25, hi = t0_ + w * tpp_ * 1.25;
+    double step = qMax(tpp_ * 3, (hi - lo) / 4000);
+    // Before the first framing the view is a guess: cover a wide span.
+    if (!framed_) return {-200, 400, 0.5};
+    return {std::floor(lo), std::ceil(hi), step};
+}
+
+QList<QPair<QString, int>> CurveCanvas::selected_keys() const {
+    QList<QPair<QString, int>> out;
+    for (auto [ci, ki] : sel_)
+        if (ci < curves_.size()) out.append({curves_[ci].curve, ki});
+    return out;
+}
+
+void CurveCanvas::select_all_keys_of(const QSet<QString>& names) {
+    sel_.clear();
+    for (int ci = 0; ci < curves_.size(); ++ci)
+        if (names.contains(curves_[ci].curve))
+            for (int ki = 0; ki < curves_[ci].keys.size(); ++ki) sel_.insert({ci, ki});
+    emit selectionChanged();
+    update();
+}
+
+static double nice_step(double units_per_px, double min_px) {
+    double raw = units_per_px * min_px;
+    double p = std::pow(10.0, std::floor(std::log10(raw)));
+    for (double m : {1.0, 2.0, 5.0, 10.0})
+        if (p * m >= raw) return p * m;
+    return p * 10;
+}
+
+void CurveCanvas::paintEvent(QPaintEvent*) {
+    QPainter p(this);
+    p.fillRect(rect(), QColor(57, 57, 57));
+    // Grid with labels: frames along the top, values down the left.
+    double ts = qMax(1.0, nice_step(tpp_, 60)), vs = nice_step(vpp_, 40);
+    QFont f = font();
+    f.setPointSizeF(qMax(6.5, f.pointSizeF() - 1));
+    p.setFont(f);
+    QPointF g0 = to_graph(QPointF(0, height())), g1 = to_graph(QPointF(width(), 0));
+    for (double t = std::floor(g0.x() / ts) * ts; t <= g1.x(); t += ts) {
+        double x = to_screen(t, 0).x();
+        p.setPen(QColor(66, 66, 66));
+        p.drawLine(QPointF(x, 0), QPointF(x, height()));
+        p.setPen(QColor(150, 150, 150));
+        p.drawText(QPointF(x + 2, 12), QString::number(t));
+    }
+    for (double v = std::floor(g0.y() / vs) * vs; v <= g1.y(); v += vs) {
+        double y = to_screen(0, v).y();
+        p.setPen(std::abs(v) < vs * 1e-6 ? QColor(30, 30, 30) : QColor(66, 66, 66));
+        p.drawLine(QPointF(0, y), QPointF(width(), y));
+        p.setPen(QColor(150, 150, 150));
+        p.drawText(QPointF(3, y - 2), QString::number(std::abs(v) < vs * 1e-6 ? 0 : v, 'g', 5));
+    }
+    // The current frame.
+    double tx = to_screen(time_, 0).x();
+    p.setPen(QPen(QColor(200, 40, 40), 1.5));
+    p.drawLine(QPointF(tx, 0), QPointF(tx, height()));
+    p.setRenderHint(QPainter::Antialiasing);
+    for (int ci = 0; ci < curves_.size(); ++ci) {
+        const CurveView& c = curves_[ci];
+        if (!c.visible || c.samples.isEmpty()) continue;
+        QPainterPath path;
+        path.moveTo(to_screen(c.samples[0].x(), c.samples[0].y()));
+        for (int i = 1; i < c.samples.size(); ++i) path.lineTo(to_screen(c.samples[i].x(), c.samples[i].y()));
+        bool any_sel = false;
+        for (int ki = 0; ki < c.keys.size(); ++ki) any_sel |= sel_.contains({ci, ki});
+        p.setPen(QPen(any_sel ? c.color.lighter(125) : c.color, any_sel ? 1.6 : 1.2));
+        p.setBrush(Qt::NoBrush);
+        p.drawPath(path);
+        for (int ki = 0; ki < c.keys.size(); ++ki) {
+            auto& k = c.keys[ki];
+            QPointF at = to_screen(k[0], k[1]);
+            bool s = sel_.contains({ci, ki});
+            if (s) {
+                // Tangent handles, a fixed length on screen.
+                for (int side : {-1, 1}) {
+                    double slope = side < 0 ? k[2] : k[3];
+                    QPointF d(1 / tpp_, -slope / vpp_);
+                    double len = std::hypot(d.x(), d.y());
+                    QPointF h = at + d / len * 40 * side;
+                    p.setPen(QPen(QColor(150, 110, 60), 1));
+                    p.drawLine(at, h);
+                    p.setBrush(QColor(170, 120, 70));
+                    p.drawEllipse(h, 2.5, 2.5);
+                }
+            }
+            p.setPen(QPen(Qt::black, 1));
+            p.setBrush(s ? QColor(255, 220, 40) : QColor(20, 20, 20));
+            p.drawRect(QRectF(at.x() - 3, at.y() - 3, 6, 6));
+        }
+    }
+    if (mode_ == Mode::Marquee) {
+        p.setPen(QPen(QColor(220, 220, 220), 1, Qt::DashLine));
+        p.setBrush(Qt::NoBrush);
+        p.drawRect(QRectF(press_, last_).normalized());
+    }
+    if (curves_.isEmpty()) {
+        p.setPen(QColor(150, 150, 150));
+        p.drawText(rect(), Qt::AlignCenter, "Select animated objects to see their curves.");
+    }
+}
+
+QPair<int, int> CurveCanvas::key_at(QPointF pos) const {
+    QPair<int, int> best{-1, -1};
+    double bd = 7;
+    for (int ci = 0; ci < curves_.size(); ++ci) {
+        if (!curves_[ci].visible) continue;
+        for (int ki = 0; ki < curves_[ci].keys.size(); ++ki) {
+            auto& k = curves_[ci].keys[ki];
+            double d = QLineF(to_screen(k[0], k[1]), pos).length();
+            if (d < bd) bd = d, best = {ci, ki};
+        }
+    }
+    return best;
+}
+
+void CurveCanvas::mousePressEvent(QMouseEvent* e) {
+    press_ = last_ = e->position();
+    bool alt = e->modifiers() & Qt::AltModifier;
+    if (alt && e->button() == Qt::MiddleButton) mode_ = Mode::Pan;
+    else if (alt && e->button() == Qt::RightButton) mode_ = Mode::Zoom;
+    else if (e->button() == Qt::LeftButton && e->position().y() < 16) {
+        mode_ = Mode::Scrub;
+        emit timeDragged(std::round(to_graph(e->position()).x()));
+    } else if (e->button() == Qt::LeftButton) {
+        auto hit = key_at(e->position());
+        bool shift = e->modifiers() & Qt::ShiftModifier, ctrl = e->modifiers() & Qt::ControlModifier;
+        if (hit.first >= 0) {
+            if (shift && !ctrl) {
+                if (sel_.contains(hit)) sel_.remove(hit);
+                else sel_.insert(hit);
+            } else if (ctrl) {
+                sel_.remove(hit);
+            } else if (!sel_.contains(hit)) {
+                sel_ = {hit};
+            }
+            // Dragging a picked key moves the selection, as with Maya's move tool.
+            mode_ = Mode::Move;
+            drag_applied_ = false;
+            axis_lock_ = shift ? -1 : 0;
+            emit selectionChanged();
+        } else {
+            mode_ = Mode::Marquee;
+        }
+        update();
+    } else if (e->button() == Qt::MiddleButton && !sel_.isEmpty()) {
+        mode_ = Mode::Move;
+        drag_applied_ = false;
+        axis_lock_ = (e->modifiers() & Qt::ShiftModifier) ? -1 : 0;
+    }
+}
+
+void CurveCanvas::apply_drag(QPointF to, bool final) {
+    QPointF d = to - press_;
+    if (axis_lock_ == -1 && QLineF(press_, to).length() > 4) axis_lock_ = std::abs(d.x()) > std::abs(d.y()) ? 1 : 2;
+    double dt = std::round(d.x() * tpp_);
+    double dv = -d.y() * vpp_;
+    if (axis_lock_ == 1) dv = 0;
+    if (axis_lock_ == 2) dt = 0;
+    if (drag_applied_) aztek_retract();
+    drag_applied_ = false;
+    if (dt == 0 && std::abs(dv) < 1e-12) {
+        Host::get()->poke();
+        return;
+    }
+    QJsonArray keys;
+    for (auto& k : selected_keys()) keys.append(QJsonArray{k.first, k.second});
+    QJsonObject call{{"keys", keys}, {"timeOffset", dt}, {"valueOffset", dv}};
+    QJsonValue r = final ? exec("editKeys", call) : exec_quiet("editKeys", call);
+    drag_applied_ = !r.isUndefined() && !final;
+    // Draw the preview straight away from the offsets; the next refresh brings the real curves.
+    emit keysChanged();
+}
+
+void CurveCanvas::mouseMoveEvent(QMouseEvent* e) {
+    QPointF pos = e->position();
+    QPointF d = pos - last_;
+    switch (mode_) {
+    case Mode::Pan:
+        t0_ -= d.x() * tpp_;
+        v0_ += d.y() * vpp_;
+        update();
+        break;
+    case Mode::Zoom: {
+        double fx = std::exp(-d.x() * 0.01), fy = std::exp(d.y() * 0.01);
+        QPointF c = to_graph(press_);
+        tpp_ *= fx, vpp_ *= fy;
+        t0_ = c.x() - press_.x() * tpp_;
+        v0_ = c.y() + press_.y() * vpp_;
+        update();
+        break;
+    }
+    case Mode::Marquee: update(); break;
+    case Mode::Move: apply_drag(pos, false); break;
+    case Mode::Scrub: emit timeDragged(std::round(to_graph(pos).x())); break;
+    default: break;
+    }
+    last_ = pos;
+}
+
+void CurveCanvas::mouseReleaseEvent(QMouseEvent* e) {
+    if (mode_ == Mode::Marquee) {
+        QRectF r = QRectF(press_, e->position()).normalized();
+        bool shift = e->modifiers() & Qt::ShiftModifier, ctrl = e->modifiers() & Qt::ControlModifier;
+        if (!shift && !ctrl) sel_.clear();
+        for (int ci = 0; ci < curves_.size(); ++ci) {
+            if (!curves_[ci].visible) continue;
+            for (int ki = 0; ki < curves_[ci].keys.size(); ++ki) {
+                auto& k = curves_[ci].keys[ki];
+                if (!r.contains(to_screen(k[0], k[1]))) continue;
+                if (ctrl) sel_.remove({ci, ki});
+                else if (shift && sel_.contains({ci, ki})) sel_.remove({ci, ki});
+                else sel_.insert({ci, ki});
+            }
+        }
+        emit selectionChanged();
+    } else if (mode_ == Mode::Move) {
+        bool was = drag_applied_;
+        if (was) {
+            aztek_retract();
+            drag_applied_ = false;
+            apply_drag(e->position(), true);
+        }
+    }
+    mode_ = Mode::None;
+    update();
+}
+
+void CurveCanvas::wheelEvent(QWheelEvent* e) {
+    double f = std::exp(-e->angleDelta().y() / 120.0 * 0.15);
+    QPointF at = e->position();
+    QPointF c = to_graph(at);
+    tpp_ *= f, vpp_ *= f;
+    t0_ = c.x() - at.x() * tpp_;
+    v0_ = c.y() + at.y() * vpp_;
+    update();
+}
+
+void CurveCanvas::keyPressEvent(QKeyEvent* e) {
+    switch (e->key()) {
+    case Qt::Key_F: frame(!sel_.isEmpty()); return;
+    case Qt::Key_A: frame(false); return;
+    case Qt::Key_Delete:
+    case Qt::Key_Backspace: {
+        QJsonArray keys;
+        for (auto& k : selected_keys()) keys.append(QJsonArray{k.first, k.second});
+        if (!keys.isEmpty()) exec("editKeys", QJsonObject{{"keys", keys}, {"delete", true}});
+        sel_.clear();
+        emit keysChanged();
+        return;
+    }
+    default: QWidget::keyPressEvent(e);
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Editor
+
+GraphEditor::GraphEditor(QWidget* parent) : QWidget(parent) {
+    setWindowTitle("Graph Editor");
+    auto* v = new QVBoxLayout(this);
+    v->setContentsMargins(0, 0, 0, 0);
+    v->setSpacing(0);
+    auto* bar = new QToolBar(this);
+    bar->setIconSize(QSize(18, 18));
+    auto tan = [this, bar](const QString& label, const QString& in, const QString& out) {
+        QAction* a = bar->addAction(label, [this, in, out] { set_tangents(in, out); });
+        a->setToolTip(QString("%1 tangents on the selected keys").arg(label));
+    };
+    tan("Auto", "auto", "auto");
+    tan("Spline", "spline", "spline");
+    tan("Clamped", "clamped", "clamped");
+    tan("Linear", "linear", "linear");
+    tan("Flat", "flat", "flat");
+    tan("Step", "clamped", "step");
+    tan("Plateau", "plateau", "plateau");
+    bar->addSeparator();
+    bar->addAction("Frame All", [this] { canvas_->frame(false); });
+    bar->addAction("Frame Selection", [this] { canvas_->frame(true); });
+    bar->addSeparator();
+    bar->addWidget(new QLabel(" Stats ", bar));
+    stats_t_ = new QLineEdit(bar);
+    stats_v_ = new QLineEdit(bar);
+    for (QLineEdit* le : {stats_t_, stats_v_}) {
+        le->setFixedWidth(70);
+        bar->addWidget(le);
+    }
+    auto set_stat = [this](const char* flag, QLineEdit* le) {
+        bool ok = false;
+        double x = le->text().toDouble(&ok);
+        if (!ok) return;
+        QJsonArray keys;
+        for (auto& k : canvas_->selected_keys()) keys.append(QJsonArray{k.first, k.second});
+        if (!keys.isEmpty()) exec("editKeys", QJsonObject{{"keys", keys}, {flag, x}});
+    };
+    connect(stats_t_, &QLineEdit::returnPressed, this, [=] { set_stat("time", stats_t_); });
+    connect(stats_v_, &QLineEdit::returnPressed, this, [=] { set_stat("value", stats_v_); });
+    v->addWidget(bar);
+    auto* split = new QSplitter(this);
+    tree_ = new QTreeWidget(split);
+    tree_->setHeaderHidden(true);
+    tree_->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    tree_->setMinimumWidth(150);
+    canvas_ = new CurveCanvas(split);
+    split->addWidget(tree_);
+    split->addWidget(canvas_);
+    split->setStretchFactor(1, 1);
+    split->setSizes({180, 700});
+    v->addWidget(split, 1);
+    connect(tree_, &QTreeWidget::itemSelectionChanged, this, [this] {
+        QSet<QString> shown;
+        for (QTreeWidgetItem* it : tree_->selectedItems()) {
+            if (it->childCount())
+                for (int i = 0; i < it->childCount(); ++i) shown.insert(it->child(i)->data(0, Qt::UserRole).toString());
+            else
+                shown.insert(it->data(0, Qt::UserRole).toString());
+        }
+        for (CurveView& c : canvas_->curves()) c.visible = shown.isEmpty() || shown.contains(c.curve);
+        canvas_->update();
+    });
+    connect(canvas_, &CurveCanvas::keysChanged, this, [this] { refresh(); });
+    connect(canvas_, &CurveCanvas::selectionChanged, this, [this] {
+        auto keys = canvas_->selected_keys();
+        if (keys.size() == 1) {
+            for (const CurveView& c : canvas_->curves())
+                if (c.curve == keys[0].first && keys[0].second < c.keys.size()) {
+                    stats_t_->setText(QString::number(c.keys[keys[0].second][0]));
+                    stats_v_->setText(QString::number(c.keys[keys[0].second][1], 'g', 6));
+                }
+        } else {
+            stats_t_->clear();
+            stats_v_->clear();
+        }
+        refresh();
+    });
+    connect(canvas_, &CurveCanvas::timeDragged, this, [](double t) {
+        exec_quiet("currentTime", QJsonObject{{"args", QJsonArray{t}}});
+        Host::get()->poke();
+    });
+    connect(Host::get(), &Host::sceneChanged, this, [this] {
+        if (isVisible()) refresh();
+    });
+    resize(900, 480);
+}
+
+void GraphEditor::set_tangents(const QString& in, const QString& out) {
+    QJsonArray keys;
+    for (auto& k : canvas_->selected_keys()) keys.append(QJsonArray{k.first, k.second});
+    if (keys.isEmpty()) return;
+    exec("editKeys", QJsonObject{{"keys", keys}, {"inTangentType", in}, {"outTangentType", out}});
+}
+
+void GraphEditor::refresh() {
+    // The visible frames (and a margin), sampled a few pixels apart.
+    auto [lo, hi, step] = canvas_->sample_window();
+    QJsonObject r = query("animCurves", QString("%1:%2:%3").arg(lo).arg(hi).arg(step)).toObject();
+    QVector<CurveView> curves;
+    QStringList key_list;
+    for (const QJsonValue& ov : r["objects"].toArray()) {
+        QJsonObject o = ov.toObject();
+        for (const QJsonValue& cv : o["curves"].toArray()) {
+            QJsonObject c = cv.toObject();
+            CurveView view;
+            view.curve = c["curve"].toString();
+            view.channel = c["channel"].toString();
+            view.node = o["node"].toString();
+            view.component = c["component"].toInt(-1);
+            view.color = channel_color(view.channel, view.component);
+            for (const QJsonValue& s : c["samples"].toArray()) view.samples.append(QPointF(s[0].toDouble(), s[1].toDouble()));
+            for (const QJsonValue& k : c["keys"].toArray()) {
+                QJsonArray ka = k.toArray();
+                view.keys.append({ka[0].toDouble(), ka[1].toDouble(), ka[2].toDouble(), ka[3].toDouble()});
+                view.itt.append(ka[4].toString());
+                view.ott.append(ka[5].toString());
+            }
+            key_list.append(view.node + "|" + view.curve);
+            curves.append(view);
+        }
+    }
+    // Keep each curve's shown/hidden state.
+    for (CurveView& c : curves)
+        for (const CurveView& o : canvas_->curves())
+            if (o.curve == c.curve) c.visible = o.visible;
+    canvas_->set_curves(curves, r["time"].toDouble(1));
+    QString key = key_list.join(",");
+    if (key != tree_key_) {
+        tree_key_ = key;
+        rebuild_tree();
+    }
+}
+
+void GraphEditor::rebuild_tree() {
+    tree_->blockSignals(true);
+    tree_->clear();
+    QHash<QString, QTreeWidgetItem*> nodes;
+    for (const CurveView& c : canvas_->curves()) {
+        QTreeWidgetItem* n = nodes.value(c.node);
+        if (!n) {
+            n = new QTreeWidgetItem(tree_, QStringList{c.node.section('|', -1)});
+            n->setIcon(0, icon("transform"));
+            nodes[c.node] = n;
+            n->setExpanded(true);
+        }
+        auto* it = new QTreeWidgetItem(n, QStringList{c.channel.left(1).toUpper() + c.channel.mid(1)});
+        it->setForeground(0, c.color);
+        it->setData(0, Qt::UserRole, c.curve);
+    }
+    tree_->expandAll();
+    tree_->blockSignals(false);
+}
+
+} // namespace az
