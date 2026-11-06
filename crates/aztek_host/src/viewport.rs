@@ -719,6 +719,11 @@ impl Viewport {
             }
             return self.raycast(items, px).map(|(i, _, _)| vec![g.path(items[i].xf)]).unwrap_or_default();
         }
+        if components::mode(g) == ComponentMode::Vertex {
+            if let Some(hit) = self.pick_lattice_point(g, px) {
+                return vec![hit];
+            }
+        }
         match self.pick_component(s, items, px) {
             Some((i, kind, id)) => {
                 let p = match kind {
@@ -730,6 +735,24 @@ impl Viewport {
             }
             None => Vec::new(),
         }
+    }
+
+    /// The control point of a selected lattice nearest px, within a few pixels.
+    fn pick_lattice_point(&self, g: &Graph, px: DVec2) -> Option<String> {
+        let screen = self.screen();
+        let mut best: Option<(f64, String)> = None;
+        for (xf, shape, dims, pts) in selected_lattices(g) {
+            for (i, p) in pts.iter().enumerate() {
+                let Some(q) = screen.project(*p) else { continue };
+                let d = (q - px).length();
+                if d < 10.0 && best.as_ref().is_none_or(|b| d < b.0) {
+                    let name = components::grid_strings(&g.path(xf), dims, &[i as u32], true);
+                    best = name.into_iter().next().map(|n| (d, n));
+                }
+            }
+            let _ = shape;
+        }
+        best.map(|b| b.1)
     }
 
     /// Draws the pre-selection highlight: the component under the cursor in red.
@@ -777,6 +800,14 @@ impl Viewport {
         let mode = components::mode(g);
         let screen = self.screen();
         let mut out = Vec::new();
+        if mode == ComponentMode::Vertex {
+            for (xf, _, dims, pts) in selected_lattices(g) {
+                let ids: Vec<u32> = (0..pts.len() as u32).filter(|&i| screen.project(pts[i as usize]).is_some_and(inside)).collect();
+                if !ids.is_empty() {
+                    out.extend(components::grid_strings(&g.path(xf), dims, &ids, false));
+                }
+            }
+        }
         if mode == ComponentMode::Object {
             for it in rig_items(g) {
                 if it.segs.iter().any(|(a, b)| screen.project(*a).is_some_and(inside) || screen.project(*b).is_some_and(inside)) {
@@ -1224,6 +1255,17 @@ fn circle(c: DVec3, u: DVec3, v: DVec3, r: f64, out: &mut Vec<(DVec3, DVec3)>) {
     }
 }
 
+/// The selected lattices: transform, shape, grid size and points in world space.
+fn selected_lattices(g: &Graph) -> Vec<(NodeId, NodeId, [u32; 3], Vec<DVec3>)> {
+    let mut out = Vec::new();
+    for &xf in g.selection() {
+        let Some(shape) = aztek_scene::dag::shape_of_type(g, xf, "lattice") else { continue };
+        let Some((d, pts)) = aztek_scene::deform_lattice::world_points(g, shape) else { continue };
+        out.push((xf, shape, [d[0] as u32, d[1] as u32, d[2] as u32], pts));
+    }
+    out
+}
+
 pub fn rig_items(g: &Graph) -> Vec<RigItem> {
     use aztek_scene::rig::Joint;
     use aztek_scene::transform::{Locator, Transform};
@@ -1267,7 +1309,39 @@ pub fn rig_items(g: &Graph) -> Vec<RigItem> {
             out.push(RigItem { node: id, color: [70, 110, 220, 255], segs });
         } else if ty.is_a("deformHandle") {
             let kind = ty.attr_index("deformerType").map(|i| n.data().string(i).to_string()).unwrap_or_default();
-            out.push(RigItem { node: id, color: [200, 120, 230, 255], segs: aztek_scene::deform::handle_lines(&kind, &w) });
+            // A cluster's handle sits on its pivot.
+            let at = w * glam::DMat4::from_translation(n.data().vec3(Transform::ROTATE_PIVOT));
+            out.push(RigItem { node: id, color: [200, 120, 230, 255], segs: aztek_scene::deform::handle_lines(&kind, &at) });
+        } else if ty.is_a("softModHandle") {
+            let at = w * glam::DMat4::from_translation(n.data().vec3(aztek_scene::transform::Shape::COUNT));
+            out.push(RigItem { node: aztek_scene::dag::transform_of(g, id), color: [200, 120, 230, 255], segs: aztek_scene::deform::handle_lines("softMod", &at) });
+        } else if ty.is_a("baseLattice") {
+            out.push(RigItem { node: aztek_scene::dag::transform_of(g, id), color: [130, 70, 150, 255], segs: aztek_scene::deform_lattice::box_lines(&w) });
+        } else if ty.is_a("lattice") {
+            let Some((dims, pts)) = aztek_scene::deform_lattice::world_points(g, id) else { continue };
+            let mut segs = aztek_scene::deform_lattice::grid_lines(dims, &pts);
+            let cross = |p: DVec3, k: f64, segs: &mut Vec<(DVec3, DVec3)>| {
+                for ax in [DVec3::X, DVec3::Y, DVec3::Z] {
+                    segs.push((p - ax * k, p + ax * k));
+                }
+            };
+            // A control point's mark, scaled to the lattice.
+            let k = pts.first().zip(pts.get(1)).map_or(0.05, |(a, b)| (*a - *b).length() * 0.04).max(1e-4);
+            for p in &pts {
+                cross(*p, k, &mut segs);
+            }
+            out.push(RigItem { node: aztek_scene::dag::transform_of(g, id), color: [200, 120, 230, 255], segs });
+            // Selected points show in vertex mode. No node: this is a highlight, and it mustn't pick or take selection colours.
+            if components::mode(g) == ComponentMode::Vertex {
+                let picked = components::selected(g, id, ComponentMode::Vertex);
+                if !picked.is_empty() {
+                    let mut segs = Vec::new();
+                    for p in picked.iter().filter_map(|&i| pts.get(i as usize)) {
+                        cross(*p, k * 2.5, &mut segs);
+                    }
+                    out.push(RigItem { node: aztek_scene::NO_NODE, color: [255, 200, 60, 255], segs });
+                }
+            }
         } else if ty.is_a("ikHandle") {
             let k = 0.4;
             let segs = vec![

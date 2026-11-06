@@ -451,7 +451,12 @@ QMenu* MainWindow::deform_menu() {
         cmd(nl, label, "nonLinear", QJsonObject{{"type", t}}, QString(), true);
     }
     m->addSeparator();
-    for (const char* l : {"Lattice", "Wrap", "Wire", "Soft Modification", "Delta Mush", "Tension"}) todo(m, l);
+    cmd(m, "Lattice", "lattice", QJsonObject{{"divisions", QJsonArray{2, 5, 2}}, {"objectCentered", true}}, QString(), true);
+    cmd(m, "Wrap", "wrap", {}, QString(), true);
+    cmd(m, "Wire", "wire", {}, QString(), true);
+    cmd(m, "Soft Modification", "softMod", {}, QString(), true);
+    cmd(m, "Delta Mush", "deltaMush", {}, QString(), true);
+    cmd(m, "Tension", "tension", {}, QString(), true);
     return m;
 }
 
