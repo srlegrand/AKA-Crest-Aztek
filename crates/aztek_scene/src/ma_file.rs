@@ -1785,7 +1785,7 @@ impl Build<'_> {
         }
     }
 
-    fn create_constraint(&mut self, i: usize, kind: usize) {
+    fn create_constraint(&mut self, i: usize, _kind: usize) {
         let doc = self.doc;
         let n = &doc.nodes[i];
         let mut targets: BTreeMap<i64, usize> = BTreeMap::new();

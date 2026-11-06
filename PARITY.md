@@ -159,3 +159,13 @@ meshes baked. Written from knowledge of the format with no Maya to check against
 units and `.xm` xform order are the parts to check first. Not handled: references, instances, NURBS, blendShape and
 cluster (baked with a warning), multiple shapes sharing a skinCluster.
 
+Python API, as of 06/11/2026: `aztek.api.OpenMaya` and `aztek.api.OpenMayaAnim`, also as `maya.api.*`: value classes
+and arrays, `MGlobal`, `MSelectionList`, `MObject`, `MDagPath`, `MPlug`, modifiers, function sets for nodes, transforms,
+meshes (rays and closest points included), curves, sets, attributes, data and components, the selection, DAG, graph and
+mesh iterators, `MFnSkinCluster`, `MAnimControl`, `MFnAnimCurve`. Python plug-ins with `loadPlugin`, `unloadPlugin` and
+`pluginInfo`: `MPxCommand` (runs from `cmds` and MEL, `undoIt` and `redoIt` on the undo stack) and `MPxNode` for plain
+dependency nodes. Differences from Maya: only dependency nodes can come from plug-ins (no `MPxDeformerNode` or
+`MPxLocatorNode`), mesh attributes don't reach `compute`, compound attributes can't be arrays, one UV set (`map1`), one
+path per DAG node, `setKeyable` only on added attributes, `MFnTransform` has no shear, and cycles are refused node by
+node, not plug by plug. MEL can't pass flags to a plug-in command with no syntax. `MRampAttribute` isn't there.
+

@@ -555,6 +555,7 @@ impl EvalView<'_> {
             }
         }
         let ctx = self.ctx;
+        n.behavior.set_node_name(&n.name);
         n.behavior.compute(&ctx, &mut n.data);
         // Computed from a placeholder upstream means a placeholder too.
         if cache_node {
@@ -1040,6 +1041,7 @@ impl Graph {
         let reg = registered(ty);
         let mut n = Box::new(Node::new(reg.clone(), create()));
         n.id = self.next_id;
+        n.behavior.set_node_id(n.id);
         self.next_id += 1;
         // Maya's default: the type name numbered from 1 (transform1, polyCube1). A naming convention, when on, styles it.
         let fallback = if self.naming.enabled {
