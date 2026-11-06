@@ -258,6 +258,20 @@ pub fn parse(cmds: &Commands<Session>, stmt: &str) -> Result<(String, Value), St
                 return Err(format!("{typed}: invalid flag -{f}"));
             };
             i += 1;
+            // Multi-use flags (-st x -st y, -sr "L_" "R_"): a fixed number of values per use, gathered into one list.
+            if fd.arity > 0 {
+                let list = flags.entry(fd.name.clone()).or_insert_with(|| Value::Array(Vec::new()));
+                for _ in 0..fd.arity {
+                    if i >= toks.len() {
+                        return Err(format!("{name}: flag -{f} needs {} values", fd.arity));
+                    }
+                    if let Value::Array(a) = list {
+                        a.push(scalar(&toks[i]));
+                    }
+                    i += 1;
+                }
+                continue;
+            }
             let v = match fd.ty {
                 ArgType::Bool => {
                     if i < toks.len() && is_bool_word(&toks[i]) {
