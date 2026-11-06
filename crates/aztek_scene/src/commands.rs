@@ -564,6 +564,9 @@ fn register_scene(c: &mut Commands<Session>) {
                 r?;
                 return Ok(Value::Null);
             }
+            for &id in &ids {
+                crate::anim_layers::before_delete(g, id)?;
+            }
             // A mesh's history goes with it, unless something else uses it.
             let mut history = Vec::new();
             let mut all_doomed = Vec::new();
@@ -720,11 +723,18 @@ fn register_attrs(c: &mut Commands<Session>) {
              without a value: a locked plug can't be changed until it is unlocked.",
             |s, a| {
                 let lock_only = a.has("lock") && a.positional.len() == 1;
-                if (a.positional.len() < 2 && !lock_only) || a.pos_str(0).is_none() {
+                let keyable = a.get("keyable").or(a.get("channelBox")).and_then(Value::as_bool);
+                if (a.positional.len() < 2 && !lock_only && keyable.is_none()) || a.pos_str(0).is_none() {
                     fail!("setAttr: expected (plug, value)");
                 }
                 let g = &mut s.graph;
                 let p = plug_arg(g, &a.positional[0])?;
+                if let Some(on) = keyable {
+                    crate::anim::set_keyable(g, &p, on)?;
+                    if a.positional.len() < 2 && !lock_only {
+                        return Ok(Value::Null);
+                    }
+                }
                 // Unlock before setting and lock after, so setAttr(plug, v, lock=...) works either way.
                 if a.has("lock") && !a.bool("lock") {
                     g.set_locked(&p, false)?;
@@ -751,7 +761,9 @@ fn register_attrs(c: &mut Commands<Session>) {
             },
         )
         .positional("plug [value]")
-        .flag(flag("lock", "l", T::Bool, Value::Null, "Lock (True) or unlock (False) the plug.")),
+        .flag(flag("lock", "l", T::Bool, Value::Null, "Lock (True) or unlock (False) the plug."))
+        .flag(flag("keyable", "k", T::Bool, Value::Null, "Make the channel keyable, or not: it shows in the channel box and S keys it."))
+        .flag(flag("channelBox", "cb", T::Bool, Value::Null, "As -k: the channel box shows keyable channels.")),
     );
 
     c.register(
@@ -765,6 +777,9 @@ fn register_attrs(c: &mut Commands<Session>) {
                 let p = plug_arg(g, first)?;
                 if a.bool("lock") {
                     return Ok(json!(g.is_locked(&p)));
+                }
+                if a.bool("keyable") {
+                    return Ok(json!(crate::anim::is_keyable(g, &p)));
                 }
                 if a.bool("multiIndices") {
                     return Ok(json!(g.elements(&p).iter().map(|e| e.element).collect::<Vec<_>>()));
@@ -781,6 +796,7 @@ fn register_attrs(c: &mut Commands<Session>) {
         )
         .positional("plug")
         .flag(flag("lock", "l", T::Bool, json!(false), "Return the lock state instead of the value."))
+        .flag(flag("keyable", "k", T::Bool, json!(false), "Return whether the channel is keyable instead of the value."))
         .flag(flag("multiIndices", "mi", T::Bool, json!(false), "Return an array's element indices, ascending."))
         .undoable(false),
     );
