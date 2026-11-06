@@ -104,6 +104,8 @@ impl Session {
         crate::anim::register(&mut s.commands);
         crate::uv_ops::register(&mut s.commands);
         crate::rig::register(&mut s.commands);
+        crate::constraint::register(&mut s.commands);
+        crate::ik::register(&mut s.commands);
         crate::skin::register(&mut s.commands);
         crate::deform::register(&mut s.commands);
         crate::curves::register(&mut s.commands);
@@ -124,6 +126,7 @@ impl Session {
         crate::duplicate::install(&mut s.graph);
         crate::anim::install(&mut s.graph);
         crate::deform_wire::install(&mut s.graph);
+        crate::rig::install(&mut s.graph);
         s.load_naming_policy();
         s
     }

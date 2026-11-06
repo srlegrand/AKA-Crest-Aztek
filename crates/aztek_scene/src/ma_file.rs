@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use aztek_geo::{names, Index, Mesh, INVALID};
 use aztek_ops::{fail, ArgType, Args, CmdResult, CommandDef, Commands, FlagDef};
-use glam::{DMat3, DMat4, DQuat, DVec3};
+use glam::{DMat4, DQuat, DVec3};
 use serde_json::{json, Value};
 
 use crate::anim::{self, Key, Keys, Tangent};
@@ -30,7 +30,7 @@ use crate::plug::{flags, AttrDef, NodeId, PlugRef, PlugType, PlugValue, NO_NODE}
 use crate::rig::{self, Joint};
 use crate::session::Session;
 use crate::skin::{self, SkinBind};
-use crate::transform::{euler_to_matrix, matrix_to_euler, DagNode, RotateOrder, Transform};
+use crate::transform::{euler_to_matrix, DagNode, RotateOrder, Transform};
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Tokens
@@ -1799,44 +1799,22 @@ impl Build<'_> {
         };
         self.used[i] = true;
 
-        let mut offsets = Vec::new();
+        let mut ids: Vec<(i64, NodeId)> = Vec::new();
         let mut weights = Vec::new();
-        let mut ids = Vec::new();
-        let parent = self.s.graph.parent(driven_id);
-        let parent_rot = if parent != NO_NODE { DMat3::from_mat4(rig::world(&mut self.s.graph, parent)) } else { DMat3::IDENTITY };
         for (&e, &src) in &targets {
             let Some(t) = self.id(src) else {
                 self.warnings.push(format!("{}: target {} is not in the scene", n.name, doc.nodes[src].name));
                 continue;
             };
-            ids.push((ids.len(), t));
-            let element_vec = |leaf: &[&str]| -> Option<DVec3> {
-                n.sets.iter().rev().find_map(|s| {
-                    let [a, b] = s.path.as_slice() else { return None };
-                    (matches!(a.name.as_str(), "tg" | "target") && a.range.is_some_and(|r| r.0 == e) && leaf.contains(&b.name.as_str()) && s.values.len() >= 3).then(|| tok_vec3(&s.values))
-                })
-            };
-            let o = n.vec3(&["o", "offset"]).unwrap_or(if kind == 3 { DVec3::ONE } else { DVec3::ZERO });
-            let off = match kind {
-                0 => {
-                    let t = element_vec(&["tot", "targetOffsetTranslate"]).unwrap_or(DVec3::ZERO) * doc.lin;
-                    let r = element_vec(&["tor", "targetOffsetRotate"]).unwrap_or(DVec3::ZERO) * doc.ang;
-                    DMat4::from_translation(t) * euler_to_matrix(r, RotateOrder::Xyz)
-                }
-                // Maya's offset is in the driven object's parent space; Aztek's in world.
-                1 => DMat4::from_translation(parent_rot * (o * doc.lin)),
-                3 => DMat4::from_scale(o),
-                _ => euler_to_matrix(o * doc.ang, RotateOrder::Xyz),
-            };
-            offsets.push(rig::mat_json(&off));
+            ids.push((e as i64, t));
             // The weight: a value on the element, or the user attr (w0) wired to it.
-            let wired = doc.conns.iter().find(|c| c.dst == i && c.src == i && first_index(&c.dst_attr) == Some(e) && plain_attr(&c.dst_attr) == "tg.tw");
+            let wired = doc.conns.iter().find(|c| c.dst == i && c.src == i && first_index(&c.dst_attr) == Some(e) && plain_attr(&c.dst_attr).ends_with("tw"));
             let w = wired
-                .and_then(|c| n.num(&[c.src_attr.as_str()]).or_else(|| n.adds.iter().find(|a| a.short == c.src_attr || a.long == c.src_attr).and_then(|a| a.dv)))
+                .and_then(|c| n.num(&[c.src_attr.as_str()]).or_else(|| n.adds.iter().find(|a| a.short == c.src_attr || a.long == c.src_attr).and_then(|a| n.num(&[a.long.as_str(), a.short.as_str()]))))
                 .or_else(|| {
                     n.sets.iter().rev().find_map(|s| {
                         let [a, b] = s.path.as_slice() else { return None };
-                        (a.range.is_some_and(|r| r.0 == e) && matches!(b.name.as_str(), "tw" | "targetWeight")).then(|| s.values.first()?.num())?
+                        (a.range.is_some_and(|r| r.0 == e) && matches!(b.name.as_str(), "tw" | "targetWeight")).then(|| s.values.first()?.num()).flatten()
                     })
                 })
                 .unwrap_or(1.0);
@@ -1846,37 +1824,74 @@ impl Build<'_> {
             self.warnings.push(format!("{}: {} has no target in the scene; skipped", n.name, n.ty));
             return;
         }
-        if kind == 4 {
-            let default_aim = n.vec3(&["a", "aimVector"]).is_none_or(|v| v == DVec3::X);
-            let default_up = n.vec3(&["u", "upVector"]).is_none_or(|v| v == DVec3::Y);
-            if !default_aim || !default_up {
-                self.warnings.push(format!("{}: only aim X and up Y are represented", n.name));
+        let cmd = n.ty.clone();
+        let g = &self.s.graph;
+        let mut args: Vec<Value> = ids.iter().map(|x| json!(g.path(x.1))).collect();
+        args.push(json!(g.path(driven_id)));
+        let mut call = json!({"args": args});
+        if Graph::valid_name(&n.name) {
+            call["name"] = json!(n.name);
+        }
+        let made = match self.s.run(&cmd, call) {
+            Ok(v) => v,
+            Err(e) => {
+                self.warnings.push(format!("{}: {e}", n.name));
+                return;
+            }
+        };
+        let Some(cname) = made.get(0).and_then(Value::as_str).map(str::to_string) else { return };
+        let Ok(Some(c)) = self.s.graph.find(&cname) else { return };
+        self.ids[i] = Some(c);
+        let t = self.s.graph.node(c).unwrap().type_arc().clone();
+        let g = &mut self.s.graph;
+        let set_vec = |g: &mut Graph, attr: &str, element: Option<i32>, v: DVec3| {
+            if let Some(a) = t.attr_index(attr) {
+                let p = match element {
+                    Some(e) => PlugRef::element(c, a as i32, e),
+                    None => PlugRef::new(c, a as i32),
+                };
+                let _ = g.set_value(p, PlugValue::Vec3(v));
+            }
+        };
+        for (k, &(e, _)) in ids.iter().enumerate() {
+            let element_vec = |leaf: &[&str]| -> Option<DVec3> {
+                n.sets.iter().rev().find_map(|s| {
+                    let [a, b] = s.path.as_slice() else { return None };
+                    if !(matches!(a.name.as_str(), "tg" | "target") && a.range.is_some_and(|r| r.0 as i64 == e) && leaf.contains(&b.name.as_str())) {
+                        return None;
+                    }
+                    let v = &s.values;
+                    Some(DVec3::new(v.first()?.num()?, v.get(1)?.num()?, v.get(2)?.num()?))
+                })
+            };
+            if let Some(v) = element_vec(&["tot", "targetOffsetTranslate"]) {
+                set_vec(g, "target.targetOffsetTranslate", Some(k as i32), v * doc.lin);
+            }
+            if let Some(v) = element_vec(&["tor", "targetOffsetRotate"]) {
+                set_vec(g, "target.targetOffsetRotate", Some(k as i32), v * doc.ang);
             }
         }
-        let g = &mut self.s.graph;
-        let order = g.node(driven_id).map_or(0, |x| x.data().int(Transform::ROTATE_ORDER));
-        let rest = rig::world(g, driven_id);
-        let t = types::find(&n.ty).unwrap();
-        let name = if Graph::valid_name(&n.name) { n.name.clone() } else { String::new() };
-        let Ok(c) = g.create_node(&t, &name, NO_NODE, false) else { return };
-        self.ids[i] = Some(c);
-        let at = |a: &str| t.attr_index(a).unwrap();
-        let _ = rig::set_json(g, c, at("constraintData"), json!({"offsets": offsets, "weights": weights, "rotateOrder": order, "rest": rig::mat_json(&rest)}));
-        for (e, id) in ids {
-            let _ = g.connect(&PlugRef::new(id, Transform::WORLD_MATRIX as i32), &PlugRef::element(c, at("target") as i32, e as i32), false);
+        // Rotation-like offsets are stored in the file's angle unit; a point constraint's in its linear unit; scale has none.
+        if let Some(o) = n.vec3(&["o", "offset"]) {
+            let unit = match cmd.as_str() {
+                "pointConstraint" => doc.lin,
+                "orientConstraint" | "aimConstraint" => doc.ang,
+                _ => 1.0,
+            };
+            set_vec(g, "offset", None, o * unit);
         }
-        if parent != NO_NODE {
-            let _ = g.connect(&PlugRef::new(parent, Transform::WORLD_MATRIX as i32), &PlugRef::new(c, at("constraintParentInverseMatrix") as i32), false);
+        for (names, attr) in [(["a", "aimVector"], "aimVector"), (["u", "upVector"], "upVector"), (["wu", "worldUpVector"], "worldUpVector")] {
+            if let Some(v) = n.vec3(&names) {
+                set_vec(g, attr, None, v);
+            }
         }
-        let outs: &[(&str, usize)] = match kind {
-            0 => &[("constraintTranslate", Transform::TRANSLATE), ("constraintRotate", Transform::ROTATE)],
-            1 => &[("constraintTranslate", Transform::TRANSLATE)],
-            3 => &[("constraintScale", Transform::SCALE)],
-            _ => &[("constraintRotate", Transform::ROTATE)],
-        };
-        for &(o, a) in outs {
-            if let Err(e) = g.connect(&PlugRef::new(c, at(o) as i32), &PlugRef::new(driven_id, a as i32), true) {
-                self.warnings.push(format!("{}: {e}", n.name));
+        if let (Some(w), Some(at)) = (n.num(&["wut", "worldUpType"]), t.attr_index("worldUpType")) {
+            let _ = g.set_value(PlugRef::new(c, at as i32), PlugValue::Int(w as i64));
+        }
+        let aliases = self.s.run(&cmd, json!({"args": [cname.clone()], "query": true, "queried": ["weightAliasList"]})).unwrap_or(Value::Null);
+        for (alias, w) in aliases.as_array().into_iter().flatten().filter_map(Value::as_str).zip(&weights) {
+            if (*w - 1.0).abs() > 1e-12 {
+                let _ = self.s.run("setAttr", json!({"args": [format!("{cname}.{alias}"), *w]}));
             }
         }
     }
@@ -2899,34 +2914,20 @@ impl Writer<'_> {
         let n = g.node(id).unwrap();
         let t = n.type_arc().clone();
         let name = n.name().to_string();
-        let data = rig::json_of(n.data(), t.attr_index("constraintData").unwrap());
-        let tg = t.attr_index("target").unwrap() as i32;
+        let tg = t.attr_index("target.targetMatrix").unwrap() as i32;
         let mut targets: Vec<(i32, NodeId)> = g.connections().into_iter().filter(|(d, _)| d.node == id && d.attr == tg && d.element >= 0).map(|(d, s)| (d.element, s.node)).collect();
         targets.sort();
-        let mut driven = None;
-        for out in ["constraintTranslate", "constraintRotate", "constraintScale"] {
-            let a = t.attr_index(out).unwrap();
-            if let Some(d) = g.destinations(&PlugRef::new(id, a as i32)).first() {
-                driven = Some(d.node);
-                break;
-            }
-        }
-        let Some(driven) = driven.filter(|d| self.keep.contains(d)) else { return };
+        let Some(driven) = crate::constraint::driven_of(g, id).filter(|d| self.keep.contains(d)) else { return };
         if targets.iter().any(|(_, t)| !self.keep.contains(t)) {
             self.warnings.push(format!("{name}: a target is not exported; constraint omitted"));
             return;
         }
         let path = g.path(driven);
-        let offsets: Vec<DMat4> = data.get("offsets").and_then(Value::as_array).map(|a| a.iter().map(rig::mat_from).collect()).unwrap_or_default();
-        let weights: Vec<f64> = data.get("weights").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_f64).collect()).unwrap_or_default();
-        let parent_rot = {
-            let p = g.parent(driven);
-            if p == NO_NODE {
-                DMat3::IDENTITY
-            } else {
-                DMat3::from_mat4(rig::world(&mut self.s.graph, p))
-            }
-        };
+        let aliases = self.s.run(&t.name, json!({"args": [name.clone()], "query": true, "queried": ["weightAliasList"]})).unwrap_or(Value::Null);
+        let mut weights: Vec<f64> = Vec::new();
+        for alias in aliases.as_array().into_iter().flatten().filter_map(Value::as_str) {
+            weights.push(self.s.run("getAttr", json!({"args": [format!("{name}.{alias}")]})).ok().and_then(|v| v.as_f64()).unwrap_or(1.0));
+        }
         let g = &self.s.graph;
         let mut body = String::new();
         let mut conns: Vec<(String, String)> = Vec::new();
@@ -2957,11 +2958,12 @@ impl Writer<'_> {
                 conns.push((format!("{tp}.ssc"), format!("{c}.tg[{e}].tsc")));
                 conns.push((format!("{tp}.is"), format!("{c}.tg[{e}].tis")));
             }
-            let off = offsets.get(e as usize).copied().unwrap_or(DMat4::IDENTITY);
-            if kind == 0 {
-                let tot = off.w_axis.truncate();
-                let rot = DMat3::from_cols(off.x_axis.truncate().normalize_or_zero(), off.y_axis.truncate().normalize_or_zero(), off.z_axis.truncate().normalize_or_zero());
-                let tor = matrix_to_euler(&rot, RotateOrder::Xyz);
+            if t.name == "parentConstraint" {
+                let n = g.node(id).unwrap();
+                let at = |a: &str, e: i32| -> DVec3 {
+                    t.attr_index(a).and_then(|i| n.data().element(i, e).cloned()).and_then(|v| if let PlugValue::Vec3(x) = v { Some(x) } else { None }).unwrap_or(DVec3::ZERO)
+                };
+                let (tot, tor) = (at("target.targetOffsetTranslate", e), at("target.targetOffsetRotate", e));
                 if tot != DVec3::ZERO {
                     let _ = writeln!(body, "\tsetAttr \".tg[{e}].tot\" -type \"double3\" {} ;", vec_text(tot));
                 }
@@ -2971,21 +2973,23 @@ impl Writer<'_> {
             }
         }
         // The other kinds hold one offset for the node.
-        if let Some(off) = offsets.first().filter(|_| kind != 0) {
-            let v = match kind {
-                1 => parent_rot.transpose() * off.w_axis.truncate(),
-                3 => DVec3::new(off.x_axis.length(), off.y_axis.length(), off.z_axis.length()),
-                _ => matrix_to_euler(&DMat3::from_mat4(*off), RotateOrder::Xyz),
-            };
-            let default = if kind == 3 { DVec3::ONE } else { DVec3::ZERO };
+        if let Some(i) = t.attr_index("offset").filter(|_| t.name != "parentConstraint") {
+            let v = g.node(id).unwrap().data().vec3(i);
+            let default = if t.name == "scaleConstraint" { DVec3::ONE } else { DVec3::ZERO };
             if v != default {
                 let _ = writeln!(body, "\tsetAttr \".o\" -type \"double3\" {} ;", vec_text(v));
             }
         }
-        if kind == 4 {
-            let _ = writeln!(body, "\tsetAttr \".a\" -type \"double3\" 1 0 0 ;");
-            let _ = writeln!(body, "\tsetAttr \".u\" -type \"double3\" 0 1 0 ;");
-            let _ = writeln!(body, "\tsetAttr \".wu\" -type \"double3\" 0 1 0 ;");
+        if t.name == "aimConstraint" {
+            let n = g.node(id).unwrap();
+            for (attr, short) in [("aimVector", "a"), ("upVector", "u"), ("worldUpVector", "wu")] {
+                if let Some(i) = t.attr_index(attr) {
+                    let _ = writeln!(body, "\tsetAttr \".{short}\" -type \"double3\" {} ;", vec_text(n.data().vec3(i)));
+                }
+            }
+            if let Some(i) = t.attr_index("worldUpType") {
+                let _ = writeln!(body, "\tsetAttr \".wut\" {};", n.data().int(i));
+            }
         }
         conns.push((format!("{path}.pim"), format!("{c}.cpim")));
         if kind != 3 {
@@ -3019,15 +3023,13 @@ impl Writer<'_> {
         let wm = PlugRef::new(handle, Transform::WORLD_MATRIX as i32);
         let Some(sv) = g.destinations(&wm).into_iter().map(|d| d.node).find(|&d| g.node(d).is_some_and(|n| n.ty().name == "ikSolve")) else { return };
         let st = g.node(sv).unwrap().type_arc().clone();
-        let mut chain = Vec::new();
-        for i in 0..rig::MAX_CHAIN {
-            let Some(a) = st.attr_index(&format!("outRotate{i}")) else { break };
-            match g.destinations(&PlugRef::new(sv, a as i32)).first() {
-                Some(d) => chain.push(d.node),
-                None => break,
-            }
+        let mut chain = crate::ik::joints_of(g, sv);
+        let Some(end) = crate::ik::end_of(g, handle) else { return };
+        // The solver drives the chain above the end joint; the end joint belongs to it all the same.
+        if chain.last() != Some(&end) {
+            chain.push(end);
         }
-        let (Some(&start), Some(&end)) = (chain.first(), chain.last()) else { return };
+        let Some(&start) = chain.first() else { return };
         if chain.iter().any(|j| !self.keep.contains(j)) {
             let name = g.path(handle);
             self.warnings.push(format!("{name}: its joints are not exported; effector and solver omitted"));
@@ -3039,7 +3041,7 @@ impl Writer<'_> {
         if parent == NO_NODE {
             return;
         }
-        let eff_name = self.fresh("effector1");
+        let eff_name = crate::ik::effector_of(&self.s.graph, handle).and_then(|e| self.s.graph.node(e).map(|n| n.name().to_string())).unwrap_or_else(|| self.fresh("effector1"));
         let g = &self.s.graph;
         let hp = g.path(handle);
         let (sp, ep, pp) = (g.path(start), g.path(end), g.path(parent));
@@ -3319,11 +3321,10 @@ pub fn write_text(s: &mut Session, file_name: &str, only: Option<&[NodeId]>) -> 
         let data = rig::json_of(g.node(sv).unwrap().data(), st.attr_index("chain").unwrap());
         let rests = data.get("joints").and_then(Value::as_array).cloned().unwrap_or_default();
         let mut entries = Vec::new();
-        for (i, rest) in rests.iter().enumerate() {
-            let Some(a) = st.attr_index(&format!("outRotate{i}")) else { break };
-            let Some(d) = g.destinations(&PlugRef::new(sv, a as i32)).first().copied() else { break };
+        let driven = crate::ik::joints_of(g, sv);
+        for (rest, &j) in rests.iter().zip(&driven) {
             let f = |k: usize| rest.get("r").and_then(|r| r.get(k)).and_then(Value::as_f64).unwrap_or(0.0);
-            entries.push((d.node, DVec3::new(f(0), f(1), f(2))));
+            entries.push((j, DVec3::new(f(0), f(1), f(2))));
         }
         w.preferred.extend(entries);
     }

@@ -681,6 +681,9 @@ pub(crate) fn target_curves(s: &Session, a: &aztek_ops::Args, cmd: &str) -> CmdR
 pub fn install(g: &mut Graph) {
     set_frame(g, range().min);
     g.set_driven_set_hook(Arc::new(|g: &mut Graph, dst: &PlugRef, src: &PlugRef, v: f64| {
+        if let Some(edit) = crate::rig::driven_scalar_set(g, dst, src, v) {
+            return edit;
+        }
         if !is_curve(g, src.node) {
             return DrivenEdit::Reject;
         }

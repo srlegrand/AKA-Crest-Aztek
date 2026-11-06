@@ -117,6 +117,16 @@ UVs, as of 06/11/2026: maps (`pCube1.map[3]`) and shells derived from the per-co
 `polyMapSewMove`, `polyEditUV` (query too), `polyNormalizeUV`, `polyFlipUV`, `polyRotateUVs`, each a history node
 (`polyPlanarProj1`, `polyTweakUV1`, ...). UV Editor.
 
+Skeletons, IK and constraints, as of 06/11/2026: `joint` with its query and edit flags (limits, degrees of freedom,
+preferred angles, zero scale orient), joint labels, segment scale compensate through `inverseScale`, `mirrorJoint`,
+`insertJoint`, `removeJoint`, `connectJoint`, `disconnectJoint`, `reroot`. `ikHandle` query and edit, a real `ikEffector`,
+`ikSolver`, `ikSystem`, `.ikBlend`, `.twist`, `.roll`, chains of any length, solving from the preferred angles within
+joint limits. Handle `weight`, `poWeight`, `priority`, `stickiness` and joint `stiffness` are stored but don't change the
+solve. Constraints: parent, point, orient, scale, aim, `poleVectorConstraint`, `geometryConstraint`, `normalConstraint`,
+`pointOnPolyConstraint` with `-e`, `-q`, `-rm`, skip flags, offsets, rest position, `interpType`, `nodeState` and weight
+attrs `<target>W0`. Not yet: `tangentConstraint` (needs curves), spline IK, an Insert Joint drag tool. Constraint nodes
+are not DAG children of what they drive, as they are in Maya: the graph orders whole nodes, so that would be a cycle.
+
 Rigging and deformers, as of 06/11/2026: `joint` (create, edit with orient, query), `orientJoint`, the joint tool,
 `skinCluster` (closest distance weights, unbind, influence query), `skinPercent`, `parentConstraint`,
 `pointConstraint`, `orientConstraint`, `scaleConstraint`, `aimConstraint` (with maintain offset), `ikHandle` (RP and SC

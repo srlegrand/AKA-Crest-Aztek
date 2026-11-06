@@ -572,6 +572,8 @@ impl EvalView<'_> {
 /// The scene's dependency graph plus its transform hierarchy. Main thread only, except `evaluate()` which fans compute
 /// out over the rayon pool. Every mutation records undo.
 pub struct Graph {
+    /// The evaluation pass rig nodes were last brought in step with the scene at (see rig.rs).
+    pub(crate) rig_synced_pass: u64,
     nodes: HashMap<NodeId, Box<Node>>,
     /// Short name -> nodes.
     names: HashMap<String, Vec<NodeId>>,
@@ -644,6 +646,7 @@ impl Default for Graph {
 impl Graph {
     pub fn new() -> Self {
         Self {
+            rig_synced_pass: u64::MAX,
             nodes: HashMap::new(),
             names: HashMap::new(),
             rel: HashMap::new(),
@@ -1429,7 +1432,9 @@ impl Graph {
             );
         }
 
-        if keep_world {
+        crate::rig::relink_inverse_scale(self, child);
+        // A constrained object stays where its constraint puts it, which already accounts for the new parent.
+        if keep_world && !crate::constraint::is_constrained(self, child) {
             let parent_world = if new_parent != NO_NODE {
                 self.node(new_parent)
                     .unwrap()
@@ -1532,6 +1537,22 @@ impl Graph {
             "'{}' has no attribute '{attr_name}'",
             n.name
         )))
+    }
+
+    /// Writes a value derived from other nodes (a solver's copy of its joints): no undo entry, since undoing the edit
+    /// it came from derives it again.
+    pub(crate) fn set_derived(&mut self, p: &PlugRef, v: &PlugValue) {
+        self.set_raw(p, v);
+    }
+
+    /// `connect` without an undo entry or checks, for a connection that follows from the hierarchy.
+    pub(crate) fn connect_derived(&mut self, src: &PlugRef, dst: &PlugRef) {
+        self.disconnect_raw(dst);
+        self.connect_raw(src, dst);
+    }
+
+    pub(crate) fn disconnect_derived(&mut self, dst: &PlugRef) {
+        self.disconnect_raw(dst);
     }
 
     /// The node's shortest unique path, a dot and the attr.

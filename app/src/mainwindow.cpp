@@ -521,10 +521,25 @@ QMenu* MainWindow::deform_menu() {
 QMenu* MainWindow::skeleton_menu() {
     auto* m = new QMenu("Skeleton", this);
     m->addAction("Create Joints", [this] { set_tool("joint"); });
+    // Runs on the selected joint until there is a tool to drag the new joint with.
+    cmd(m, "Insert Joint Tool", "insertJoint");
+    cmd(m, "Mirror Skeleton", "mirrorJoint", QJsonObject{{"mirrorXY", true}, {"mirrorBehavior", true}}, QString(), true);
+    cmd(m, "Mirror Skeleton (Orientation)", "mirrorJoint", QJsonObject{{"mirrorXY", true}});
     m->addAction("Orient Joint", [] { exec("joint", QJsonObject{{"edit", true}, {"orientJoint", "xyz"}, {"secondaryAxisOrient", "yup"}, {"children", true}}); });
+    m->addSeparator();
+    cmd(m, "Remove Joint", "removeJoint");
+    cmd(m, "Connect Joint", "connectJoint", QJsonObject{{"connectMode", true}});
+    cmd(m, "Parent Joint", "connectJoint", QJsonObject{{"parentMode", true}});
+    cmd(m, "Disconnect Joint", "disconnectJoint");
+    cmd(m, "Reroot Skeleton", "reroot");
+    m->addSeparator();
+    cmd(m, "Set Preferred Angle", "joint", QJsonObject{{"edit", true}, {"setPreferredAngles", true}, {"children", true}});
+    cmd(m, "Assume Preferred Angle", "joint", QJsonObject{{"edit", true}, {"assumePreferredAngles", true}, {"children", true}});
     m->addSeparator();
     cmd(m, "Create IK Handle", "ikHandle", QJsonObject{{"solver", "ikRPsolver"}}, QString(), true);
     cmd(m, "Create IK Handle (Single Chain)", "ikHandle", QJsonObject{{"solver", "ikSCsolver"}});
+    cmd(m, "Enable IK Handles", "ikHandle", QJsonObject{{"enableHandles", true}});
+    cmd(m, "Disable IK Handles", "ikHandle", QJsonObject{{"disableHandles", true}});
     return m;
 }
 
@@ -596,6 +611,12 @@ QMenu* MainWindow::constrain_menu() {
     cmd(m, "Orient", "orientConstraint", {}, QString(), true);
     cmd(m, "Scale", "scaleConstraint", {}, QString(), true);
     cmd(m, "Aim", "aimConstraint", {}, QString(), true);
+    cmd(m, "Pole Vector", "poleVectorConstraint", {}, QString(), true);
+    cmd(m, "Geometry", "geometryConstraint", {}, QString(), true);
+    cmd(m, "Normal", "normalConstraint", {}, QString(), true);
+    cmd(m, "Point on Poly", "pointOnPolyConstraint", {}, QString(), true);
+    m->addSeparator();
+    cmd(m, "Remove Target", "RemoveConstraintTarget");
     return m;
 }
 

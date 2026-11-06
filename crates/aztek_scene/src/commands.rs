@@ -1417,6 +1417,7 @@ fn register_queries(c: &mut Commands<Session>) {
         .positional("object")
         .flag(flag("parent", "p", T::Bool, json!(false), ""))
         .flag(flag("allDescendents", "ad", T::Bool, json!(false), ""))
+        .flag(flag("children", "c", T::Bool, json!(false), "The children: what it lists by default."))
         .undoable(false),
     );
 
@@ -1461,6 +1462,7 @@ fn register_queries(c: &mut Commands<Session>) {
             flag("rotation", "ro", T::Any, Value::Null, "Euler rotation in degrees as (x, y, z) to set, or True to read it with query.")
                 .example("xform(\"cube1\", rotation=(0, 45, 0))"),
         )
+        .flag(flag("rotateAxis", "ra", T::Any, Value::Null, "rotateAxis as (x, y, z) to set, or True to read it with query."))
         .flag(
             flag("scale", "s", T::Any, Value::Null, "Scale as (x, y, z) to set, or True to read it with query.")
                 .example("xform(\"cube1\", scale=(2, 2, 2))"),
@@ -1514,6 +1516,9 @@ fn xform(s: &mut Session, a: &Args) -> CmdResult {
         if a.has("scale") {
             return Ok(to_json(n.value(Transform::SCALE)));
         }
+        if a.has("rotateAxis") {
+            return Ok(to_json(n.value(Transform::ROTATE_AXIS)));
+        }
         fail!("xform: query what?");
     }
     let need = |f: &str| {
@@ -1544,6 +1549,9 @@ fn xform(s: &mut Session, a: &Args) -> CmdResult {
                     * m;
             }
             Transform::set_local_matrix(g, id, &m)?;
+        }
+        if a.has("rotateAxis") {
+            set_vec(g, id, Transform::ROTATE_AXIS, need("rotateAxis")?)?;
         }
         if a.has("rotation") {
             set_vec(g, id, Transform::ROTATE, need("rotation")?)?;
