@@ -27,6 +27,19 @@ struct PaintStroke {
     last: Option<DVec3>,
 }
 
+/// One stroke of a sculpting brush: the points as they build up, undoing as one.
+struct SculptStroke {
+    shape: aztek_scene::plug::NodeId,
+    pos: Vec<DVec3>,
+    base: Vec<DVec3>,
+    mesh: std::sync::Arc<aztek_geo::Mesh>,
+    world: DMat4,
+    applied: bool,
+    invert: bool,
+    smooth: bool,
+    last: Option<DVec3>,
+}
+
 pub struct View {
     pub gpu: Gpu,
     pub r: Renderer,
@@ -41,6 +54,8 @@ pub struct View {
     cam_sync: Option<[f64; 9]>,
     /// The modelling tools' state.
     pub ts: crate::tools::ToolState,
+    /// A sculpt stroke in progress.
+    sculpt: Option<SculptStroke>,
     /// A paint stroke in progress.
     stroke: Option<PaintStroke>,
     /// B held with the paint tool: a drag sizes the brush.
@@ -72,6 +87,7 @@ impl View {
             cam_node: kind.name().to_string(),
             cam_sync: None,
             ts: Default::default(),
+            sculpt: None,
             stroke: None,
             brush_adjust: false,
             brush_drag: None,
@@ -272,6 +288,22 @@ impl View {
                     self.nav = Some((button, px));
                     return false;
                 }
+                if self.vp.tool == Tool::Sculpt && button == 1 {
+                    if self.brush_adjust {
+                        self.brush_drag = Some((px, core.s.sculpt_ctx.size));
+                        return true;
+                    }
+                    if let Some((i, wp, n)) = self.vp.brush_hit(&core.s, &items, px) {
+                        let shape = items[i].shape;
+                        if let Some(m) = aztek_scene::modifiers::cage(&mut core.s.graph, shape) {
+                            let pos = m.positions().to_vec();
+                            self.sculpt = Some(SculptStroke { shape, base: pos.clone(), pos, mesh: m, world: items[i].world, applied: false, invert: mods & CTRL != 0, smooth: mods & SHIFT != 0, last: None });
+                            self.sculpt_dab(core, wp, n);
+                            self.vp.brush = Some((wp, n));
+                        }
+                    }
+                    return true;
+                }
                 if self.vp.tool == Tool::PaintSkin && button == 1 {
                     if self.brush_adjust {
                         self.brush_drag = Some((px, core.s.paint_ctx.radius));
@@ -355,8 +387,37 @@ impl View {
                 if let Some((start, radius)) = self.brush_drag {
                     let upp = self.vp.cam.units_per_px_at(self.vp.brush.map(|b| b.0).unwrap_or(self.vp.cam.coi), self.vp.rect[3], self.vp.aspect());
                     let next = (radius + (px.x - start.x) * upp).max(1e-3);
-                    let _ = core.exec_silent("artAttrSkinPaintCtx", json!({"edit": true, "radius": next}));
+                    if self.vp.tool == Tool::Sculpt {
+                        core.s.sculpt_ctx.size = next;
+                        core.version += 1;
+                    } else {
+                        let _ = core.exec_silent("artAttrSkinPaintCtx", json!({"edit": true, "radius": next}));
+                    }
                     return true;
+                }
+                if self.sculpt.is_some() {
+                    if let Some((_, wp, n)) = self.vp.brush_hit(&core.s, &items, px) {
+                        self.sculpt_dab(core, wp, n);
+                        self.vp.brush = Some((wp, n));
+                    } else if core.s.sculpt_ctx.tool == "grab" {
+                        // Grab keeps following off the surface, on the plane through the stroke's last point.
+                        if let (Some(l), Some((_, n))) = (self.sculpt.as_ref().and_then(|s| s.last), self.vp.brush) {
+                            let (o, d) = self.vp.cam.ray(px, self.vp.size());
+                            let den = d.dot(n);
+                            if den.abs() > 1e-6 {
+                                let t = (l - o).dot(n) / den;
+                                let wp = o + d * t;
+                                self.sculpt_dab(core, wp, n);
+                                self.vp.brush = Some((wp, n));
+                            }
+                        }
+                    }
+                    return true;
+                }
+                if self.vp.tool == Tool::Sculpt && buttons == 0 {
+                    let was = self.vp.brush.is_some();
+                    self.vp.brush = self.vp.brush_hit(&core.s, &items, px).map(|x| (x.1, x.2));
+                    return was || self.vp.brush.is_some();
                 }
                 if self.stroke.is_some() {
                     if let Some((i, wp, n)) = self.vp.brush_hit(&core.s, &items, px) {
@@ -421,6 +482,10 @@ impl View {
                 if self.brush_drag.take().is_some() {
                     return true;
                 }
+                if self.sculpt.take().is_some() {
+                    core.version += 1;
+                    return true;
+                }
                 if self.stroke.take().is_some() {
                     // The dabs' one undo entry stays; the panels hear of it.
                     core.version += 1;
@@ -459,6 +524,30 @@ impl View {
                 false
             }
         }
+    }
+
+    fn sculpt_dab(&mut self, core: &mut Core, wp: DVec3, n: DVec3) {
+        let Some(st) = self.sculpt.as_mut() else { return };
+        let ctx = core.s.sculpt_ctx.clone();
+        if ctx.tool == "freeze" {
+            let mut fr = core.s.sculpt_ctx.frozen.remove(&st.shape).unwrap_or_default();
+            aztek_scene::sculpt::paint_freeze(&mut fr, &st.mesh, &st.world, wp, &ctx, st.invert);
+            core.s.sculpt_ctx.frozen.insert(st.shape, fr);
+            return;
+        }
+        let pull = st.last.map(|l| wp - l).unwrap_or(DVec3::ZERO);
+        let frozen = ctx.frozen.get(&st.shape).map(|v| v.as_slice());
+        aztek_scene::sculpt::dab(&mut st.pos, &st.base, &st.mesh, &st.world, wp, n, pull, &ctx, frozen, st.invert, st.smooth);
+        st.last = Some(wp);
+        if st.applied {
+            core.s.undo();
+        }
+        let (shape, pos, mesh) = (st.shape, st.pos.clone(), st.mesh.clone());
+        let ok = aztek_scene::sculpt::commit(&mut core.s, shape, &pos, &mesh).is_ok();
+        if let Some(st) = self.sculpt.as_mut() {
+            st.applied = ok;
+        }
+        core.version += 1;
     }
 
     /// A dab of the brush, replacing the stroke's previous undo entry so the whole stroke undoes in one step.
@@ -501,6 +590,7 @@ impl View {
                     "scale" => Tool::Scale,
                     "joint" => Tool::Joint,
                     "paintSkin" => Tool::PaintSkin,
+                    "sculpt" => Tool::Sculpt,
                     "curveCv" => Tool::CurveCv,
                     "curveEp" => Tool::CurveEp,
                     "multiCut" => Tool::MultiCut,

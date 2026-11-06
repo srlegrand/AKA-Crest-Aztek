@@ -28,6 +28,8 @@ private:
     QWidget* build_paint_page();
     QWidget* build_joint_page();
     QWidget* build_curve_page();
+    QWidget* build_sculpt_page();
+    void refresh_sculpt();
     void refresh_paint();
     void refresh_transform();
     void paint_set(const QString& flag, const QJsonValue& v);
@@ -40,6 +42,12 @@ private:
     QWidget* paint_page_ = nullptr;
     QWidget* joint_page_ = nullptr;
     QWidget* curve_page_ = nullptr;
+    QWidget* sculpt_page_ = nullptr;
+    QComboBox* sculpt_tool_ = nullptr;
+    QDoubleSpinBox* sculpt_size_ = nullptr;
+    QDoubleSpinBox* sculpt_strength_ = nullptr;
+    QCheckBox* sculpt_invert_ = nullptr;
+    QCheckBox* sculpt_sym_ = nullptr;
     // Paint page.
     QListWidget* influences_ = nullptr;
     QButtonGroup* op_ = nullptr;

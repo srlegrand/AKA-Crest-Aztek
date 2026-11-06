@@ -407,6 +407,15 @@ QMenu* MainWindow::mesh_tools_menu() {
     tool("Quad Draw", "quadDraw");
     tool("Slide Edge", "slideEdge");
     tool("Target Weld", "targetWeld");
+    QMenu* sculpt = m->addMenu("Sculpting Tools");
+    for (const char* b : {"sculpt", "smooth", "relax", "grab", "pinch", "flatten", "foamy", "spray", "repeat", "imprint", "wax", "scrape", "fill", "knife", "smear", "bulge", "amplify", "freeze"}) {
+        QString brush = b;
+        QString label = brush.left(1).toUpper() + brush.mid(1) + " Tool";
+        sculpt->addAction(label, [this, brush] {
+            exec_quiet("sculptMeshCacheCtx", QJsonObject{{"edit", true}, {"sculptTool", brush}});
+            set_tool("sculpt");
+        });
+    }
     m->addSeparator();
     m->addAction("Make Live", [] { exec("makeLive"); });
     m->addAction("Make Not Live", [] { exec("makeLive", QJsonObject{{"none", true}}); });
@@ -1133,6 +1142,7 @@ void MainWindow::refresh_state() {
         else if (n == "TextureViewWindow" || n == "UVEditor") show_uv_editor();
         else if (n == "PreferencesWindow") show_preferences();
         else if (n == "JointTool") set_tool("joint");
+        else if (n == "SculptMeshActivateBrushSculpt") set_tool("sculpt");
         else if (n == "MultiCutTool") set_tool("multiCut");
         else if (n == "SplitEdgeRingTool") set_tool("insertLoop");
         else if (n == "OffsetEdgeLoopTool") set_tool("offsetLoop");
@@ -1197,6 +1207,7 @@ void MainWindow::set_tool(const QString& tool) {
     for (ViewportWidget* v : panels_->views()) v->set("tool", "\"" + tool + "\"");
     if (tool_settings_) tool_settings_->set_tool(tool);
     static const QHash<QString, QString> tool_help{
+        {"sculpt", "Sculpting: drag to sculpt, Ctrl inverts, Shift smooths, B-drag sizes the brush."},
         {"multiCut", "Multi-Cut: click to place cut points, Shift snaps along edges, Ctrl-click inserts a loop, Backspace takes the last back, Enter cuts."},
         {"insertLoop", "Insert Edge Loop: hover an edge to see the loop, click to insert it."},
         {"offsetLoop", "Offset Edge Loop: drag from an edge to add loops either side."},
@@ -1529,7 +1540,7 @@ bool MainWindow::hotkey(QKeyEvent* k, bool press) {
         for (ViewportWidget* v : panels_->views()) v->set("toolTab", press ? "true" : "false");
         return true;
     }
-    if (key == Qt::Key_B && tool_ == "paintSkin" && !ctrl && !alt && !shift) {
+    if (key == Qt::Key_B && (tool_ == "paintSkin" || tool_ == "sculpt") && !ctrl && !alt && !shift) {
         for (ViewportWidget* v : panels_->views()) v->set("brushAdjust", press ? "true" : "false");
         return true;
     }

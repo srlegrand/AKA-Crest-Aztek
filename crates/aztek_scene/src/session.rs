@@ -51,6 +51,8 @@ pub struct Session {
     pub key_selection: Vec<(NodeId, f64)>,
     /// The live surface: what Quad Draw and snapping draw on.
     pub live_surface: Vec<NodeId>,
+    /// The sculpting tools' settings.
+    pub sculpt_ctx: crate::sculpt::SculptCtx,
 }
 
 impl Default for Session {
@@ -74,6 +76,7 @@ impl Session {
             key_clipboard: Default::default(),
             key_selection: Vec::new(),
             live_surface: Vec::new(),
+            sculpt_ctx: Default::default(),
         };
         crate::commands::register(&mut s.commands);
         crate::components::register(&mut s.commands);
@@ -98,6 +101,7 @@ impl Session {
         crate::skin::register(&mut s.commands);
         crate::deform::register(&mut s.commands);
         crate::curves::register(&mut s.commands);
+        crate::sculpt::register(&mut s.commands);
         crate::cameras::register(&mut s.commands);
         crate::maya_cmds::register(&mut s.commands);
         crate::maya_core::register(&mut s.commands);

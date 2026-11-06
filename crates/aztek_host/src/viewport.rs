@@ -97,6 +97,7 @@ pub enum Tool {
     CurveCv,
     /// EP Curve Tool: clicks place edit points; Enter makes the curve.
     CurveEp,
+    Sculpt,
     MultiCut,
     InsertLoop,
     OffsetLoop,
@@ -576,10 +577,11 @@ impl Viewport {
     /// The brush's ring on the surface and its normal line, in red as Maya draws it.
     fn draw_brush(&mut self, gpu: &mut Gpu, r: &Renderer, s: &Session) {
         let Some((c, n)) = self.brush else { return };
-        if self.tool != Tool::PaintSkin {
-            return;
-        }
-        let radius = s.paint_ctx.radius;
+        let radius = match self.tool {
+            Tool::PaintSkin => s.paint_ctx.radius,
+            Tool::Sculpt => s.sculpt_ctx.size,
+            _ => return,
+        };
         let (u, w) = n.any_orthonormal_pair();
         let mut v = Vec::new();
         let col = c8([230, 40, 40, 255]);
@@ -600,11 +602,13 @@ impl Viewport {
         gpu.drop_buffer(b);
     }
 
-    /// The selected skinned mesh under a pixel, for the brush: (item, world point, world normal).
+    /// The selected skinned mesh under a pixel, for the brush (any selected mesh when sculpting): (item, world point, world
+    /// normal).
     pub fn brush_hit(&mut self, s: &Session, items: &[DrawItem], px: DVec2) -> Option<(usize, DVec3, DVec3)> {
         let g = &s.graph;
         let sel = g.selection();
-        let picked: Vec<usize> = (0..items.len()).filter(|&i| (sel.contains(&items[i].xf) || sel.contains(&items[i].shape)) && aztek_scene::skin::skin_of(g, items[i].shape).is_some()).collect();
+        let any = self.tool == Tool::Sculpt;
+        let picked: Vec<usize> = (0..items.len()).filter(|&i| (sel.contains(&items[i].xf) || sel.contains(&items[i].shape)) && (any || aztek_scene::skin::skin_of(g, items[i].shape).is_some())).collect();
         let list: Vec<DrawItem> = picked
             .iter()
             .map(|&i| DrawItem { shape: items[i].shape, xf: items[i].xf, world: items[i].world, mesh: items[i].mesh.clone(), smooth: 0 })
