@@ -426,3 +426,72 @@ pub fn uv_data(core: &mut Core) -> Value {
     };
     json!({"mode": mode, "meshes": out})
 }
+
+/// The Node Editor's graph: the root nodes and what's connected to them, `depth` connections out. arg is JSON:
+/// {"roots": [names], "depth": n}. Node attrs: name, input, output; edges: [source, attr, destination, attr].
+pub fn node_graph(core: &Core, arg: &str) -> Value {
+    let g = &core.s.graph;
+    let parsed: Value = serde_json::from_str(arg).unwrap_or(json!({}));
+    let depth = parsed.get("depth").and_then(Value::as_i64).unwrap_or(1).max(0);
+    let mut set: Vec<NodeId> = Vec::new();
+    for r in parsed.get("roots").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
+        if let Ok(Some(id)) = g.find(r) {
+            if !set.contains(&id) {
+                set.push(id);
+            }
+            // A transform brings its shape, as the editor graphs them.
+            if g.node(id).is_some_and(|n| n.ty().is_a("transform")) {
+                for s in aztek_scene::dag::shapes(g, id, false) {
+                    if !set.contains(&s) {
+                        set.push(s);
+                    }
+                }
+            }
+        }
+    }
+    let conns = g.connections();
+    let touches = |a: NodeId, b: NodeId, set: &[NodeId]| set.contains(&a) || set.contains(&b);
+    for _ in 0..depth {
+        let mut more = Vec::new();
+        for (d, s) in &conns {
+            if touches(d.node, s.node, &set) {
+                for id in [d.node, s.node] {
+                    if !set.contains(&id) && !more.contains(&id) {
+                        more.push(id);
+                    }
+                }
+            }
+        }
+        set.extend(more);
+    }
+    let nodes: Vec<Value> = set
+        .iter()
+        .filter_map(|&id| {
+            let n = g.node(id)?;
+            let attrs: Vec<Value> = n
+                .ty()
+                .attrs
+                .iter()
+                .filter(|a| !a.has(flags::HIDDEN) || conns.iter().any(|(d, s)| (d.node == id && g.attr(d).name == a.name) || (s.node == id && g.attr(s).name == a.name)))
+                .map(|a| json!({"name": a.name, "input": a.has(flags::INPUT), "output": a.has(flags::OUTPUT) || !a.has(flags::INPUT)}))
+                .collect();
+            Some(json!({"name": g.path(id), "type": n.ty().name, "attrs": attrs}))
+        })
+        .collect();
+    let plug_attr = |p: &PlugRef| -> String {
+        let a = g.attr(p);
+        if p.component >= 0 && a.ty == PlugType::Vec3 {
+            a.child_names[p.component as usize].clone()
+        } else if p.element >= 0 {
+            format!("{}[{}]", a.name, p.element)
+        } else {
+            a.name.clone()
+        }
+    };
+    let edges: Vec<Value> = conns
+        .iter()
+        .filter(|(d, s)| set.contains(&d.node) && set.contains(&s.node))
+        .map(|(d, s)| json!([g.path(s.node), plug_attr(s), g.path(d.node), plug_attr(d)]))
+        .collect();
+    json!({"nodes": nodes, "edges": edges})
+}

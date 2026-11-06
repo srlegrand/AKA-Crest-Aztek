@@ -169,6 +169,7 @@ pub extern "C" fn aztek_query(what: *const c_char, arg: *const c_char) -> *mut c
             "outliner" => query::outliner(c, arg == "shapes"),
             "channelBox" => query::channel_box(c),
             "animCurves" => query::anim_curves(c, &arg),
+            "nodeGraph" => query::node_graph(c, &arg),
             "uiRequests" => core::take_ui_requests(),
             "uvData" => query::uv_data(c),
             "attributeEditor" => query::attribute_editor(c, &arg),

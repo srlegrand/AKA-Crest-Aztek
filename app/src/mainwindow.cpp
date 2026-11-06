@@ -10,6 +10,7 @@
 #include "uveditor.h"
 #include "toolsettings.h"
 #include "dopesheet.h"
+#include "nodeeditor.h"
 
 #include <QAction>
 #include <cstdio>
@@ -304,6 +305,7 @@ QMenu* MainWindow::windows_menu() {
     auto* m = new QMenu("Windows", this);
     QMenu* ge = m->addMenu("General Editors");
     ge->addAction("Script Editor", this, &MainWindow::show_script_editor);
+    ge->addAction("Node Editor", this, &MainWindow::show_node_editor);
     auto* anim_ed = m->addMenu("Animation Editors");
     anim_ed->addAction("Graph Editor", this, &MainWindow::show_graph_editor);
     anim_ed->addAction("Dope Sheet", this, &MainWindow::show_dope_sheet);
@@ -1119,6 +1121,7 @@ void MainWindow::refresh_state() {
         QString n = r.toString();
         if (n == "GraphEditor") show_graph_editor();
         else if (n == "DopeSheetEditor") show_dope_sheet();
+        else if (n == "NodeEditorWindow") show_node_editor();
         else if (n == "SetDrivenKeyOptions") show_set_driven_key();
         else if (n == "ScriptEditor") show_script_editor();
         else if (n == "OutlinerWindow") { outliner_dock_->show(); outliner_dock_->raise(); }
@@ -1269,6 +1272,29 @@ void MainWindow::show_script_editor() {
     script_window_->show();
     script_window_->raise();
     script_window_->activateWindow();
+}
+
+void MainWindow::show_node_editor() {
+    if (!node_window_) {
+        node_window_ = new QWidget(this, Qt::Window);
+        node_window_->setWindowTitle("Node Editor");
+        auto* l = new QVBoxLayout(node_window_);
+        l->setContentsMargins(0, 0, 0, 0);
+        l->setSpacing(0);
+        auto* bar = new QToolBar(node_window_);
+        auto* ed = new NodeEditor(node_window_);
+        bar->addAction("Input and Output Connections", [ed] { ed->graph_selection(1); });
+        bar->addAction("Input Connections Deep", [ed] { ed->graph_selection(4); });
+        bar->addAction("Add Selected", [ed] { ed->add_selected(); });
+        bar->addAction("Clear", [ed] { ed->clear_graph(); });
+        l->addWidget(bar);
+        l->addWidget(ed, 1);
+        node_window_->resize(1000, 640);
+    }
+    node_window_->show();
+    node_window_->raise();
+    node_window_->activateWindow();
+    if (auto* ed = node_window_->findChild<NodeEditor*>()) ed->graph_selection(1);
 }
 
 void MainWindow::show_dope_sheet() {
