@@ -432,10 +432,19 @@ pub fn register(c: &mut Commands<Session>) {
                 g.evaluate();
                 let local = a.bool("local");
                 if components::is_component_string(&n) {
+                    if let Some((node, ids, at)) = provided_points(g, std::slice::from_ref(&n)).into_iter().next() {
+                        let Some(q) = ids.first().and_then(|id| at.get(id)) else { fail!("pointPosition: no point {n}") };
+                        let w = crate::rig::world(g, crate::dag::transform_of(g, node));
+                        let q = if local { *q } else { w.transform_point3(*q) };
+                        return Ok(json!([q.x, q.y, q.z]));
+                    }
                     let targets = crate::skin::points_named(g, &[n.clone()]);
                     let Some((mesh, ids)) = targets.into_iter().next() else { fail!("pointPosition: no point {n}") };
                     let Some(&p) = ids.first() else { fail!("pointPosition: no point {n}") };
                     let Some(m) = components::mesh_of(g, mesh) else { fail!("pointPosition: no point {n}") };
+                    if p >= m.point_capacity() || !m.point_valid(p) {
+                        fail!("pointPosition: no point {n}");
+                    }
                     let w = crate::rig::world(g, crate::dag::transform_of(g, mesh));
                     let q = if local { m.position(p) } else { w.transform_point3(m.position(p)) };
                     return Ok(json!([q.x, q.y, q.z]));
@@ -511,6 +520,19 @@ fn xform_cvs(g: &mut crate::graph::Graph, a: &aztek_ops::Args, named: &[String],
     Ok(any.then_some(Value::Array(out)))
 }
 
+/// Named points of nodes that aren't meshes (a lattice's pt[s][t][u]): the node, the ids in order, each point's position.
+#[allow(clippy::type_complexity)]
+fn provided_points(g: &mut crate::graph::Graph, named: &[String]) -> Vec<(NodeId, Vec<u32>, std::collections::HashMap<u32, glam::DVec3>)> {
+    let Ok(members) = crate::object_sets::parse(g, named) else { return Vec::new() };
+    let mut out = Vec::new();
+    for m in members {
+        let Some(points) = g.node(m.node).and_then(components::point_provider).and_then(|pp| pp.points) else { continue };
+        let at = points(g, m.node).into_iter().collect();
+        out.push((m.node, m.ids, at));
+    }
+    out
+}
+
 /// xform on points: pCube1.vtx[0:3]. A query returns x, y, z per point, world space with -ws; a set moves them all to the
 /// position, or by it with -r.
 pub(crate) fn xform_components(s: &mut Session, a: &aztek_ops::Args, named: &[String]) -> CmdResult {
@@ -522,8 +544,16 @@ pub(crate) fn xform_components(s: &mut Session, a: &aztek_ops::Args, named: &[St
         return Ok(r);
     }
     let targets = crate::skin::points_named(g, named);
+    let provided = provided_points(g, named);
     if a.bool("query") {
         let mut out = Vec::new();
+        for (node, ids, at) in &provided {
+            let w = crate::rig::world(g, crate::dag::transform_of(g, *node));
+            for q in ids.iter().filter_map(|id| at.get(id)) {
+                let q = if ws { w.transform_point3(*q) } else { *q };
+                out.extend([json!(q.x), json!(q.y), json!(q.z)]);
+            }
+        }
         for (mesh, ids) in &targets {
             let Some(m) = crate::components::mesh_of(g, *mesh) else { continue };
             let w = crate::rig::world(g, crate::dag::transform_of(g, *mesh));
@@ -539,6 +569,24 @@ pub(crate) fn xform_components(s: &mut Session, a: &aztek_ops::Args, named: &[St
     }
     let Some(t) = a.vec3("translation").map(DVec3::from_array) else { fail!("xform: on components only -t is available") };
     let rel = a.bool("relative");
+    for (node, ids, at) in provided {
+        let Some(set_points) = g.node(node).and_then(components::point_provider).and_then(|pp| pp.set_points) else { continue };
+        let inv = crate::rig::world(g, crate::dag::transform_of(g, node)).inverse();
+        let moves: Vec<(u32, DVec3)> = ids
+            .into_iter()
+            .filter_map(|id| at.get(&id).map(|q| (id, *q)))
+            .map(|(id, q)| {
+                let to = match (rel, ws) {
+                    (true, true) => q + inv.transform_vector3(t),
+                    (true, false) => q + t,
+                    (false, true) => inv.transform_point3(t),
+                    (false, false) => t,
+                };
+                (id, to)
+            })
+            .collect();
+        set_points(g, node, &moves);
+    }
     for (mesh, ids) in targets {
         let Some(m) = crate::modifiers::cage(g, mesh) else { continue };
         let w = crate::rig::world(g, crate::dag::transform_of(g, mesh));

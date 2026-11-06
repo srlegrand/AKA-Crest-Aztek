@@ -103,6 +103,12 @@ impl Session {
         crate::curves::register(&mut s.commands);
         crate::sculpt::register(&mut s.commands);
         crate::cameras::register(&mut s.commands);
+        crate::deform_lattice::register(&mut s.commands);
+        crate::deform_soft::register(&mut s.commands);
+        crate::deform_mush::register(&mut s.commands);
+        crate::deform_wrap::register(&mut s.commands);
+        crate::deform_wire::register(&mut s.commands);
+        crate::deform_cmds::register(&mut s.commands);
         crate::maya_cmds::register(&mut s.commands);
         crate::maya_core::register(&mut s.commands);
         // Last: history node types take their attributes from the commands registered above.
@@ -110,6 +116,7 @@ impl Session {
         crate::instancing::install(&mut s.graph);
         crate::duplicate::install(&mut s.graph);
         crate::anim::install(&mut s.graph);
+        crate::deform_wire::install(&mut s.graph);
         s.load_naming_policy();
         s
     }

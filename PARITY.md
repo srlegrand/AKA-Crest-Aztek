@@ -133,3 +133,14 @@ carry a line number only for syntax errors; an array of one element converts to 
 
 Not yet: weight painting, lattice, wrap, wire, delta mush, spline IK, set driven keys, NURBS curves, the dope sheet,
 the node editor, `.ma` files, the OpenMaya subset.
+Deform menu, as of 06/11/2026: `lattice` (`ffd`, `lattice`, `baseLattice`; `ffd1Lattice.pt[s][t][u]` select, move and list with
+`ls -fl`; local influence, outside modes, freeze mapping, `-e -remap`, `-e -resetLattice`), `softMod` (selection or centre,
+volume or surface, `falloffCurve` ramp), `deltaMush`, `tension`, `wrap` (with `deformer -type wrap` and `wrap -e -inf`), `wire`,
+`deformer` (`-type`, `-q -g`, `-q -gi`, `-e -g`, `-e -rm -g`), `percent`, `reorderDeformers`, `listHistory -type`. Deleting a deformer
+closes the chain and takes its handle or lattice. Differences: a deformer on several meshes is one chain node per mesh with the
+first node's settings connected in, so `ls` shows ffd1 and ffd2 where Maya has one node. `wire` follows the driver's points as a
+polyline, so a NURBS curve follows its control points until a sampler is added; the base wire is data on the node, with no
+`curve1BaseWire` shape. Deformer sets are not made; `percent` holds membership as weights.
+
+Not yet: weight painting, spline IK, set driven keys, NURBS curves, the dope sheet,
+the node editor, `.ma` files, the OpenMaya subset, MEL procedures and control flow.

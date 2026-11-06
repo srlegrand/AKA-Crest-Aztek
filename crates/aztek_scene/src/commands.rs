@@ -574,6 +574,8 @@ fn register_scene(c: &mut Commands<Session>) {
                 r?;
                 return Ok(Value::Null);
             }
+            // A deformer goes with its handle or lattice, and the chain closes up.
+            let ids = crate::deform::expand_delete(g, ids)?;
             // A mesh's history goes with it, unless something else uses it.
             let mut history = Vec::new();
             let mut all_doomed = Vec::new();

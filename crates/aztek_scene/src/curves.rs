@@ -239,6 +239,7 @@ fn register_provider() {
             }
         })),
         soft: None,
+        grid: None,
     });
 }
 

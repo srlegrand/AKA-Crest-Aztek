@@ -122,6 +122,9 @@ pub fn flatten_component(g: &mut Graph, s: &str) -> Vec<String> {
         }
         return out;
     }
+    if let Some(strings) = grid_component(g, id, obj, kind, inner, true) {
+        return strings;
+    }
     let Some(mesh) = components::as_mesh(g, id) else { return vec![s.to_string()] };
     let Some(m) = components::mesh_of(g, mesh) else { return vec![s.to_string()] };
     let cap = match kind {
@@ -149,9 +152,26 @@ pub fn flatten_component(g: &mut Graph, s: &str) -> Vec<String> {
     out
 }
 
+/// A lattice's pt[s][t][u] as component strings.
+fn grid_component(g: &Graph, id: NodeId, obj: &str, kind: &str, inner: &str, flat: bool) -> Option<Vec<String>> {
+    if kind != "pt" {
+        return None;
+    }
+    let node = components::point_node(g, id)?;
+    let dims = components::point_grid(g, node)?;
+    Some(components::grid_strings(obj, dims, &components::grid_ids(dims, inner)?, flat))
+}
+
 fn compress_component(g: &mut Graph, s: &str) -> String {
     let Some((obj, comp)) = s.split_once('.') else { return s.to_string() };
     let Some((kind, inner)) = comp.split_once('[') else { return s.to_string() };
+    if let Ok(Some(id)) = g.find(obj) {
+        if let Some(strings) = grid_component(g, id, obj, kind, inner.trim_end_matches(']'), false) {
+            if strings.len() == 1 {
+                return strings.into_iter().next().unwrap();
+            }
+        }
+    }
     if inner.starts_with('*') {
         let flat = flatten_component(g, s);
         if let (Some(a), Some(b)) = (flat.first(), flat.last()) {

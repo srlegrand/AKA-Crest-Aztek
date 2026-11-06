@@ -93,3 +93,83 @@ fn joint_tool_chain() {
     }
 }
 
+
+#[test]
+fn deformers_in_maya_spelling() {
+    let mut c = Core::new();
+    mel(&mut c, "polyCube -sx 2 -sy 2 -sz 2;");
+    assert_eq!(mel(&mut c, "lattice -dv 2 5 2 -oc true -objectCentered true pCube1;"), json!(["ffd1", "ffd1Lattice", "ffd1Base"]));
+    assert!(errors(&mut c).is_empty());
+    assert_eq!(mel(&mut c, "lattice -q -dv ffd1;"), json!([2, 5, 2]));
+    mel(&mut c, "lattice -e -ldv 2 3 2 -ol 2 -ofd 0.5 ffd1;");
+    assert_eq!(mel(&mut c, "lattice -q -ldv ffd1;"), json!([2, 3, 2]));
+    assert_eq!(mel(&mut c, "lattice -q -ol ffd1;"), json!(2));
+    assert_eq!(mel(&mut c, "getAttr ffd1.lit;"), json!(3));
+    mel(&mut c, "select ffd1Lattice.pt[1][2][0];");
+    assert_eq!(mel(&mut c, "ls -sl;"), json!(["ffd1Lattice.pt[1][2][0]"]));
+    mel(&mut c, "select ffd1Lattice.pt[0:1][*][*];");
+    assert_eq!(mel(&mut c, "ls -sl -fl;").as_array().unwrap().len(), 20);
+    // Points move through the same words as a mesh's.
+    mel(&mut c, "move -r 0 1 0 ffd1Lattice.pt[*][4][*];");
+    assert!(errors(&mut c).is_empty());
+    assert_eq!(mel(&mut c, "pointPosition ffd1Lattice.pt[0][4][0];"), json!([-0.5, 1.5, -0.5]));
+    let top = c.s.run("meshInfo", json!({"args": ["pCube1"]})).unwrap()["worldBoundsMax"][1].as_f64().unwrap();
+    assert!((top - 1.5).abs() < 1e-6, "{top}");
+    mel(&mut c, "lattice -e -resetLattice ffd1; lattice -e -latticeReset ffd1; lattice -e -remap ffd1;");
+    assert!(errors(&mut c).is_empty());
+    assert_eq!(mel(&mut c, "pointPosition ffd1Lattice.pt[0][4][0];"), json!([-0.5, 0.5, -0.5]));
+
+    assert_eq!(mel(&mut c, "softMod -fr 2 -fas true -n dent pCube1.vtx[0];"), json!(["dent", "dentHandle"]));
+    assert_eq!(mel(&mut c, "softMod -q -fr dent;"), json!(2.0));
+    mel(&mut c, "softMod -e -fr 3 dent;");
+    assert_eq!(mel(&mut c, "getAttr dent.falloffRadius;"), json!(3.0));
+    assert_eq!(mel(&mut c, "softMod -fc 0 1 0 -fr 1 -fas false pCube1;")[0], "softMod1");
+    assert_eq!(mel(&mut c, "deltaMush -si 5 -ss 0.25 -pin 1 -en 0.5 -inwardConstraint 0.1 -outwardConstraint 0.2 -n mush pCube1;"), json!(["mush"]));
+    assert_eq!(mel(&mut c, "getAttr mush.si;"), json!(5));
+    assert_eq!(mel(&mut c, "getAttr mush.envelope;"), json!(0.5));
+    assert_eq!(mel(&mut c, "tension -n pull pCube1;"), json!(["pull"]));
+    assert!(errors(&mut c).is_empty());
+    assert_eq!(mel(&mut c, "listHistory -type ffd pCube1;"), json!(["ffd1"]));
+
+    mel(&mut c, "cluster pCube1;");
+    mel(&mut c, "percent -v 0.5 cluster1 pCube1.vtx[0:3];");
+    assert_eq!(mel(&mut c, "percent -q -v cluster1 pCube1.vtx[0];"), json!([0.5]));
+    mel(&mut c, "reorderDeformers cluster1 ffd1 pCube1;");
+    assert!(errors(&mut c).is_empty());
+
+    assert_eq!(mel(&mut c, "deformer -q -g ffd1;"), json!(["pCubeShape1"]));
+    assert_eq!(mel(&mut c, "deformer -q -gi ffd1;"), json!([0]));
+    mel(&mut c, "polySphere -r 0.25;");
+    mel(&mut c, "deformer -e -g pSphere1 ffd1;");
+    assert_eq!(mel(&mut c, "deformer -q -g ffd1;"), json!(["pCubeShape1", "pSphereShape1"]));
+    mel(&mut c, "deformer -e -rm -g pSphere1 ffd1;");
+    assert_eq!(mel(&mut c, "deformer -q -g ffd1;"), json!(["pCubeShape1"]));
+    assert!(errors(&mut c).is_empty());
+}
+
+#[test]
+fn wrap_and_wire_in_maya_spelling() {
+    let mut c = Core::new();
+    mel(&mut c, "polySphere -r 1 -n inner;");
+    mel(&mut c, "polyCube -w 3 -h 3 -d 3 -n cage;");
+    assert_eq!(mel(&mut c, "deformer -type wrap -n wr inner;"), json!(["wr"]));
+    mel(&mut c, "wrap -e -inf cage wr;");
+    assert_eq!(mel(&mut c, "wrap -q -inf wr;"), json!(["cageShape"]));
+    assert_eq!(mel(&mut c, "getAttr wr.maxDistance;"), json!(1.0));
+    mel(&mut c, "setAttr wr.exclusiveBind 1; setAttr wr.autoWeightThreshold 0; setAttr wr.falloffMode 1;");
+    mel(&mut c, "wrap -e -rb wr;");
+    assert!(errors(&mut c).is_empty());
+
+    mel(&mut c, "polyPlane -w 8 -h 8 -sx 8 -sy 8 -n sheet;");
+    mel(&mut c, "polyPlane -w 8 -h 0.001 -sx 8 -sy 1 -n line;");
+    assert_eq!(mel(&mut c, "wire -w line -dds 0 2.0 -gw false -en 1 -ce 0 -li 0 -n w1 sheet;"), json!(["w1"]));
+    assert!(errors(&mut c).is_empty());
+    assert_eq!(mel(&mut c, "getAttr w1.dropoffDistance[0];"), json!(2.0));
+    assert_eq!(mel(&mut c, "wire -q -w w1;"), json!(["line"]));
+    mel(&mut c, "setAttr line.ty 1;");
+    let top = c.s.run("meshInfo", json!({"args": ["sheet"]})).unwrap()["worldBoundsMax"][1].as_f64().unwrap();
+    assert!((top - 1.0).abs() < 1e-3, "{top}");
+    mel(&mut c, "wire -e -dds 0 3.0 w1;");
+    assert_eq!(mel(&mut c, "getAttr w1.dropoffDistance[0];"), json!(3.0));
+    assert!(errors(&mut c).is_empty());
+}

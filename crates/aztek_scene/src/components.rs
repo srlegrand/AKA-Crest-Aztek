@@ -554,6 +554,7 @@ pub type ProviderEditPlug = Arc<dyn Fn(&mut Graph, NodeId) -> Result<PlugRef, Co
 pub type ProviderFrames = Arc<dyn Fn(&mut Graph, NodeId, &[u32]) -> Vec<DMat3> + Send + Sync>;
 pub type ProviderBake = Arc<dyn Fn(&mut Graph, NodeId, &DMat4) + Send + Sync>;
 pub type ProviderSoft = Arc<dyn Fn(u32) -> bool + Send + Sync>;
+pub type ProviderGrid = Arc<dyn Fn(&Graph, NodeId) -> [u32; 3] + Send + Sync>;
 
 /// Point-like components of nodes that aren't meshes (curve points and handles): vertex mode picks, centres and moves
 /// them through these, by node type. Ids are the provider's own.
@@ -572,6 +573,8 @@ pub struct PointProvider {
     pub bake: Option<ProviderBake>,
     /// Optional: whether soft selection may pull this component along.
     pub soft: Option<ProviderSoft>,
+    /// Points on a grid (a lattice), named pt[s][t][u]: its size. An id is s + t * S + u * S * T.
+    pub grid: Option<ProviderGrid>,
 }
 
 fn providers() -> &'static RwLock<Vec<PointProvider>> {
@@ -599,6 +602,95 @@ pub fn point_provider(n: &Node) -> Option<PointProvider> {
         t = ty.base.as_deref();
     }
     None
+}
+
+/// The node with points of its own a name stands for: the node, or the first such shape under a transform.
+pub fn point_node(g: &Graph, id: NodeId) -> Option<NodeId> {
+    let has = |x: NodeId| g.node(x).is_some_and(|n| point_provider(n).is_some());
+    if has(id) {
+        return Some(id);
+    }
+    if crate::dag::is_transform(g, id) {
+        return crate::dag::shapes(g, id, false).into_iter().find(|&s| has(s));
+    }
+    None
+}
+
+/// The size of a node's grid of points, if they lie on one.
+pub fn point_grid(g: &Graph, node: NodeId) -> Option<[u32; 3]> {
+    let grid = point_provider(g.node(node)?)?.grid?;
+    Some(grid(g, node))
+}
+
+/// Grid ids from the inside of pt[0:1][*][2], written "0:1][*][2". Sorted by s, then t, then u, as Maya lists them.
+pub fn grid_ids(dims: [u32; 3], brackets: &str) -> Option<Ids> {
+    let parts: Vec<&str> = brackets.split("][").collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    let mut ranges = [(0, 0); 3];
+    for i in 0..3 {
+        let (a, b) = match parts[i].split_once(':') {
+            _ if parts[i] == "*" => (0, dims[i].checked_sub(1)?),
+            Some((a, b)) => (a.parse().ok()?, b.parse().ok()?),
+            None => {
+                let v = parts[i].parse().ok()?;
+                (v, v)
+            }
+        };
+        if a > b || b >= dims[i] {
+            return None;
+        }
+        ranges[i] = (a, b);
+    }
+    let mut out = Vec::new();
+    for s in ranges[0].0..=ranges[0].1 {
+        for t in ranges[1].0..=ranges[1].1 {
+            for u in ranges[2].0..=ranges[2].1 {
+                out.push(s + t * dims[0] + u * dims[0] * dims[1]);
+            }
+        }
+    }
+    Some(out)
+}
+
+/// Component strings for grid points: path.pt[1][2][0] each when flat, else as few boxes as a greedy pass finds.
+pub fn grid_strings(path: &str, dims: [u32; 3], ids: &[u32], flat: bool) -> Vec<String> {
+    let coords = |id: u32| (id % dims[0], (id / dims[0]) % dims[1], id / (dims[0] * dims[1]));
+    let id_of = |s: u32, t: u32, u: u32| s + t * dims[0] + u * dims[0] * dims[1];
+    let mut sorted: Vec<(u32, u32, u32)> = ids.iter().map(|&i| coords(i)).collect();
+    sorted.sort_unstable();
+    sorted.dedup();
+    if flat {
+        return sorted.into_iter().map(|(s, t, u)| format!("{path}.pt[{s}][{t}][{u}]")).collect();
+    }
+    let range = |a: u32, b: u32| if a == b { a.to_string() } else { format!("{a}:{b}") };
+    let mut left: BTreeSet<u32> = ids.iter().copied().collect();
+    let mut out = Vec::new();
+    for (s, t, u) in sorted {
+        if !left.contains(&id_of(s, t, u)) {
+            continue;
+        }
+        let (mut s1, mut t1, mut u1) = (s, t, u);
+        while s1 + 1 < dims[0] && left.contains(&id_of(s1 + 1, t, u)) {
+            s1 += 1;
+        }
+        while t1 + 1 < dims[1] && (s..=s1).all(|x| left.contains(&id_of(x, t1 + 1, u))) {
+            t1 += 1;
+        }
+        while u1 + 1 < dims[2] && (s..=s1).all(|x| (t..=t1).all(|y| left.contains(&id_of(x, y, u1 + 1)))) {
+            u1 += 1;
+        }
+        for x in s..=s1 {
+            for y in t..=t1 {
+                for z in u..=u1 {
+                    left.remove(&id_of(x, y, z));
+                }
+            }
+        }
+        out.push(format!("{path}.pt[{}][{}][{}]", range(s, s1), range(t, t1), range(u, u1)));
+    }
+    out
 }
 
 /// True when a selected node has points of its own (a curve), so component modes edit it rather than every mesh.
@@ -1443,6 +1535,10 @@ pub fn component_strings(g: &Graph, flatten: bool) -> Vec<String> {
             continue;
         }
         let path = display_path(g, node);
+        if let Some(dims) = point_grid(g, node) {
+            out.extend(grid_strings(&path, dims, ids, flatten));
+            continue;
+        }
         if flatten {
             let p = match kind {
                 ComponentMode::Vertex if !is_mesh(g, node) => "cv",
