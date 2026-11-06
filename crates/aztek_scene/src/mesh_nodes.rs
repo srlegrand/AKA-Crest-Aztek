@@ -390,6 +390,27 @@ fn int1(name: &str, def: i64, doc: &str) -> AttrDef {
     int_attr(name, def, doc, 1.0, 1000.0)
 }
 
+/// attr answering to other names too; the first of them is what older scene files stored it as.
+fn known_as(mut a: AttrDef, short: &str, names: &[&str]) -> AttrDef {
+    a.short_name = short.into();
+    a.aliases = names.iter().map(|s| s.to_string()).collect();
+    if let Some(first) = names.first() {
+        a.file_alias = first.to_string();
+    }
+    a
+}
+
+/// A primitive's extra flag that sets one of its attributes: another spelling of it.
+struct FlagAlias {
+    long: &'static str,
+    short: &'static str,
+    ty: ArgType,
+}
+
+fn int_alias(long: &'static str, short: &'static str) -> FlagAlias {
+    FlagAlias { long, short, ty: ArgType::Int }
+}
+
 fn keyable_bool(name: &str, def: bool, doc: &str) -> AttrDef {
     AttrDef {
         name: name.into(),
@@ -513,6 +534,8 @@ fn orient_up(m: &mut Mesh, axis: i64) {
 }
 
 struct Primitive {
+    /// Other flags of its command, each an alias of an attribute.
+    flags: Vec<FlagAlias>,
     /// Node type, also the command name.
     ty: &'static str,
     /// Default object name.
@@ -524,8 +547,10 @@ struct Primitive {
 }
 
 fn primitives() -> Vec<Primitive> {
-    let prim = |ty, display, attrs, build: BuildFn, domed| Primitive { ty, display, attrs, build, domed };
-    vec![
+    let prim = |ty, display, attrs, build: BuildFn, domed| Primitive { flags: Vec::new(), ty, display, attrs, build, domed };
+    let sxyz = || vec![int_alias("subdivisionsX", "sx"), int_alias("subdivisionsY", "sy"), int_alias("subdivisionsZ", "sz")];
+    let sxy = || vec![int_alias("subdivisionsX", "sx"), int_alias("subdivisionsY", "sy")];
+    let list: Vec<Primitive> = vec![
         prim(
             "polyCube",
             "Cube",
@@ -533,9 +558,9 @@ fn primitives() -> Vec<Primitive> {
                 size_attr("width", 1.0, 100.0, "Size along X, cm."),
                 size_attr("height", 1.0, 100.0, "Size along the up axis, cm."),
                 size_attr("depth", 1.0, 100.0, "Size along Z, cm."),
-                int1("subdivisionsX", 1, "Segments across."),
-                int1("subdivisionsY", 1, "Segments up."),
-                int1("subdivisionsZ", 1, "Segments deep."),
+                known_as(int1("subdivisionsWidth", 1, "Segments across."), "sw", &["subdivisionsX", "sx"]),
+                known_as(int1("subdivisionsHeight", 1, "Segments up."), "sh", &["subdivisionsY", "sy"]),
+                known_as(int1("subdivisionsDepth", 1, "Segments deep."), "sd", &["subdivisionsZ", "sz"]),
                 keyable_bool("baseAtOrigin", false, "Sit on the ground instead of centring."),
             ],
             Arc::new(|n| {
@@ -543,9 +568,9 @@ fn primitives() -> Vec<Primitive> {
                     width: f(n, "width"),
                     height: f(n, "height"),
                     depth: f(n, "depth"),
-                    subdiv_x: count(n, "subdivisionsX", 1),
-                    subdiv_y: count(n, "subdivisionsY", 1),
-                    subdiv_z: count(n, "subdivisionsZ", 1),
+                    subdiv_x: count(n, "subdivisionsWidth", 1),
+                    subdiv_y: count(n, "subdivisionsHeight", 1),
+                    subdiv_z: count(n, "subdivisionsDepth", 1),
                     base_at_origin: b(n, "baseAtOrigin"),
                 })
             }),
@@ -556,8 +581,8 @@ fn primitives() -> Vec<Primitive> {
             "Sphere",
             vec![
                 size_attr("radius", 1.0, 50.0, "cm."),
-                int_attr("subdivisionsAxis", 20, "Segments around.", 3.0, 1000.0),
-                int_attr("subdivisionsHeight", 20, "Segments pole to pole.", 2.0, 1000.0),
+                known_as(int_attr("subdivisionsAxis", 20, "Segments around.", 3.0, 1000.0), "sa", &["subdivisionsX", "sx"]),
+                known_as(int_attr("subdivisionsHeight", 20, "Segments pole to pole.", 2.0, 1000.0), "sh", &["subdivisionsY", "sy"]),
                 keyable_bool("baseAtOrigin", false, "Sit on the ground."),
                 height_fraction(),
             ],
@@ -578,9 +603,10 @@ fn primitives() -> Vec<Primitive> {
             vec![
                 size_attr("radius", 1.0, 50.0, "cm."),
                 size_attr("height", 2.0, 100.0, "cm."),
-                int_attr("subdivisionsAxis", 20, "Segments around.", 3.0, 1000.0),
-                int1("subdivisionsHeight", 1, "Segments up."),
-                int_attr("subdivisionsCaps", 0, "Rings of quads around each cap's fill; 0 and 1 both leave just the fill.", 0.0, 1000.0),
+                known_as(int_attr("subdivisionsAxis", 20, "Segments around.", 3.0, 1000.0), "sa", &["subdivisionsX", "sx"]),
+                known_as(int1("subdivisionsHeight", 1, "Segments up."), "sh", &["subdivisionsY", "sy"]),
+                known_as(int_attr("subdivisionsCaps", 0, "Rings of quads around each cap's fill; 0 and 1 both leave just the fill.", 0.0, 1000.0), "sc", &["subdivisionsZ", "sz"]),
+                keyable_bool("roundCap", false, "Accepted; the caps stay flat."),
                 cap_type_attr(),
                 keyable_bool("caps", true, "Close the ends; off leaves them open whatever capType says."),
                 keyable_bool("baseAtOrigin", false, "Sit on the ground."),
@@ -632,9 +658,10 @@ fn primitives() -> Vec<Primitive> {
             vec![
                 size_attr("radius", 1.0, 50.0, "cm."),
                 size_attr("height", 2.0, 100.0, "cm."),
-                int_attr("subdivisionsAxis", 20, "Segments around.", 3.0, 1000.0),
-                int1("subdivisionsHeight", 1, "Segments up."),
-                int_attr("subdivisionsCap", 0, "Rings of quads around the base's fill; 0 and 1 both leave just the fill.", 0.0, 1000.0),
+                known_as(int_attr("subdivisionsAxis", 20, "Segments around.", 3.0, 1000.0), "sa", &["subdivisionsX", "sx"]),
+                known_as(int1("subdivisionsHeight", 1, "Segments up."), "sh", &["subdivisionsY", "sy"]),
+                known_as(int_attr("subdivisionsCap", 0, "Rings of quads around the base's fill; 0 and 1 both leave just the fill.", 0.0, 1000.0), "sc", &["subdivisionsZ", "sz"]),
+                keyable_bool("roundCap", false, "Accepted; the base stays flat."),
                 cap_type_attr(),
                 keyable_bool("baseAtOrigin", false, "Sit on the ground."),
                 sweep_fraction(),
@@ -664,16 +691,16 @@ fn primitives() -> Vec<Primitive> {
             "Plane",
             vec![
                 size_attr("width", 1.0, 100.0, "Size along X, cm."),
-                size_attr("depth", 1.0, 100.0, "Size along Z, cm."),
-                int1("subdivisionsX", 10, "Segments across."),
-                int1("subdivisionsZ", 10, "Segments deep."),
+                known_as(size_attr("height", 1.0, 100.0, "Size along Z, cm."), "h", &["depth"]),
+                known_as(int1("subdivisionsWidth", 10, "Segments across."), "sw", &["subdivisionsX", "sx"]),
+                known_as(int1("subdivisionsHeight", 10, "Segments deep."), "sh", &["subdivisionsZ", "subdivisionsY", "sy", "sz"]),
             ],
             Arc::new(|n| {
                 make_plane(&PlaneOptions {
                     width: f(n, "width"),
-                    depth: f(n, "depth"),
-                    subdiv_x: count(n, "subdivisionsX", 1),
-                    subdiv_z: count(n, "subdivisionsZ", 1),
+                    depth: f(n, "height"),
+                    subdiv_x: count(n, "subdivisionsWidth", 1),
+                    subdiv_z: count(n, "subdivisionsHeight", 1),
                 })
             }),
             false,
@@ -684,20 +711,35 @@ fn primitives() -> Vec<Primitive> {
             vec![
                 size_attr("radius", 1.0, 50.0, "Ring radius, cm."),
                 size_attr("sectionRadius", 0.5, 20.0, "Tube radius, cm."),
-                int_attr("subdivisionsAxis", 20, "Segments around the ring.", 3.0, 1000.0),
-                int_attr("subdivisionsHeight", 20, "Segments around the tube.", 3.0, 1000.0),
+                known_as(int_attr("subdivisionsAxis", 20, "Segments around the ring.", 3.0, 1000.0), "sa", &["subdivisionsX", "sx"]),
+                known_as(int_attr("subdivisionsHeight", 20, "Segments around the tube.", 3.0, 1000.0), "sh", &["subdivisionsY", "sy"]),
+                known_as(float_attr("twist", 0.0, "Turns the tube's sections about the ring, degrees.", None, None), "tw", &[]),
                 sweep_fraction(),
                 cut_caps(),
             ],
             Arc::new(|n| {
-                make_torus(&TorusOptions {
+                let mut m = make_torus(&TorusOptions {
                     radius: f(n, "radius"),
                     section_radius: f(n, "sectionRadius"),
                     subdiv_axis: count(n, "subdivisionsAxis", 3),
                     subdiv_height: count(n, "subdivisionsHeight", 3),
                     fraction: frac(n),
                     cut_caps: b(n, "cutCaps"),
-                })
+                });
+                let twist = f(n, "twist");
+                if twist != 0.0 {
+                    let radius = f(n, "radius");
+                    for p in 0..m.point_capacity() {
+                        if m.point_valid(p) {
+                            let q = m.position(p);
+                            let out = DVec3::new(q.x, 0.0, q.z).normalize_or_zero();
+                            let center = out * radius;
+                            let turn = DQuat::from_axis_angle(DVec3::Y.cross(out).normalize_or_zero(), twist.to_radians());
+                            m.set_position(p, center + turn * (q - center));
+                        }
+                    }
+                }
+                m
             }),
             false,
         ),
@@ -706,8 +748,8 @@ fn primitives() -> Vec<Primitive> {
             "Disc",
             vec![
                 size_attr("radius", 1.0, 50.0, "cm."),
-                int_attr("subdivisionsAxis", 20, "Segments around.", 3.0, 1000.0),
-                int_attr("subdivisionsRings", 1, "Rings; 0 is one n-gon.", 0.0, 1000.0),
+                known_as(int_attr("subdivisionsAxis", 20, "Segments around.", 3.0, 1000.0), "sa", &["sides"]),
+                known_as(int_attr("subdivisionsRings", 1, "Rings; 0 is one n-gon.", 0.0, 1000.0), "sr", &["subdivisions"]),
                 sweep_fraction(),
                 disc_cap_type_attr(),
             ],
@@ -729,8 +771,10 @@ fn primitives() -> Vec<Primitive> {
                 size_attr("radius", 1.0, 50.0, "Outer radius, cm."),
                 size_attr("thickness", 0.5, 10.0, "Wall thickness, cm."),
                 size_attr("height", 2.0, 100.0, "cm."),
-                int_attr("subdivisionsAxis", 20, "Segments around.", 3.0, 1000.0),
-                int1("subdivisionsHeight", 1, "Segments up."),
+                known_as(int_attr("subdivisionsAxis", 20, "Segments around.", 3.0, 1000.0), "sa", &["subdivisionsX", "sx"]),
+                known_as(int1("subdivisionsHeight", 1, "Segments up."), "sh", &["subdivisionsY", "sy"]),
+                known_as(int1("subdivisionsCaps", 1, "Accepted; each end is one ring."), "sc", &["subdivisionsZ", "sz"]),
+                keyable_bool("roundCap", false, "Accepted; the ends stay flat."),
                 keyable_bool("baseAtOrigin", false, "Sit on the ground."),
                 sweep_fraction(),
                 cut_caps(),
@@ -777,7 +821,134 @@ fn primitives() -> Vec<Primitive> {
             }),
             true,
         ),
-    ]
+        prim(
+            "polyPrism",
+            "Prism",
+            vec![
+                known_as(size_attr("length", 2.0, 2.0, "Height, cm."), "l", &[]),
+                known_as(size_attr("sideLength", 2.0, 2.0, "Length of each side of the ends, cm."), "w", &["width"]),
+                known_as(int_attr("numberOfSides", 3, "Sides.", 3.0, 1000.0), "ns", &["numderOfSides", "nsi"]),
+                known_as(int1("subdivisionsHeight", 1, "Segments up."), "sh", &[]),
+                known_as(int_attr("subdivisionsCaps", 2, "Rings on each end.", 0.0, 1000.0), "sc", &[]),
+            ],
+            Arc::new(|n| {
+                make_prism(f(n, "length"), f(n, "sideLength"), count(n, "numberOfSides", 3), count(n, "subdivisionsHeight", 1), count(n, "subdivisionsCaps", 0))
+            }),
+            false,
+        ),
+        prim(
+            "polyPyramid",
+            "Pyramid",
+            vec![
+                known_as(size_attr("sideLength", 1.0, 1.0, "Length of each side, cm."), "w", &["width"]),
+                known_as(int_attr("numberOfSides", 4, "Sides of the base.", 3.0, 1000.0), "ns", &["numderOfSides", "nsi"]),
+                known_as(int1("subdivisionsHeight", 1, "Segments up."), "sh", &[]),
+                known_as(int_attr("subdivisionsCaps", 0, "Rings on the base.", 0.0, 1000.0), "sc", &[]),
+            ],
+            Arc::new(|n| make_pyramid(f(n, "sideLength"), count(n, "numberOfSides", 3), count(n, "subdivisionsHeight", 1), count(n, "subdivisionsCaps", 0))),
+            false,
+        ),
+        prim(
+            "polyHelix",
+            "Helix",
+            vec![
+                known_as(float_attr("coils", 3.0, "Turns.", Some(0.0), None), "c", &[]),
+                known_as(size_attr("height", 2.0, 2.0, "cm."), "h", &[]),
+                known_as(size_attr("width", 2.0, 2.0, "Across the coil, cm."), "w", &[]),
+                known_as(size_attr("radius", 0.4, 0.4, "Tube radius, cm."), "r", &[]),
+                known_as(int_attr("direction", 1, "0 clockwise, 1 counterclockwise.", 0.0, 1.0), "d", &[]),
+                known_as(int_attr("subdivisionsAxis", 8, "Segments round the tube.", 3.0, 1000.0), "sa", &[]),
+                known_as(int1("subdivisionsCoil", 50, "Segments per coil."), "sco", &[]),
+                known_as(int_attr("subdivisionsCaps", 0, "Rings on each end.", 0.0, 1000.0), "sc", &[]),
+                keyable_bool("roundCap", false, "Accepted; the ends stay flat."),
+            ],
+            Arc::new(|n| {
+                make_helix(
+                    f(n, "coils"),
+                    f(n, "height"),
+                    f(n, "width"),
+                    f(n, "radius"),
+                    count(n, "direction", 0),
+                    count(n, "subdivisionsAxis", 3),
+                    count(n, "subdivisionsCoil", 1),
+                    count(n, "subdivisionsCaps", 0),
+                )
+            }),
+            false,
+        ),
+        prim(
+            "polyPlatonicSolid",
+            "Solid",
+            vec![
+                known_as(size_attr("radius", 1.0, 1.0, "Centre to each point, cm."), "r", &[]),
+                known_as(size_attr("sideLength", 1.0, 1.0, "Accepted; the radius sets the size."), "l", &[]),
+                known_as(int_attr("solidType", 0, "0 dodecahedron, 1 icosahedron, 2 octahedron, 3 tetrahedron.", 0.0, 3.0), "st", &[]),
+            ],
+            Arc::new(|n| make_platonic(count(n, "solidType", 0), f(n, "radius"))),
+            false,
+        ),
+        prim(
+            "polyPrimitive",
+            "Solid",
+            vec![
+                known_as(size_attr("radius", 1.0, 1.0, "Centre to each point, cm."), "r", &[]),
+                known_as(size_attr("sideLength", 1.0, 1.0, "Accepted; the radius sets the size."), "l", &[]),
+                known_as(int_attr("polyType", 0, "0 soccer ball.", 0.0, 0.0), "pt", &[]),
+            ],
+            Arc::new(|n| make_soccer_ball(f(n, "radius"))),
+            false,
+        ),
+        prim(
+            "polySoccerBall",
+            "SoccerBall",
+            vec![known_as(size_attr("radius", 1.0, 1.0, "Centre to each point, cm."), "r", &[])],
+            Arc::new(|n| make_soccer_ball(f(n, "radius"))),
+            false,
+        ),
+        prim(
+            "polySuperShape",
+            "SuperShape",
+            vec![
+                known_as(size_attr("radius", 1.0, 1.0, "cm."), "r", &[]),
+                known_as(int_attr("horizontalDivisions", 20, "Segments around.", 3.0, 1000.0), "hd", &[]),
+                known_as(int_attr("verticalDivisions", 20, "Segments pole to pole.", 2.0, 1000.0), "vd", &[]),
+                known_as(float_attr("ultraM", 4.0, "Lobes around.", None, None), "um", &[]),
+                known_as(float_attr("ultraN1", 2.0, "Shape around: first exponent.", Some(0.01), None), "un1", &[]),
+                known_as(float_attr("ultraN2", 2.0, "Shape around: second exponent.", None, None), "un2", &[]),
+                known_as(float_attr("ultraN3", 2.0, "Shape around: third exponent.", None, None), "un3", &[]),
+                known_as(float_attr("ultraVM", 4.0, "Lobes pole to pole.", None, None), "uvm", &[]),
+                known_as(float_attr("ultraVN1", 2.0, "Shape pole to pole: first exponent.", Some(0.01), None), "uvn1", &[]),
+                known_as(float_attr("ultraVN2", 2.0, "Shape pole to pole: second exponent.", None, None), "uvn2", &[]),
+                known_as(float_attr("ultraVN3", 2.0, "Shape pole to pole: third exponent.", None, None), "uvn3", &[]),
+            ],
+            Arc::new(|n| {
+                make_super_shape(
+                    f(n, "radius"),
+                    count(n, "horizontalDivisions", 3),
+                    count(n, "verticalDivisions", 2),
+                    [f(n, "ultraM"), f(n, "ultraN1"), f(n, "ultraN2"), f(n, "ultraN3")],
+                    [f(n, "ultraVM"), f(n, "ultraVN1"), f(n, "ultraVN2"), f(n, "ultraVN3")],
+                )
+            }),
+            false,
+        ),
+    ];
+    list.into_iter()
+        .map(|mut p| {
+            p.flags = match p.ty {
+                "polyCube" | "polyCylinder" | "polyCone" | "polyPipe" => sxyz(),
+                "polySphere" | "polyTorus" => sxy(),
+                "polyPlane" => {
+                    let mut v = sxyz();
+                    v.push(FlagAlias { long: "depth", short: "", ty: ArgType::Float });
+                    v
+                }
+                "polyDisc" => vec![int_alias("sides", "s"), int_alias("subdivisions", "sd"), int_alias("subdivisionMode", "sm")],
+                _ => Vec::new(),
+            };
+            p
+        })
+        .collect()
 }
 
 pub fn register_types() {
@@ -789,12 +960,28 @@ pub fn register_types() {
     for p in primitives() {
         let mut own = p.attrs;
         own.push(up_axis_attr());
+        own.push(vec3_attr("axis", "ax", DVec3::Y, flags::INPUT | flags::STORABLE | flags::KEYABLE, "The direction the primitive's up points, as a vector."));
+        own.push(int_attr("createUVs", 1, "0 leaves the mesh without UVs.", 0.0, 4.0));
+        own.push(int_attr("texture", 1, "How UVs are laid out; accepted.", 0.0, 2.0));
         own.push(mesh_attr("outMesh", "o", flags::OUTPUT | flags::HIDDEN, "Generated mesh."));
         let out = own.len() - 1;
         let shape = p.build;
         let build: BuildFn = Arc::new(move |n| {
             let mut m = shape(n);
-            orient_up(&mut m, n.int(n.ty().attr_index("upAxis").unwrap()));
+            let axis = n.vec3(n.ty().attr_index("axis").unwrap());
+            if (axis - DVec3::Y).length_squared() > 1e-12 && axis.length_squared() > 1e-12 {
+                let turn = DQuat::from_rotation_arc(DVec3::Y, axis.normalize());
+                for p in 0..m.point_capacity() {
+                    if m.point_valid(p) {
+                        m.set_position(p, turn * m.position(p));
+                    }
+                }
+            } else {
+                orient_up(&mut m, n.int(n.ty().attr_index("upAxis").unwrap()));
+            }
+            if n.int(n.ty().attr_index("createUVs").unwrap()) == 0 {
+                m.corner_attrs_mut().remove(names::uv(0).as_str());
+            }
             m
         });
         let t = NodeType {
@@ -909,17 +1096,22 @@ fn maya_short(name: &str) -> &'static str {
         "height" => "h",
         "depth" => "d",
         "radius" => "r",
-        "subdivisionsX" => "sx",
-        "subdivisionsY" => "sy",
-        "subdivisionsZ" => "sz",
         "subdivisionsAxis" => "sa",
         "subdivisionsHeight" => "sh",
-        "subdivisionsCaps" => "sc",
+        "subdivisionsCaps" | "subdivisionsCap" => "sc",
         "subdivisionsDepth" => "sd",
+        "subdivisionsWidth" => "sw",
+        "subdivisionsCoil" => "sco",
+        "sideLength" => "w",
+        "length" => "l",
+        "numberOfSides" => "ns",
+        "solidType" => "st",
+        "polyType" => "pt",
+        "coils" => "c",
+        "direction" => "d",
         "sectionRadius" => "sr",
         "twist" => "tw",
         "roundCap" => "rcp",
-        "upAxis" => "ax",
         "thickness" => "t",
         _ => "",
     }
@@ -945,6 +1137,9 @@ pub fn create_mesh_node(g: &mut Graph, name: &str) -> CmdResult<(NodeId, NodeId)
 
 /// The transform stem Maya gives a primitive: polyCube -> pCube.
 pub fn primitive_stem(ty: &str) -> String {
+    if matches!(ty, "polyPlatonicSolid" | "polyPrimitive") {
+        return "pSolid".into();
+    }
     format!("p{}", ty.strip_prefix("poly").unwrap_or(ty))
 }
 
@@ -958,13 +1153,17 @@ pub fn register(c: &mut Commands<Session>) {
                 let g = &mut s.graph;
                 let default_up = if g.up_axis == UpAxis::Z { "z" } else { "y" };
                 // Maya gives the axis as a vector (-ax 1 0 0).
-                let up = match a.get("upAxis") {
+                let up_flag = a.get("axis").filter(|v| v.is_string()).or(a.get("upAxis"));
+                let by_vector = a.get("axis").is_some_and(Value::is_array);
+                let up = match up_flag {
+                    _ if by_vector => "y".to_string(),
                     Some(Value::Array(v)) if v.len() == 3 => {
                         let c: Vec<f64> = v.iter().map(|x| x.as_f64().unwrap_or(0.0)).collect();
                         let i = (0..3).max_by(|&i, &j| c[i].abs().total_cmp(&c[j].abs())).unwrap();
                         format!("{}{}", if c[i] < 0.0 { "-" } else { "" }, ["x", "y", "z"][i])
                     }
-                    _ => a.string("upAxis", default_up),
+                    Some(Value::String(u)) => u.clone(),
+                    _ => default_up.to_string(),
                 };
                 if !UP_AXES.contains(&up.as_str()) {
                     fail!("{ty}: upAxis must be x, y, z, -x, -y or -z");
@@ -976,7 +1175,14 @@ pub fn register(c: &mut Commands<Session>) {
                 let gen = g.create_node(&gen_type, "", NO_NODE, true)?;
                 let mut values = a.flags.clone();
                 values.insert("upAxis".into(), json!(up));
-                for (flag, value) in &values {
+                if !by_vector {
+                    values.remove("axis");
+                }
+                // Attribute names first: a flag that is another name for one (subdivisionsX) has the last word over
+                // the attribute's own default.
+                let mut order: Vec<(&String, &Value)> = values.iter().collect();
+                order.sort_by_key(|(k, _)| gen_type.attr_index(k).is_some_and(|i| gen_type.attrs[i].name != **k));
+                for (flag, value) in order {
                     if value.is_null() {
                         continue;
                     }
@@ -1009,6 +1215,9 @@ pub fn register(c: &mut Commands<Session>) {
                     gen_name = Value::Null;
                 }
                 g.select(&[xform], SelectMode::Replace);
+                if gen_name.is_null() && a.has("constructionHistory") {
+                    return Ok(json!([g.path(xform)]));
+                }
                 Ok(json!([g.path(xform), gen_name]))
             },
         )
@@ -1023,6 +1232,12 @@ pub fn register(c: &mut Commands<Session>) {
              its open base.",
         ))
         .flag(flag("generator", T::Bool, json!(true), "Keep the generator node so its parameters stay editable."))
+            .flag(FlagDef::new("object", "o", T::Bool, Value::Null, "Accepted: the transform and shape are always made."))
+            .flag(FlagDef::new("createUVs", "cuv", T::Int, Value::Null, "0 leaves the mesh without UVs."))
+            .flag(FlagDef::new("texture", "tx", T::Int, Value::Null, "How UVs are laid out; accepted."))
+            .flag(FlagDef::new("axis", "ax", T::Any, Value::Null, "The direction the primitive's up points, as a vector."))
+            .flag(FlagDef::new("caching", "cch", T::Bool, Value::Null, "Accepted."))
+            .flag(FlagDef::new("nodeState", "nds", T::Int, Value::Null, "Accepted."))
             .flag(FlagDef::new("constructionHistory", "ch", T::Bool, Value::Null, "False: no generator node, as generator=False."));
         for a in &p.attrs {
             if a.ty == PlugType::Enum {
@@ -1045,10 +1260,14 @@ pub fn register(c: &mut Commands<Session>) {
                 cmd = cmd.flag(fd);
             }
         }
+        for x in &p.flags {
+            cmd = cmd.flag(FlagDef::new(x.long, x.short, x.ty, Value::Null, "Another name for the attribute it sets."));
+        }
         cmd = cmd
             .flag(
-                flag(
+                FlagDef::new(
                     "upAxis",
+                    "",
                     T::Any,
                     Value::Null,
                     "Direction the primitive's up points: x, y, z, -x, -y or -z (or a vector, as Maya's -ax 1 0 0); the scene up \

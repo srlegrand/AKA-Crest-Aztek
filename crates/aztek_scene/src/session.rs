@@ -51,6 +51,8 @@ pub struct Session {
     pub key_selection: Vec<(NodeId, f64)>,
     /// The live surface: what Quad Draw and snapping draw on.
     pub live_surface: Vec<NodeId>,
+    /// polyOptions' display settings, polySelectConstraint's state and polyClipboard's contents.
+    pub poly_state: crate::mesh_edit::maya_poly::PolyState,
 }
 
 impl Default for Session {
@@ -74,6 +76,7 @@ impl Session {
             key_clipboard: Default::default(),
             key_selection: Vec::new(),
             live_surface: Vec::new(),
+            poly_state: Default::default(),
         };
         crate::commands::register(&mut s.commands);
         crate::components::register(&mut s.commands);
@@ -100,6 +103,8 @@ impl Session {
         crate::curves::register(&mut s.commands);
         crate::maya_cmds::register(&mut s.commands);
         crate::maya_core::register(&mut s.commands);
+        // After the modules above: these replace or extend commands they registered.
+        crate::mesh_edit::maya_poly::register(&mut s.commands);
         // Last: history node types take their attributes from the commands registered above.
         crate::history::register(&mut s.commands);
         crate::instancing::install(&mut s.graph);

@@ -1,7 +1,7 @@
 //! Port of `src/scene/MeshEditNormals.cpp`: weighted, locked and unlocked normals.
 
 use aztek_geo::names;
-use aztek_geo::normals::{apply_weighted_normals, update_corner_normals, CornerNormalOptions, WeightedNormalMode, WeightedNormalOptions};
+use aztek_geo::normals::{apply_weighted_normals, WeightedNormalMode, WeightedNormalOptions};
 use aztek_ops::{ArgType, CommandDef, Commands, FlagDef};
 use serde_json::json;
 
@@ -28,13 +28,6 @@ fn weighted_op(a: &aztek_ops::Args, m: &mut aztek_geo::Mesh, sel: &crate::compon
     Ok(EditResult::default())
 }
 
-fn lock_op(_a: &aztek_ops::Args, m: &mut aztek_geo::Mesh, _sel: &crate::components::Ids, _sym: Option<&aztek_geo::symmetry::SymmetryMap>) -> aztek_ops::CmdResult<EditResult> {
-    if !m.corner_attrs().has(names::NORMAL) {
-        update_corner_normals(m, &CornerNormalOptions::default());
-    }
-    Ok(EditResult::default())
-}
-
 fn unlock_op(_a: &aztek_ops::Args, m: &mut aztek_geo::Mesh, _sel: &crate::components::Ids, _sym: Option<&aztek_geo::symmetry::SymmetryMap>) -> aztek_ops::CmdResult<EditResult> {
     m.corner_attrs_mut().remove(names::NORMAL);
     Ok(EditResult::default())
@@ -52,7 +45,6 @@ pub fn register(c: &mut Commands<Session>) {
         doc,
     };
     register_op(op("polyWeightedNormals", "polyWeightedNormals", "Weighted Normals", weighted_op, "Face-weighted locked normals."));
-    register_op(op("polyNormalPerVertex", "polyLockNormals", "Lock Normals", lock_op, "Stores the shading normals as split normals."));
     register_op(op("polyUnlockNormals", "polyUnlockNormals", "Unlock Normals", unlock_op, "Drops stored split normals."));
     c.register(
         Cmd::new(

@@ -109,31 +109,6 @@ pub struct Alias {
 
 /// Maya commands and flags Aztek runs under its own names.
 pub const ALIASES: &[Alias] = &[
-    Alias { maya: "polyExtrudeFacet", target: "polyExtrude", flags: &[("ltz", "thickness"), ("localTranslateZ", "thickness"), ("off", "offset")] },
-    Alias { maya: "polyExtrudeEdge", target: "polyExtrude", flags: &[("ltz", "thickness"), ("localTranslateZ", "thickness"), ("off", "offset")] },
-    Alias { maya: "polyBevel3", target: "polyBevel", flags: &[("o", "offset"), ("sg", "segments"), ("sa", "smoothingAngle")] },
-    Alias { maya: "polySplitRing", target: "polyInsertLoop", flags: &[("wt", "fraction"), ("weight", "fraction")] },
-    Alias { maya: "polyMergeVertex", target: "polyMerge", flags: &[("d", "distance")] },
-    Alias { maya: "polyCloseBorder", target: "polyFillHole", flags: &[] },
-    Alias { maya: "polyNormal", target: "polyFlip", flags: &[] },
-    Alias { maya: "polyUnite", target: "polyCombine", flags: &[] },
-    Alias { maya: "polySmooth", target: "polySubdivide", flags: &[] },
-    Alias { maya: "polyQuad", target: "polyQuadrangulate", flags: &[("a", "maxAngle"), ("angle", "maxAngle")] },
-    Alias { maya: "polyDelEdge", target: "polyDissolve", flags: &[] },
-    Alias { maya: "polyDelVertex", target: "polyDissolve", flags: &[] },
-    Alias { maya: "polyDelFacet", target: "deleteComponents", flags: &[] },
-    Alias { maya: "polyCollapseEdge", target: "polyCollapse", flags: &[] },
-    Alias { maya: "polyFlipEdge", target: "polySpinEdge", flags: &[] },
-    Alias { maya: "polyMirrorFace", target: "polyMirror", flags: &[] },
-    Alias { maya: "polyConnectComponents", target: "polyConnect", flags: &[] },
-    Alias { maya: "polyChipOff", target: "polyExtract", flags: &[] },
-    Alias { maya: "polyPlane", target: "polyPlane", flags: &[("h", "depth"), ("height", "depth"), ("sy", "subdivisionsZ"), ("subdivisionsY", "subdivisionsZ")] },
-    Alias { maya: "polyCylinder", target: "polyCylinder", flags: &[("sc", "subdivisionsCaps"), ("sx", "subdivisionsAxis"), ("subdivisionsX", "subdivisionsAxis"), ("sy", "subdivisionsHeight"), ("subdivisionsY", "subdivisionsHeight"), ("sz", "subdivisionsCaps"), ("subdivisionsZ", "subdivisionsCaps")] },
-    Alias { maya: "polyCone", target: "polyCone", flags: &[("sc", "subdivisionsCap"), ("sx", "subdivisionsAxis"), ("subdivisionsX", "subdivisionsAxis"), ("sy", "subdivisionsHeight"), ("subdivisionsY", "subdivisionsHeight"), ("sz", "subdivisionsCap"), ("subdivisionsZ", "subdivisionsCap")] },
-    Alias { maya: "polyTorus", target: "polyTorus", flags: &[("sr", "sectionRadius"), ("sx", "subdivisionsAxis"), ("subdivisionsX", "subdivisionsAxis"), ("sy", "subdivisionsHeight"), ("subdivisionsY", "subdivisionsHeight")] },
-    Alias { maya: "polySphere", target: "polySphere", flags: &[("sx", "subdivisionsAxis"), ("subdivisionsX", "subdivisionsAxis"), ("sy", "subdivisionsHeight"), ("subdivisionsY", "subdivisionsHeight")] },
-    Alias { maya: "polyPipe", target: "polyPipe", flags: &[] },
-    Alias { maya: "polyDisc", target: "polyDisc", flags: &[] },
     Alias { maya: "makeIdentity", target: "freezeTransforms", flags: &[("a", "apply")] },
     Alias { maya: "CenterPivot", target: "centerPivot", flags: &[] },
     Alias { maya: "polyPlanarProjection", target: "polyProjection", flags: &[] },
@@ -141,7 +116,6 @@ pub const ALIASES: &[Alias] = &[
     Alias { maya: "polySphericalProjection", target: "polyProjection", flags: &[] },
     Alias { maya: "unfold", target: "u3dUnfold", flags: &[] },
     Alias { maya: "polyMultiLayoutUV", target: "u3dLayout", flags: &[("ps", "shellSpacing")] },
-    Alias { maya: "polyLayoutUV", target: "u3dLayout", flags: &[] },
     Alias { maya: "DeleteHistory", target: "delete", flags: &[] },
 ];
 
@@ -151,6 +125,10 @@ pub fn alias(name: &str) -> Option<&'static Alias> {
 
 /// Commands whose positional component strings (pCube1.f[0:3]) are what they work on: they're selected first.
 pub fn takes_components(name: &str) -> bool {
+    // These read their own component arguments, as Maya's do, and leave the selection alone.
+    if aztek_scene::mesh_edit::maya_poly::reads_components(name) {
+        return false;
+    }
     (name.starts_with("poly")
         && !matches!(
             name,
@@ -281,10 +259,17 @@ pub fn parse(cmds: &Commands<Session>, stmt: &str) -> Result<(String, Value), St
                     Value::Array(v)
                 }
                 ArgType::List => {
-                    let mut v = Vec::new();
-                    while i < toks.len() && !is_flag(&toks[i]) {
+                    let mut v = match flags.remove(&fd.name) {
+                        // A repeated flag (-p 0 0 0 -p 1 0 0) gathers.
+                        Some(Value::Array(a)) => a,
+                        _ => Vec::new(),
+                    };
+                    // Multi-use flags with a set size stop there, so component arguments may follow.
+                    let mut taken = 0;
+                    while i < toks.len() && !is_flag(&toks[i]) && (fd.arity == 0 || taken < fd.arity) {
                         v.push(scalar(&toks[i]));
                         i += 1;
+                        taken += 1;
                     }
                     Value::Array(v)
                 }

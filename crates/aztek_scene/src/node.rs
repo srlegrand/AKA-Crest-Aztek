@@ -55,7 +55,7 @@ impl NodeType {
     pub fn attr_index(&self, n: &str) -> Option<usize> {
         self.attrs
             .iter()
-            .position(|a| a.name == n || a.short_name == n)
+            .position(|a| a.name == n || a.short_name == n || a.aliases.iter().any(|x| x == n))
     }
 
     /// `attr_index`, falling back to the attrs' `file_alias`: for reading scene files. Also reads "<alias><n>", an

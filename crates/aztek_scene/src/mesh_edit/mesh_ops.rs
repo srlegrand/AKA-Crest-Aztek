@@ -37,11 +37,6 @@ fn set_mesh(g: &mut crate::graph::Graph, p: PlugRef, m: Mesh) -> CmdResult<()> {
     Ok(())
 }
 
-fn quad_op(a: &Args, m: &mut Mesh, sel: &Ids, _sym: Option<&SymmetryMap>) -> CmdResult<EditResult> {
-    let o = QuadrangulateOptions { max_face_angle: a.float("maxAngle", 40.0), ..Default::default() };
-    Ok(faces(quadrangulate_faces(m, sel, &o)))
-}
-
 fn soft_edge_op(a: &Args, m: &mut Mesh, sel: &Ids, sym: Option<&SymmetryMap>) -> CmdResult<EditResult> {
     let angle = a.float("angle", 180.0);
     let edges = with_mirror(m, sym, sel, K::Edge);
@@ -115,7 +110,6 @@ fn register_history_ops() {
         skip_flags: &[],
         doc,
     };
-    register_op(op("polyQuad", "polyQuadrangulate", "Quadrangulate", K::Face, quad_op, "Joins triangles into quads."));
     register_op(op("polySoftEdge", "polySoftEdge", "Soften/Harden Edges", K::Edge, soft_edge_op, "Softens or hardens edges by angle."));
     register_op(op("polyDuplicateFaces", "polyDuplicateFaces", "Duplicate Faces", K::Face, duplicate_faces_op, "Copies faces into a new shell."));
     register_op(op("polyConnectVertex", "polyConnect", "Connect", K::Vertex, connect_vertex_op, "Connects vertices with edges."));
@@ -233,7 +227,9 @@ pub fn register(c: &mut Commands<Session>) {
 
     c.register(
         Cmd::new("polyQuadrangulate", "Join neighbouring triangles into quads.", |s, a| {
-            edit_selected_op(s, "polyQuad", a, true, None)
+            let mut a2 = a.clone();
+            a2.flags.insert("angle".into(), json!(a.float("maxAngle", 40.0)));
+            edit_selected_op(s, "polyQuad", &a2, true, None)
         })
         .flag(flag("maxAngle", T::Float, json!(40.0), "Largest angle between the two triangles, degrees.").min(0.0).max(180.0)),
     );
@@ -344,7 +340,7 @@ pub fn register(c: &mut Commands<Session>) {
             },
         )
         .positional("objects")
-        .flag(flag("axis", T::String, json!("x"), "x, y or z.").choices(&["x", "y", "z"]))
+        .flag(flag("axis", T::Any, json!("x"), "x, y or z; or 0, 1 or 2 with the reference's other flags."))
         .flag(
             flag("direction", T::String, json!("positive"), "positive (+ to -), negative (- to +) or both.")
                 .choices(&["positive", "negative", "both"]),
