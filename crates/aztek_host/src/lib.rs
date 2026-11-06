@@ -8,6 +8,8 @@ mod gpu;
 pub mod mel;
 #[cfg(feature = "python")]
 mod python;
+#[cfg(feature = "python")]
+mod python_api;
 mod query;
 mod render;
 pub mod tools;

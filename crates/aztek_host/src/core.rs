@@ -66,7 +66,15 @@ impl Core {
     pub fn new() -> Core {
         let mut c = Core { s: Session::new(), log: Vec::new(), log_read: 0, version: 1, current_file: None, preview: Vec::new() };
         register_ui_commands(&mut c.s);
+        #[cfg(feature = "python")]
+        crate::python::register_commands(&mut c.s);
         c
+    }
+
+    /// A core around a session moved here while Python is called back from inside a command: no UI commands of its own.
+    #[cfg(feature = "python")]
+    pub(crate) fn nested(s: Session) -> Core {
+        Core { s, log: Vec::new(), log_read: 0, version: 1, current_file: None, preview: Vec::new() }
     }
 
     pub fn push(&mut self, text: impl Into<String>, kind: LineKind) {
@@ -74,6 +82,10 @@ impl Core {
     }
 
     fn drain_captured(&mut self) {
+        #[cfg(feature = "python")]
+        for (t, k) in crate::python::take_deferred() {
+            self.push(t, k);
+        }
         let lines: Vec<(log::Level, String)> = CAPTURED.lock().map(|mut c| std::mem::take(&mut *c)).unwrap_or_default();
         for (lvl, t) in lines {
             let kind = if lvl == log::Level::Error { LineKind::Error } else { LineKind::Warning };
@@ -364,6 +376,7 @@ impl Core {
     }
 
     pub fn take_log(&mut self) -> Value {
+        self.drain_captured();
         let start = self.log_read.min(self.log.len());
         let lines: Vec<Value> = self.log[start..].iter().map(|l| json!({"text": l.text, "kind": l.kind as i32})).collect();
         self.log_read = self.log.len();
