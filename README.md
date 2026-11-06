@@ -4,6 +4,8 @@ A modelling, UV, rigging and animation application that behaves like Maya. Rust 
 geometry, Vulkan viewport), Qt Widgets shell in C++, embedded Python with `aztek.cmds` and a `maya.cmds` shim.
 PARITY.md has the behaviour target and status.
 
+![Aztek](docs/screenshot.png)
+
 ## Build
 
 Linux:
