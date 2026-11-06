@@ -434,6 +434,8 @@ void TimeSlider::mouseReleaseEvent(QMouseEvent*) {
     moving_ = false;
     move_by_ = 0;
     selecting_ = false;
+    double lo = qMin(range_a_, range_b_), hi = qMax(range_a_, range_b_);
+    ask("timeControl", QJsonObject{{"edit", true}, {"rangeArray", lo != hi ? QJsonArray{lo, hi} : QJsonArray{}}});
     update();
 }
 

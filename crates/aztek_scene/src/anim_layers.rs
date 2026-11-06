@@ -1024,7 +1024,9 @@ fn layers_of_plug(g: &Graph, p: &PlugRef) -> Vec<NodeId> {
 
 fn query(s: &Session, a: &Args) -> CmdResult {
     let g = &s.graph;
-    let layer = layer_arg(g, a)?;
+    // MEL reads the word after -q -at as the flag's value: animLayer -q -at L1 means the layer.
+    let at_value = attr_list(a, "attribute").into_iter().find_map(|n| g.find(&n).ok().flatten().filter(|&id| is_layer(g, id)));
+    let layer = layer_arg(g, a)?.or(at_value);
     let the = || -> CmdResult<NodeId> {
         match layer.or_else(|| base_layer(g)) {
             Some(l) => Ok(l),
@@ -1116,7 +1118,7 @@ fn query(s: &Session, a: &Args) -> CmdResult {
         layer_parent(g, l).map(|p| json!(g.path(p))).unwrap_or(Value::Null)
     } else if queried(a, &["children"]) {
         names(g, layer_children(g, l))
-    } else if queried(a, &["attribute"]) {
+    } else if queried(a, &["attribute"]) || at_value.is_some() {
         let mut out: Vec<String> = Vec::new();
         for b in layer_blends(g, l) {
             for p in split_rotates(g, blend_plugs(g, b)) {

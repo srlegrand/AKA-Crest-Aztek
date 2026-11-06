@@ -122,6 +122,9 @@ pub fn outliner(core: &Core, shapes: bool) -> Value {
 
 /// How the channel box colours a channel: keyed, keyed on this frame, driven by another connection, locked, or "".
 fn channel_state(g: &Graph, p: &PlugRef) -> &'static str {
+    if g.source(p).is_some_and(|x| aztek_scene::anim_filter::is_mute(g, x.node)) {
+        return "muted";
+    }
     if let Some(c) = aztek_scene::anim::curve_of(g, p) {
         let now = aztek_scene::anim::frame(g);
         if g.is_held(p) {
@@ -169,7 +172,11 @@ pub fn anim_curves(core: &Core, arg: &str) -> Value {
                 .map(|i| {
                     let (si, so) = k.slopes(i);
                     let key = &k.keys[i];
-                    json!([key.t, key.v, si, so, key.itt.name(), key.ott.name(), key.breakdown])
+                    // The handles, in frames and value: a third of the tangents.
+                    let f = anim::fps() / 3.0;
+                    let (ix, iy) = k.tangent_xy(i, false);
+                    let (ox, oy) = k.tangent_xy(i, true);
+                    json!([key.t, key.v, si, so, key.itt.name(), key.ott.name(), key.breakdown, ix * f, iy / 3.0, ox * f, oy / 3.0, key.tan_lock, key.weight_lock])
                 })
                 .collect();
             let mut samples = Vec::new();
@@ -180,7 +187,18 @@ pub fn anim_curves(core: &Core, arg: &str) -> Value {
             }
             let a = g.attr(&p);
             let channel = if p.component >= 0 { a.child_names[p.component as usize].clone() } else { a.name.clone() };
-            curves.push(json!({"curve": g.path(c), "channel": channel, "plug": g.plug_name(&p), "component": p.component, "keys": keys, "samples": samples}));
+            // What the buffer holds, sampled the same way.
+            let mut buffer = Vec::new();
+            if let Some(b) = core.s.buffer_curves.get(&c) {
+                let mut held = b.clone();
+                held.weighted = k.weighted;
+                let mut t = start;
+                while !held.keys.is_empty() && t <= end + 1e-9 {
+                    buffer.push(json!([t, held.eval(t, inf(pre), inf(post))]));
+                    t += step;
+                }
+            }
+            curves.push(json!({"curve": g.path(c), "channel": channel, "plug": g.plug_name(&p), "component": p.component, "keys": keys, "samples": samples, "weighted": k.weighted, "buffer": buffer}));
         }
         if !curves.is_empty() {
             out.push(json!({"node": g.path(id), "curves": curves}));
@@ -199,15 +217,20 @@ fn channels(g: &Graph, id: NodeId, all_inputs: bool) -> Vec<Value> {
         if a.flags & (flags::HIDDEN | flags::OUTPUT) != 0 {
             continue;
         }
-        let keyable = a.flags & flags::KEYABLE != 0;
-        let is_vis = a.name == "visibility";
-        if !keyable && !is_vis && !(all_inputs && matches!(a.ty, PlugType::Bool | PlugType::Int | PlugType::Float | PlugType::Enum | PlugType::String)) {
+        // Keyable as this node has it: setAttr -k hides and shows channels.
+        let whole = PlugRef::new(id, i as i32);
+        let vector = a.ty == PlugType::Vec3;
+        let keyable = !vector && aztek_scene::anim::is_keyable(g, &whole);
+        if !vector && !keyable && !(all_inputs && matches!(a.ty, PlugType::Bool | PlugType::Int | PlugType::Float | PlugType::Enum | PlugType::String)) {
             continue;
         }
         let v = n.value(i);
         match (a.ty, v) {
             (PlugType::Vec3, PlugValue::Vec3(v)) => {
                 for k in 0..3 {
+                    if !aztek_scene::anim::is_keyable(g, &PlugRef::component(id, i as i32, k as i32)) {
+                        continue;
+                    }
                     let child = if a.child_names[k].is_empty() { format!("{}{}", a.name, ["X", "Y", "Z"][k]) } else { a.child_names[k].clone() };
                     out.push(json!({
                         "attr": child,

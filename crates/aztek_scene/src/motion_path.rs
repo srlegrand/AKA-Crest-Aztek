@@ -348,7 +348,7 @@ fn apply_path_flags(g: &mut Graph, mp: NodeId, a: &Args) -> CmdResult<()> {
     set_b(g, "inverseFront", INVERSE_FRONT)?;
     set_b(g, "inverseUp", INVERSE_UP)?;
     set_b(g, "bank", BANK)?;
-    for (flag, at) in [("bankScale", BANK_SCALE), ("bankThreshold", BANK_LIMIT)] {
+    for (flag, at) in [("bankScale", BANK_SCALE), ("bankThreshold", BANK_LIMIT), ("bankLimit", BANK_LIMIT)] {
         if let Some(v) = a.get(flag).and_then(Value::as_f64) {
             g.set_value(PlugRef::new(mp, at as i32), PlugValue::Float(v))?;
         }
@@ -452,7 +452,7 @@ fn path_query(g: &mut Graph, mp: NodeId, a: &Args) -> CmdResult {
         json!(n.bool(BANK))
     } else if queried(a, &["bankScale"]) {
         json!(n.float(BANK_SCALE))
-    } else if queried(a, &["bankThreshold"]) {
+    } else if queried(a, &["bankThreshold", "bankLimit"]) {
         json!(n.float(BANK_LIMIT))
     } else {
         json!(g.path(mp))
@@ -742,7 +742,7 @@ pub fn register(c: &mut Commands<Session>) {
         .flag(f("bank", "b", ArgType::Bool, "Lean into turns."))
         .flag(f("bankScale", "bs", ArgType::Float, "How far it leans."))
         .flag(f("bankThreshold", "bt", ArgType::Float, "The most it leans, degrees."))
-        .flag(f("bankLimit", "bl", ArgType::Float, "Accepted for Maya scripts; the limit is set with -bt."))
+        .flag(f("bankLimit", "bl", ArgType::Float, "As -bt."))
         .flag(f("startTimeU", "stu", ArgType::Float, "The frame it starts."))
         .flag(f("endTimeU", "etu", ArgType::Float, "The frame it ends."))
         .flag(f("startU", "su", ArgType::Float, "The U it starts at (the curve's start)."))
