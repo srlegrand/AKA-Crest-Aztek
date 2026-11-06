@@ -1570,7 +1570,8 @@ fn curve_cvs(g: &Graph) -> Vec<(NodeId, NodeId, Vec<DVec3>, Option<usize>)> {
     let mut out = Vec::new();
     for id in g.nodes() {
         let Some(n) = g.node(id) else { continue };
-        if n.bool(DagNode::INTERMEDIATE_OBJECT) || !visible(g, id) {
+        // Types first: only DAG nodes have the intermediate attribute.
+        if !(n.ty().is_a("nurbsCurve") || n.ty().is_a("nurbsSurface")) || n.bool(DagNode::INTERMEDIATE_OBJECT) || !visible(g, id) {
             continue;
         }
         if n.ty().is_a("nurbsCurve") {

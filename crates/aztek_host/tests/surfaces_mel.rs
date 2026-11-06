@@ -34,8 +34,9 @@ fn maya_echoes_run() {
     c.mel("select -r nurbsSphere1; selectType -cv true;");
     assert_eq!(errors(&mut c), Vec::<String>::new());
     assert_eq!(c.s.run("selectMode", json!({})).unwrap(), json!("vertex"));
-    c.mel("selectMode -o;");
-    let _ = errors(&mut c);
+    assert_eq!(c.mel("selectType -q -cv;"), json!(true));
+    assert_eq!(c.mel("selectType -q -polymeshFace;"), json!(false));
+    assert_eq!(errors(&mut c), Vec::<String>::new());
     c.s.run("selectMode", json!({"args": ["object"]})).unwrap();
 
     let r = c.mel("nurbsToPoly -mnd 1 -ch 1 -f 2 -pt 1 -pc 200 -chr 0.9 -ft 0.01 -mel 0.001 -d 0.1 -ut 3 -un 3 -vt 3 -vn 3 -uch 0 -ucr 0 -cht 0.2 -es 0 -ntr 0 -mrt 0 -uss 1 nurbsSphere1;");
