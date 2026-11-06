@@ -131,5 +131,19 @@ and array functions. Multi-use flags read their arity; query mode gives a flag a
 Differs from Maya: unknown procedures and undeclared variables fail when reached, not before the script starts; errors
 carry a line number only for syntax errors; an array of one element converts to a scalar on assignment.
 
-Not yet: weight painting, lattice, wrap, wire, delta mush, spline IK, set driven keys, NURBS curves, the dope sheet,
-the node editor, `.ma` files, the OpenMaya subset.
+NURBS surfaces, as of 06/11/2026: `nurbsSurface` shape, CVs as `surface1.cv[u][v]` (select, move, undo, tweaks on top of
+history), drawn shaded with isoparms and a CV hull in vertex mode, `selectType -cv`, `displaySmoothness` and the 1, 2, 3
+keys. `sphere`, `nurbsCube`, `cylinder`, `cone`, `torus`, `nurbsPlane` with `make*` nodes. `loft`, `revolve`, `extrude`
+and `planar` make NURBS, polygons with `-po 1`; `boundary`, `square`, `singleProfileBirailSurface`, `rebuildSurface`,
+`reverseSurface`, `insertKnotSurface`, `detachSurface`, `attachSurface`, `offsetSurface`, `closeSurface`, `nurbsToPoly`
+(`nurbsTessellate`), `duplicateCurve` for isoparms, `pointOnSurface`, and the `surfaceInfo`, `closestPointOnSurface` and
+`pointOnSurfaceInfo` nodes. Differs from Maya: no trims, so `planar` makes a surface only for a rectangle and otherwise
+polygons with a warning; non-rational, so a sphere is Maya's cubic approximation only; `-ut` and `-tol` on primitives
+are accepted and ignored; `loft` takes degrees 1 to 3; `attachSurface` copies its second surface rather than following
+it. None of this has been compared with a running Maya: the sphere's CV values, which way U runs on `loft` and `extrude`,
+the direction flags' numbering and the bare commands' axis of 1 0 0 are from memory of Maya's files and docs.
+Not yet: `.u[]`, `.v[]`, `.sf[][]` and `.ep` as selectable components, `doubleProfileBirailSurface`, `curveOnSurface`,
+`projectCurve`, `trim`, `bevel`, `bevelPlus`, deformers on surfaces.
+
+Not yet: weight painting, lattice, wrap, wire, delta mush, spline IK, set driven keys, the dope sheet, the node editor,
+`.ma` files, the OpenMaya subset.
