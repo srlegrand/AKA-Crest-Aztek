@@ -88,6 +88,8 @@ impl Session {
         crate::rig::register(&mut s.commands);
         crate::skin::register(&mut s.commands);
         crate::deform::register(&mut s.commands);
+        crate::deform_lattice::register(&mut s.commands);
+        crate::deform_cmds::register(&mut s.commands);
         crate::maya_cmds::register(&mut s.commands);
         crate::maya_core::register(&mut s.commands);
         // Last: history node types take their attributes from the commands registered above.

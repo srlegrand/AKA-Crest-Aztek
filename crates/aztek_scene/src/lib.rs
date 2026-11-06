@@ -8,6 +8,8 @@ pub mod booleans;
 pub mod conform_commands;
 pub mod dag;
 pub mod deform;
+pub mod deform_cmds;
+pub mod deform_lattice;
 pub mod display_layers;
 pub mod duplicate;
 pub mod commands;
