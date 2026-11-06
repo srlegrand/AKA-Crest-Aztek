@@ -74,7 +74,7 @@ if(WIN32)
   # What the Rust standard library and its crates link on Windows (cargo rustc --print native-static-libs).
   target_link_libraries(aztek PRIVATE ws2_32 userenv bcrypt ntdll advapi32 user32 kernel32 ole32 oleaut32 shell32
                         synchronization dbghelp psapi pdh powrprof iphlpapi netapi32 secur32 crypt32 ncrypt
-                        wbemuuid propsys uuid winmm gdi32 comdlg32 version)
+                        wbemuuid propsys uuid winmm gdi32 comdlg32 version runtimeobject)
 else()
   target_link_libraries(aztek PRIVATE dl pthread m)
 endif()
