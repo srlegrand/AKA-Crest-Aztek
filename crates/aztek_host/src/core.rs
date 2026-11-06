@@ -66,7 +66,15 @@ impl Core {
     pub fn new() -> Core {
         let mut c = Core { s: Session::new(), log: Vec::new(), log_read: 0, version: 1, current_file: None, preview: Vec::new() };
         register_ui_commands(&mut c.s);
+        c.ensure_defaults();
         c
+    }
+
+    /// A new scene has the default cameras and sets, as Maya's does. Cheap when they're there.
+    pub fn ensure_defaults(&mut self) {
+        if !self.s.graph.undo_stack().can_undo() {
+            aztek_scene::cameras::make_defaults(&mut self.s.graph);
+        }
     }
 
     pub fn push(&mut self, text: impl Into<String>, kind: LineKind) {
@@ -102,6 +110,7 @@ impl Core {
     pub fn exec_quiet(&mut self, name: &str, call: Value, src: CallSource) -> Result<Value, String> {
         let (name, call) = pivot_move(name, call);
         let r = execute(&mut self.s, &name, &call, src);
+        self.ensure_defaults();
         self.version += 1;
         self.drain_captured();
         match r {
@@ -228,6 +237,7 @@ impl Core {
         let before = self.s.graph.undo_stack().newest_id();
         let (name, call) = pivot_move(name, call);
         let r = execute(&mut self.s, &name, &call, CallSource::Script);
+        self.ensure_defaults();
         let after = self.s.graph.undo_stack().newest_id();
         if after != before {
             self.preview.push(after);
@@ -390,7 +400,11 @@ impl Core {
         let text = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
         let doc: Value = serde_json::from_str(&text).map_err(|e| format!("{path}: {e}"))?;
         let _ = execute(&mut self.s, "newScene", &json!({}), CallSource::Script);
+        // The file brings its own cameras and sets; older files get them added below.
+        self.s.graph.clear();
         let warnings = aztek_scene::scene_file::deserialize(&mut self.s.graph, &doc).map_err(|e| format!("{path}: {e}"))?;
+        self.s.graph.undo_stack_mut().clear();
+        aztek_scene::cameras::make_defaults(&mut self.s.graph);
         for w in warnings {
             self.push(format!("// Warning: {w} //"), LineKind::Warning);
         }
@@ -420,6 +434,7 @@ static UI_REQUESTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 pub const UI_COMMANDS: &[(&str, &str)] = &[
     ("GraphEditor", "Open the Graph Editor."),
+    ("NodeEditorWindow", "Open the Node Editor."),
     ("DopeSheetEditor", "Open the Dope Sheet."),
     ("SetDrivenKeyOptions", "Open the Set Driven Key window."),
     ("ScriptEditor", "Open the Script Editor."),

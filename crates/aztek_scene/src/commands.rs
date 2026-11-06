@@ -539,6 +539,16 @@ fn register_scene(c: &mut Commands<Session>) {
 
     c.register(
         Cmd::new("delete", "Delete objects (and their children). Defaults to the selection.", |s, a| {
+            // Maya refuses to delete the default cameras.
+            if !a.bool("constructionHistory") {
+                for n in objects(s, a) {
+                    if let Ok(Some(id)) = s.graph.find(&n) {
+                        if crate::cameras::is_default_camera(&s.graph, id) {
+                            fail!("delete: {n} is a default camera and can't be deleted");
+                        }
+                    }
+                }
+            }
             let ids = ids_of(&s.graph, &objects(s, a))?;
             let g = &mut s.graph;
             if a.bool("constructionHistory") {

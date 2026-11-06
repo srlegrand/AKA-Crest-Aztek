@@ -6,6 +6,7 @@ pub mod anim_edit;
 pub mod attr_defs;
 pub mod auto_bevel;
 pub mod booleans;
+pub mod cameras;
 pub mod conform_commands;
 pub mod curves;
 pub mod dag;

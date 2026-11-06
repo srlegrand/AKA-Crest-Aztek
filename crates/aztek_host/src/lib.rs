@@ -373,7 +373,7 @@ pub extern "C" fn aztek_view_mouse(id: i32, kind: i32, button: i32, x: f64, y: f
 pub extern "C" fn aztek_view_wheel(id: i32, delta: f64) {
     with(|h| {
         if let Some(v) = h.views.get_mut(&id) {
-            v.wheel(delta);
+            v.wheel(&mut h.core, delta);
         }
     })
 }

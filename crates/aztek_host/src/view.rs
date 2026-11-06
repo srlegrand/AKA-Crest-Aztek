@@ -36,6 +36,9 @@ pub struct View {
     nav: Option<(i32, DVec2)>,
     marquee: Option<DVec2>,
     joint_press: Option<DVec2>,
+    /// The camera node this view looks through, by name, and what was last read from or written to it.
+    pub cam_node: String,
+    cam_sync: Option<[f64; 9]>,
     /// The modelling tools' state.
     pub ts: crate::tools::ToolState,
     /// A paint stroke in progress.
@@ -66,6 +69,8 @@ impl View {
             nav: None,
             marquee: None,
             joint_press: None,
+            cam_node: kind.name().to_string(),
+            cam_sync: None,
             ts: Default::default(),
             stroke: None,
             brush_adjust: false,
@@ -103,6 +108,7 @@ impl View {
             self.needs_redraw = true;
             return;
         };
+        self.read_camera(core);
         let items = gather(&mut core.s.graph);
         self.vp.show_grid = self.show_grid;
         self.vp.draw(&mut self.gpu, &self.r, &mut core.s, &items, self.dpr);
@@ -156,7 +162,7 @@ impl View {
             }
         }
         // Camera name, bottom centre.
-        let name = self.vp.cam.kind.name();
+        let name = self.cam_node.as_str();
         let size = 10.0 * s;
         let tw = font::width(name, size);
         for (a, b) in font::strokes(name, DVec2::new(w * 0.5 - tw * 0.5, h - 12.0 * s), size) {
@@ -182,6 +188,73 @@ impl View {
 
     // -----------------------------------------------------------------------------------------------------------------
     // Mouse
+
+    fn camera_state(&self) -> [f64; 9] {
+        let c = &self.vp.cam;
+        let eye = c.eye();
+        [eye.x, eye.y, eye.z, c.yaw, c.pitch, c.distance, c.ortho_width, c.hfov, c.orthographic as i32 as f64]
+    }
+
+    /// Follows the camera node when a script moved it.
+    fn read_camera(&mut self, core: &mut Core) {
+        use aztek_scene::cameras as cam;
+        let g = &mut core.s.graph;
+        let Ok(Some(id)) = g.find(&self.cam_node) else { return };
+        let Some(sh) = cam::shape_of(g, id) else { return };
+        g.evaluate();
+        let tr = aztek_scene::dag::transform_of(g, sh);
+        let w = aztek_scene::rig::world(g, tr);
+        let d = g.node(sh).unwrap().data();
+        let eye = w.w_axis.truncate();
+        let z = w.z_axis.truncate().normalize_or_zero();
+        let fl = d.float(cam::FOCAL_LENGTH);
+        let hfa = d.float(cam::H_APERTURE);
+        let hfov = (2.0 * (hfa * 25.4 * 0.5 / fl.max(1e-6)).atan()).to_degrees();
+        let (ow, coi, ortho) = (d.float(cam::ORTHO_WIDTH), d.float(cam::COI).max(1e-3), d.bool(cam::ORTHOGRAPHIC));
+        let yaw = z.x.atan2(z.z).to_degrees();
+        let pitch = z.y.clamp(-1.0, 1.0).asin().to_degrees();
+        let state = [eye.x, eye.y, eye.z, yaw, pitch, coi, ow, hfov, ortho as i32 as f64];
+        let same = self.cam_sync.is_some_and(|s| s.iter().zip(&state).all(|(a, b)| (a - b).abs() < 1e-6));
+        if same {
+            return;
+        }
+        self.cam_sync = Some(state);
+        let c = &mut self.vp.cam;
+        c.yaw = yaw;
+        c.pitch = pitch;
+        c.distance = coi;
+        c.ortho_width = ow;
+        c.hfov = hfov;
+        c.orthographic = ortho;
+        c.coi = eye - c.dir_to_eye() * coi;
+    }
+
+    /// Writes what the mouse did to the view back to the camera node. Not undoable, as Maya's default.
+    pub fn write_camera(&mut self, core: &mut Core) {
+        use aztek_scene::cameras as cam;
+        use aztek_scene::plug::{PlugRef, PlugValue};
+        use aztek_scene::transform::Transform;
+        let g = &mut core.s.graph;
+        let Ok(Some(id)) = g.find(&self.cam_node) else { return };
+        let Some(sh) = cam::shape_of(g, id) else { return };
+        let tr = aztek_scene::dag::transform_of(g, sh);
+        let (eye, yaw, pitch, dist, ow, ortho) = {
+            let c = &self.vp.cam;
+            (c.eye(), c.yaw, c.pitch, c.distance, c.ortho_width, c.orthographic)
+        };
+        // Driven or locked cameras keep to what drives them.
+        g.without_undo(|g| {
+            let _ = g.set_value(PlugRef::new(tr, Transform::TRANSLATE as i32), PlugValue::Vec3(eye));
+            let _ = g.set_value(PlugRef::new(tr, Transform::ROTATE as i32), PlugValue::Vec3(cam::rotate_for(yaw, pitch)));
+            let _ = g.set_value(PlugRef::new(sh, cam::COI as i32), PlugValue::Float(dist));
+            if ortho {
+                let _ = g.set_value(PlugRef::new(sh, cam::ORTHO_WIDTH as i32), PlugValue::Float(ow));
+            }
+        });
+        // What's written is what's read back, so the next read leaves the view alone.
+        self.cam_sync = None;
+        self.read_camera(core);
+    }
 
     /// kind: 0 press, 1 move, 2 release. button: 1 left, 2 middle, 3 right (0 on moves). buttons: held, bit per button.
     /// Returns whether the view should redraw.
@@ -276,6 +349,7 @@ impl View {
                         _ => self.vp.cam.dolly((d.x + d.y) / self.dpr),
                     }
                     self.nav = Some((b, px));
+                    self.write_camera(core);
                     return true;
                 }
                 if let Some((start, radius)) = self.brush_drag {
@@ -410,8 +484,9 @@ impl View {
         core.version += 1;
     }
 
-    pub fn wheel(&mut self, delta: f64) {
+    pub fn wheel(&mut self, core: &mut Core, delta: f64) {
         self.vp.cam.dolly(delta * 0.5);
+        self.write_camera(core);
     }
 
     pub fn set(&mut self, core: &mut Core, key: &str, v: &Value) {
@@ -444,18 +519,25 @@ impl View {
             "wireOnShaded" => self.vp.wire_on_shaded = v.as_bool().unwrap_or(false),
             "grid" => self.show_grid = v.as_bool().unwrap_or(true),
             "camera" => {
-                if let Some(k) = v.as_str().and_then(CamKind::from_name) {
-                    self.vp.cam = crate::camera::Camera::new(k);
-                    self.vp.reset_grid(&mut self.gpu);
+                if let Some(name) = v.as_str() {
+                    if let Some(k) = CamKind::from_name(name) {
+                        self.vp.cam = crate::camera::Camera::new(k);
+                        self.vp.reset_grid(&mut self.gpu);
+                    }
+                    self.cam_node = name.to_string();
+                    self.cam_sync = None;
+                    self.read_camera(core);
                 }
             }
             "frame" => {
                 let items = gather(&mut core.s.graph);
                 self.vp.frame(&mut core.s, &items, v.as_str() == Some("all"));
+                self.write_camera(core);
             }
             "home" => {
                 let k = self.vp.cam.kind;
                 self.vp.cam = crate::camera::Camera::new(k);
+                self.write_camera(core);
             }
             "dpr" => self.dpr = v.as_f64().unwrap_or(1.0),
             "background" => {
@@ -499,7 +581,7 @@ impl View {
 
     pub fn get(&self, key: &str) -> Value {
         match key {
-            "camera" => json!(self.vp.cam.kind.name()),
+            "camera" => json!(self.cam_node),
             "tool" => json!(format!("{:?}", self.vp.tool).to_lowercase()),
             "wireframe" => json!(self.vp.wireframe),
             "wireOnShaded" => json!(self.vp.wire_on_shaded),

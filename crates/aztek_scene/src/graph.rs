@@ -715,6 +715,11 @@ impl Graph {
         r
     }
 
+    /// Runs edits the undo stack doesn't hear about: a view's camera following the mouse, the default nodes of a new scene.
+    pub fn without_undo<R>(&mut self, f: impl FnOnce(&mut Graph) -> R) -> R {
+        self.with_undo(|_, g| f(g))
+    }
+
     pub fn undo(&mut self) -> bool {
         self.with_undo(|s, g| s.undo(g))
     }
