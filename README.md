@@ -1,10 +1,42 @@
-# Aztek
+<p align="center"><img src="docs/logo.png" alt="Aztek" width="420"></p>
+
+[![Build](https://github.com/srlegrand/AKA-Crest-Aztek/actions/workflows/build.yml/badge.svg)](https://github.com/srlegrand/AKA-Crest-Aztek/actions/workflows/build.yml)
 
 A modelling, UV, rigging and animation application that behaves like Maya. Rust core (scene graph, commands,
 geometry, Vulkan viewport), Qt Widgets shell in C++, embedded Python with `aztek.cmds` and a `maya.cmds` shim.
 PARITY.md has the behaviour target and status.
 
 ![Aztek](docs/screenshot.png)
+
+## Screens
+
+Four views, Space to toggle:
+
+![Four views](docs/four-view.png)
+
+Component editing with construction history (`polyExtrudeFace1` in the channel box's inputs) and the move manipulator:
+
+![Modelling](docs/modelling.png)
+
+Marking menus on the right button:
+
+![Marking menu](docs/marking-menu.png)
+
+Soft selection (B), falloff shown on the vertices:
+
+![Soft selection](docs/soft-select.png)
+
+UV Editor: automatic projection and layout:
+
+![UV Editor](docs/uv-editor.png)
+
+Graph Editor, with keyed channels in the channel box and key ticks on the time slider:
+
+![Graph Editor](docs/graph-editor.png)
+
+Joints, smooth skin and an RP IK handle:
+
+![Rigging](docs/rigging.png)
 
 ## Build
 
@@ -13,7 +45,7 @@ Linux:
     ./build.sh --deps --run
 
 `--deps` installs the build dependencies (apt, dnf or pacman) and only needs running once; `--run` starts Aztek
-afterwards; `--debug` builds into `build-debug/`. Rust comes from [rustup](https://rustup.rs). An active conda
+afterwards; `--install` puts it in `~/.local` with a menu entry and icon; `--debug` builds into `build-debug/`. Rust comes from [rustup](https://rustup.rs). An active conda
 environment is fine: the script builds against the system Python and ignores conda's libraries.
 
 Windows, from PowerShell or a command prompt:

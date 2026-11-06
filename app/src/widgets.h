@@ -14,7 +14,14 @@ class QLabel;
 class QDoubleSpinBox;
 class QSpinBox;
 
+class QPixmap;
+
 namespace az {
+
+// The logo on a dark panel with the version: the splash screen and the About box.
+QPixmap splash_pixmap();
+void show_about(QWidget* parent);
+
 
 // A command's settings, built from its flags and remembered between sessions.
 class OptionsDialog : public QDialog {

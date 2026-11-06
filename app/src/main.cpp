@@ -3,6 +3,9 @@
 #include "mainwindow.h"
 
 #include <QApplication>
+#include <QIcon>
+#include <QSplashScreen>
+#include "widgets.h"
 #include <QCommandLineParser>
 #include <QFile>
 #include <QPalette>
@@ -47,6 +50,8 @@ int main(int argc, char** argv) {
     QApplication app(argc, argv);
     QApplication::setOrganizationName("Aztek");
     QApplication::setApplicationName("Aztek");
+    QApplication::setWindowIcon(QIcon(":/aztek-icon.png"));
+    QGuiApplication::setDesktopFileName("aztek");
     apply_style(app);
 
     QCommandLineParser args;
@@ -59,8 +64,20 @@ int main(int argc, char** argv) {
     args.addPositionalArgument("scene", "Scene to open.");
     args.process(app);
 
+    // The splash while the core and the viewports start, as Maya shows one.
+    QSplashScreen* splash = nullptr;
+    if (!args.isSet(shot)) {
+        splash = new QSplashScreen(az::splash_pixmap());
+        splash->show();
+        splash->showMessage("Starting the core...", Qt::AlignBottom | Qt::AlignLeft, QColor(170, 170, 170));
+        app.processEvents();
+    }
     az::MainWindow w;
     w.show();
+    if (splash) {
+        splash->finish(&w);
+        splash->deleteLater();
+    }
     if (!args.positionalArguments().isEmpty()) w.open_file(args.positionalArguments().first());
     w.run_startup(args.value(script), args.value(shot));
     return app.exec();

@@ -54,16 +54,35 @@ add_executable(aztek WIN32
   app/src/mainwindow.cpp
   app/src/grapheditor.cpp
   app/src/uveditor.cpp
-  app/src/resources.qrc)
+  app/src/resources.qrc
+  $<$<PLATFORM_ID:Windows>:app/icons/aztek.rc>)
 add_dependencies(aztek aztek_host_build)
+file(STRINGS ${CMAKE_SOURCE_DIR}/Cargo.toml AZTEK_VERSION_LINE REGEX "^version *= *\"")
+string(REGEX REPLACE "^version *= *\"([^\"]*)\".*" "\\1" AZTEK_VERSION "${AZTEK_VERSION_LINE}")
+target_compile_definitions(aztek PRIVATE AZTEK_VERSION="${AZTEK_VERSION}")
 target_include_directories(aztek PRIVATE app/src)
 target_link_libraries(aztek PRIVATE Qt6::Widgets ${AZTEK_HOST_LIB})
 if(AZTEK_PYTHON)
   target_link_libraries(aztek PRIVATE Python3::Python)
   target_compile_definitions(aztek PRIVATE AZTEK_HAS_PYTHON=1)
 endif()
+if(MSVC)
+  target_compile_options(aztek PRIVATE /utf-8 /permissive-)
+  target_compile_definitions(aztek PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+endif()
 if(WIN32)
-  target_link_libraries(aztek PRIVATE ws2_32 userenv bcrypt ntdll advapi32 user32 kernel32 ole32 shell32)
+  # What the Rust standard library and its crates link on Windows (cargo rustc --print native-static-libs).
+  target_link_libraries(aztek PRIVATE ws2_32 userenv bcrypt ntdll advapi32 user32 kernel32 ole32 oleaut32 shell32
+                        synchronization dbghelp psapi pdh powrprof iphlpapi netapi32 secur32 crypt32 ncrypt
+                        wbemuuid propsys uuid winmm gdi32 comdlg32 version)
 else()
   target_link_libraries(aztek PRIVATE dl pthread m)
+endif()
+
+# Install: the binary, and on Linux its desktop entry and icon (cmake --install build --prefix ~/.local).
+install(TARGETS aztek RUNTIME DESTINATION bin)
+if(UNIX AND NOT APPLE)
+  install(FILES app/aztek.desktop DESTINATION share/applications)
+  install(FILES app/icons/aztek-icon.svg DESTINATION share/icons/hicolor/scalable/apps RENAME aztek.svg)
+  install(FILES app/icons/aztek-icon.png DESTINATION share/icons/hicolor/512x512/apps RENAME aztek.png)
 endif()

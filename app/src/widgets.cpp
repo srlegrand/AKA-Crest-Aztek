@@ -14,6 +14,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QKeyEvent>
+#include <QImage>
 #include <QLabel>
 #include <QListWidget>
 #include <QMouseEvent>
@@ -26,7 +27,48 @@
 #include <QVBoxLayout>
 #include <cmath>
 
+#ifndef AZTEK_VERSION
+#define AZTEK_VERSION "dev"
+#endif
+
 namespace az {
+
+QPixmap splash_pixmap() {
+    QPixmap pm(640, 340);
+    pm.fill(QColor(0, 0, 0));
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::SmoothPixmapTransform);
+    QImage logo(":/aztek-logo.png");
+    QRect r(70, 20, 500, 253);
+    p.drawImage(r, logo);
+    p.setPen(QColor(150, 150, 150));
+    QFont f = p.font();
+    f.setPointSize(9);
+    p.setFont(f);
+    p.drawText(QRect(0, 280, 620, 20), Qt::AlignRight, QString("Version %1").arg(AZTEK_VERSION));
+    return pm;
+}
+
+void show_about(QWidget* parent) {
+    QDialog d(parent);
+    d.setWindowTitle("About Aztek");
+    auto* v = new QVBoxLayout(&d);
+    auto* img = new QLabel(&d);
+    img->setPixmap(splash_pixmap().scaledToWidth(480, Qt::SmoothTransformation));
+    v->addWidget(img);
+    auto* text = new QLabel(QString("Aztek %1<br>Modelling, UVs, rigging and animation.<br>Rust core, Qt interface, Vulkan viewport.<br><br>"
+                                    "<a href=\"https://github.com/srlegrand/AKA-Crest-Aztek\" style=\"color:#7fb4d6\">github.com/srlegrand/AKA-Crest-Aztek</a>")
+                                .arg(AZTEK_VERSION),
+                            &d);
+    text->setOpenExternalLinks(true);
+    text->setTextFormat(Qt::RichText);
+    v->addWidget(text);
+    auto* ok = new QDialogButtonBox(QDialogButtonBox::Ok, &d);
+    QObject::connect(ok, &QDialogButtonBox::accepted, &d, &QDialog::accept);
+    v->addWidget(ok);
+    d.exec();
+}
+
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Option boxes

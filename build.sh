@@ -3,15 +3,17 @@
 #   --deps   install the build dependencies first (apt, dnf or pacman)
 #   --debug  debug build in build-debug/
 #   --run    start Aztek when the build is done
+#   --install  install to ~/.local: the binary, a menu entry and the icon
 set -euo pipefail
 cd "$(dirname "$0")"
 
-DEPS=0 RUN=0 TYPE=Release DIR=build
+DEPS=0 RUN=0 INSTALL=0 TYPE=Release DIR=build
 for a in "$@"; do
   case "$a" in
     --deps) DEPS=1 ;;
     --debug) TYPE=Debug DIR=build-debug ;;
     --run) RUN=1 ;;
+    --install) INSTALL=1 ;;
     *) echo "unknown option $a"; exit 1 ;;
   esac
 done
@@ -45,6 +47,12 @@ fi
 cmake -B "$DIR" -G Ninja -DCMAKE_BUILD_TYPE="$TYPE" "${EXTRA[@]}"
 cmake --build "$DIR"
 echo "Built $DIR/aztek"
+
+if [ "$INSTALL" = 1 ]; then
+  cmake --install "$DIR" --prefix "$HOME/.local"
+  command -v update-desktop-database >/dev/null && update-desktop-database "$HOME/.local/share/applications" || true
+  echo "Installed to $HOME/.local (bin/aztek, menu entry, icon)"
+fi
 
 if [ "$RUN" = 1 ]; then
   exec "$DIR/aztek"

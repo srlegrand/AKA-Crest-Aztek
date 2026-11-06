@@ -563,9 +563,7 @@ void MainWindow::build_menu_set(const QString& set) {
         set_menus_.append(m);
     }
     auto* help = new QMenu("Help", this);
-    help->addAction("About Aztek", [this] {
-        QMessageBox::about(this, "About Aztek", "Aztek\nModelling, UVs and rigging.\nRust core, Qt interface, Vulkan viewport.");
-    });
+    help->addAction("About Aztek", [this] { show_about(this); });
     mb->addMenu(help);
     set_menus_.append(help);
     if (hotbox_) hotbox_->deleteLater();
@@ -1102,16 +1100,25 @@ void MainWindow::show_preferences() {
 }
 
 void MainWindow::show_uv_editor() {
-    if (!uv_window_) uv_window_ = new UvEditor(this);
-    uv_window_->setWindowFlag(Qt::Window);
+    if (!uv_window_) {
+        uv_window_ = new UvEditor(this);
+        uv_window_->setWindowFlag(Qt::Window);
+        // Over the right of the main window, as Maya opens its editors over the panels.
+        QRect g = geometry();
+        uv_window_->move(g.x() + g.width() - uv_window_->width() - 340, g.y() + 140);
+    }
     uv_window_->show();
     uv_window_->raise();
     static_cast<UvEditor*>(uv_window_)->refresh();
 }
 
 void MainWindow::show_graph_editor() {
-    if (!graph_window_) graph_window_ = new GraphEditor(this);
-    graph_window_->setWindowFlag(Qt::Window);
+    if (!graph_window_) {
+        graph_window_ = new GraphEditor(this);
+        graph_window_->setWindowFlag(Qt::Window);
+        QRect g = geometry();
+        graph_window_->move(g.x() + (g.width() - graph_window_->width()) / 2, g.y() + g.height() - graph_window_->height() - 140);
+    }
     graph_window_->show();
     graph_window_->raise();
     static_cast<GraphEditor*>(graph_window_)->refresh();
