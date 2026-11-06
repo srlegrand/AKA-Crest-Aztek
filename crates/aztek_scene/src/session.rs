@@ -100,6 +100,7 @@ impl Session {
         crate::curves::register(&mut s.commands);
         crate::maya_cmds::register(&mut s.commands);
         crate::maya_core::register(&mut s.commands);
+        crate::expression::register(&mut s.commands);
         // Last: history node types take their attributes from the commands registered above.
         crate::history::register(&mut s.commands);
         crate::instancing::install(&mut s.graph);

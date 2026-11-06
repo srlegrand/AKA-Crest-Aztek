@@ -198,6 +198,57 @@ pub trait TransformBehavior {
     }
 }
 
+fn safe_inverse(m: &DMat4) -> DMat4 {
+    if m.determinant().abs() < 1e-300 {
+        DMat4::IDENTITY
+    } else {
+        m.inverse()
+    }
+}
+
+fn out_matrix(name: &str, short: &str, doc: &str) -> AttrDef {
+    AttrDef {
+        name: name.into(),
+        short_name: short.into(),
+        ty: PlugType::Matrix,
+        default_value: PlugValue::Matrix(DMat4::IDENTITY),
+        flags: flags::OUTPUT | flags::HIDDEN,
+        doc: doc.into(),
+        ..Default::default()
+    }
+}
+
+fn bool_in(name: &str, short: &str, default: bool, doc: &str) -> AttrDef {
+    AttrDef {
+        name: name.into(),
+        short_name: short.into(),
+        ty: PlugType::Bool,
+        default_value: PlugValue::Bool(default),
+        flags: IN_STORE,
+        doc: doc.into(),
+        ..Default::default()
+    }
+}
+
+fn vec3_named(name: &str, short: &str, default: DVec3, fl: u32, children: [&str; 3], child_short: [&str; 3], doc: &str) -> AttrDef {
+    AttrDef {
+        name: name.into(),
+        short_name: short.into(),
+        ty: PlugType::Vec3,
+        default_value: PlugValue::Vec3(default),
+        flags: fl,
+        child_names: children.map(str::to_string),
+        child_short: child_short.map(str::to_string),
+        doc: doc.into(),
+        ..Default::default()
+    }
+}
+
+/// A bounding box attr: answered by getAttr from the geometry, so it costs nothing while nobody asks.
+fn vec3_out(name: &str, short: &str, children: [&str; 3], child_short: [&str; 3]) -> AttrDef {
+    vec3_named(name, short, DVec3::ZERO, flags::OUTPUT | flags::HIDDEN, children, child_short, "")
+}
+
 /// Maya's dagNode: what every node in the hierarchy has, transforms and shapes alike. Abstract.
 #[derive(Clone, Default)]
 pub struct DagNode;
@@ -213,7 +264,34 @@ impl DagNode {
     pub const OVERRIDE_COLOR: usize = 7;
     pub const OVERRIDE_RGB_COLORS: usize = 8;
     pub const OVERRIDE_COLOR_RGB: usize = 9;
-    pub const COUNT: usize = 10;
+    pub const WORLD_INVERSE_MATRIX: usize = 10;
+    pub const PARENT_INVERSE_MATRIX: usize = 11;
+    pub const TEMPLATE: usize = 12;
+    pub const LOD_VISIBILITY: usize = 13;
+    pub const HIDDEN_IN_OUTLINER: usize = 14;
+    pub const BOUNDING_BOX_MIN: usize = 15;
+    pub const BOUNDING_BOX_MAX: usize = 16;
+    pub const BOUNDING_BOX_SIZE: usize = 17;
+    pub const CENTER: usize = 18;
+    pub const COUNT: usize = 19;
+
+    /// Outputs every DAG node has that follow from its matrices. `parent` is the parent's world matrix, without
+    /// offsetParentMatrix.
+    pub fn compute_derived(d: &mut NodeData, parent: &DMat4, transform: bool) {
+        let world = d.matrix(Self::WORLD_MATRIX);
+        d.set_output(Self::WORLD_INVERSE_MATRIX, safe_inverse(&world));
+        d.set_output(Self::PARENT_INVERSE_MATRIX, safe_inverse(parent));
+        if transform {
+            let local = d.matrix(Transform::MATRIX);
+            d.set_output(Transform::INVERSE_MATRIX, safe_inverse(&local));
+            d.set_output(Transform::XFORM_MATRIX, local);
+            let rot = euler_to_matrix(d.vec3(Transform::ROTATE), RotateOrder::from_index(d.int(Transform::ROTATE_ORDER)));
+            let q = glam::DQuat::from_mat4(&rot);
+            for (i, v) in [q.x, q.y, q.z, q.w].into_iter().enumerate() {
+                d.set_output(Transform::ROTATE_QUATERNION + i, v);
+            }
+        }
+    }
 
     pub fn make_type() -> NodeType {
         let keyable = flags::INPUT | flags::STORABLE | flags::KEYABLE;
@@ -307,6 +385,15 @@ impl DagNode {
                     ..Default::default()
                 },
                 crate::node::vec3_attr("overrideColorRGB", "ovrgb", DVec3::ZERO, IN_STORE, "The override colour, 0 to 1 per channel."),
+                out_matrix("worldInverseMatrix", "wim", "Inverse of worldMatrix."),
+                out_matrix("parentInverseMatrix", "pim", "Inverse of the parent's world matrix."),
+                bool_in("template", "tmp", false, "Drawn grey and not pickable."),
+                bool_in("lodVisibility", "lodv", true, "Level of detail visibility."),
+                bool_in("hiddenInOutliner", "hio", false, "Left out of the Outliner."),
+                vec3_out("boundingBoxMin", "bbmn", ["boundingBoxMinX", "boundingBoxMinY", "boundingBoxMinZ"], ["bbnx", "bbny", "bbnz"]),
+                vec3_out("boundingBoxMax", "bbmx", ["boundingBoxMaxX", "boundingBoxMaxY", "boundingBoxMaxZ"], ["bbxx", "bbxy", "bbxz"]),
+                vec3_out("boundingBoxSize", "bbsi", ["boundingBoxSizeX", "boundingBoxSizeY", "boundingBoxSizeZ"], ["bbsx", "bbsy", "bbsz"]),
+                vec3_out("center", "c", ["centerX", "centerY", "centerZ"], ["cx", "cy", "cz"]),
             ],
             ..Default::default()
         }
@@ -337,6 +424,32 @@ impl Shape {
     }
 }
 
+fn quat_child(name: &str, short: &str) -> AttrDef {
+    AttrDef {
+        name: name.into(),
+        short_name: short.into(),
+        flags: flags::OUTPUT | flags::HIDDEN,
+        category: "rotateQuaternion".into(),
+        ..Default::default()
+    }
+}
+
+fn limit(name: &str, short: &str, default: f64, children: [&str; 3], child_short: [&str; 3]) -> AttrDef {
+    vec3_named(name, short, DVec3::splat(default), IN_STORE | flags::HIDDEN, children, child_short, "A transform limit; see transformLimits.")
+}
+
+/// Maya's shear in column vector form: x += xy * y + xz * z, y += yz * z.
+pub fn shear_matrix(s: DVec3) -> DMat4 {
+    if s == DVec3::ZERO {
+        return DMat4::IDENTITY;
+    }
+    let mut m = DMat4::IDENTITY;
+    m.y_axis.x = s.x;
+    m.z_axis.x = s.y;
+    m.z_axis.y = s.z;
+    m
+}
+
 #[derive(Clone, Default)]
 pub struct Transform;
 
@@ -360,7 +473,43 @@ impl Transform {
     pub const ROTATION_INTERPOLATION: usize = DagNode::COUNT + 11;
     pub const SPACE: usize = DagNode::COUNT + 12;
     pub const SPACE_FRAMES: usize = DagNode::COUNT + 13;
-    pub const COUNT: usize = DagNode::COUNT + 14;
+    pub const OFFSET_PARENT_MATRIX: usize = DagNode::COUNT + 14;
+    pub const SHEAR: usize = DagNode::COUNT + 15;
+    pub const INVERSE_MATRIX: usize = DagNode::COUNT + 16;
+    pub const XFORM_MATRIX: usize = DagNode::COUNT + 17;
+    /// rotateQuaternionX, Y, Z, W: four floats.
+    pub const ROTATE_QUATERNION: usize = DagNode::COUNT + 18;
+    pub const INHERITS_TRANSFORM: usize = DagNode::COUNT + 22;
+    pub const DISPLAY_HANDLE: usize = DagNode::COUNT + 23;
+    pub const DISPLAY_ROTATE_PIVOT: usize = DagNode::COUNT + 24;
+    pub const DISPLAY_SCALE_PIVOT: usize = DagNode::COUNT + 25;
+    pub const DISPLAY_LOCAL_AXIS: usize = DagNode::COUNT + 26;
+    pub const SELECT_HANDLE: usize = DagNode::COUNT + 27;
+    /// Min, max, min enable, max enable for translate, then rotate, then scale: twelve Vec3s.
+    pub const LIMITS: usize = DagNode::COUNT + 28;
+    pub const COUNT: usize = DagNode::COUNT + 40;
+
+    /// Holds translate, rotate and scale inside their enabled limits, as they are pulled.
+    pub fn apply_limits(d: &mut NodeData) {
+        for (k, attr) in [Self::TRANSLATE, Self::ROTATE, Self::SCALE].into_iter().enumerate() {
+            let base = Self::LIMITS + k * 4;
+            let (lo_on, hi_on) = (d.vec3(base + 2), d.vec3(base + 3));
+            if lo_on == DVec3::ZERO && hi_on == DVec3::ZERO {
+                continue;
+            }
+            let (lo, hi) = (d.vec3(base), d.vec3(base + 1));
+            let mut v = d.vec3(attr);
+            for c in 0..3 {
+                if lo_on[c] != 0.0 && v[c] < lo[c] {
+                    v[c] = lo[c];
+                }
+                if hi_on[c] != 0.0 && v[c] > hi[c] {
+                    v[c] = hi[c];
+                }
+            }
+            d.values[attr] = PlugValue::Vec3(v);
+        }
+    }
 
     /// Maya's pivot model, column vectors:
     /// T * Rpt * Rp * Pre * R * Ra * Rp^-1 * Spt * Sp * S * Sp^-1  (Pre = pre_rotation, Ra = rotateAxis)
@@ -401,6 +550,7 @@ impl Transform {
             * tr(-rp)
             * tr(d.vec3(Self::SCALE_PIVOT_TRANSLATE))
             * tr(sp)
+            * shear_matrix(d.vec3(Self::SHEAR))
             * DMat4::from_scale(d.vec3(Self::SCALE))
             * tr(-sp);
         (before, after)
@@ -522,6 +672,40 @@ impl Transform {
                     doc: "Every space's world frame, from the node's spaceSwitch.".into(),
                     ..Default::default()
                 },
+                AttrDef {
+                    name: "offsetParentMatrix".into(),
+                    short_name: "opm".into(),
+                    ty: PlugType::Matrix,
+                    default_value: PlugValue::Matrix(DMat4::IDENTITY),
+                    flags: IN_STORE,
+                    doc: "Sits between the parent and the local matrix: world = parent * offsetParentMatrix * matrix.".into(),
+                    ..Default::default()
+                },
+                vec3_named("shear", "sh", DVec3::ZERO, keyable & !flags::KEYABLE, ["shearXY", "shearXZ", "shearYZ"], ["shxy", "shxz", "shyz"], "Shear, applied after scale."),
+                out_matrix("inverseMatrix", "im", "Inverse of matrix."),
+                out_matrix("xformMatrix", "xm", "The local matrix from its transformation attributes."),
+                quat_child("rotateQuaternionX", "rqx"),
+                quat_child("rotateQuaternionY", "rqy"),
+                quat_child("rotateQuaternionZ", "rqz"),
+                quat_child("rotateQuaternionW", "rqw"),
+                bool_in("inheritsTransform", "it", true, "Off: the parent's transform doesn't reach this node."),
+                bool_in("displayHandle", "dh", false, "Draw the selection handle."),
+                bool_in("displayRotatePivot", "drp", false, "Draw the rotate pivot."),
+                bool_in("displayScalePivot", "dsp", false, "Draw the scale pivot."),
+                bool_in("displayLocalAxis", "dla", false, "Draw the local axes."),
+                vec3_named("selectHandle", "hdl", DVec3::ZERO, unkeyable, ["selectHandleX", "selectHandleY", "selectHandleZ"], ["hdlx", "hdly", "hdlz"], "Where the selection handle sits."),
+                limit("minTransLimit", "mnt", -1.0, ["minTransXLimit", "minTransYLimit", "minTransZLimit"], ["mtxl", "mtyl", "mtzl"]),
+                limit("maxTransLimit", "mxt", 1.0, ["maxTransXLimit", "maxTransYLimit", "maxTransZLimit"], ["xtxl", "xtyl", "xtzl"]),
+                limit("minTransLimitEnable", "mtle", 0.0, ["minTransXLimitEnable", "minTransYLimitEnable", "minTransZLimitEnable"], ["mtxe", "mtye", "mtze"]),
+                limit("maxTransLimitEnable", "xtle", 0.0, ["maxTransXLimitEnable", "maxTransYLimitEnable", "maxTransZLimitEnable"], ["xtxe", "xtye", "xtze"]),
+                limit("minRotLimit", "mnrl", -45.0, ["minRotXLimit", "minRotYLimit", "minRotZLimit"], ["mrxl", "mryl", "mrzl"]),
+                limit("maxRotLimit", "mxrl", 45.0, ["maxRotXLimit", "maxRotYLimit", "maxRotZLimit"], ["xrxl", "xryl", "xrzl"]),
+                limit("minRotLimitEnable", "mrle", 0.0, ["minRotXLimitEnable", "minRotYLimitEnable", "minRotZLimitEnable"], ["mrxe", "mrye", "mrze"]),
+                limit("maxRotLimitEnable", "xrle", 0.0, ["maxRotXLimitEnable", "maxRotYLimitEnable", "maxRotZLimitEnable"], ["xrxe", "xrye", "xrze"]),
+                limit("minScaleLimit", "mnsl", -1.0, ["minScaleXLimit", "minScaleYLimit", "minScaleZLimit"], ["msxl", "msyl", "mszl"]),
+                limit("maxScaleLimit", "mxsl", 1.0, ["maxScaleXLimit", "maxScaleYLimit", "maxScaleZLimit"], ["xsxl", "xsyl", "xszl"]),
+                limit("minScaleLimitEnable", "msle", 0.0, ["minScaleXLimitEnable", "minScaleYLimitEnable", "minScaleZLimitEnable"], ["msxe", "msye", "msze"]),
+                limit("maxScaleLimitEnable", "xsle", 0.0, ["maxScaleXLimitEnable", "maxScaleYLimitEnable", "maxScaleZLimitEnable"], ["xsxe", "xsye", "xsze"]),
             ],
             create: Some(Arc::new(|| Box::new(Transform))),
             // The Unreal live link's identity, dropped with the link: older scene files load without it.
@@ -578,6 +762,37 @@ impl NodeBehavior for Locator {
     fn as_any(&self) -> &dyn Any {
         self
     }
+}
+
+/// Translation, rotation, scale and shear, so that m = T * R * shear_matrix(shear) * S. A mirrored matrix gets all three
+/// scales negated, as `decompose` does.
+pub fn decompose_full(m: &DMat4) -> (DVec3, DMat3, DVec3, DVec3) {
+    let t = m.w_axis.truncate();
+    let (x, y, z) = (m.x_axis.truncate(), m.y_axis.truncate(), m.z_axis.truncate());
+    let mut s = DVec3::ZERO;
+    s.x = x.length();
+    let ax = x.normalize_or_zero();
+    let xy = ax.dot(y);
+    let y2 = y - ax * xy;
+    s.y = y2.length();
+    let ay = y2.normalize_or_zero();
+    let (xz, yz) = (ax.dot(z), ay.dot(z));
+    let z2 = z - ax * xz - ay * yz;
+    s.z = z2.length();
+    let mut az = z2.normalize_or_zero();
+    let shear = DVec3::new(
+        if s.y != 0.0 { xy / s.y } else { 0.0 },
+        if s.z != 0.0 { xz / s.z } else { 0.0 },
+        if s.z != 0.0 { yz / s.z } else { 0.0 },
+    );
+    let (mut ax, mut ay) = (ax, ay);
+    if ax.dot(ay.cross(az)) < 0.0 {
+        s = -s;
+        ax = -ax;
+        ay = -ay;
+        az = -az;
+    }
+    (t, DMat3::from_cols(ax, ay, az), s, shear)
 }
 
 /// glm::decompose without perspective: scale, rotation and translation, skew removed. A mirrored matrix gets all

@@ -17,6 +17,7 @@ pub mod component_pick;
 pub mod component_query;
 pub mod components;
 pub mod error;
+pub mod expression;
 pub mod extrude_modifier;
 pub mod graph;
 pub mod history;
@@ -46,6 +47,7 @@ pub mod soft_select;
 pub mod split_rings_modifier;
 pub mod transform;
 pub mod transform_ops;
+pub mod utility_nodes;
 pub mod uv_ops;
 
 pub use error::{GraphError, Result};

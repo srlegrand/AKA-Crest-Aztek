@@ -82,6 +82,7 @@ pub fn serialize(g: &Graph, packed: bool) -> Value {
         let mut node = Map::new();
         node.insert("name".into(), json!(n.name()));
         node.insert("type".into(), json!(n.ty().name));
+        node.insert("uuid".into(), json!(n.uuid()));
         let p = g.parent(id);
         if p != NO_NODE {
             node.insert("parent".into(), json!(g.full_path(p)));
@@ -154,6 +155,7 @@ pub fn serialize(g: &Graph, packed: bool) -> Value {
         "nodes": nodes,
         "connections": connections,
         "selection": selection,
+        "namespaces": g.namespaces.iter().collect::<Vec<_>>(),
     })
 }
 
@@ -263,6 +265,9 @@ pub fn instantiate(g: &mut Graph, doc: &Value, warnings: &mut Vec<String>) -> Ve
                 continue;
             }
         };
+        if let Some(u) = jn.get("uuid").and_then(Value::as_str) {
+            g.set_uuid(id, u);
+        }
         by_path.insert(key.clone(), id);
         path_of.insert(id, key);
         by_name.entry(name.clone()).or_default().push(id);
@@ -384,6 +389,7 @@ pub fn deserialize(g: &mut Graph, doc: &Value) -> Result<Vec<String>> {
     g.clear();
     g.undo_stack_mut().set_enabled(false);
     instantiate(g, doc, &mut warnings);
+    g.namespaces = member(doc, "namespaces").iter().filter_map(Value::as_str).map(str::to_string).collect();
 
     let mut sel = Vec::new();
     for n in member(doc, "selection") {

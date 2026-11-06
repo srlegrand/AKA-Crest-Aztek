@@ -9,7 +9,8 @@ use crate::plug::{NodeId, NO_NODE};
 
 /// The shape name Maya gives under a transform: `pCube1` -> `pCubeShape1`, `foo` -> `fooShape`.
 pub fn shape_name(transform: &str) -> String {
-    let short = transform.rsplit(['|', ':']).next().unwrap_or(transform);
+    // The namespace stays: ns:pCube1 -> ns:pCubeShape1.
+    let short = transform.rsplit('|').next().unwrap_or(transform);
     let digits = short.len() - short.bytes().rev().take_while(u8::is_ascii_digit).count();
     format!("{}Shape{}", &short[..digits], &short[digits..])
 }

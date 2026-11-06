@@ -153,6 +153,9 @@ fn next_structure() -> u64 {
 
 /// The attr part of a plug's name: attr, attr[3], or group[3].child for a grouped array's child.
 fn attr_part(a: &AttrDef, p: &PlugRef) -> String {
+    if p.component >= 0 && p.element >= 0 {
+        return format!("{}[{}].{}", a.name, p.element, a.child_names[p.component as usize]);
+    }
     if p.component >= 0 {
         return a.child_names[p.component as usize].clone();
     }
@@ -354,6 +357,102 @@ struct EvalView<'a> {
     ctx: EvalContext,
     pass: u64,
     cache: bool,
+    /// Values of source plugs that are plain inputs: read here, since their node may be computing beside this one.
+    passed: &'a HashMap<PlugRef, PlugValue>,
+}
+
+/// An attr a node only reads: its value doesn't depend on the node computing, so reading it needs no ordering against
+/// the node, only against what drives the attr. This is what lets `pCube1.tx -> multiplyDivide1 -> pCube1.ty` run,
+/// which is no cycle in Maya.
+fn passes_through(a: &AttrDef) -> bool {
+    a.has(flags::INPUT) && !a.has(flags::OUTPUT)
+}
+
+/// The plugs feeding this plug directly: its own source, its whole Vec3's or its components'.
+fn feeds_of(inputs: &BTreeMap<PlugRef, PlugRef>, p: &PlugRef) -> Vec<PlugRef> {
+    let mut out = Vec::new();
+    if let Some(s) = inputs.get(p) {
+        out.push(*s);
+    }
+    if p.component >= 0 {
+        if let Some(s) = inputs.get(&PlugRef { component: -1, ..*p }) {
+            out.push(*s);
+        }
+    } else {
+        for c in 0..3 {
+            if let Some(s) = inputs.get(&PlugRef { component: c, ..*p }) {
+                out.push(*s);
+            }
+        }
+    }
+    out
+}
+
+/// The nodes a read of `p` has to wait for: p's own node for an output, whatever drives p for a plain input.
+fn read_after(nodes: &HashMap<NodeId, Box<Node>>, inputs: &BTreeMap<PlugRef, PlugRef>, p: &PlugRef, out: &mut Vec<NodeId>, depth: u32) {
+    let Some(n) = nodes.get(&p.node) else { return };
+    let pass = n.data.ty.attrs.get(p.attr as usize).is_some_and(passes_through);
+    if !pass || depth > 64 {
+        out.push(p.node);
+        return;
+    }
+    for s in feeds_of(inputs, p) {
+        read_after(nodes, inputs, &s, out, depth + 1);
+    }
+}
+
+fn stored_plug(n: &Node, p: &PlugRef) -> PlugValue {
+    let whole = if p.element >= 0 {
+        n.element(p.attr as usize, p.element).cloned().unwrap_or_else(|| n.ty().attrs[p.attr as usize].default_value.clone())
+    } else {
+        n.value(p.attr as usize).clone()
+    };
+    if p.component >= 0 {
+        PlugValue::Float(vec3_component(&whole, p.component))
+    } else {
+        whole
+    }
+}
+
+/// A plain input's value as its node would pull it, following what drives it. Its drivers have already computed.
+fn resolve_input(nodes: &HashMap<NodeId, Box<Node>>, inputs: &BTreeMap<PlugRef, PlugRef>, held: &BTreeSet<PlugRef>, p: &PlugRef, depth: u32) -> PlugValue {
+    let Some(n) = nodes.get(&p.node) else { return PlugValue::Float(0.0) };
+    let a = &n.data.ty.attrs[p.attr as usize];
+    if !passes_through(a) || depth > 64 {
+        return stored_plug(n, p);
+    }
+    let read = |s: &PlugRef| resolve_input(nodes, inputs, held, s, depth + 1);
+    let mut v = stored_plug(n, p);
+    if !held.contains(p) {
+        if let Some(s) = inputs.get(p) {
+            let sv = read(s);
+            if std::mem::discriminant(&v) == std::mem::discriminant(&sv) {
+                v = sv;
+            } else if let Some(d) = sv.scalar() {
+                v.assign_scalar(d);
+            }
+        } else if p.component >= 0 {
+            if let Some(s) = inputs.get(&PlugRef { component: -1, ..*p }) {
+                if let PlugValue::Vec3(x) = read(s) {
+                    v = PlugValue::Float(x[p.component as usize]);
+                }
+            }
+        } else if let PlugValue::Vec3(x) = &mut v {
+            for c in 0..3 {
+                let comp = PlugRef { component: c, ..*p };
+                if held.contains(&comp) {
+                    continue;
+                }
+                if let Some(s) = inputs.get(&comp) {
+                    x[c as usize] = read(s).scalar().unwrap_or(x[c as usize]);
+                }
+            }
+        }
+    }
+    if p.component < 0 {
+        a.clamp(&mut v);
+    }
+    v
 }
 
 fn inputs_of(
@@ -430,7 +529,8 @@ impl EvalView<'_> {
         let mut keep: Vec<bool> = (0..n.data.values.len())
             .map(|i| i < attrs.len() && !attrs[i].has(flags::INPUT))
             .collect();
-        let mut elements = false;
+        // Array outputs (an expression's) live in the elements too.
+        let mut elements = attrs.iter().any(|a| a.is_array() && !a.has(flags::INPUT));
         for (dst, _) in inputs_of(self.inputs, n.id) {
             if dst.element >= 0 {
                 elements = true;
@@ -504,7 +604,19 @@ impl EvalView<'_> {
             if !self.held.is_empty() && self.held.contains(dp) {
                 continue;
             }
-            let sv = &self.nodes[&sp.node].data.values[sp.attr as usize];
+            let passed = self.passed.get(sp);
+            let from_element;
+            let sv = if let Some(v) = passed {
+                v
+            } else if sp.element >= 0 {
+                let up = &self.nodes[&sp.node];
+                from_element = up.element(sp.attr as usize, sp.element).cloned().unwrap_or_else(|| up.ty().attrs[sp.attr as usize].default_value.clone());
+                &from_element
+            } else {
+                &self.nodes[&sp.node].data.values[sp.attr as usize]
+            };
+            // A passed value is already the component it names.
+            let sp_component = if passed.is_some() { -1 } else { sp.component };
             let da = &ty.attrs[dp.attr as usize];
             let slot = if dp.element >= 0 {
                 match n
@@ -519,9 +631,9 @@ impl EvalView<'_> {
             } else {
                 &mut n.data.values[dp.attr as usize]
             };
-            if sp.component >= 0 || dp.component >= 0 {
-                let s = if sp.component >= 0 {
-                    vec3_component(sv, sp.component)
+            if sp_component >= 0 || dp.component >= 0 {
+                let s = if sp_component >= 0 {
+                    vec3_component(sv, sp_component)
                 } else {
                     sv.scalar().unwrap_or(0.0)
                 };
@@ -543,6 +655,21 @@ impl EvalView<'_> {
             }
             da.clamp(slot);
         }
+        let parent_frame = if dag { n.data.matrix(Transform::PARENT_MATRIX) } else { DMat4::IDENTITY };
+        let is_transform = dag && n.data.ty.is_a("transform");
+        if is_transform {
+            Transform::apply_limits(&mut n.data);
+            // inheritsTransform off detaches the node from its parent; offsetParentMatrix sits between parent and local.
+            let mut frame = parent_frame;
+            if !n.data.bool(Transform::INHERITS_TRANSFORM) {
+                frame = DMat4::IDENTITY;
+            }
+            let offset = n.data.matrix(Transform::OFFSET_PARENT_MATRIX);
+            if offset != DMat4::IDENTITY {
+                frame *= offset;
+            }
+            n.data.values[Transform::PARENT_MATRIX] = PlugValue::Matrix(frame);
+        }
         if dag {
             if let Some(f) = self.active_frame {
                 if let Some(frame) = f(n) {
@@ -556,6 +683,9 @@ impl EvalView<'_> {
         }
         let ctx = self.ctx;
         n.behavior.compute(&ctx, &mut n.data);
+        if dag {
+            crate::transform::DagNode::compute_derived(&mut n.data, &parent_frame, is_transform);
+        }
         // Computed from a placeholder upstream means a placeholder too.
         if cache_node {
             n.playback = if upstream < 2 && self.keep_cached(n) {
@@ -633,6 +763,10 @@ pub struct Graph {
     pub construction_history: bool,
     /// What Duplicate with Transform repeats; see duplicate::install.
     pub duplicate_pairs: crate::duplicate::Pairs,
+    /// Namespaces that exist besides the root, full names ("rig:arm"). Those nodes live in exist too, by their names.
+    pub namespaces: BTreeSet<String>,
+    /// Where new nodes go ("" is the root): namespace -set.
+    pub current_namespace: String,
 }
 
 impl Default for Graph {
@@ -690,6 +824,8 @@ impl Graph {
             last_hidden: Vec::new(),
             construction_history: true,
             duplicate_pairs: Default::default(),
+            namespaces: BTreeSet::new(),
+            current_namespace: String::new(),
         }
     }
 
@@ -1047,6 +1183,11 @@ impl Graph {
         } else {
             name.to_string()
         };
+        // Scene files name their nodes in full; everything else lands in the current namespace.
+        let wanted = match apply_naming || name.is_empty() {
+            true if !self.current_namespace.is_empty() && !wanted.contains(':') => format!("{}:{wanted}", self.current_namespace),
+            _ => wanted,
+        };
         n.name = self.unique_name(
             &wanted,
             p,
@@ -1078,6 +1219,13 @@ impl Graph {
             inverted: true,
         });
         Ok(id)
+    }
+
+    /// Gives a node the identity it had when saved. Not undoable.
+    pub fn set_uuid(&mut self, id: NodeId, uuid: &str) {
+        if let Some(n) = self.nodes.get_mut(&id) {
+            n.uuid = uuid.to_string();
+        }
     }
 
     /// Marks a node as loaded from a file reference (0 = owned by the scene). Not undoable; references manage it.
@@ -1502,6 +1650,38 @@ impl Graph {
                 }
             }
         }
+        // group[3].child with either spelling of each half, or a child of a Vec3 element (input3D[3].input3Dx).
+        if let (true, Some((group, child))) = (element >= 0, attr_name.split_once('.')) {
+            for (i, a) in n.ty().attrs.iter().enumerate() {
+                if a.ty == PlugType::Vec3 && a.is_array() && (a.name == group || a.short_name == group) {
+                    for c in 0..3 {
+                        if !child.is_empty() && (a.child_names[c] == child || a.child_short[c] == child) {
+                            return Ok(PlugRef { node: id, attr: i as i32, component: c as i32, element });
+                        }
+                    }
+                }
+                let (Some((lg, lc)), Some((sg, sc))) = (a.name.split_once('.'), a.short_name.split_once('.')) else { continue };
+                if lg != group && sg != group {
+                    continue;
+                }
+                if lc == child || sc == child {
+                    return Ok(PlugRef { node: id, attr: i as i32, component: -1, element });
+                }
+                if a.ty == PlugType::Vec3 {
+                    for c in 0..3 {
+                        if a.child_names[c] == child || a.child_short[c] == child {
+                            return Ok(PlugRef { node: id, attr: i as i32, component: c as i32, element });
+                        }
+                    }
+                }
+            }
+        }
+        // pCube1.translate.translateX and cpm.result.position: the last part names the attr.
+        if !attr_name.contains('[') {
+            if let Some((_, last)) = attr_name.rsplit_once('.') {
+                return self.plug(&format!("{node_part}.{last}"));
+            }
+        }
         // Numbered attrs an array replaced, as older scene files and scripts name them.
         if element < 0 {
             if let Some((i, Some(k))) = n.ty().file_attr_index(&attr_name) {
@@ -1597,7 +1777,14 @@ impl Graph {
 
     fn set_raw(&mut self, p: &PlugRef, v: &PlugValue) {
         if p.element >= 0 {
-            *self.element_slot(p) = v.clone();
+            let slot = self.element_slot(p);
+            if p.component >= 0 {
+                if let PlugValue::Vec3(x) = slot {
+                    x[p.component as usize] = v.scalar().unwrap_or(0.0);
+                }
+            } else {
+                *slot = v.clone();
+            }
         } else {
             let slot = &mut self.node_mut(p.node).data.values[p.attr as usize];
             if p.component >= 0 {
@@ -1719,7 +1906,7 @@ impl Graph {
                 self.plug_name(&p)
             )));
         }
-        if a.is_array() && (p.element < 0 || p.component >= 0) {
+        if a.is_array() && p.element < 0 {
             let name = self.plug_name(&p);
             return Err(GraphError::invalid(format!(
                 "{name} is an array: set one element ({name}[0]), or all with setElements"
@@ -1772,7 +1959,7 @@ impl Graph {
                 }
             }
         }
-        if p.component >= 0 {
+        if p.component >= 0 && p.element < 0 {
             if let Some(src) = self.source(&p.whole()) {
                 let mut whole = self.value(&p.whole())?.as_vec3();
                 let Some(d) = v.scalar() else {
@@ -1795,6 +1982,18 @@ impl Graph {
         let n = self.node(p.node).unwrap();
         if p.element >= 0 {
             let was = n.element(p.attr as usize, p.element).cloned();
+            // One component of a Vec3 element: the element as a whole changes.
+            let (p, v) = if p.component >= 0 {
+                let whole = PlugRef { component: -1, ..p };
+                if self.source(&whole).is_some() {
+                    return Err(GraphError::invalid(format!("{} is driven by a connection", self.plug_name(&whole))));
+                }
+                let mut x = was.as_ref().unwrap_or(&a.default_value).as_vec3();
+                x[p.component as usize] = v.scalar().unwrap_or(0.0);
+                (whole, PlugValue::Vec3(x))
+            } else {
+                (p, v)
+            };
             if was.as_ref() == Some(&v) {
                 return Ok(());
             }
@@ -1964,10 +2163,7 @@ impl Graph {
         }
         let n = self.node(p.node).unwrap();
         if p.element >= 0 {
-            return Ok(n
-                .element(p.attr as usize, p.element)
-                .cloned()
-                .unwrap_or_else(|| n.ty().attrs[p.attr as usize].default_value.clone()));
+            return Ok(stored_plug(n, p));
         }
         let v = n.value(p.attr as usize);
         Ok(if p.component >= 0 {
@@ -1981,20 +2177,39 @@ impl Graph {
         self.inputs.iter().map(|(d, s)| (*d, *s)).collect()
     }
 
-    fn depends_on(&self, n: NodeId, upstream: NodeId) -> bool {
-        let mut stack = vec![n];
-        let mut seen = HashSet::new();
-        while let Some(cur) = stack.pop() {
-            if cur == upstream {
-                return true;
-            }
-            if !seen.insert(cur) {
+    /// Whether reading `src` needs `dst`. An output depends on all its node's inputs and on its parents; a plain input
+    /// only on what drives it, so `pCube1.tx -> multiplyDivide1 -> pCube1.ty` is fine and
+    /// `pCube1.worldMatrix -> multMatrix1 -> pCube1.tx` is not. A direct attribute to attribute link back to `dst`'s node
+    /// stays refused, as it always was here.
+    fn reads_depend_on(&self, src: &PlugRef, dst: &PlugRef) -> bool {
+        let mut stack = vec![(*src, src.node != dst.node)];
+        let mut seen_nodes = HashSet::new();
+        let mut seen_plugs = HashSet::new();
+        while let Some((p, direct)) = stack.pop() {
+            let Some(n) = self.node(p.node) else { continue };
+            if !seen_plugs.insert(p) {
                 continue;
             }
-            stack.extend(inputs_of(&self.inputs, cur).map(|(_, s)| s.node));
-            let p = self.parent(cur);
-            if p != NO_NODE {
-                stack.push(p);
+            let a = &n.ty().attrs[p.attr as usize];
+            if passes_through(a) {
+                let same_element = p.element < 0 || dst.element < 0 || p.element == dst.element;
+                let same_part = p.component < 0 || dst.component < 0 || p.component == dst.component;
+                if p.node == dst.node && (direct || (p.attr == dst.attr && same_element && same_part)) {
+                    return true;
+                }
+                stack.extend(feeds_of(&self.inputs, &p).into_iter().map(|s| (s, direct)));
+                continue;
+            }
+            if p.node == dst.node {
+                return true;
+            }
+            if !seen_nodes.insert(p.node) {
+                continue;
+            }
+            stack.extend(inputs_of(&self.inputs, p.node).map(|(_, s)| (*s, false)));
+            let parent = self.parent(p.node);
+            if parent != NO_NODE {
+                stack.push((PlugRef::new(parent, Transform::WORLD_MATRIX as i32), false));
             }
         }
         false
@@ -2052,19 +2267,13 @@ impl Graph {
                 self.plug_name(to)
             )));
         }
-        if src.element >= 0 {
-            return Err(GraphError::invalid(format!(
-                "array elements are inputs and can't drive {}",
-                self.plug_name(to)
-            )));
-        }
         if to.element >= 0 && !da.is_array() {
             return Err(GraphError::invalid(format!(
                 "{} is not an array",
                 self.plug_name(&to.whole())
             )));
         }
-        if da.is_array() && to.component >= 0 {
+        if da.is_array() && to.component >= 0 && to.element < 0 {
             return Err(GraphError::invalid("array inputs have no components"));
         }
         let mut dst = *to;
@@ -2100,18 +2309,19 @@ impl Graph {
                 type_name(dt)
             )));
         }
-        if src.node == dst.node || self.depends_on(src.node, dst.node) {
+        if self.reads_depend_on(src, &dst) {
             return Err(GraphError::invalid("connection would create a cycle"));
         }
 
         let mut clashing = Vec::new();
         if dst.component >= 0 {
-            if self.source(&dst.whole()).is_some() {
-                clashing.push(dst.whole());
+            let whole = PlugRef { component: -1, ..dst };
+            if self.source(&whole).is_some() {
+                clashing.push(whole);
             }
         } else if da.ty == PlugType::Vec3 {
             for c in 0..3 {
-                let comp = PlugRef::component(dst.node, dst.attr, c);
+                let comp = PlugRef { component: c, ..dst };
                 if self.source(&comp).is_some() {
                     clashing.push(comp);
                 }
@@ -2152,6 +2362,7 @@ impl Graph {
                 .element(dst.attr as usize, dst.element)
             {
                 None => new_element = true,
+                Some(v) if !heavy && dst.component >= 0 => before = Some(PlugValue::Float(vec3_component(v, dst.component))),
                 Some(v) if !heavy => before = Some(v.clone()),
                 Some(_) => {}
             }
@@ -2948,9 +3159,14 @@ impl Graph {
                 add_edge(p, id, &mut pending);
             }
         }
+        let mut reads = Vec::new();
         for (dst, src) in &self.inputs {
             if pending.contains_key(&dst.node) {
-                add_edge(src.node, dst.node, &mut pending);
+                reads.clear();
+                read_after(&self.nodes, &self.inputs, src, &mut reads, 0);
+                for &up in &reads {
+                    add_edge(up, dst.node, &mut pending);
+                }
             }
         }
 
@@ -2960,6 +3176,16 @@ impl Graph {
             .filter(|id| pending[id] == 0)
             .collect();
         while !level.is_empty() {
+            // Plain inputs read from other nodes, while those are all still in the map.
+            let mut passed = HashMap::new();
+            for id in &level {
+                for (_, src) in inputs_of(&self.inputs, *id) {
+                    let pass = self.nodes.get(&src.node).is_some_and(|n| passes_through(&n.data.ty.attrs[src.attr as usize]));
+                    if pass && !passed.contains_key(src) {
+                        passed.insert(*src, resolve_input(&self.nodes, &self.inputs, &self.held, src, 0));
+                    }
+                }
+            }
             let mut owned: Vec<Box<Node>> = level
                 .iter()
                 .map(|id| self.nodes.remove(id).unwrap())
@@ -2977,6 +3203,7 @@ impl Graph {
                     ctx: self.ctx,
                     pass,
                     cache,
+                    passed: &passed,
                 };
                 if owned.len() < 16 {
                     for n in owned.iter_mut() {
