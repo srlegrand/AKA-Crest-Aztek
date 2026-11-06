@@ -369,7 +369,7 @@ pub fn state(core: &Core) -> Value {
         "history": g.construction_history,
         "canUndo": g.undo_stack().can_undo(),
         "canRedo": g.undo_stack().can_redo(),
-        "file": core.current_file,
+        "file": core.s.scene_path,
         "version": core.version,
     })
 }

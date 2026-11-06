@@ -57,14 +57,13 @@ pub struct Core {
     pub log_read: usize,
     /// Bumped whenever anything may have changed; panels refresh when it moves.
     pub version: u64,
-    pub current_file: Option<String>,
     /// The undo entry the last silent command made, which `retract_preview` may take back.
     preview: Vec<u64>,
 }
 
 impl Core {
     pub fn new() -> Core {
-        let mut c = Core { s: Session::new(), log: Vec::new(), log_read: 0, version: 1, current_file: None, preview: Vec::new() };
+        let mut c = Core { s: Session::new(), log: Vec::new(), log_read: 0, version: 1, preview: Vec::new() };
         register_ui_commands(&mut c.s);
         c
     }
@@ -374,36 +373,24 @@ impl Core {
         Value::Array(lines)
     }
 
+    /// Saves in the format the path's extension names: `.ma` or Aztek's own.
     pub fn save(&mut self, path: &str) -> Result<(), String> {
-        self.s.graph.evaluate();
-        let mut doc = aztek_scene::scene_file::serialize(&self.s.graph, false);
-        let r = aztek_scene::anim::range();
-        doc["playbackOptions"] = json!({"minTime": r.min, "maxTime": r.max, "animationStartTime": r.anim_start, "animationEndTime": r.anim_end, "framesPerSecond": aztek_scene::anim::fps(), "currentTime": aztek_scene::anim::frame(&self.s.graph)});
-        let text = serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())?;
-        std::fs::write(path, text).map_err(|e| format!("{path}: {e}"))?;
-        self.current_file = Some(path.to_string());
+        aztek_scene::ma_file::save_scene(&mut self.s, path, aztek_scene::ma_file::Format::of_path(path))?;
+        self.drain_captured();
+        self.version += 1;
         self.push(format!("// Saved {path} //"), LineKind::Info);
         Ok(())
     }
 
     pub fn open(&mut self, path: &str) -> Result<(), String> {
-        let text = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
-        let doc: Value = serde_json::from_str(&text).map_err(|e| format!("{path}: {e}"))?;
-        let _ = execute(&mut self.s, "newScene", &json!({}), CallSource::Script);
-        let warnings = aztek_scene::scene_file::deserialize(&mut self.s.graph, &doc).map_err(|e| format!("{path}: {e}"))?;
-        for w in warnings {
-            self.push(format!("// Warning: {w} //"), LineKind::Warning);
-        }
-        if let Some(p) = doc.get("playbackOptions").and_then(Value::as_object) {
-            let mut call = p.clone();
-            let now = call.remove("currentTime");
-            let _ = execute(&mut self.s, "playbackOptions", &Value::Object(call), CallSource::Script);
-            if let Some(t) = now {
-                let _ = execute(&mut self.s, "currentTime", &json!({"args": [t]}), CallSource::Script);
+        let warnings = aztek_scene::ma_file::open_scene(&mut self.s, path)?;
+        // Warnings from a .ma file arrive through the log.
+        self.drain_captured();
+        if aztek_scene::ma_file::Format::of_path(path) != aztek_scene::ma_file::Format::MayaAscii {
+            for w in warnings {
+                self.push(format!("// Warning: {w} //"), LineKind::Warning);
             }
         }
-        let _ = execute(&mut self.s, "flushUndo", &json!({}), CallSource::Script);
-        self.current_file = Some(path.to_string());
         self.version += 1;
         self.push(format!("// Opened {path} //"), LineKind::Info);
         Ok(())
@@ -411,7 +398,7 @@ impl Core {
 
     pub fn new_scene(&mut self) {
         let _ = self.exec("newScene", json!({}));
-        self.current_file = None;
+        self.s.scene_path = None;
     }
 }
 

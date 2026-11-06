@@ -147,14 +147,22 @@ QMenu* MainWindow::file_menu() {
     m->addAction("Save Scene As...\tCtrl+Shift+S", [this] { save_scene(true); });
     m->addSeparator();
     m->addAction("Import...", [] {
-        QString f = QFileDialog::getOpenFileName(nullptr, "Import", QString(), "Meshes (*.obj *.ply *.stl)");
+        QString f = QFileDialog::getOpenFileName(nullptr, "Import", QString(), "Scenes and meshes (*.ma *.obj *.ply *.stl);;Maya ASCII (*.ma);;Meshes (*.obj *.ply *.stl)");
         if (f.isEmpty()) return;
+        if (f.endsWith(".ma", Qt::CaseInsensitive)) {
+            exec("file", QJsonObject{{"args", QJsonArray{f}}, {"import", true}});
+            return;
+        }
         QString c = f.endsWith(".ply", Qt::CaseInsensitive) ? "importPly" : f.endsWith(".stl", Qt::CaseInsensitive) ? "importStl" : "importObj";
         exec(c, args(QJsonArray{f}));
     });
     m->addAction("Export Selection...", [] {
-        QString f = QFileDialog::getSaveFileName(nullptr, "Export Selection", "export.obj", "OBJ (*.obj);;PLY (*.ply);;STL (*.stl)");
+        QString f = QFileDialog::getSaveFileName(nullptr, "Export Selection", "export.ma", "Maya ASCII (*.ma);;OBJ (*.obj);;PLY (*.ply);;STL (*.stl)");
         if (f.isEmpty()) return;
+        if (f.endsWith(".ma", Qt::CaseInsensitive)) {
+            exec("file", QJsonObject{{"args", QJsonArray{f}}, {"exportSelected", true}, {"type", "mayaAscii"}});
+            return;
+        }
         QString c = f.endsWith(".ply", Qt::CaseInsensitive) ? "exportPly" : f.endsWith(".stl", Qt::CaseInsensitive) ? "exportStl" : "exportObj";
         exec(c, args(QJsonArray{f}));
     });
@@ -1116,7 +1124,7 @@ void MainWindow::repeat_last() {
 }
 
 void MainWindow::open_scene() {
-    QString f = QFileDialog::getOpenFileName(this, "Open Scene", QString(), "Aztek scenes (*.aztek);;All files (*)");
+    QString f = QFileDialog::getOpenFileName(this, "Open Scene", QString(), "Scenes (*.aztek *.ma);;Aztek scenes (*.aztek);;Maya ASCII (*.ma);;All files (*)");
     if (!f.isEmpty()) open_file(f);
 }
 
@@ -1137,8 +1145,10 @@ void MainWindow::open_file(const QString& path) {
 void MainWindow::save_scene(bool as) {
     QString f = state()["file"].toString();
     if (as || f.isEmpty()) {
-        f = QFileDialog::getSaveFileName(this, "Save Scene As", f.isEmpty() ? "untitled.aztek" : f, "Aztek scenes (*.aztek)");
+        QString filter;
+        f = QFileDialog::getSaveFileName(this, "Save Scene As", f.isEmpty() ? "untitled.aztek" : f, "Aztek scenes (*.aztek);;Maya ASCII (*.ma)", &filter);
         if (f.isEmpty()) return;
+        if (!f.section('/', -1).contains('.')) f += filter.contains("*.ma") ? ".ma" : ".aztek";
     }
     QString err = take(aztek_file("save", f.toUtf8().constData()));
     Host::get()->poke();
