@@ -394,14 +394,20 @@ QMenu* MainWindow::edit_mesh_menu() {
 
 QMenu* MainWindow::mesh_tools_menu() {
     auto* m = new QMenu("Mesh Tools", this);
-    cmd(m, "Insert Edge Loop", "polyInsertLoop", {}, QString(), true);
-    cmd(m, "Offset Edge Loop", "polyOffsetLoop", {}, QString(), true);
-    cmd(m, "Multi-Cut", "polyKnife", {}, QString(), true);
-    cmd(m, "Target Weld", "polyTargetWeld", {}, QString(), true);
-    todo(m, "Quad Draw");
-    todo(m, "Create Polygon");
-    todo(m, "Append to Polygon");
-    todo(m, "Slide Edge");
+    auto tool = [this, m](const QString& label, const QString& id) { m->addAction(label, [this, id] { set_tool(id); }); };
+    tool("Append to Polygon", "appendPolygon");
+    cmd(m, "Connect", "polyConnect");
+    tool("Crease", "crease");
+    tool("Create Polygon", "createPolygon");
+    tool("Insert Edge Loop", "insertLoop");
+    tool("Multi-Cut", "multiCut");
+    tool("Offset Edge Loop", "offsetLoop");
+    tool("Quad Draw", "quadDraw");
+    tool("Slide Edge", "slideEdge");
+    tool("Target Weld", "targetWeld");
+    m->addSeparator();
+    m->addAction("Make Live", [] { exec("makeLive"); });
+    m->addAction("Make Not Live", [] { exec("makeLive", QJsonObject{{"none", true}}); });
     m->addSeparator();
     cmd(m, "Symmetry: Toggle", "toggleSymmetry");
     cmd(m, "Symmetry: World X", "setSymmetry", QJsonObject{{"axis", "x"}});
@@ -1124,6 +1130,15 @@ void MainWindow::refresh_state() {
         else if (n == "TextureViewWindow" || n == "UVEditor") show_uv_editor();
         else if (n == "PreferencesWindow") show_preferences();
         else if (n == "JointTool") set_tool("joint");
+        else if (n == "MultiCutTool") set_tool("multiCut");
+        else if (n == "SplitEdgeRingTool") set_tool("insertLoop");
+        else if (n == "OffsetEdgeLoopTool") set_tool("offsetLoop");
+        else if (n == "TargetWeldTool") set_tool("targetWeld");
+        else if (n == "SlideEdgeTool") set_tool("slideEdge");
+        else if (n == "PolyCreaseTool") set_tool("crease");
+        else if (n == "CreatePolygonTool") set_tool("createPolygon");
+        else if (n == "AppendToPolygonTool") set_tool("appendPolygon");
+        else if (n == "QuadDrawTool") set_tool("quadDraw");
         else if (n == "CVCurveTool") set_tool("curveCv");
         else if (n == "EPCurveTool") set_tool("curveEp");
         else if (n == "ArtPaintSkinWeightsTool") set_tool("paintSkin");
@@ -1178,7 +1193,20 @@ void MainWindow::set_tool(const QString& tool) {
     if (tool_buttons_.contains(tool)) tool_buttons_[tool]->setChecked(true);
     for (ViewportWidget* v : panels_->views()) v->set("tool", "\"" + tool + "\"");
     if (tool_settings_) tool_settings_->set_tool(tool);
-    if (tool == "curveCv" || tool == "curveEp")
+    static const QHash<QString, QString> tool_help{
+        {"multiCut", "Multi-Cut: click to place cut points, Shift snaps along edges, Ctrl-click inserts a loop, Backspace takes the last back, Enter cuts."},
+        {"insertLoop", "Insert Edge Loop: hover an edge to see the loop, click to insert it."},
+        {"offsetLoop", "Offset Edge Loop: drag from an edge to add loops either side."},
+        {"targetWeld", "Target Weld: drag from a vertex or edge onto another."},
+        {"slideEdge", "Slide Edge: pick edges, then middle-drag to slide them."},
+        {"crease", "Crease: pick edges, then middle-drag to set their crease."},
+        {"createPolygon", "Create Polygon: click to place points, Enter makes the face."},
+        {"appendPolygon", "Append to Polygon: click border edges and points, Enter makes the face."},
+        {"quadDraw", "Quad Draw: click places dots, Shift-click fills a quad, Ctrl-click inserts a loop, Ctrl+Shift-click deletes, Tab-drag extends a border edge, drag moves."},
+    };
+    if (tool_help.contains(tool))
+        help_line_->setText(tool_help[tool]);
+    else if (tool == "curveCv" || tool == "curveEp")
         help_line_->setText("Curve Tool: click to place points, Backspace takes the last back, Enter makes the curve. Hold X to snap to the grid.");
     else if (tool == "paintSkin")
         help_line_->setText("Paint Skin Weights Tool: drag to paint, Ctrl paints the inverse, Shift smooths, B-drag sizes the brush.");
@@ -1471,6 +1499,10 @@ bool MainWindow::hotkey(QKeyEvent* k, bool press) {
         if (press) help_line_->setText("Pivot: drag the manipulator to move the pivot");
         return true;
     }
+    if (key == Qt::Key_Tab && tool_ == "quadDraw") {
+        for (ViewportWidget* v : panels_->views()) v->set("toolTab", press ? "true" : "false");
+        return true;
+    }
     if (key == Qt::Key_B && tool_ == "paintSkin" && !ctrl && !alt && !shift) {
         for (ViewportWidget* v : panels_->views()) v->set("brushAdjust", press ? "true" : "false");
         return true;
@@ -1512,7 +1544,7 @@ bool MainWindow::hotkey(QKeyEvent* k, bool press) {
     case Qt::Key_Enter:
         // The joint tool's chain ends; the next click starts another.
         if (tool_ == "joint") { exec("select", QJsonObject{{"clear", true}}); return true; }
-        if (tool_.startsWith("curve")) {
+        if (tool_.startsWith("curve") || tool_ == "multiCut" || tool_ == "createPolygon" || tool_ == "appendPolygon") {
             for (ViewportWidget* v : panels_->views()) v->set("finishTool", "true");
             Host::get()->poke();
             return true;
@@ -1602,7 +1634,7 @@ bool MainWindow::hotkey(QKeyEvent* k, bool press) {
     case Qt::Key_F11: if (ctrl) exec("convertSelection", args(QJsonArray{"face"})); else set_mode("face"); return true;
     case Qt::Key_Delete:
     case Qt::Key_Backspace:
-        if (tool_.startsWith("curve")) {
+        if (tool_.startsWith("curve") || tool_ == "multiCut" || tool_ == "createPolygon" || tool_ == "appendPolygon" || tool_ == "quadDraw") {
             for (ViewportWidget* v : panels_->views()) v->set("undoToolPoint", "true");
             return true;
         }

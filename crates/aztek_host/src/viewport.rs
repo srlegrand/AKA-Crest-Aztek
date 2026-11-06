@@ -97,6 +97,15 @@ pub enum Tool {
     CurveCv,
     /// EP Curve Tool: clicks place edit points; Enter makes the curve.
     CurveEp,
+    MultiCut,
+    InsertLoop,
+    OffsetLoop,
+    TargetWeld,
+    SlideEdge,
+    Crease,
+    CreatePolygon,
+    AppendPolygon,
+    QuadDraw,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -150,6 +159,9 @@ pub struct Viewport {
     pub axis_mode: String,
     /// The manipulator's axes as columns.
     pub frame: DMat3,
+    /// What the modelling tools draw over the scene, world space.
+    pub tool_lines: Vec<(DVec3, DVec3, [u8; 4])>,
+    pub tool_points: Vec<(DVec3, [u8; 4])>,
 }
 
 const LEAD: [u8; 4] = [66, 255, 163, 255];
@@ -184,6 +196,8 @@ impl Viewport {
             curve_degree: 3,
             axis_mode: "world".into(),
             frame: DMat3::IDENTITY,
+            tool_lines: Vec::new(),
+            tool_points: Vec::new(),
         }
     }
 
@@ -465,10 +479,12 @@ impl Viewport {
                     }
                 }
             }
+            // Quad Draw's mesh sits on the live surface, chords and all, so it's pulled forward to stay in sight.
+            let retopo = if self.tool == Tool::QuadDraw && !s.live_surface.contains(&it.shape) && !s.live_surface.is_empty() { 0.03 } else { 0.0 };
             if !self.wireframe && !painted {
                 if let Some((vb, ib, n)) = &entry.tris {
                     r.bind(gpu, Kind::Shaded);
-                    r.push(gpu, &push(mvp, it.world, view, [0.5, 0.5, 0.5, 1.0], 0.0, 1.0));
+                    r.push(gpu, &push(mvp, it.world, view, [0.5, 0.5, 0.5, 1.0], retopo, 1.0));
                     r.draw(gpu, vb, Some((ib, *n)), 0);
                     if let Some((ti, tn)) = &entry.tint {
                         r.bind(gpu, Kind::Tint);
@@ -480,7 +496,7 @@ impl Viewport {
             if let Some((lb, ln)) = &entry.lines {
                 r.bind(gpu, Kind::Lines);
                 r.set_line_width(gpu, if selected && mode == ComponentMode::Object { 1.5 } else { 1.0 });
-                r.push(gpu, &push(mvp, it.world, view, [1.0; 4], 1.5e-3, 1.0));
+                r.push(gpu, &push(mvp, it.world, view, [1.0; 4], 1.5e-3 + retopo, 1.0));
                 r.draw(gpu, lb, None, *ln);
             }
             if let Some((pb, pn)) = &entry.points {
@@ -494,6 +510,36 @@ impl Viewport {
         self.draw_manip(gpu, r, s, scale);
         self.draw_brush(gpu, r, s);
         self.draw_curve_tool(gpu, r, scale);
+        self.draw_tool_overlay(gpu, r, scale);
+    }
+
+    fn draw_tool_overlay(&mut self, gpu: &mut Gpu, r: &Renderer, scale: f64) {
+        if !self.tool_lines.is_empty() {
+            let mut v = Vec::with_capacity(self.tool_lines.len() * 2);
+            for (a, b, c) in &self.tool_lines {
+                v.push(LineVertex { pos: a.as_vec3().to_array(), color: c8(*c) });
+                v.push(LineVertex { pos: b.as_vec3().to_array(), color: c8(*c) });
+            }
+            let b = gpu.buffer_with(vk::BufferUsageFlags::VERTEX_BUFFER, &v);
+            r.bind(gpu, Kind::LinesOnTop);
+            r.set_line_width(gpu, (1.5 * scale) as f32);
+            r.push(gpu, &push(self.view_proj(), DMat4::IDENTITY, self.cam.view(), [1.0; 4], 0.0, 1.0));
+            r.draw(gpu, &b, None, v.len() as u32);
+            gpu.drop_buffer(b);
+        }
+        if !self.tool_points.is_empty() {
+            let v: Vec<LineVertex> = self.tool_points.iter().map(|(p, c)| LineVertex { pos: p.as_vec3().to_array(), color: c8(*c) }).collect();
+            let b = gpu.buffer_with(vk::BufferUsageFlags::VERTEX_BUFFER, &v);
+            r.bind(gpu, Kind::Points);
+            r.push(gpu, &push(self.view_proj(), DMat4::IDENTITY, self.cam.view(), [1.0; 4], 0.05, (7.0 * scale) as f32));
+            r.draw(gpu, &b, None, v.len() as u32);
+            gpu.drop_buffer(b);
+        }
+    }
+
+    /// Whether the tool has a manipulator.
+    fn manipulates(&self) -> bool {
+        matches!(self.tool, Tool::Move | Tool::Rotate | Tool::Scale)
     }
 
     /// A curve tool's points so far, with the curve they'd make.
@@ -957,7 +1003,7 @@ impl Viewport {
 
     /// Where the manipulator sits: the lead object's pivot, or the selected components' centre.
     pub fn manip_pivot(&self, s: &mut Session, items: &[DrawItem]) -> Option<DVec3> {
-        if matches!(self.tool, Tool::Select | Tool::Joint | Tool::PaintSkin | Tool::CurveCv | Tool::CurveEp) {
+        if !self.manipulates() {
             return None;
         }
         let mode = components::mode(&s.graph);
@@ -1170,7 +1216,7 @@ impl Viewport {
 
     /// The tool the manipulator acts as: pivot mode moves pivots whatever the tool.
     pub fn eff_tool(&self) -> Tool {
-        if self.pivot_mode && !matches!(self.tool, Tool::Select | Tool::Joint | Tool::PaintSkin | Tool::CurveCv | Tool::CurveEp) {
+        if self.pivot_mode && self.manipulates() {
             Tool::Move
         } else {
             self.tool
@@ -1259,7 +1305,7 @@ impl Viewport {
                     ("scale".into(), serde_json::json!({ "args": targets, "by": by }))
                 })
             }
-            Tool::Select | Tool::Joint | Tool::PaintSkin | Tool::CurveCv | Tool::CurveEp => None,
+            _ => None,
         }
     }
 

@@ -49,6 +49,8 @@ pub struct Session {
     pub key_clipboard: crate::anim_edit::KeyClipboard,
     /// selectKey's keys: curve and frame.
     pub key_selection: Vec<(NodeId, f64)>,
+    /// The live surface: what Quad Draw and snapping draw on.
+    pub live_surface: Vec<NodeId>,
 }
 
 impl Default for Session {
@@ -71,6 +73,7 @@ impl Session {
             paint_ctx: Default::default(),
             key_clipboard: Default::default(),
             key_selection: Vec::new(),
+            live_surface: Vec::new(),
         };
         crate::commands::register(&mut s.commands);
         crate::components::register(&mut s.commands);

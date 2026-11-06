@@ -10,6 +10,7 @@ pub mod mel;
 mod python;
 mod query;
 mod render;
+pub mod tools;
 pub mod view;
 pub mod viewport;
 

@@ -22,6 +22,7 @@ pub mod knife;
 pub mod mesh_ops;
 pub mod normals;
 pub mod symmetry;
+pub mod tools;
 pub mod transform;
 
 /// Direct edits work on the base mesh under any modifiers; a procedural source is frozen first.
@@ -347,7 +348,9 @@ pub fn mesh_flag(g: &Graph, a: &Args, cmd: &str) -> CmdResult<NodeId> {
         return mesh_arg(g, &name, cmd);
     }
     let mut candidates = g.selection().to_vec();
-    candidates.extend(components::selected_all(g, components::mode(g)).keys().copied());
+    if components::mode(g) != components::ComponentMode::Object {
+        candidates.extend(components::selected_all(g, components::mode(g)).keys().copied());
+    }
     candidates
         .into_iter()
         .find_map(|id| components::as_mesh(g, id))
@@ -401,6 +404,7 @@ pub fn register(c: &mut Commands<Session>) {
     mesh_ops::register(c);
     normals::register(c);
     symmetry::register(c);
+    tools::register(c);
     transform::register(c);
     crate::soft_select::register(c);
     for name in ADJUSTABLE {

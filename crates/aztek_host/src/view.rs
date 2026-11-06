@@ -36,6 +36,8 @@ pub struct View {
     nav: Option<(i32, DVec2)>,
     marquee: Option<DVec2>,
     joint_press: Option<DVec2>,
+    /// The modelling tools' state.
+    pub ts: crate::tools::ToolState,
     /// A paint stroke in progress.
     stroke: Option<PaintStroke>,
     /// B held with the paint tool: a drag sizes the brush.
@@ -64,6 +66,7 @@ impl View {
             nav: None,
             marquee: None,
             joint_press: None,
+            ts: Default::default(),
             stroke: None,
             brush_adjust: false,
             brush_drag: None,
@@ -185,6 +188,11 @@ impl View {
     pub fn mouse(&mut self, core: &mut Core, kind: i32, button: i32, px: DVec2, mods: i32, buttons: i32) -> bool {
         let items = gather(&mut core.s.graph);
         let alt = mods & ALT != 0;
+        if !alt && self.nav.is_none() && (kind != 1 || buttons == 0 || buttons & 1 != 0 || buttons & 2 != 0) {
+            if let Some(r) = self.tool_mouse(core, kind, button, px, mods, &items) {
+                return r;
+            }
+        }
         match kind {
             0 => {
                 if alt {
@@ -409,6 +417,9 @@ impl View {
     pub fn set(&mut self, core: &mut Core, key: &str, v: &Value) {
         match key {
             "tool" => {
+                self.ts = Default::default();
+                self.vp.tool_lines.clear();
+                self.vp.tool_points.clear();
                 self.vp.tool = match v.as_str().unwrap_or("") {
                     "move" => Tool::Move,
                     "rotate" => Tool::Rotate,
@@ -417,6 +428,15 @@ impl View {
                     "paintSkin" => Tool::PaintSkin,
                     "curveCv" => Tool::CurveCv,
                     "curveEp" => Tool::CurveEp,
+                    "multiCut" => Tool::MultiCut,
+                    "insertLoop" => Tool::InsertLoop,
+                    "offsetLoop" => Tool::OffsetLoop,
+                    "targetWeld" => Tool::TargetWeld,
+                    "slideEdge" => Tool::SlideEdge,
+                    "crease" => Tool::Crease,
+                    "createPolygon" => Tool::CreatePolygon,
+                    "appendPolygon" => Tool::AppendPolygon,
+                    "quadDraw" => Tool::QuadDraw,
                     _ => Tool::Select,
                 }
             }
@@ -445,8 +465,11 @@ impl View {
             "manipSize" => self.vp.manip_scale = v.as_f64().unwrap_or(1.0),
             "axisOrientation" => self.vp.axis_mode = v.as_str().unwrap_or("world").to_string(),
             "curveDegree" => self.vp.curve_degree = v.as_i64().unwrap_or(3),
+            "toolTab" => self.ts.tab = v.as_bool().unwrap_or(false),
             // Enter: makes the curve; the tool stays for the next.
             "finishTool" => {
+                let items = gather(&mut core.s.graph);
+                self.tool_finish(core, &items);
                 if matches!(self.vp.tool, Tool::CurveCv | Tool::CurveEp) && self.vp.curve_points.len() >= 2 {
                     let pts: Vec<[f64; 3]> = self.vp.curve_points.drain(..).map(|p| p.to_array()).collect();
                     let flag = if self.vp.tool == Tool::CurveEp { "editPoint" } else { "point" };
@@ -456,6 +479,7 @@ impl View {
                 }
             }
             "undoToolPoint" => {
+                self.tool_back();
                 self.vp.curve_points.pop();
             }
             "brushAdjust" => self.brush_adjust = v.as_bool().unwrap_or(false),
