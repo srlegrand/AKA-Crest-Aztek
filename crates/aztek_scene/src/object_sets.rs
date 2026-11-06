@@ -333,16 +333,48 @@ pub fn parse(g: &Graph, items: &[String]) -> Result<Vec<Member>, String> {
             Ok(Some(n)) => n,
             _ => return Err(format!("no object named {node_name}")),
         };
+        // A curve's CVs are its vertex components.
+        if let Some(c) = crate::curves::as_curve(g, n) {
+            if suffix != "cv" {
+                return Err(format!("unknown component '{suffix}' in {item} (cv)"));
+            }
+            let range = &item[open + 1..item.len() - 1];
+            let count = g.node(c).and_then(|x| crate::curves::drawn_curve(x).map(|k| k.distinct_cvs().len() as u32)).unwrap_or(0);
+            let (first, last) = match range {
+                "*" => (0, count.saturating_sub(1)),
+                r => match r.split_once(':') {
+                    Some((a, b)) => (a.parse().unwrap_or(0), b.parse().unwrap_or(0)),
+                    None => {
+                        let i = r.parse().map_err(|_| format!("bad component range in {item}"))?;
+                        (i, i)
+                    }
+                },
+            };
+            out = merged(out, &[Member { node: c, kind: ComponentMode::Vertex, ids: (first..=last).collect() }]);
+            continue;
+        }
         let Some(n) = crate::components::as_mesh(g, n) else {
             return Err(format!("{node_name} is not a mesh, so it has no components"));
         };
         let kind = match suffix {
-            "vtx" => ComponentMode::Vertex,
+            "vtx" | "pt" => ComponentMode::Vertex,
             "e" => ComponentMode::Edge,
             "f" => ComponentMode::Face,
             _ => return Err(format!("unknown component '{suffix}' in {item} (vtx, e or f)")),
         };
         let range = &item[open + 1..item.len() - 1];
+        if range == "*" {
+            let ids: Vec<u32> = match g.node(n).and_then(|x| x.data().mesh(crate::mesh_nodes::MeshNode::OUT_MESH).cloned()) {
+                Some(m) => match kind {
+                    ComponentMode::Vertex => (0..m.point_capacity()).filter(|&i| m.point_valid(i)).collect(),
+                    ComponentMode::Edge => (0..m.edge_capacity()).filter(|&i| m.edge_valid(i)).collect(),
+                    _ => (0..m.face_capacity()).filter(|&i| m.face_valid(i)).collect(),
+                },
+                None => Vec::new(),
+            };
+            out = merged(out, &[Member { node: n, kind, ids }]);
+            continue;
+        }
         let parse_index = |s: &str| if s.bytes().all(|b| b.is_ascii_digit()) && !s.is_empty() { s.parse::<u32>().ok() } else { None };
         let (first, last) = match range.find(':') {
             Some(c) => (parse_index(&range[..c]), parse_index(&range[c + 1..])),

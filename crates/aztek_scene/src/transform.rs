@@ -208,7 +208,12 @@ impl DagNode {
     pub const WORLD_MATRIX: usize = 2;
     pub const DISPLAY_LAYER: usize = 3;
     pub const INTERMEDIATE_OBJECT: usize = 4;
-    pub const COUNT: usize = 5;
+    pub const OVERRIDE_ENABLED: usize = 5;
+    pub const OVERRIDE_DISPLAY_TYPE: usize = 6;
+    pub const OVERRIDE_COLOR: usize = 7;
+    pub const OVERRIDE_RGB_COLORS: usize = 8;
+    pub const OVERRIDE_COLOR_RGB: usize = 9;
+    pub const COUNT: usize = 10;
 
     pub fn make_type() -> NodeType {
         let keyable = flags::INPUT | flags::STORABLE | flags::KEYABLE;
@@ -262,6 +267,46 @@ impl DagNode {
                     doc: "A shape kept for history (a deformer's original) that is not drawn or picked.".into(),
                     ..Default::default()
                 },
+                AttrDef {
+                    name: "overrideEnabled".into(),
+                    short_name: "ove".into(),
+                    ty: PlugType::Bool,
+                    default_value: PlugValue::Bool(false),
+                    flags: IN_STORE,
+                    doc: "Use this node's own display settings: colour and display type.".into(),
+                    ..Default::default()
+                },
+                AttrDef {
+                    name: "overrideDisplayType".into(),
+                    short_name: "ovdt".into(),
+                    ty: PlugType::Enum,
+                    default_value: PlugValue::Int(0),
+                    flags: IN_STORE,
+                    enum_names: vec!["Normal".into(), "Template".into(), "Reference".into()],
+                    doc: "Normal, Template (grey, unpickable) or Reference (unpickable).".into(),
+                    ..Default::default()
+                },
+                AttrDef {
+                    name: "overrideColor".into(),
+                    short_name: "ovc".into(),
+                    ty: PlugType::Int,
+                    default_value: PlugValue::Int(0),
+                    flags: IN_STORE,
+                    doc: "Index into Maya's colour table, 0 to 31.".into(),
+                    min_value: Some(0.0),
+                    max_value: Some(31.0),
+                    ..Default::default()
+                },
+                AttrDef {
+                    name: "overrideRGBColors".into(),
+                    short_name: "ovrgbf".into(),
+                    ty: PlugType::Bool,
+                    default_value: PlugValue::Bool(false),
+                    flags: IN_STORE,
+                    doc: "Take the colour from overrideColorRGB instead of the index.".into(),
+                    ..Default::default()
+                },
+                crate::node::vec3_attr("overrideColorRGB", "ovrgb", DVec3::ZERO, IN_STORE, "The override colour, 0 to 1 per channel."),
             ],
             ..Default::default()
         }

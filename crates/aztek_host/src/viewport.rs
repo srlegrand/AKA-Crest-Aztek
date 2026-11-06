@@ -16,7 +16,7 @@ use aztek_scene::plug::{NodeId, NO_NODE};
 use aztek_scene::transform::DagNode;
 use aztek_scene::Session;
 use ash::vk;
-use glam::{DMat4, DVec2, DVec3, Vec3};
+use glam::{DMat3, DMat4, DVec2, DVec3, Vec3};
 
 use crate::camera::{CamKind, Camera};
 use crate::gpu::{Buffer, Gpu};
@@ -93,6 +93,10 @@ pub enum Tool {
     Joint,
     /// Paint skin weights: the brush on the selected skinned meshes.
     PaintSkin,
+    /// CV Curve Tool: clicks place CVs; Enter makes the curve.
+    CurveCv,
+    /// EP Curve Tool: clicks place edit points; Enter makes the curve.
+    CurveEp,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -139,6 +143,13 @@ pub struct Viewport {
     pub hover_comp: Option<(NodeId, ComponentMode, Index)>,
     /// The paint brush under the cursor: world centre and normal.
     pub brush: Option<(DVec3, DVec3)>,
+    /// A curve tool's points so far, and its degree.
+    pub curve_points: Vec<DVec3>,
+    pub curve_degree: i64,
+    /// Manipulator axis orientation: world, object, component, parent or normal.
+    pub axis_mode: String,
+    /// The manipulator's axes as columns.
+    pub frame: DMat3,
 }
 
 const LEAD: [u8; 4] = [66, 255, 163, 255];
@@ -169,6 +180,10 @@ impl Viewport {
             smooth_cage: false,
             hover_comp: None,
             brush: None,
+            curve_points: Vec::new(),
+            curve_degree: 3,
+            axis_mode: "world".into(),
+            frame: DMat3::IDENTITY,
         }
     }
 
@@ -478,6 +493,38 @@ impl Viewport {
         self.draw_hover(gpu, r, items, scale);
         self.draw_manip(gpu, r, s, scale);
         self.draw_brush(gpu, r, s);
+        self.draw_curve_tool(gpu, r, scale);
+    }
+
+    /// A curve tool's points so far, with the curve they'd make.
+    fn draw_curve_tool(&mut self, gpu: &mut Gpu, r: &Renderer, scale: f64) {
+        if !matches!(self.tool, Tool::CurveCv | Tool::CurveEp) || self.curve_points.is_empty() {
+            return;
+        }
+        let col = c8([255, 255, 255, 255]);
+        let line = c8([120, 120, 255, 255]);
+        let mut pv: Vec<LineVertex> = self.curve_points.iter().map(|p| LineVertex { pos: p.as_vec3().to_array(), color: col }).collect();
+        let b = gpu.buffer_with(vk::BufferUsageFlags::VERTEX_BUFFER, &pv);
+        r.bind(gpu, Kind::Points);
+        r.push(gpu, &push(self.view_proj(), DMat4::IDENTITY, self.cam.view(), [1.0; 4], 1e-3, (6.0 * scale) as f32));
+        r.draw(gpu, &b, None, pv.len() as u32);
+        gpu.drop_buffer(b);
+        pv.clear();
+        if self.curve_points.len() >= 2 {
+            let d = self.curve_degree.max(1) as usize;
+            let curve = if self.tool == Tool::CurveEp { aztek_geo::nurbs::NurbsCurve::through(d, &self.curve_points) } else { aztek_geo::nurbs::NurbsCurve::open(d, self.curve_points.clone()) };
+            let pts = curve.tessellate(12);
+            for w in pts.windows(2) {
+                pv.push(LineVertex { pos: w[0].as_vec3().to_array(), color: line });
+                pv.push(LineVertex { pos: w[1].as_vec3().to_array(), color: line });
+            }
+            let b = gpu.buffer_with(vk::BufferUsageFlags::VERTEX_BUFFER, &pv);
+            r.bind(gpu, Kind::Lines);
+            r.set_line_width(gpu, (1.5 * scale) as f32);
+            r.push(gpu, &push(self.view_proj(), DMat4::IDENTITY, self.cam.view(), [1.0; 4], 1e-3, 1.0));
+            r.draw(gpu, &b, None, pv.len() as u32);
+            gpu.drop_buffer(b);
+        }
     }
 
     /// The brush's ring on the surface and its normal line, in red as Maya draws it.
@@ -656,6 +703,10 @@ impl Viewport {
         }
         let t = n.dot(p0 - o) / den;
         let mut p = o + d * t;
+        if self.snap == 1 {
+            // X held: to the grid.
+            p = (p / self.grid_spacing).round() * self.grid_spacing;
+        }
         // Snap tiny noise so ortho placements sit exactly in their plane.
         for i in 0..3 {
             if p[i].abs() < 1e-9 {
@@ -699,15 +750,73 @@ impl Viewport {
                 v.push(LineVertex { pos: b.as_vec3().to_array(), color: c8(c) });
             }
         }
-        if v.is_empty() {
-            return;
+        if !v.is_empty() {
+            let b = gpu.buffer_with(vk::BufferUsageFlags::VERTEX_BUFFER, &v);
+            r.bind(gpu, Kind::Lines);
+            r.set_line_width(gpu, (1.5 * scale) as f32);
+            r.push(gpu, &push(self.view_proj(), DMat4::IDENTITY, self.cam.view(), [1.0; 4], 1e-3, 1.0));
+            r.draw(gpu, &b, None, v.len() as u32);
+            gpu.drop_buffer(b);
         }
-        let b = gpu.buffer_with(vk::BufferUsageFlags::VERTEX_BUFFER, &v);
-        r.bind(gpu, Kind::Lines);
-        r.set_line_width(gpu, (1.5 * scale) as f32);
-        r.push(gpu, &push(self.view_proj(), DMat4::IDENTITY, self.cam.view(), [1.0; 4], 1e-3, 1.0));
-        r.draw(gpu, &b, None, v.len() as u32);
-        gpu.drop_buffer(b);
+        // CVs of the selected curves in a component mode, and of curves with dispCV on, with the hull.
+        let mode = components::mode(g);
+        let mut points = Vec::new();
+        let mut hull = Vec::new();
+        for (shape, xf, world_cvs) in curve_cvs(g) {
+            let hilited = mode == ComponentMode::Vertex && (sel.contains(&xf) || sel.contains(&shape));
+            let n = g.node(shape);
+            let disp = n.is_some_and(|n| n.data().bool(aztek_scene::curves::CurveShape::DISP_CV));
+            let disp_hull = n.is_some_and(|n| n.data().bool(aztek_scene::curves::CurveShape::DISP_HULL));
+            if !hilited && !disp {
+                continue;
+            }
+            let picked = components::selected(g, shape, ComponentMode::Vertex);
+            for (i, p) in world_cvs.iter().enumerate() {
+                let c = if picked.contains(&(i as u32)) { SEL_COMP } else { VERT };
+                points.push(LineVertex { pos: p.as_vec3().to_array(), color: c8(c) });
+            }
+            if disp_hull || hilited {
+                for w in world_cvs.windows(2) {
+                    hull.push(LineVertex { pos: w[0].as_vec3().to_array(), color: c8([120, 60, 120, 255]) });
+                    hull.push(LineVertex { pos: w[1].as_vec3().to_array(), color: c8([120, 60, 120, 255]) });
+                }
+            }
+        }
+        if !hull.is_empty() {
+            let b = gpu.buffer_with(vk::BufferUsageFlags::VERTEX_BUFFER, &hull);
+            r.bind(gpu, Kind::Lines);
+            r.set_line_width(gpu, 1.0);
+            r.push(gpu, &push(self.view_proj(), DMat4::IDENTITY, self.cam.view(), [1.0; 4], 1e-3, 1.0));
+            r.draw(gpu, &b, None, hull.len() as u32);
+            gpu.drop_buffer(b);
+        }
+        if !points.is_empty() {
+            let b = gpu.buffer_with(vk::BufferUsageFlags::VERTEX_BUFFER, &points);
+            r.bind(gpu, Kind::Points);
+            r.push(gpu, &push(self.view_proj(), DMat4::IDENTITY, self.cam.view(), [1.0; 4], 2e-3, (6.0 * scale) as f32));
+            r.draw(gpu, &b, None, points.len() as u32);
+            gpu.drop_buffer(b);
+        }
+    }
+
+    /// The CV of a hilited curve nearest a pixel.
+    fn pick_cv(&self, g: &Graph, px: DVec2) -> Option<(NodeId, usize)> {
+        let screen = self.screen();
+        let sel = g.selection();
+        let mut best: Option<(f64, NodeId, usize)> = None;
+        for (shape, xf, cvs) in curve_cvs(g) {
+            if !sel.contains(&xf) && !sel.contains(&shape) {
+                continue;
+            }
+            for (i, p) in cvs.iter().enumerate() {
+                let Some(q) = screen.project(*p) else { continue };
+                let d = (q - px).length();
+                if d < 14.0 && best.is_none_or(|b| d < b.0) {
+                    best = Some((d, shape, i));
+                }
+            }
+        }
+        best.map(|b| (b.1, b.2))
     }
 
     /// What a click at px picks, as select arguments: object names or component strings.
@@ -718,6 +827,11 @@ impl Viewport {
                 return vec![g.path(id)];
             }
             return self.raycast(items, px).map(|(i, _, _)| vec![g.path(items[i].xf)]).unwrap_or_default();
+        }
+        if components::mode(g) == ComponentMode::Vertex {
+            if let Some((shape, i)) = self.pick_cv(g, px) {
+                return vec![format!("{}.cv[{i}]", g.path(aztek_scene::dag::transform_of(g, shape)))];
+            }
         }
         match self.pick_component(s, items, px) {
             Some((i, kind, id)) => {
@@ -784,6 +898,18 @@ impl Viewport {
                 }
             }
         }
+        if mode == ComponentMode::Vertex {
+            for (shape, xf, cvs) in curve_cvs(g) {
+                if !g.selection().contains(&xf) && !g.selection().contains(&shape) {
+                    continue;
+                }
+                for (i, p) in cvs.iter().enumerate() {
+                    if screen.project(*p).is_some_and(inside) {
+                        out.push(format!("{}.cv[{i}]", g.path(xf)));
+                    }
+                }
+            }
+        }
         for it in items {
             let m = &it.mesh;
             let proj = |p: Index| screen.project(it.world.transform_point3(m.position(p)));
@@ -831,7 +957,7 @@ impl Viewport {
 
     /// Where the manipulator sits: the lead object's pivot, or the selected components' centre.
     pub fn manip_pivot(&self, s: &mut Session, items: &[DrawItem]) -> Option<DVec3> {
-        if matches!(self.tool, Tool::Select | Tool::Joint | Tool::PaintSkin) {
+        if matches!(self.tool, Tool::Select | Tool::Joint | Tool::PaintSkin | Tool::CurveCv | Tool::CurveEp) {
             return None;
         }
         let mode = components::mode(&s.graph);
@@ -855,7 +981,57 @@ impl Viewport {
                 n += 1.0;
             }
         }
+        if mode == ComponentMode::Vertex {
+            for (shape, _, cvs) in curve_cvs(g) {
+                for &i in components::selected(g, shape, mode) {
+                    if let Some(p) = cvs.get(i as usize) {
+                        sum += *p;
+                        n += 1.0;
+                    }
+                }
+            }
+        }
         (n > 0.0).then(|| sum / n)
+    }
+
+    /// Works out the manipulator's axes for the axis orientation in Tool Settings. The move tool honours every mode; rotate
+    /// and scale read them too.
+    pub fn update_frame(&mut self, s: &mut Session) {
+        let g = &mut s.graph;
+        self.frame = DMat3::IDENTITY;
+        if self.axis_mode == "world" {
+            return;
+        }
+        let Some(&lead) = g.selection().last() else { return };
+        let ortho = |m: &DMat4| {
+            let x = m.x_axis.truncate().normalize_or_zero();
+            let y = m.y_axis.truncate().normalize_or_zero();
+            let z = x.cross(y);
+            if x == DVec3::ZERO || y == DVec3::ZERO {
+                DMat3::IDENTITY
+            } else {
+                DMat3::from_cols(x, y, z)
+            }
+        };
+        g.evaluate();
+        let mode = components::mode(g);
+        match self.axis_mode.as_str() {
+            "object" => self.frame = ortho(&aztek_scene::rig::world(g, lead)),
+            "parent" => {
+                let p = g.parent(lead);
+                if p != NO_NODE {
+                    self.frame = ortho(&aztek_scene::rig::world(g, p));
+                }
+            }
+            "component" | "normal" => {
+                if mode == ComponentMode::Object {
+                    self.frame = ortho(&aztek_scene::rig::world(g, lead));
+                } else {
+                    self.frame = aztek_scene::mesh_edit::transform::selection_normal_frame(g);
+                }
+            }
+            _ => {}
+        }
     }
 
     /// World units per pixel at a point.
@@ -875,7 +1051,8 @@ impl Viewport {
         let colors = [[230, 40, 40, 255], [40, 230, 40, 255], [40, 80, 255, 255]];
         let active = self.drag.as_ref().map(|d| d.handle).or(self.hover);
         let mut v = Vec::new();
-        let axes = [Vec3::X, Vec3::Y, Vec3::Z];
+        self.update_frame(s);
+        let axes = [self.frame.x_axis.as_vec3(), self.frame.y_axis.as_vec3(), self.frame.z_axis.as_vec3()];
         match self.eff_tool() {
             Tool::Rotate => {
                 for (i, ax) in axes.iter().enumerate() {
@@ -935,7 +1112,7 @@ impl Viewport {
         }
         let mut best: Option<(f64, Handle)> = None;
         for i in 0..3 {
-            let ax = DVec3::AXES[i];
+            let ax = self.frame.col(i);
             let d = if self.eff_tool() == Tool::Rotate {
                 let (u, w) = ax.any_orthonormal_pair();
                 (0..48)
@@ -993,7 +1170,7 @@ impl Viewport {
 
     /// The tool the manipulator acts as: pivot mode moves pivots whatever the tool.
     pub fn eff_tool(&self) -> Tool {
-        if self.pivot_mode && !matches!(self.tool, Tool::Select | Tool::Joint | Tool::PaintSkin) {
+        if self.pivot_mode && !matches!(self.tool, Tool::Select | Tool::Joint | Tool::PaintSkin | Tool::CurveCv | Tool::CurveEp) {
             Tool::Move
         } else {
             self.tool
@@ -1012,7 +1189,7 @@ impl Viewport {
             Tool::Move => {
                 let world = match d.handle {
                     Handle::Axis(i) => {
-                        let ax = DVec3::AXES[i];
+                        let ax = self.frame.col(i);
                         let tip = screen.project(d.pivot + ax * upp * 100.0)?;
                         let sdir = tip - c;
                         let l2 = sdir.length_squared();
@@ -1029,7 +1206,7 @@ impl Viewport {
                     }
                 };
                 let axis = match d.handle {
-                    Handle::Axis(i) => Some(DVec3::AXES[i]),
+                    Handle::Axis(i) => Some(self.frame.col(i)),
                     Handle::Center => None,
                 };
                 let world = self.snapped(d, world, axis, px);
@@ -1050,10 +1227,16 @@ impl Viewport {
                 let a1 = (px - c).to_angle();
                 let mut ang = (a1 - a0).to_degrees();
                 // Screen y runs down: flip so the ring turns the way the cursor does when the axis faces the camera.
-                let toward = (self.cam.eye() - d.pivot).dot(DVec3::AXES[i]).signum();
+                let toward = (self.cam.eye() - d.pivot).dot(self.frame.col(i)).signum();
                 ang *= -toward;
                 let mut by = [0.0; 3];
                 by[i] = ang;
+                // About a turned axis: the same rotation as world Euler angles.
+                if self.frame != DMat3::IDENTITY {
+                    let q = glam::DQuat::from_axis_angle(self.frame.col(i), ang.to_radians());
+                    let e = aztek_scene::transform::matrix_to_euler(&DMat3::from_quat(q), aztek_scene::transform::RotateOrder::Xyz);
+                    by = [e.x, e.y, e.z];
+                }
                 Some(if comps {
                     ("rotateComponents".into(), serde_json::json!({ "by": by, "pivot": d.pivot.to_array() }))
                 } else {
@@ -1076,7 +1259,7 @@ impl Viewport {
                     ("scale".into(), serde_json::json!({ "args": targets, "by": by }))
                 })
             }
-            Tool::Select | Tool::Joint | Tool::PaintSkin => None,
+            Tool::Select | Tool::Joint | Tool::PaintSkin | Tool::CurveCv | Tool::CurveEp => None,
         }
     }
 
@@ -1224,6 +1407,50 @@ fn circle(c: DVec3, u: DVec3, v: DVec3, r: f64, out: &mut Vec<(DVec3, DVec3)>) {
     }
 }
 
+/// Maya's drawing override index colours, 0 to 31.
+const INDEX_COLORS: [[u8; 3]; 32] = [
+    [120, 120, 120], [0, 0, 0], [64, 64, 64], [153, 153, 153], [155, 0, 40], [0, 4, 96], [0, 0, 255], [0, 70, 25],
+    [38, 0, 67], [200, 0, 200], [138, 72, 51], [63, 35, 31], [153, 38, 0], [255, 0, 0], [0, 255, 0], [0, 65, 153],
+    [255, 255, 255], [255, 255, 0], [100, 220, 255], [67, 255, 163], [255, 176, 176], [228, 172, 121], [255, 255, 99], [0, 153, 84],
+    [161, 106, 48], [158, 161, 48], [104, 161, 48], [48, 161, 93], [48, 161, 161], [48, 103, 161], [111, 48, 161], [161, 48, 106],
+];
+
+/// The drawing override on a node, or on one above it, as Maya inherits it.
+fn override_color(g: &Graph, id: NodeId) -> Option<[u8; 4]> {
+    let mut n = id;
+    while n != NO_NODE {
+        let node = g.node(n)?;
+        if node.ty().dag && node.bool(DagNode::OVERRIDE_ENABLED) {
+            if node.bool(DagNode::OVERRIDE_RGB_COLORS) {
+                let c = node.data().vec3(DagNode::OVERRIDE_COLOR_RGB);
+                return Some([(c.x * 255.0) as u8, (c.y * 255.0) as u8, (c.z * 255.0) as u8, 255]);
+            }
+            let i = node.int(DagNode::OVERRIDE_COLOR).clamp(0, 31) as usize;
+            // Index 0 means no colour of its own.
+            if i > 0 {
+                let c = INDEX_COLORS[i];
+                return Some([c[0], c[1], c[2], 255]);
+            }
+        }
+        n = g.parent(n);
+    }
+    None
+}
+
+/// Each visible curve shape, its transform and its CVs in world space, one lap for a periodic curve.
+fn curve_cvs(g: &Graph) -> Vec<(NodeId, NodeId, Vec<DVec3>)> {
+    let mut out = Vec::new();
+    for id in g.nodes() {
+        let Some(n) = g.node(id) else { continue };
+        if !n.ty().is_a("nurbsCurve") || n.bool(DagNode::INTERMEDIATE_OBJECT) || !visible(g, id) {
+            continue;
+        }
+        let Some(c) = aztek_scene::curves::drawn_curve(n) else { continue };
+        out.push((id, aztek_scene::dag::transform_of(g, id), c.distinct_cvs().to_vec()));
+    }
+    out
+}
+
 pub fn rig_items(g: &Graph) -> Vec<RigItem> {
     use aztek_scene::rig::Joint;
     use aztek_scene::transform::{Locator, Transform};
@@ -1264,10 +1491,16 @@ pub fn rig_items(g: &Graph) -> Vec<RigItem> {
                     segs.push((corners[i], tip));
                 }
             }
-            out.push(RigItem { node: id, color: [70, 110, 220, 255], segs });
+            out.push(RigItem { node: id, color: override_color(g, id).unwrap_or([70, 110, 220, 255]), segs });
         } else if ty.is_a("deformHandle") {
             let kind = ty.attr_index("deformerType").map(|i| n.data().string(i).to_string()).unwrap_or_default();
             out.push(RigItem { node: id, color: [200, 120, 230, 255], segs: aztek_scene::deform::handle_lines(&kind, &w) });
+        } else if ty.is_a("nurbsCurve") {
+            if n.bool(DagNode::INTERMEDIATE_OBJECT) {
+                continue;
+            }
+            let color = override_color(g, id).unwrap_or([10, 10, 110, 255]);
+            out.push(RigItem { node: aztek_scene::dag::transform_of(g, id), color, segs: aztek_scene::curves::curve_lines(n) });
         } else if ty.is_a("ikHandle") {
             let k = 0.4;
             let segs = vec![
@@ -1285,7 +1518,7 @@ pub fn rig_items(g: &Graph) -> Vec<RigItem> {
                 let d = ax.truncate() * ls[i];
                 segs.push((p - d, p + d));
             }
-            out.push(RigItem { node: aztek_scene::dag::transform_of(g, id), color: [60, 90, 230, 255], segs });
+            out.push(RigItem { node: aztek_scene::dag::transform_of(g, id), color: override_color(g, id).unwrap_or([60, 90, 230, 255]), segs });
         }
         let _ = Transform::TRANSLATE;
     }

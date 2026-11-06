@@ -27,6 +27,7 @@ private:
     QWidget* build_transform_page();
     QWidget* build_paint_page();
     QWidget* build_joint_page();
+    QWidget* build_curve_page();
     void refresh_paint();
     void refresh_transform();
     void paint_set(const QString& flag, const QJsonValue& v);
@@ -38,6 +39,7 @@ private:
     QWidget* transform_page_ = nullptr;
     QWidget* paint_page_ = nullptr;
     QWidget* joint_page_ = nullptr;
+    QWidget* curve_page_ = nullptr;
     // Paint page.
     QListWidget* influences_ = nullptr;
     QButtonGroup* op_ = nullptr;
@@ -56,6 +58,7 @@ private:
     bool loading_ = false;
 signals:
     void axisOrientation(const QString& mode);
+    void curveDegree(int degree);
 };
 
 } // namespace az

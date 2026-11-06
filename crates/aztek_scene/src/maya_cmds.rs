@@ -452,14 +452,76 @@ pub fn register(c: &mut Commands<Session>) {
     );
 }
 
+/// xform on a curve's CVs: None when what's named isn't on a curve.
+fn xform_cvs(g: &mut crate::graph::Graph, a: &aztek_ops::Args, named: &[String], ws: bool) -> CmdResult<Option<Value>> {
+    use glam::DVec3;
+    let mut out = Vec::new();
+    let mut any = false;
+    for n in named {
+        let Some((obj, comp)) = n.split_once('.') else { continue };
+        let Ok(Some(id)) = g.find(obj) else { continue };
+        let Some(shape) = crate::curves::as_curve(g, id) else { continue };
+        any = true;
+        let Some(c) = crate::curves::local_curve(g, shape) else { continue };
+        let w = crate::rig::world(g, crate::dag::transform_of(g, shape));
+        let inner = comp.split_once('[').map(|x| x.1.trim_end_matches(']')).unwrap_or("");
+        let count = c.distinct_cvs().len() as u32;
+        let ids: Vec<u32> = match inner {
+            "*" => (0..count).collect(),
+            r => match r.split_once(':') {
+                Some((a, b)) => (a.parse().unwrap_or(0)..=b.parse().unwrap_or(0)).collect(),
+                None => r.parse().ok().into_iter().collect(),
+            },
+        };
+        if a.bool("query") {
+            for i in ids {
+                let Some(&p) = c.cvs.get(i as usize) else { continue };
+                let q = if ws { w.transform_point3(p) } else { p };
+                out.extend([json!(q.x), json!(q.y), json!(q.z)]);
+            }
+        } else {
+            let Some(t) = a.vec3("translation").map(DVec3::from_array) else { fail!("xform: on components only -t is available") };
+            let inv = w.inverse();
+            let rel = a.bool("relative");
+            let moves: Vec<(u32, DVec3)> = ids
+                .into_iter()
+                .filter_map(|i| {
+                    let p = *c.cvs.get(i as usize)?;
+                    Some((
+                        i,
+                        if rel {
+                            if ws { p + inv.transform_vector3(t) } else { p + t }
+                        } else if ws {
+                            inv.transform_point3(t)
+                        } else {
+                            t
+                        },
+                    ))
+                })
+                .collect();
+            if let Some(n) = g.node(shape) {
+                if let Some(pp) = crate::components::point_provider(n) {
+                    if let Some(set) = pp.set_points {
+                        set(g, shape, &moves);
+                    }
+                }
+            }
+        }
+    }
+    Ok(any.then_some(Value::Array(out)))
+}
+
 /// xform on points: pCube1.vtx[0:3]. A query returns x, y, z per point, world space with -ws; a set moves them all to the
 /// position, or by it with -r.
 pub(crate) fn xform_components(s: &mut Session, a: &aztek_ops::Args, named: &[String]) -> CmdResult {
     use glam::DVec3;
     let g = &mut s.graph;
     g.evaluate();
-    let targets = crate::skin::points_named(g, named);
     let ws = a.bool("worldSpace");
+    if let Some(r) = xform_cvs(g, a, named, ws)? {
+        return Ok(r);
+    }
+    let targets = crate::skin::points_named(g, named);
     if a.bool("query") {
         let mut out = Vec::new();
         for (mesh, ids) in &targets {
@@ -498,4 +560,25 @@ pub(crate) fn xform_components(s: &mut Session, a: &aztek_ops::Args, named: &[St
         crate::mesh_edit::transform::set_points(g, mesh, &moves)?;
     }
     Ok(Value::Null)
+}
+
+/// move, rotate and scale given components (pCube1.vtx[0:3]): the component command on them, leaving the selection as it
+/// was. None when no components are named.
+pub(crate) fn on_components(s: &mut Session, a: &aztek_ops::Args, target: &str) -> CmdResult<Option<Value>> {
+    let named = a.named();
+    let comps: Vec<String> = named.iter().filter(|n| components::is_component_string(n)).cloned().collect();
+    if comps.is_empty() {
+        return Ok(None);
+    }
+    let mode = components::mode(&s.graph);
+    let objects: Vec<String> = s.graph.selection().iter().map(|&i| s.graph.path(i)).collect();
+    let before = components::component_strings(&s.graph, false);
+    let by = a.get("by").or(a.get("to")).cloned().unwrap_or(json!([0.0, 0.0, 0.0]));
+    let scene = &mut *s;
+    execute(scene, "select", &json!({"args": comps}), CallSource::Script)?;
+    let r = execute(scene, target, &json!({"by": by}), CallSource::Script);
+    execute(scene, "select", &json!({"args": if before.is_empty() { objects } else { before }}), CallSource::Script)?;
+    components::set_mode(&mut scene.graph, mode);
+    r?;
+    Ok(Some(Value::Null))
 }

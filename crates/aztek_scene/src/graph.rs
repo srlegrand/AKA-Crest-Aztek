@@ -1479,12 +1479,14 @@ impl Graph {
         }
         for (i, a) in n.ty().attrs.iter().enumerate() {
             if a.name == attr_name || a.short_name == attr_name {
-                if element >= 0 && !a.is_array() {
+                // Maya writes one-element outputs as arrays: worldMatrix[0], worldSpace[0].
+                if element > 0 && !a.is_array() {
                     return Err(GraphError::invalid(format!(
                         "'{}.{}' is not an array",
                         n.name, a.name
                     )));
                 }
+                let element = if a.is_array() { element } else { -1 };
                 return Ok(PlugRef {
                     node: id,
                     attr: i as i32,
@@ -1504,6 +1506,21 @@ impl Graph {
         if element < 0 {
             if let Some((i, Some(k))) = n.ty().file_attr_index(&attr_name) {
                 return Ok(PlugRef::element(id, i as i32, k));
+            }
+        }
+        // As in Maya, a transform answers for its shape's attributes: curve1.spans is curveShape1.spans.
+        if n.ty().is_a("transform") {
+            for &c in self.children(id) {
+                let Some(k) = self.node(c) else { continue };
+                if !k.ty().dag || k.ty().is_a("transform") || k.bool(crate::transform::DagNode::INTERMEDIATE_OBJECT) {
+                    continue;
+                }
+                for (i, a) in k.ty().attrs.iter().enumerate() {
+                    if a.name == attr_name || a.short_name == attr_name {
+                        let element = if a.is_array() { element } else { -1 };
+                        return Ok(PlugRef { node: c, attr: i as i32, component: -1, element });
+                    }
+                }
             }
         }
         Err(GraphError::invalid(format!(

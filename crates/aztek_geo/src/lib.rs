@@ -17,6 +17,7 @@ pub mod loop_tools;
 pub mod mix;
 pub mod multibox;
 pub mod normals;
+pub mod nurbs;
 pub mod obj;
 pub mod ops;
 pub mod par;

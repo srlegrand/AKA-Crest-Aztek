@@ -40,6 +40,8 @@ ToolSettings::ToolSettings(QWidget* parent) : Panel(parent) {
     transform_page_ = build_transform_page();
     paint_page_ = build_paint_page();
     joint_page_ = build_joint_page();
+    curve_page_ = build_curve_page();
+    stack_->addWidget(curve_page_);
     stack_->addWidget(transform_page_);
     stack_->addWidget(paint_page_);
     stack_->addWidget(joint_page_);
@@ -102,6 +104,22 @@ QWidget* ToolSettings::build_transform_page() {
     form->addRow("Falloff mode:", soft_mode_);
     soft_radius_ = slider_row(form, "Falloff radius:", 0.0, 20.0, 0.1, [](double x) { exec_quiet("softSelect", QJsonObject{{"softSelectDistance", x}}); });
     v->addLayout(form);
+    v->addStretch(1);
+    return w;
+}
+
+QWidget* ToolSettings::build_curve_page() {
+    auto* w = new QWidget(this);
+    auto* v = new QVBoxLayout(w);
+    v->setContentsMargins(0, 0, 0, 0);
+    auto* form = new QFormLayout();
+    auto* degree = new QComboBox(w);
+    for (auto [label, d] : {std::pair{"1 Linear", 1}, {"2", 2}, {"3 Cubic", 3}, {"5", 5}, {"7", 7}}) degree->addItem(label, d);
+    degree->setCurrentIndex(2);
+    connect(degree, &QComboBox::currentIndexChanged, this, [this, degree] { emit curveDegree(degree->currentData().toInt()); });
+    form->addRow("Curve degree:", degree);
+    v->addLayout(form);
+    v->addWidget(new QLabel("Click to place points. Backspace takes the last back.\nEnter makes the curve.", w));
     v->addStretch(1);
     return w;
 }
@@ -185,6 +203,9 @@ void ToolSettings::set_tool(const QString& tool) {
     } else if (tool == "joint") {
         title_->setText("Joint Tool");
         stack_->setCurrentWidget(joint_page_);
+    } else if (tool == "curveCv" || tool == "curveEp") {
+        title_->setText(tool == "curveCv" ? "CV Curve Tool" : "EP Curve Tool");
+        stack_->setCurrentWidget(curve_page_);
     } else {
         QString n = tool.left(1).toUpper() + tool.mid(1);
         title_->setText(n + " Tool");
@@ -196,7 +217,7 @@ void ToolSettings::set_tool(const QString& tool) {
 
 void ToolSettings::refresh() {
     if (tool_ == "paintSkin") refresh_paint();
-    else if (tool_ != "joint") refresh_transform();
+    else if (tool_ != "joint" && !tool_.startsWith("curve")) refresh_transform();
 }
 
 void ToolSettings::refresh_transform() {

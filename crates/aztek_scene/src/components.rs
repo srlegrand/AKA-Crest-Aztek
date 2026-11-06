@@ -1445,6 +1445,7 @@ pub fn component_strings(g: &Graph, flatten: bool) -> Vec<String> {
         let path = display_path(g, node);
         if flatten {
             let p = match kind {
+                ComponentMode::Vertex if !is_mesh(g, node) => "cv",
                 ComponentMode::Vertex => "vtx",
                 ComponentMode::Edge => "e",
                 _ => "f",
@@ -1454,7 +1455,14 @@ pub fn component_strings(g: &Graph, flatten: bool) -> Vec<String> {
             v.dedup();
             out.extend(v.into_iter().map(|i| format!("{path}.{p}[{i}]")));
         } else {
-            out.extend(crate::history::format_components(kind, ids).split_whitespace().map(|c| format!("{path}.{c}")));
+            let curve = kind == ComponentMode::Vertex && !is_mesh(g, node);
+            out.extend(crate::history::format_components(kind, ids).split_whitespace().map(|c| {
+                if curve {
+                    format!("{path}.{}", c.replacen("vtx", "cv", 1))
+                } else {
+                    format!("{path}.{c}")
+                }
+            }));
         }
     }
     out

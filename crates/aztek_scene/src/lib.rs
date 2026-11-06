@@ -7,6 +7,7 @@ pub mod attr_defs;
 pub mod auto_bevel;
 pub mod booleans;
 pub mod conform_commands;
+pub mod curves;
 pub mod dag;
 pub mod deform;
 pub mod display_layers;

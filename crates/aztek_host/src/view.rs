@@ -210,6 +210,7 @@ impl View {
                     self.marquee = Some(px);
                     return false;
                 }
+                self.vp.update_frame(&mut core.s);
                 let pivot = self.vp.manip_pivot(&mut core.s, &items);
                 let hit = pivot.and_then(|pv| self.vp.manip_hit(pv, px, self.dpr));
                 let start_drag = match (button, hit, pivot) {
@@ -248,7 +249,7 @@ impl View {
                     self.drag_lines = 0;
                     return true;
                 }
-                if button == 1 && self.vp.tool == Tool::Joint {
+                if button == 1 && matches!(self.vp.tool, Tool::Joint | Tool::CurveCv | Tool::CurveEp) {
                     self.joint_press = Some(px);
                     return false;
                 }
@@ -354,7 +355,12 @@ impl View {
                 }
                 if let Some(start) = self.joint_press.take() {
                     if (px - start).length() < 6.0 * self.dpr {
-                        place_joint(core, self.vp.place_point(px));
+                        let at = self.vp.place_point(px);
+                        if self.vp.tool == Tool::Joint {
+                            place_joint(core, at);
+                        } else {
+                            self.vp.curve_points.push(at);
+                        }
                     }
                     return true;
                 }
@@ -409,6 +415,8 @@ impl View {
                     "scale" => Tool::Scale,
                     "joint" => Tool::Joint,
                     "paintSkin" => Tool::PaintSkin,
+                    "curveCv" => Tool::CurveCv,
+                    "curveEp" => Tool::CurveEp,
                     _ => Tool::Select,
                 }
             }
@@ -435,6 +443,21 @@ impl View {
                 self.background = [g, g, g, 1.0];
             }
             "manipSize" => self.vp.manip_scale = v.as_f64().unwrap_or(1.0),
+            "axisOrientation" => self.vp.axis_mode = v.as_str().unwrap_or("world").to_string(),
+            "curveDegree" => self.vp.curve_degree = v.as_i64().unwrap_or(3),
+            // Enter: makes the curve; the tool stays for the next.
+            "finishTool" => {
+                if matches!(self.vp.tool, Tool::CurveCv | Tool::CurveEp) && self.vp.curve_points.len() >= 2 {
+                    let pts: Vec<[f64; 3]> = self.vp.curve_points.drain(..).map(|p| p.to_array()).collect();
+                    let flag = if self.vp.tool == Tool::CurveEp { "editPoint" } else { "point" };
+                    let _ = core.exec("curve", json!({"degree": self.vp.curve_degree, flag: pts}));
+                } else {
+                    self.vp.curve_points.clear();
+                }
+            }
+            "undoToolPoint" => {
+                self.vp.curve_points.pop();
+            }
             "brushAdjust" => self.brush_adjust = v.as_bool().unwrap_or(false),
             "smoothCage" => self.vp.smooth_cage = v.as_bool().unwrap_or(false),
             "pivotMode" => self.vp.pivot_mode = v.as_bool().unwrap_or(false),

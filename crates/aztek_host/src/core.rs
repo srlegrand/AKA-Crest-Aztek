@@ -433,6 +433,8 @@ pub const UI_COMMANDS: &[(&str, &str)] = &[
     ("FrameAll", "Frame everything in the active view."),
     ("PlaybackToggle", "Start or stop playback."),
     ("JointTool", "The joint tool: click to place joints."),
+    ("CVCurveTool", "The CV curve tool: click to place CVs, Enter to finish."),
+    ("EPCurveTool", "The EP curve tool: click to place edit points, Enter to finish."),
     ("ArtPaintSkinWeightsTool", "The paint skin weights tool."),
     ("ArtPaintSkinWeightsToolOptions", "The paint skin weights tool and its settings."),
     ("ToolSettingsWindow", "Show the Tool Settings."),

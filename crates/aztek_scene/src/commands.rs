@@ -554,6 +554,9 @@ fn register_scene(c: &mut Commands<Session>) {
                         for m in meshes {
                             crate::history::delete_history(g, m)?;
                         }
+                        if let Some(c) = crate::curves::as_curve(g, id) {
+                            crate::curves::bake_history(g, c)?;
+                        }
                     }
                     Ok(())
                 })();
@@ -1577,6 +1580,9 @@ fn register_transform(c: &mut Commands<Session>) {
              selected object's pivot, or with components selected every selected point, so move(x=0) puts an edge loop on the \
              centre line.",
             |s, a| {
+                if let Some(r) = crate::maya_cmds::on_components(s, a, "moveComponents")? {
+                    return Ok(r);
+                }
                 if let Some(axes) = axis_args(a) {
                     if on_components(a) {
                         let (mut factor, mut pivot) = (DVec3::ONE, DVec3::ZERO);
@@ -1634,6 +1640,9 @@ fn register_transform(c: &mut Commands<Session>) {
              rotate(to=(x, y, z)) sets the local Euler angles.\n\nrotate(x=90) sets one local angle and leaves the others. With \
              components selected it turns them that far about the world axis through their centre instead.",
             |s, a| {
+                if let Some(r) = crate::maya_cmds::on_components(s, a, "rotateComponents")? {
+                    return Ok(r);
+                }
                 if let Some(axes) = axis_args(a) {
                     if on_components(a) {
                         run(s, "rotateComponents", json!({"by": vec3_json(with_axes(DVec3::ZERO, axes))}))?;
@@ -1682,6 +1691,9 @@ fn register_transform(c: &mut Commands<Session>) {
              one local scale and leaves the others. With components selected it scales them by that factor along the world axis \
              about their centre instead, so scale(y=0) flattens them.",
             |s, a| {
+                if let Some(r) = crate::maya_cmds::on_components(s, a, "scaleComponents")? {
+                    return Ok(r);
+                }
                 if let Some(axes) = axis_args(a) {
                     if on_components(a) {
                         run(s, "scaleComponents", json!({"by": vec3_json(with_axes(DVec3::ONE, axes))}))?;

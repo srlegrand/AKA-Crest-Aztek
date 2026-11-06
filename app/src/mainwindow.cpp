@@ -209,10 +209,12 @@ QMenu* MainWindow::create_menu() {
                 P{"Plane", "polyPlane"}, P{"Disc", "polyDisc"}, P{"Pipe", "polyPipe"}, P{"Capsule", "polyCapsule"}, P{"Platonic Solid", "polyIcoSphere"},
                 P{"Quad Sphere", "polyQuadSphere"}})
         cmd(polys, p.label, p.cmd, {}, QString(), true);
-    todo(m, "NURBS Primitives");
-    todo(m, "Lights");
-    todo(m, "Cameras");
-    todo(m, "Curve Tools");
+    QMenu* nurbs = m->addMenu("NURBS Primitives");
+    cmd(nurbs, "Circle", "circle", QJsonObject{{"normal", QJsonArray{0, 1, 0}}}, QString(), true);
+    cmd(nurbs, "Square", "nurbsSquare", {}, QString(), true);
+    QMenu* curves = m->addMenu("Curve Tools");
+    curves->addAction("CV Curve Tool", [this] { set_tool("curveCv"); });
+    curves->addAction("EP Curve Tool", [this] { set_tool("curveEp"); });
     m->addSeparator();
     cmd(m, "Locator", "spaceLocator");
     cmd(m, "Empty Group", "group", QJsonObject{{"empty", true}}, "Ctrl+G");
@@ -421,6 +423,35 @@ QMenu* MainWindow::mesh_display_menu() {
     return m;
 }
 
+QMenu* MainWindow::curves_menu() {
+    auto* m = new QMenu("Curves", this);
+    cmd(m, "Attach", "attachCurve", {}, QString(), true);
+    cmd(m, "Detach", "detachCurve", {}, QString(), true);
+    cmd(m, "Open/Close", "closeCurve", {}, QString(), true);
+    m->addSeparator();
+    cmd(m, "Insert Knot", "insertKnotCurve", {}, QString(), true);
+    cmd(m, "Extend", "extendCurve", {}, QString(), true);
+    cmd(m, "Offset", "offsetCurve", {}, QString(), true);
+    m->addSeparator();
+    cmd(m, "Reverse Direction", "reverseCurve");
+    cmd(m, "Rebuild", "rebuildCurve", {}, QString(), true);
+    cmd(m, "Fit B-spline", "fitBspline");
+    cmd(m, "Smooth", "smoothCurve", {}, QString(), true);
+    m->addSeparator();
+    cmd(m, "Polygon Edges to Curve", "polyToCurve", {}, QString(), true);
+    return m;
+}
+
+QMenu* MainWindow::surfaces_menu() {
+    auto* m = new QMenu("Surfaces", this);
+    cmd(m, "Loft", "loft", {}, QString(), true);
+    cmd(m, "Planar", "planar");
+    cmd(m, "Revolve", "revolve", {}, QString(), true);
+    cmd(m, "Extrude", "extrude", {}, QString(), true);
+    cmd(m, "Sweep Mesh", "sweepMeshFromCurve", {}, QString(), true);
+    return m;
+}
+
 QMenu* MainWindow::uv_menu() {
     auto* m = new QMenu("UV", this);
     cmd(m, "Automatic", "polyAutoProjection", {}, QString(), true);
@@ -622,7 +653,7 @@ void MainWindow::build_menu_set(const QString& set) {
     set_menus_.clear();
     QList<QMenu*> menus = {file_menu(), edit_menu(), create_menu(), select_menu(), modify_menu(), display_menu(), windows_menu()};
     if (set == "Modeling")
-        menus << mesh_menu() << edit_mesh_menu() << mesh_tools_menu() << mesh_display_menu() << uv_menu() << deform_menu();
+        menus << mesh_menu() << edit_mesh_menu() << mesh_tools_menu() << mesh_display_menu() << curves_menu() << surfaces_menu() << uv_menu() << deform_menu();
     else if (set == "Rigging")
         menus << skeleton_menu() << skin_menu() << deform_menu() << constrain_menu() << control_menu();
     else
@@ -756,6 +787,16 @@ void MainWindow::build_shelf() {
         t->addAction(icon("graph"), "Graph Editor", [this] { show_graph_editor(); });
         btn(t, "cutKey", "Delete Keys", "cutKey");
     });
+    shelf("Curves", [&](QToolBar* t) {
+        t->addAction(icon("curveCv"), "CV Curve Tool", [this] { set_tool("curveCv"); });
+        t->addAction(icon("curveEp"), "EP Curve Tool", [this] { set_tool("curveEp"); });
+        btn(t, "circle", "NURBS Circle", "circle", QJsonObject{{"normal", QJsonArray{0, 1, 0}}});
+        btn(t, "square", "NURBS Square", "nurbsSquare");
+        t->addSeparator();
+        btn(t, "loft", "Loft", "loft");
+        btn(t, "revolve", "Revolve", "revolve");
+        btn(t, "extrudeCurve", "Extrude", "extrude");
+    });
     shelf("UV Editing", [&](QToolBar* t) {
         t->addAction(icon("uvEditor"), "UV Editor", [this] { show_uv_editor(); });
         btn(t, "uvAuto", "Automatic Projection", "polyAutoProjection");
@@ -844,6 +885,12 @@ void MainWindow::build_toolbox() {
         tool_buttons_[id] = a;
     }
     tool_buttons_["select"]->setChecked(true);
+    // Double-clicking a tool opens its settings, as in Maya.
+    for (const QString& id : tool_buttons_.keys())
+        if (QWidget* w = tb->widgetForAction(tool_buttons_[id])) {
+            w->setProperty("toolId", id);
+            w->installEventFilter(this);
+        }
     tb->addSeparator();
     tb->addAction(icon("single"), "Single Perspective View", [this] { panels_->set_single(true); });
     tb->addAction(icon("four"), "Four View", [this] { panels_->set_single(false); });
@@ -888,6 +935,12 @@ void MainWindow::build_docks() {
     tool_dock_ = new QDockWidget("Tool Settings", this);
     tool_dock_->setObjectName("toolDock");
     tool_settings_ = new ToolSettings(tool_dock_);
+    connect(tool_settings_, &ToolSettings::axisOrientation, this, [this](const QString& m) {
+        for (ViewportWidget* v : panels_->views()) v->set("axisOrientation", "\"" + m + "\"");
+    });
+    connect(tool_settings_, &ToolSettings::curveDegree, this, [this](int d) {
+        for (ViewportWidget* v : panels_->views()) v->set("curveDegree", QString::number(d));
+    });
     tool_dock_->setWidget(tool_settings_);
     addDockWidget(Qt::LeftDockWidgetArea, tool_dock_);
     tabifyDockWidget(outliner_dock_, tool_dock_);
@@ -1071,6 +1124,8 @@ void MainWindow::refresh_state() {
         else if (n == "TextureViewWindow" || n == "UVEditor") show_uv_editor();
         else if (n == "PreferencesWindow") show_preferences();
         else if (n == "JointTool") set_tool("joint");
+        else if (n == "CVCurveTool") set_tool("curveCv");
+        else if (n == "EPCurveTool") set_tool("curveEp");
         else if (n == "ArtPaintSkinWeightsTool") set_tool("paintSkin");
         else if (n == "ArtPaintSkinWeightsToolOptions") { set_tool("paintSkin"); show_tool_settings(); }
         else if (n == "ToolSettingsWindow") show_tool_settings();
@@ -1123,7 +1178,9 @@ void MainWindow::set_tool(const QString& tool) {
     if (tool_buttons_.contains(tool)) tool_buttons_[tool]->setChecked(true);
     for (ViewportWidget* v : panels_->views()) v->set("tool", "\"" + tool + "\"");
     if (tool_settings_) tool_settings_->set_tool(tool);
-    if (tool == "paintSkin")
+    if (tool == "curveCv" || tool == "curveEp")
+        help_line_->setText("Curve Tool: click to place points, Backspace takes the last back, Enter makes the curve. Hold X to snap to the grid.");
+    else if (tool == "paintSkin")
         help_line_->setText("Paint Skin Weights Tool: drag to paint, Ctrl paints the inverse, Shift smooths, B-drag sizes the brush.");
     else if (tool == "joint")
         help_line_->setText("Joint Tool: click to place joints, each under the last. Enter ends the chain.");
@@ -1363,6 +1420,11 @@ void MainWindow::marking_menu(QPoint global, int mods) {
 }
 
 bool MainWindow::eventFilter(QObject* o, QEvent* e) {
+    if (e->type() == QEvent::MouseButtonDblClick && o->property("toolId").isValid()) {
+        set_tool(o->property("toolId").toString());
+        show_tool_settings();
+        return true;
+    }
     if (e->type() == QEvent::KeyPress || e->type() == QEvent::KeyRelease) {
         // Only for this window's widgets, and never while typing in a field.
         QWidget* w = qobject_cast<QWidget*>(o);
@@ -1450,6 +1512,11 @@ bool MainWindow::hotkey(QKeyEvent* k, bool press) {
     case Qt::Key_Enter:
         // The joint tool's chain ends; the next click starts another.
         if (tool_ == "joint") { exec("select", QJsonObject{{"clear", true}}); return true; }
+        if (tool_.startsWith("curve")) {
+            for (ViewportWidget* v : panels_->views()) v->set("finishTool", "true");
+            Host::get()->poke();
+            return true;
+        }
         break;
     case Qt::Key_Escape: if (play_timer_->isActive()) { stop_play(); return true; } break;
     case Qt::Key_F:
@@ -1535,6 +1602,10 @@ bool MainWindow::hotkey(QKeyEvent* k, bool press) {
     case Qt::Key_F11: if (ctrl) exec("convertSelection", args(QJsonArray{"face"})); else set_mode("face"); return true;
     case Qt::Key_Delete:
     case Qt::Key_Backspace:
+        if (tool_.startsWith("curve")) {
+            for (ViewportWidget* v : panels_->views()) v->set("undoToolPoint", "true");
+            return true;
+        }
         if (ctrl) exec("polyDissolve");
         else if (state()["mode"].toString() == "object") exec("delete");
         else exec("deleteComponents");

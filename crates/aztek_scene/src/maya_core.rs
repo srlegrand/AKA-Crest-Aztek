@@ -107,6 +107,21 @@ pub fn flatten_component(g: &mut Graph, s: &str) -> Vec<String> {
     let Some((kind, inner)) = comp.split_once('[') else { return vec![s.to_string()] };
     let inner = inner.trim_end_matches(']');
     let Ok(Some(id)) = g.find(obj) else { return vec![s.to_string()] };
+    if let Some(c) = crate::curves::as_curve(g, id) {
+        let count = crate::curves::local_curve(g, c).map(|k| k.distinct_cvs().len() as u32).unwrap_or(0);
+        let mut out = Vec::new();
+        for part in inner.split(',') {
+            if part == "*" {
+                out.extend((0..count).map(|i| format!("{obj}.{kind}[{i}]")));
+            } else if let Some((a, b)) = part.split_once(':') {
+                let (a, b): (u32, u32) = (a.parse().unwrap_or(0), b.parse().unwrap_or(0));
+                out.extend((a..=b).map(|i| format!("{obj}.{kind}[{i}]")));
+            } else {
+                out.push(format!("{obj}.{kind}[{part}]"));
+            }
+        }
+        return out;
+    }
     let Some(mesh) = components::as_mesh(g, id) else { return vec![s.to_string()] };
     let Some(m) = components::mesh_of(g, mesh) else { return vec![s.to_string()] };
     let cap = match kind {
