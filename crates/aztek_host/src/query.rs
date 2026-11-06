@@ -346,6 +346,8 @@ pub fn layers(core: &Core) -> Value {
             "visible": n.bool(aztek_scene::display_layers::VISIBILITY),
             "displayType": n.int(aztek_scene::display_layers::DISPLAY_TYPE),
             "order": n.int(aztek_scene::display_layers::DISPLAY_ORDER),
+            "playback": !n.bool(aztek_scene::display_layers::HIDE_ON_PLAYBACK),
+            "color": if n.bool(aztek_scene::display_layers::USE_COLOR) { let c = n.vec3(aztek_scene::display_layers::COLOR); json!([c.x, c.y, c.z]) } else { Value::Null },
             "members": members,
         }));
     }

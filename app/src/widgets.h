@@ -2,6 +2,7 @@
 // the preferences window.
 #pragma once
 #include <QDialog>
+#include <QHash>
 #include <QJsonObject>
 #include <QLineEdit>
 #include <QMenu>
@@ -38,6 +39,9 @@ private:
     QList<std::function<void(QJsonObject&)>> readers_;
 };
 
+// What Ctrl+Shift+click on a menu row with an option box does.
+std::function<void(QAction*)>& shelf_capture();
+
 // A menu item with Maya's option box on its right.
 class OptionRow : public QWidgetAction {
     Q_OBJECT
@@ -63,6 +67,8 @@ public:
     void set_breakdowns(const QVector<double>& k);
     const QVector<double>& keys() const { return keys_; }
     bool has_range() const { return range_a_ != range_b_ || selecting_; }
+    void set_tick_width(int w) { tick_width_ = w; update(); }
+    void set_ticks_shown(bool on) { ticks_shown_ = on; update(); }
     QString range_text() const;
 signals:
     void timeChanged(double t);
@@ -76,6 +82,8 @@ protected:
     void mouseReleaseEvent(QMouseEvent*) override;
 private:
     double frame_at(int x) const;
+    int tick_width_ = 2;
+    bool ticks_shown_ = true;
     double time_ = 1, start_ = 1, end_ = 120;
     QVector<double> keys_;
     QVector<double> breakdowns_;
@@ -94,11 +102,14 @@ public:
     void set(double ast, double min, double max, double aet);
 signals:
     void rangeChanged(double min, double max);
+    // Double-click: the playback range to the whole animation range and back.
+    void toggleFullRange();
 protected:
     void paintEvent(QPaintEvent*) override;
     void mousePressEvent(QMouseEvent*) override;
     void mouseMoveEvent(QMouseEvent*) override;
     void mouseReleaseEvent(QMouseEvent*) override;
+    void mouseDoubleClickEvent(QMouseEvent*) override { emit toggleFullRange(); }
 private:
     double frame_at(double x) const;
     double x_of(double f) const;
@@ -120,18 +131,32 @@ private:
     QToolButton* lang_;
     QLineEdit* input_;
     QLineEdit* result_;
-    QStringList history_;
+    // History per language, as the two share a line.
+    QHash<QString, QStringList> histories_;
     int pos_ = 0;
 };
 
-// Space held: every menu at the cursor.
+struct MarkItem;
+
+// Space held: every menu at the cursor, with marking menus in the zones around them. `common` of the menus go on top.
 class Hotbox : public QWidget {
     Q_OBJECT
 public:
-    Hotbox(const QList<QMenu*>& menus, QWidget* parent);
+    Hotbox(const QList<QMenu*>& menus, int common, QWidget* parent);
     void popup(QPoint global);
+    // Zone: 0 north, 1 east, 2 south, 3 west.
+    void set_zones(std::function<QList<MarkItem>(int)> f) { zones_ = std::move(f); }
+signals:
+    void spaceReleased();
 protected:
     void paintEvent(QPaintEvent*) override;
+    void mousePressEvent(QMouseEvent*) override;
+    void keyReleaseEvent(QKeyEvent*) override;
+private:
+    int zone_at(QPoint p) const;
+    QWidget* box_;
+    QPoint center_;
+    std::function<QList<MarkItem>(int)> zones_;
 };
 
 class Preferences : public QDialog {

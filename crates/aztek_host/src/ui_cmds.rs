@@ -539,7 +539,7 @@ pub fn register(s: &mut Session) {
                     names.iter().filter_map(|n| g.find(n).ok().flatten()).collect()
                 }
             };
-            for flag in ["localAxis", "rotatePivot", "scalePivot", "selectHandle"] {
+            for flag in ["localAxis", "rotatePivot", "scalePivot", "selectHandle", "boundingBox"] {
                 if !a.bool(flag) {
                     continue;
                 }
@@ -572,8 +572,27 @@ pub fn register(s: &mut Session) {
         .flag(f("rotatePivot", "rp", ArgType::Bool, "The rotate pivot."))
         .flag(f("scalePivot", "sp", ArgType::Bool, "The scale pivot."))
         .flag(f("selectHandle", "sh", ArgType::Bool, "The selection handle."))
+        .flag(f("boundingBox", "bb", ArgType::Bool, "Draw as a box."))
         .flag(f("template", "te", ArgType::Bool, "Template display."))
         .flag(f("state", "st", ArgType::Bool, "On or off rather than a switch.")),
+    );
+
+    reg(
+        s,
+        Cmd::new("uiPref", "An interface setting the views read: uiPref name value. No value returns it.", |_s, a| {
+            let Some(name) = a.pos_str(0).map(str::to_string) else { fail!("uiPref: give a name") };
+            let list = a.get("args").and_then(Value::as_array).cloned().unwrap_or_default();
+            with_ui(|u| {
+                if let Some(v) = list.get(1) {
+                    u.prefs.insert(name, v.clone());
+                    Ok(Value::Null)
+                } else {
+                    Ok(u.prefs.get(&name).cloned().unwrap_or(Value::Null))
+                }
+            })
+        })
+        .positional("name value")
+        .undoable(false),
     );
 
     reg(

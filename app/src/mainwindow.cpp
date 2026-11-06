@@ -11,6 +11,8 @@
 #include "toolsettings.h"
 #include "dopesheet.h"
 #include "nodeeditor.h"
+#include "shelves.h"
+#include "editors.h"
 
 #include <QAction>
 #include <cstdio>
@@ -23,8 +25,10 @@
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QMouseEvent>
 #include <QLineEdit>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -75,8 +79,20 @@ MainWindow::MainWindow() {
     panels_ = new PanelLayout(this);
     connect(panels_, &PanelLayout::rightClick, this, &MainWindow::marking_menu);
 
+    build_runtime();
+    load_hotkeys();
     build_status_line();
-    build_shelf();
+    addToolBarBreak();
+    QToolBar* shelf_holder = addToolBar("Shelf");
+    shelf_holder->setObjectName("shelf");
+    shelf_holder->setMovable(false);
+    shelf_bar_ = new ShelfBar([this](const QString& code, const QString& lang) {
+        if (lang == "python") python(code);
+        else if (lang == "menu") run_menu_path(code);
+        else mel(code);
+    }, shelf_holder);
+    shelf_capture() = [this](QAction* a) { add_to_shelf(a); };
+    shelf_holder->addWidget(shelf_bar_);
     build_toolbox();
     build_docks();
     build_bottom();
@@ -84,6 +100,7 @@ MainWindow::MainWindow() {
 
     // The centre: model panels.
     setCentralWidget(panels_);
+    in_view_ = new InViewEditor(panels_);
 
     connect(Host::get(), &Host::sceneChanged, this, &MainWindow::refresh_state);
     connect(Host::get(), &Host::logLines, this, [this](const QJsonArray& lines) {
@@ -93,6 +110,14 @@ MainWindow::MainWindow() {
             QJsonObject l = v.toObject();
             int k = l["kind"].toInt();
             if (k == 1 || k == 2 || k == 4) command_line_->show_result(l["text"].toString(), k == 2);
+            if (k == 0) {
+                remember_command(l["text"].toString());
+                // After an edit that made a history node: its attributes in the view.
+                QString t = l["text"].toString();
+                bool off = QSettings().value("prefs/inViewEditorOff", false).toBool();
+                if (!off && t.startsWith("poly") && !t.startsWith("polyEvaluate")) QTimer::singleShot(0, this, [this] { in_view_->show_last(); });
+                else if (t.startsWith("select")) in_view_->hide();
+            }
         }
     });
 
@@ -130,6 +155,9 @@ QAction* MainWindow::cmd(QMenu* m, const QString& label, const QString& command,
         connect(a, &QAction::triggered, this, run);
     }
     a->setEnabled(ok);
+    // What Ctrl+Shift+click puts on the shelf.
+    QJsonObject echo{{"name", command}, {"call", call}};
+    a->setProperty("melCommand", query("melEcho", QString::fromUtf8(QJsonDocument(echo).toJson(QJsonDocument::Compact))).toString());
     a->setStatusTip(ok ? QString("%1: %2").arg(label, command) : QString("%1: not available yet").arg(label));
     return a;
 }
@@ -139,67 +167,6 @@ QAction* MainWindow::todo(QMenu* m, const QString& label) {
     a->setEnabled(false);
     a->setStatusTip(label + ": not available yet");
     return a;
-}
-
-QMenu* MainWindow::file_menu() {
-    auto* m = new QMenu("File", this);
-    m->addAction(icon("new"), "New Scene\tCtrl+N", [] { aztek_free(aztek_file("new", "")); Host::get()->poke(); });
-    m->addAction(icon("open"), "Open Scene...\tCtrl+O", this, &MainWindow::open_scene);
-    m->addAction(icon("save"), "Save Scene\tCtrl+S", [this] { save_scene(false); });
-    m->addAction("Save Scene As...\tCtrl+Shift+S", [this] { save_scene(true); });
-    m->addSeparator();
-    m->addAction("Import...", [] {
-        QString f = QFileDialog::getOpenFileName(nullptr, "Import", QString(), "Meshes (*.obj *.ply *.stl)");
-        if (f.isEmpty()) return;
-        QString c = f.endsWith(".ply", Qt::CaseInsensitive) ? "importPly" : f.endsWith(".stl", Qt::CaseInsensitive) ? "importStl" : "importObj";
-        exec(c, args(QJsonArray{f}));
-    });
-    m->addAction("Export Selection...", [] {
-        QString f = QFileDialog::getSaveFileName(nullptr, "Export Selection", "export.obj", "OBJ (*.obj);;PLY (*.ply);;STL (*.stl)");
-        if (f.isEmpty()) return;
-        QString c = f.endsWith(".ply", Qt::CaseInsensitive) ? "exportPly" : f.endsWith(".stl", Qt::CaseInsensitive) ? "exportStl" : "exportObj";
-        exec(c, args(QJsonArray{f}));
-    });
-    m->addSeparator();
-    QMenu* recent = m->addMenu("Recent Files");
-    connect(recent, &QMenu::aboutToShow, this, [this, recent] {
-        recent->clear();
-        for (const QString& f : QSettings().value("recentFiles").toStringList()) recent->addAction(f, [this, f] { open_file(f); });
-        if (recent->isEmpty()) recent->addAction("(none)")->setEnabled(false);
-    });
-    m->addSeparator();
-    m->addAction("Exit\tCtrl+Q", this, &QWidget::close);
-    return m;
-}
-
-QMenu* MainWindow::edit_menu() {
-    auto* m = new QMenu("Edit", this);
-    m->addAction(icon("undo"), "Undo\tZ", [] { aztek_undo(); Host::get()->poke(); });
-    m->addAction(icon("redo"), "Redo\tShift+Z", [] { aztek_redo(); Host::get()->poke(); });
-    m->addAction("Repeat\tG", this, &MainWindow::repeat_last);
-    m->addSeparator();
-    cmd(m, "Delete", "delete", {}, "Delete");
-    QMenu* by_type = m->addMenu("Delete by Type");
-    cmd(by_type, "History", "delete", QJsonObject{{"constructionHistory", true}}, "Alt+Shift+D");
-    QMenu* all_type = m->addMenu("Delete All by Type");
-    all_type->addAction("History", [] {
-        QJsonArray all;
-        for (const QJsonValue& v : query("outliner").toArray()) all.append(v.toObject()["path"].toString());
-        QJsonObject c = args(all);
-        c["constructionHistory"] = true;
-        exec("delete", c);
-    });
-    m->addSeparator();
-    cmd(m, "Duplicate", "duplicate", {}, "Ctrl+D", true);
-    cmd(m, "Duplicate with Transform", "duplicateWithTransform", {}, "Shift+D");
-    cmd(m, "Instance", "instance", {}, QString(), true);
-    m->addSeparator();
-    cmd(m, "Group", "group", {}, "Ctrl+G", true);
-    cmd(m, "Ungroup", "ungroup", {}, QString(), true);
-    m->addSeparator();
-    cmd(m, "Parent", "parent", {}, "P", true);
-    cmd(m, "Unparent", "parent", QJsonObject{{"world", true}}, "Shift+P");
-    return m;
 }
 
 QMenu* MainWindow::create_menu() {
@@ -220,123 +187,6 @@ QMenu* MainWindow::create_menu() {
     cmd(m, "Locator", "spaceLocator");
     cmd(m, "Empty Group", "group", QJsonObject{{"empty", true}}, "Ctrl+G");
     cmd(m, "Sets", "createSet", {}, QString(), true);
-    return m;
-}
-
-QMenu* MainWindow::select_menu() {
-    auto* m = new QMenu("Select", this);
-    m->addAction("All\tCtrl+Shift+A", [] {
-        QJsonArray all;
-        for (const QJsonValue& v : query("outliner").toArray())
-            if (v.toObject()["type"].toString() != "objectSet") all.append(v.toObject()["path"].toString());
-        exec("select", args(all));
-    });
-    cmd(m, "Deselect All", "select", QJsonObject{{"clear", true}});
-    cmd(m, "Hierarchy", "selectHierarchy");
-    cmd(m, "Inverse", "invertSelection", {}, "Ctrl+Shift+I");
-    m->addSeparator();
-    cmd(m, "Grow", "growSelection", {}, ">");
-    cmd(m, "Shrink", "shrinkSelection", {}, "<");
-    m->addSeparator();
-    cmd(m, "Select Edge Loop", "selectLoop");
-    cmd(m, "Select Border Edges", "selectBorder");
-    cmd(m, "Select Shell", "selectConnected");
-    cmd(m, "Select Shortest Edge Path", "selectPathBetween");
-    cmd(m, "Select by Angle", "selectByAngle", {}, QString(), true);
-    m->addSeparator();
-    cmd(m, "Object/Component", "selectMode", args(QJsonArray{"object"}), "F8");
-    cmd(m, "Vertex", "selectMode", args(QJsonArray{"vertex"}), "F9");
-    cmd(m, "Edge", "selectMode", args(QJsonArray{"edge"}), "F10");
-    cmd(m, "Face", "selectMode", args(QJsonArray{"face"}), "F11");
-    m->addSeparator();
-    QMenu* conv = m->addMenu("Convert Selection");
-    cmd(conv, "To Vertices", "convertSelection", args(QJsonArray{"vertex"}), "Ctrl+F9");
-    cmd(conv, "To Edges", "convertSelection", args(QJsonArray{"edge"}), "Ctrl+F10");
-    cmd(conv, "To Faces", "convertSelection", args(QJsonArray{"face"}), "Ctrl+F11");
-    return m;
-}
-
-QMenu* MainWindow::modify_menu() {
-    auto* m = new QMenu("Modify", this);
-    cmd(m, "Freeze Transformations", "freezeTransforms", {}, QString(), true);
-    cmd(m, "Reset Transformations", "resetTransforms", {}, QString(), true);
-    m->addSeparator();
-    QMenu* pivot = m->addMenu("Pivot");
-    cmd(pivot, "Center Pivot", "centerPivot");
-    cmd(pivot, "Bake Pivot", "bakePivot");
-    cmd(pivot, "Reset Pivot", "resetPivot");
-    cmd(pivot, "Zero Pivot", "zeroPivot");
-    cmd(m, "Match Pivots", "matchPivot");
-    m->addSeparator();
-    cmd(m, "Convert to Instance", "convertToInstance");
-    cmd(m, "Make Unique", "makeUnique");
-    m->addSeparator();
-    cmd(m, "Soft Select", "softSelect", QJsonObject{{"softSelectEnabled", 1}}, "B", true);
-    return m;
-}
-
-QMenu* MainWindow::display_menu() {
-    auto* m = new QMenu("Display", this);
-    QMenu* hide = m->addMenu("Hide");
-    cmd(hide, "Hide Selection", "hide", {}, "Ctrl+H");
-    QMenu* show = m->addMenu("Show");
-    cmd(show, "Show Selection", "show");
-    cmd(show, "Show Last Hidden", "showLastHidden", {}, "Ctrl+Shift+H");
-    cmd(m, "Toggle Show/Hide", "toggleVisibility", {}, "H");
-    m->addSeparator();
-    QMenu* grid = m->addMenu("Grid");
-    grid->addAction("Show", [this] { panels_->set_all("grid", "true"); });
-    grid->addAction("Hide", [this] { panels_->set_all("grid", "false"); });
-    m->addSeparator();
-    QMenu* sp = m->addMenu("Smooth Preview");
-    cmd(sp, "Off", "smoothPreview", QJsonObject{{"level", 0}}, "1");
-    sp->addAction("Cage + Smooth\t2", [this] {
-        for (ViewportWidget* vw : panels_->views()) vw->set("smoothCage", "true");
-        exec("smoothPreview", QJsonObject{{"level", 2}});
-    });
-    sp->addAction("Smooth\t3", [this] {
-        for (ViewportWidget* vw : panels_->views()) vw->set("smoothCage", "false");
-        exec("smoothPreview", QJsonObject{{"level", 2}});
-    });
-    return m;
-}
-
-QMenu* MainWindow::windows_menu() {
-    auto* m = new QMenu("Windows", this);
-    QMenu* ge = m->addMenu("General Editors");
-    ge->addAction("Script Editor", this, &MainWindow::show_script_editor);
-    ge->addAction("Node Editor", this, &MainWindow::show_node_editor);
-    auto* anim_ed = m->addMenu("Animation Editors");
-    anim_ed->addAction("Graph Editor", this, &MainWindow::show_graph_editor);
-    anim_ed->addAction("Dope Sheet", this, &MainWindow::show_dope_sheet);
-    auto* model_ed = m->addMenu("Modeling Editors");
-    model_ed->addAction("UV Editor", this, &MainWindow::show_uv_editor);
-    ge->addAction("Attribute Editor\tCtrl+A", this, &MainWindow::show_attribute_editor);
-    ge->addAction("Channel Box / Layer Editor", [this] {
-        channel_dock_->show();
-        channel_dock_->raise();
-    });
-    m->addAction("Outliner", [this] {
-        outliner_dock_->show();
-        outliner_dock_->raise();
-    });
-    m->addSeparator();
-    QMenu* layouts = m->addMenu("Workspaces");
-    layouts->addAction("Single Perspective View", [this] { panels_->set_single(true); });
-    layouts->addAction("Four View", [this] { panels_->set_single(false); });
-    m->addSeparator();
-    m->addAction("Tool Settings...\tCtrl+Shift+T", this, &MainWindow::show_tool_settings);
-    QMenu* prefs = m->addMenu("Settings/Preferences");
-    prefs->addAction("Preferences...", this, &MainWindow::show_preferences);
-    prefs->addAction("Hotkey Editor...", [this] {
-        QMessageBox::information(this, "Hotkeys",
-                                 "Q W E R  select, move, rotate, scale\nF / A  frame selection / all\nSpace  tap: single/four views, hold: hotbox\n"
-                                 "F8 F9 F10 F11  object/component, vertex, edge, face\nAlt + left/middle/right drag  tumble, track, dolly\n"
-                                 "Right drag  marking menu; Shift+right: tools; Ctrl+right: convert\nZ / Shift+Z  undo / redo\nG  repeat last\n"
-                                 "Ctrl+D  duplicate   Ctrl+G  group   P / Shift+P  parent / unparent\nCtrl+H / Ctrl+Shift+H  hide / show last hidden\n"
-                                 "Ctrl+E  extrude   Ctrl+B  bevel   > <  grow / shrink\n1 2 3  smooth preview   4 5  wireframe / shaded\n"
-                                 "+ -  manipulator size   Ctrl+A  attribute editor\nCtrl+N Ctrl+O Ctrl+S  new, open, save");
-    });
     return m;
 }
 
@@ -685,206 +535,16 @@ void MainWindow::build_menu_set(const QString& set) {
     mb->addMenu(help);
     set_menus_.append(help);
     if (hotbox_) hotbox_->deleteLater();
-    hotbox_ = new Hotbox(set_menus_, this);
+    hotbox_ = new Hotbox(set_menus_, 7, this);
+    hotbox_->set_zones([this](int zone) { return hotbox_zone(zone); });
+    connect(hotbox_, &Hotbox::spaceReleased, this, [this] {
+        held_.remove(Qt::Key_Space);
+        space_held_ = false;
+    });
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Status line, shelf, toolbox
-
-void MainWindow::build_status_line() {
-    QToolBar* tb = addToolBar("Status Line");
-    tb->setObjectName("statusLine");
-    tb->setMovable(false);
-    tb->setIconSize(QSize(20, 20));
-    menu_set_ = new QComboBox(tb);
-    menu_set_->addItems({"Modeling", "Rigging", "Animation"});
-    menu_set_->setToolTip("Menu set");
-    connect(menu_set_, &QComboBox::currentTextChanged, this, &MainWindow::build_menu_set);
-    tb->addWidget(menu_set_);
-    tb->addSeparator();
-    tb->addAction(icon("new"), "New Scene", [] { aztek_free(aztek_file("new", "")); Host::get()->poke(); });
-    tb->addAction(icon("open"), "Open Scene", this, &MainWindow::open_scene);
-    tb->addAction(icon("save"), "Save Scene", [this] { save_scene(false); });
-    tb->addSeparator();
-    tb->addAction(icon("undo"), "Undo", [] { aztek_undo(); Host::get()->poke(); });
-    tb->addAction(icon("redo"), "Redo", [] { aztek_redo(); Host::get()->poke(); });
-    tb->addSeparator();
-    auto* modes = new QActionGroup(this);
-    for (const char* m : {"object", "vertex", "edge", "face"}) {
-        QString mode = m;
-        QAction* a = tb->addAction(icon(mode), QString("Select by %1").arg(mode == "object" ? "object type" : mode));
-        a->setCheckable(true);
-        modes->addAction(a);
-        connect(a, &QAction::triggered, this, [this, mode] { set_mode(mode); });
-        mode_buttons_[mode] = a;
-    }
-    tb->addSeparator();
-    history_button_ = tb->addAction(icon("history"), "Construction history on/off");
-    history_button_->setCheckable(true);
-    connect(history_button_, &QAction::triggered, this, [](bool on) { exec("constructionHistory", QJsonObject{{"state", on}}); });
-    tb->addSeparator();
-    QAction* sym = tb->addAction(icon("mirror"), "Symmetry (toggle on the selected mesh)");
-    connect(sym, &QAction::triggered, this, [] { exec("toggleSymmetry"); });
-}
-
-void MainWindow::build_shelf() {
-    addToolBarBreak();
-    QToolBar* holder = addToolBar("Shelf");
-    holder->setObjectName("shelf");
-    holder->setMovable(false);
-    auto* tabs = new QTabWidget(holder);
-    tabs->setObjectName("shelfTabs");
-    tabs->setDocumentMode(true);
-    auto shelf = [&](const QString& name, std::function<void(QToolBar*)> fill) {
-        auto* t = new QToolBar(tabs);
-        t->setIconSize(QSize(32, 32));
-        t->setToolButtonStyle(Qt::ToolButtonIconOnly);
-        fill(t);
-        tabs->addTab(t, name);
-    };
-    auto btn = [this](QToolBar* t, const QString& ic, const QString& tip, const QString& command, const QJsonObject& call = QJsonObject()) {
-        QAction* a = t->addAction(icon(ic), tip, [this, command, call] {
-            QJsonObject c = call;
-            QJsonObject saved = OptionsDialog::saved(command);
-            for (auto it = saved.begin(); it != saved.end(); ++it)
-                if (!c.contains(it.key())) c[it.key()] = it.value();
-            last_command_ = command;
-            last_call_ = c;
-            exec(command, c);
-        });
-        a->setEnabled(has_command(command));
-        a->setStatusTip(tip);
-    };
-    shelf("Poly Modeling", [&](QToolBar* t) {
-        btn(t, "sphere", "Polygon Sphere", "polySphere");
-        btn(t, "cube", "Polygon Cube", "polyCube");
-        btn(t, "cylinder", "Polygon Cylinder", "polyCylinder");
-        btn(t, "cone", "Polygon Cone", "polyCone");
-        btn(t, "torus", "Polygon Torus", "polyTorus");
-        btn(t, "plane", "Polygon Plane", "polyPlane");
-        btn(t, "disc", "Polygon Disc", "polyDisc");
-        btn(t, "pipe", "Polygon Pipe", "polyPipe");
-        t->addSeparator();
-        btn(t, "combine", "Combine", "polyCombine");
-        btn(t, "separate", "Separate", "polySeparate");
-        btn(t, "smooth", "Smooth", "polySubdivide");
-        btn(t, "boolean", "Boolean Union", "polyBoolean", QJsonObject{{"operation", "union"}});
-        btn(t, "mirror", "Mirror", "polyMirror");
-        t->addSeparator();
-        btn(t, "extrude", "Extrude", "polyExtrude");
-        btn(t, "bridge", "Bridge", "polyBridge");
-        btn(t, "bevel", "Bevel", "polyBevel");
-        btn(t, "insertLoop", "Insert Edge Loop", "polyInsertLoop");
-        btn(t, "offsetLoop", "Offset Edge Loop", "polyOffsetLoop");
-        btn(t, "merge", "Merge", "polyMerge");
-        btn(t, "collapse", "Merge to Center", "polyMergeCenter");
-    });
-    shelf("General", [&](QToolBar* t) {
-        btn(t, "locator", "Locator", "spaceLocator");
-        btn(t, "group", "Group", "group");
-        btn(t, "history", "Delete History", "delete", QJsonObject{{"constructionHistory", true}});
-        btn(t, "transform", "Freeze Transformations", "freezeTransforms");
-        btn(t, "frameSel", "Center Pivot", "centerPivot");
-        btn(t, "layer", "New Display Layer", "createDisplayLayer");
-    });
-    shelf("Rigging", [&](QToolBar* t) {
-        t->addAction(icon("joint"), "Create Joints", [this] { set_tool("joint"); });
-        btn(t, "ik", "IK Handle", "ikHandle");
-        btn(t, "skin", "Bind Skin", "skinCluster");
-        t->addSeparator();
-        btn(t, "parentCon", "Parent Constraint", "parentConstraint", QJsonObject{{"maintainOffset", true}});
-        btn(t, "pointCon", "Point Constraint", "pointConstraint");
-        btn(t, "orientCon", "Orient Constraint", "orientConstraint");
-        t->addSeparator();
-        btn(t, "locator", "Locator", "spaceLocator");
-        btn(t, "group", "Group", "group");
-    });
-    shelf("Animation", [&](QToolBar* t) {
-        btn(t, "key", "Set Key", "setKeyframe");
-        t->addAction(icon("graph"), "Graph Editor", [this] { show_graph_editor(); });
-        btn(t, "cutKey", "Delete Keys", "cutKey");
-    });
-    shelf("Curves", [&](QToolBar* t) {
-        t->addAction(icon("curveCv"), "CV Curve Tool", [this] { set_tool("curveCv"); });
-        t->addAction(icon("curveEp"), "EP Curve Tool", [this] { set_tool("curveEp"); });
-        btn(t, "circle", "NURBS Circle", "circle", QJsonObject{{"normal", QJsonArray{0, 1, 0}}});
-        btn(t, "square", "NURBS Square", "nurbsSquare");
-        t->addSeparator();
-        btn(t, "loft", "Loft", "loft");
-        btn(t, "revolve", "Revolve", "revolve");
-        btn(t, "extrudeCurve", "Extrude", "extrude");
-    });
-    shelf("UV Editing", [&](QToolBar* t) {
-        t->addAction(icon("uvEditor"), "UV Editor", [this] { show_uv_editor(); });
-        btn(t, "uvAuto", "Automatic Projection", "polyAutoProjection");
-        btn(t, "uvPlanar", "Planar Projection", "polyProjection", QJsonObject{{"type", "planar"}});
-        btn(t, "uvUnfold", "Unfold", "u3dUnfold");
-        btn(t, "uvLayout", "Layout", "u3dLayout");
-        btn(t, "uvCut", "Cut UV Edges", "polyMapCut");
-        btn(t, "uvSew", "Sew UV Edges", "polyMapSew");
-    });
-    // Custom: MEL buttons the user adds from the right-click menu, remembered between sessions.
-    auto* custom = new QToolBar(tabs);
-    custom->setIconSize(QSize(32, 32));
-    custom->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
-    auto load_custom = [custom] {
-        custom->clear();
-        QSettings s;
-        int n = s.beginReadArray("customShelf");
-        for (int i = 0; i < n; ++i) {
-            s.setArrayIndex(i);
-            QString label = s.value("label").toString(), code = s.value("code").toString();
-            QAction* a = custom->addAction(icon(label), label, [code] { mel(code); });
-            a->setToolTip(code);
-        }
-        s.endArray();
-    };
-    load_custom();
-    custom->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(custom, &QWidget::customContextMenuRequested, this, [this, custom, load_custom](const QPoint& p) {
-        QMenu m;
-        m.addAction("Add MEL Button...", [this, load_custom] {
-            QDialog d(this);
-            d.setWindowTitle("Add Shelf Button");
-            auto* lay = new QVBoxLayout(&d);
-            auto* label = new QLineEdit(&d);
-            label->setPlaceholderText("Label");
-            auto* code = new QPlainTextEdit(&d);
-            code->setPlaceholderText("MEL, e.g. polyCube -w 2; polyExtrude;");
-            auto* ok = new QPushButton("Add", &d);
-            lay->addWidget(label);
-            lay->addWidget(code);
-            lay->addWidget(ok);
-            connect(ok, &QPushButton::clicked, &d, &QDialog::accept);
-            if (d.exec() != QDialog::Accepted || label->text().isEmpty()) return;
-            QSettings s;
-            QList<QPair<QString, QString>> items;
-            int n = s.beginReadArray("customShelf");
-            for (int i = 0; i < n; ++i) {
-                s.setArrayIndex(i);
-                items.append({s.value("label").toString(), s.value("code").toString()});
-            }
-            s.endArray();
-            items.append({label->text(), code->toPlainText()});
-            s.beginWriteArray("customShelf");
-            for (int i = 0; i < items.size(); ++i) {
-                s.setArrayIndex(i);
-                s.setValue("label", items[i].first);
-                s.setValue("code", items[i].second);
-            }
-            s.endArray();
-            load_custom();
-        });
-        m.addAction("Clear Shelf", [load_custom] {
-            QSettings().remove("customShelf");
-            load_custom();
-        });
-        m.exec(custom->mapToGlobal(p));
-    });
-    tabs->addTab(custom, "Custom");
-    tabs->setCurrentIndex(0);
-    holder->addWidget(tabs);
-}
 
 void MainWindow::build_toolbox() {
     QToolBar* tb = new QToolBar("Toolbox", this);
@@ -909,12 +569,14 @@ void MainWindow::build_toolbox() {
             w->installEventFilter(this);
         }
     tb->addSeparator();
-    tb->addAction(icon("single"), "Single Perspective View", [this] { panels_->set_single(true); });
-    tb->addAction(icon("four"), "Four View", [this] { panels_->set_single(false); });
+    tb->addAction(icon("single"), "Single Perspective View", [this] { panels_->set_layout(0); });
+    tb->addAction(icon("four"), "Four View", [this] { panels_->set_layout(4); });
     tb->addAction(icon("perspOutliner"), "Perspective/Outliner", [this] {
-        panels_->set_single(true);
+        panels_->set_layout(0);
         outliner_dock_->show();
     });
+    QAction* last = tb->addAction(icon("lastTool"), "Last Tool (Y)", [this] { set_tool(last_tool_); });
+    Q_UNUSED(last);
 }
 
 void MainWindow::build_docks() {
@@ -1008,9 +670,26 @@ void MainWindow::build_bottom() {
     play_timer_ = new QTimer(this);
     play_timer_->setInterval(1000 / 24);
     connect(play_timer_, &QTimer::timeout, this, [this] {
-        double t = time_slider_->time() + play_dir_;
-        if (t > time_slider_->end()) t = time_slider_->start();
-        if (t < time_slider_->start()) t = time_slider_->end();
+        // Real time goes by the clock, dropping frames to keep up; every frame goes one at a time.
+        double t;
+        if (play_every_frame_) {
+            t = time_slider_->time() + play_dir_;
+        } else {
+            double fr = ask("playbackOptions", QJsonObject{{"query", true}, {"queried", QJsonArray{"framesPerSecond"}}}).toDouble(24);
+            t = play_started_frame_ + play_dir_ * (QDateTime::currentMSecsSinceEpoch() - play_started_ms_) / 1000.0 * fr * play_speed_;
+        }
+        double a = time_slider_->start(), b = time_slider_->end();
+        if (t > b || t < a) {
+            if (loop_mode_ == "Once") {
+                time_slider_->set_time(t > b ? b : a);
+                stop_play();
+                return;
+            }
+            if (loop_mode_ == "Oscillate") play_dir_ = -play_dir_;
+            t = loop_mode_ == "Oscillate" ? (t > b ? b : a) : (t > b ? a : b);
+            play_started_frame_ = t;
+            play_started_ms_ = QDateTime::currentMSecsSinceEpoch();
+        }
         time_slider_->set_time(t);
     });
     auto key_step = [this](const QString& which) {
@@ -1049,17 +728,52 @@ void MainWindow::build_bottom() {
         exec_quiet("playbackOptions", QJsonObject{{"minTime", a}, {"maxTime", b}});
         sync_time_range();
     });
+    connect(range_slider_, &RangeSlider::toggleFullRange, this, [this] {
+        double mn = play_start_->value(), mx = play_end_->value();
+        bool full = mn == anim_start_->value() && mx == anim_end_->value();
+        if (full && last_full_max_ > last_full_min_) {
+            exec_quiet("playbackOptions", QJsonObject{{"minTime", last_full_min_}, {"maxTime", last_full_max_}});
+        } else {
+            last_full_min_ = mn;
+            last_full_max_ = mx;
+            exec_quiet("playbackOptions", QJsonObject{{"minTime", anim_start_->value()}, {"maxTime", anim_end_->value()}});
+        }
+        sync_time_range();
+    });
     row2->addWidget(anim_start_);
     row2->addWidget(play_start_);
     row2->addWidget(range_slider_, 1);
     row2->addWidget(play_end_);
     row2->addWidget(anim_end_);
+    // Time units by name, as the Settings have them.
     auto* fps = new QComboBox(w);
-    fps->addItems({"24 fps", "25 fps", "30 fps", "48 fps", "50 fps", "60 fps"});
-    connect(fps, &QComboBox::currentTextChanged, this, [](const QString& t) {
-        exec("playbackOptions", QJsonObject{{"framesPerSecond", t.split(' ')[0].toDouble()}});
+    fps_box_ = fps;
+    fps->setToolTip("Time unit");
+    struct U { const char* label; double rate; };
+    for (U u : {U{"Film (24 fps)", 24}, U{"PAL (25 fps)", 25}, U{"NTSC (30 fps)", 30}, U{"Show (48 fps)", 48}, U{"PAL Field (50 fps)", 50}, U{"NTSC Field (60 fps)", 60}}) fps->addItem(u.label, u.rate);
+    connect(fps, &QComboBox::activated, this, [fps](int i) {
+        exec("playbackOptions", QJsonObject{{"framesPerSecond", fps->itemData(i).toDouble()}});
     });
     row2->addWidget(fps);
+    auto* speed = new QComboBox(w);
+    speed_box_ = speed;
+    speed->setToolTip("Playback speed");
+    speed->addItems({"Play every frame", "Real-time", "Half", "Twice"});
+    speed->setCurrentText(QSettings().value("prefs/playbackSpeed", "Real-time").toString());
+    connect(speed, &QComboBox::activated, this, [this, speed](int) {
+        QSettings().setValue("prefs/playbackSpeed", speed->currentText());
+        apply_prefs();
+    });
+    row2->addWidget(speed);
+    auto* loop = new QComboBox(w);
+    loop->setToolTip("Looping");
+    loop->addItems({"Once", "Oscillate", "Continuous"});
+    loop->setCurrentText(QSettings().value("prefs/playbackLoop", "Continuous").toString());
+    connect(loop, &QComboBox::activated, this, [this, loop](int) {
+        QSettings().setValue("prefs/playbackLoop", loop->currentText());
+        loop_mode_ = loop->currentText();
+    });
+    row2->addWidget(loop);
     auto* tb = new QToolBar(w);
     tb->setIconSize(QSize(16, 16));
     auto_key_ = tb->addAction(icon("autokey"), "Auto keyframe toggle", [this](bool on) {
@@ -1077,19 +791,6 @@ void MainWindow::build_bottom() {
     statusBar()->setSizeGripEnabled(false);
 }
 
-void MainWindow::apply_prefs() {
-    QSettings s;
-    QFont f = qApp->font();
-    f.setPointSize(s.value("prefs/fontSize", 9).toInt());
-    qApp->setFont(f);
-    statusBar()->setVisible(s.value("prefs/helpLine", true).toBool());
-    double bg = s.value("prefs/background", 0.36).toDouble();
-    double manip = s.value("prefs/manipSize", 1.0).toDouble();
-    for (ViewportWidget* v : panels_->views()) {
-        v->set("background", QString::number(bg));
-        v->set("manipSize", QString::number(manip));
-    }
-}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // State
@@ -1101,7 +802,9 @@ void MainWindow::toggle_play(int dir) {
     }
     play_dir_ = dir;
     double fps = ask("playbackOptions", QJsonObject{{"query", true}, {"queried", QJsonArray{"framesPerSecond"}}}).toDouble(24);
-    play_timer_->setInterval(int(1000 / qMax(1.0, fps)));
+    play_timer_->setInterval(int(1000 / qMax(1.0, fps * play_speed_)));
+    play_started_ms_ = QDateTime::currentMSecsSinceEpoch();
+    play_started_frame_ = time_slider_->time();
     play_timer_->start();
 }
 
@@ -1110,6 +813,11 @@ void MainWindow::stop_play() {
 }
 
 void MainWindow::sync_time_range() {
+    if (fps_box_) {
+        double fr = ask("playbackOptions", QJsonObject{{"query", true}, {"queried", QJsonArray{"framesPerSecond"}}}).toDouble(24);
+        int i = fps_box_->findData(fr);
+        if (i >= 0) fps_box_->setCurrentIndex(i);
+    }
     auto q = [](const char* flag) {
         return ask("playbackOptions", QJsonObject{{"query", true}, {"queried", QJsonArray{flag}}}).toDouble();
     };
@@ -1128,41 +836,7 @@ void MainWindow::refresh_state() {
     QJsonObject st = state();
     for (const QJsonValue& r : query("uiRequests").toArray()) {
         QString n = r.toString();
-        if (n == "GraphEditor") show_graph_editor();
-        else if (n == "DopeSheetEditor") show_dope_sheet();
-        else if (n == "NodeEditorWindow") show_node_editor();
-        else if (n == "SetDrivenKeyOptions") show_set_driven_key();
-        else if (n == "ScriptEditor") show_script_editor();
-        else if (n == "OutlinerWindow") { outliner_dock_->show(); outliner_dock_->raise(); }
-        else if (n == "AttributeEditor") show_attribute_editor();
-        else if (n == "ToggleChannelsLayers") channel_dock_->setVisible(!channel_dock_->isVisible());
-        else if (n == "FrameSelected") { if (active_view()) active_view()->set("frame", "\"selection\""); }
-        else if (n == "FrameAll") { if (active_view()) active_view()->set("frame", "\"all\""); }
-        else if (n == "PlaybackToggle") toggle_play(1);
-        else if (n == "TextureViewWindow" || n == "UVEditor") show_uv_editor();
-        else if (n == "PreferencesWindow") show_preferences();
-        else if (n == "JointTool") set_tool("joint");
-        else if (n == "SculptMeshActivateBrushSculpt") set_tool("sculpt");
-        else if (n == "MultiCutTool") set_tool("multiCut");
-        else if (n == "SplitEdgeRingTool") set_tool("insertLoop");
-        else if (n == "OffsetEdgeLoopTool") set_tool("offsetLoop");
-        else if (n == "TargetWeldTool") set_tool("targetWeld");
-        else if (n == "SlideEdgeTool") set_tool("slideEdge");
-        else if (n == "PolyCreaseTool") set_tool("crease");
-        else if (n == "CreatePolygonTool") set_tool("createPolygon");
-        else if (n == "AppendToPolygonTool") set_tool("appendPolygon");
-        else if (n == "QuadDrawTool") set_tool("quadDraw");
-        else if (n == "CVCurveTool") set_tool("curveCv");
-        else if (n == "EPCurveTool") set_tool("curveEp");
-        else if (n == "ArtPaintSkinWeightsTool") set_tool("paintSkin");
-        else if (n == "ArtPaintSkinWeightsToolOptions") { set_tool("paintSkin"); show_tool_settings(); }
-        else if (n == "ToolSettingsWindow") show_tool_settings();
-        else if (n == "SelectTool") set_tool("select");
-        else if (n == "MoveTool") set_tool("move");
-        else if (n == "RotateTool") set_tool("rotate");
-        else if (n == "ScaleTool") set_tool("scale");
-        else if (n == "FourViewLayout") panels_->set_single(false);
-        else if (n == "SingleViewLayout") panels_->set_single(true);
+        handle_ui_request(n);
     }
     // The time: scripts may have moved it, changed the range or set keys.
     double now = ask("currentTime", QJsonObject{{"query", true}}).toDouble(1);
@@ -1189,6 +863,7 @@ void MainWindow::refresh_state() {
     QString mode = st["mode"].toString();
     if (mode_buttons_.contains(mode)) mode_buttons_[mode]->setChecked(true);
     history_button_->setChecked(st["history"].toBool());
+    sync_status_line();
     update_title();
 }
 
@@ -1202,11 +877,21 @@ ViewportWidget* MainWindow::active_view() const {
 }
 
 void MainWindow::set_tool(const QString& tool) {
+    if (tool != tool_) last_tool_ = tool_;
     tool_ = tool;
     if (tool_buttons_.contains(tool)) tool_buttons_[tool]->setChecked(true);
     for (ViewportWidget* v : panels_->views()) v->set("tool", "\"" + tool + "\"");
     if (tool_settings_) tool_settings_->set_tool(tool);
     static const QHash<QString, QString> tool_help{
+        {"lasso", "Lasso Tool: drag round what to select. Shift toggles, Ctrl deselects, Ctrl+Shift adds."},
+        {"paintSelect", "Paint Selection Tool: drag over components to select them; Ctrl deselects."},
+        {"shortestPath", "Shortest Edge Path Tool: click a component, then another: the path between them is selected."},
+        {"camTumble", "Tumble Tool: drag to tumble the view."},
+        {"camTrack", "Track Tool: drag to track the view."},
+        {"camDolly", "Dolly Tool: drag to dolly the view."},
+        {"camZoom", "Zoom Tool: drag to change the lens."},
+        {"camRoll", "Roll Tool: drag to roll the view."},
+        {"camYawPitch", "Yaw-Pitch Tool: drag to turn the camera where it stands."},
         {"sculpt", "Sculpting: drag to sculpt, Ctrl inverts, Shift smooths, B-drag sizes the brush."},
         {"multiCut", "Multi-Cut: click to place cut points, Shift snaps along edges, Ctrl-click inserts a loop, Backspace takes the last back, Enter cuts."},
         {"insertLoop", "Insert Edge Loop: hover an edge to see the loop, click to insert it."},
@@ -1359,12 +1044,6 @@ void MainWindow::show_tool_settings() {
     tool_dock_->raise();
 }
 
-void MainWindow::show_preferences() {
-    auto* p = new Preferences(this);
-    p->setAttribute(Qt::WA_DeleteOnClose);
-    connect(p, &Preferences::changed, this, &MainWindow::apply_prefs);
-    p->show();
-}
 
 void MainWindow::show_uv_editor() {
     if (!uv_window_) {
@@ -1403,88 +1082,32 @@ void MainWindow::show_attribute_editor() {
 // ---------------------------------------------------------------------------------------------------------------------
 // Marking menus and hotkeys
 
-void MainWindow::marking_menu(QPoint global, int mods) {
-    ViewportWidget* v = active_view();
-    QString mode = state()["mode"].toString();
-    QList<MarkItem> items;
-    auto run = [](const QString& c, const QJsonObject& call = QJsonObject()) { return [c, call] { exec(c, call); }; };
-    if (mods & 1) {
-        // Shift: the modelling tools for the current component type.
-        if (mode == "face") {
-            items = {{"Extrude Face", 0, run("polyExtrude")}, {"Bevel Face", 4, run("polyBevel")}, {"Bridge Face", 2, run("polyBridge")},
-                     {"Inset Face", 6, run("polyInset")}, {"Poke Face", 1, run("polyPoke")}, {"Duplicate Face", 7, run("polyDuplicateFaces")},
-                     {"Extract Face", 3, run("polyExtract")}, {"Delete Face", 5, run("deleteComponents")},
-                     {"Triangulate", -1, run("polyTriangulate")}, {"Quadrangulate", -1, run("polyQuadrangulate")}, {"Flip", -1, run("polyFlip")}};
-        } else if (mode == "edge") {
-            items = {{"Extrude Edge", 0, run("polyExtrude")}, {"Bevel Edge", 4, run("polyBevel")}, {"Bridge", 2, run("polyBridge")},
-                     {"Insert Edge Loop", 6, run("polyInsertLoop")}, {"Collapse Edge", 1, run("polyCollapse")}, {"Delete Edge", 5, run("polyDissolve")},
-                     {"Offset Edge Loop", 7, run("polyOffsetLoop")}, {"Connect", 3, run("polyConnect")},
-                     {"Spin Edge", -1, run("polySpinEdge")}, {"Fill Hole", -1, run("polyFillHole")}, {"Soften Edge", -1, run("polySoftEdge", {{"angle", 180.0}})},
-                     {"Harden Edge", -1, run("polySoftEdge", {{"angle", 0.0}})}};
-        } else if (mode == "vertex") {
-            items = {{"Merge Vertices", 0, run("polyMerge")}, {"Merge to Center", 4, run("polyMergeCenter")}, {"Connect", 2, run("polyConnect")},
-                     {"Delete Vertex", 6, run("polyDissolve")}, {"Target Weld", 1, run("polyTargetWeld")}};
-        } else {
-            items = {{"Combine", 0, run("polyCombine")}, {"Separate", 4, run("polySeparate")}, {"Smooth", 2, run("polySubdivide")},
-                     {"Mirror", 6, run("polyMirror")}, {"Boolean Union", 1, run("polyBoolean", {{"operation", "union"}})},
-                     {"Boolean Difference", 7, run("polyBoolean", {{"operation", "difference"}})},
-                     {"Delete History", -1, run("delete", {{"constructionHistory", true}})}, {"Center Pivot", -1, run("centerPivot")},
-                     {"Freeze Transformations", -1, run("freezeTransforms")}};
-        }
-    } else if (mods & 2) {
-        // Ctrl: selection conversion.
-        items = {{"To Edges", 0, run("convertSelection", args(QJsonArray{"edge"}))}, {"To Faces", 4, run("convertSelection", args(QJsonArray{"face"}))},
-                 {"To Vertices", 6, run("convertSelection", args(QJsonArray{"vertex"}))}, {"Grow", 2, run("growSelection")},
-                 {"Shrink", -1, run("shrinkSelection")}, {"Edge Loop", -1, run("selectLoop")}, {"Border", -1, run("selectBorder")}};
-    } else {
-        QString hit;
-        if (v) {
-            QPoint local = v->mapFromGlobal(global);
-            double dpr = v->devicePixelRatioF();
-            hit = take(aztek_view_hit(v->id(), local.x() * dpr, local.y() * dpr));
-        }
-        if (!hit.isEmpty()) {
-            auto mode_to = [hit](const QString& m) {
-                return [hit, m] {
-                    // Hilite the object under the cursor, then switch.
-                    QJsonArray sel = state()["selection"].toArray();
-                    bool in = false;
-                    for (const QJsonValue& s : sel)
-                        if (s.toString().section('.', 0, 0) == hit) in = true;
-                    if (!in) exec("select", QJsonObject{{"args", QJsonArray{hit}}});
-                    exec("selectMode", QJsonObject{{"args", QJsonArray{m}}});
-                };
-            };
-            items = {{"Edge", 0, mode_to("edge")}, {"Object Mode", 1, mode_to("object")}, {"UV", 2, {}, false}, {"Vertex Face", 3, {}, false},
-                     {"Face", 4, mode_to("face")}, {"UV Shell", 5, {}, false}, {"Vertex", 6, mode_to("vertex")}, {"Multi", 7, {}, false},
-                     {"Select", -1, run("select", args(QJsonArray{hit}))}, {"Select Hierarchy", -1, [hit] {
-                          exec("select", QJsonObject{{"args", QJsonArray{hit}}});
-                          exec("selectHierarchy");
-                      }},
-                     {"Attribute Editor...", -1, [this, hit] {
-                          exec("select", QJsonObject{{"args", QJsonArray{hit}}});
-                          show_attribute_editor();
-                      }},
-                     {"Delete", -1, run("delete", args(QJsonArray{hit}))}};
-        } else {
-            items = {{"Select All", -1, [] {
-                          QJsonArray all;
-                          for (const QJsonValue& n : query("outliner").toArray())
-                              if (n.toObject()["type"].toString() != "objectSet") all.append(n.toObject()["path"].toString());
-                          exec("select", args(all));
-                      }},
-                     {"Deselect", -1, run("select", {{"clear", true}})},
-                     {"Undo", -1, [] { aztek_undo(); Host::get()->poke(); }},
-                     {"Redo", -1, [] { aztek_redo(); Host::get()->poke(); }},
-                     {"Repeat Last", -1, [this] { repeat_last(); }},
-                     {"Frame All", -1, [v] { if (v) v->set("frame", "\"all\""); }},
-                     {"Object Mode", 1, [this] { set_mode("object"); }}};
+bool MainWindow::eventFilter(QObject* o, QEvent* e) {
+    // Ctrl+Shift+click on a menu item puts it on the shelf.
+    if (e->type() == QEvent::MouseButtonRelease) {
+        if (auto* menu = qobject_cast<QMenu*>(o)) {
+            auto* me = static_cast<QMouseEvent*>(e);
+            if ((me->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier)) == (Qt::ControlModifier | Qt::ShiftModifier)) {
+                if (QAction* a = menu->actionAt(me->position().toPoint())) {
+                    add_to_shelf(a);
+                    while (QWidget* p = QApplication::activePopupWidget()) p->close();
+                    return true;
+                }
+            }
         }
     }
-    MarkingMenu::show_at(global, items);
-}
-
-bool MainWindow::eventFilter(QObject* o, QEvent* e) {
+    // A tool key held with a left press in a view: the tool's marking menu. K and I work a drag.
+    if (!view_hold_.isEmpty() && qobject_cast<ViewportWidget*>(o) && (e->type() == QEvent::MouseButtonPress || e->type() == QEvent::MouseMove || e->type() == QEvent::MouseButtonRelease)) {
+        auto* me = static_cast<QMouseEvent*>(e);
+        if (view_hold_ == "scrub" || view_hold_ == "nudgeKeys") {
+            view_scrub(o, e);
+            return true;
+        }
+        if (e->type() == QEvent::MouseButtonPress && me->button() == Qt::LeftButton && !(me->modifiers() & Qt::AltModifier)) {
+            tool_marking_menu(me->globalPosition().toPoint(), view_hold_);
+            return true;
+        }
+    }
     if (e->type() == QEvent::MouseButtonDblClick && o->property("toolId").isValid()) {
         set_tool(o->property("toolId").toString());
         show_tool_settings();
@@ -1500,216 +1123,6 @@ bool MainWindow::eventFilter(QObject* o, QEvent* e) {
         if (hotkey(k, e->type() == QEvent::KeyPress)) return true;
     }
     return QMainWindow::eventFilter(o, e);
-}
-
-bool MainWindow::hotkey(QKeyEvent* k, bool press) {
-    if (k->isAutoRepeat()) return k->key() == Qt::Key_Space;
-    Qt::KeyboardModifiers m = k->modifiers() & ~Qt::KeypadModifier;
-    bool ctrl = m & Qt::ControlModifier, shift = m & Qt::ShiftModifier, alt = m & Qt::AltModifier;
-    int key = k->key();
-    if (key == Qt::Key_Space) {
-        if (press) {
-            space_down_ms_ = QDateTime::currentMSecsSinceEpoch();
-            space_held_ = true;
-            QTimer::singleShot(220, this, [this] {
-                if (space_held_ && hotbox_) hotbox_->popup(QCursor::pos());
-            });
-        } else {
-            space_held_ = false;
-            qint64 held = QDateTime::currentMSecsSinceEpoch() - space_down_ms_;
-            QWidget* popup = QApplication::activePopupWidget();
-            if (hotbox_ && hotbox_->isVisible() && !(popup && popup->inherits("QMenu"))) hotbox_->hide();
-            if (held < 220) panels_->toggle();
-        }
-        return true;
-    }
-    // Held snapping: X to the grid, V to points, while dragging a move.
-    if ((key == Qt::Key_X || key == Qt::Key_V) && !ctrl && !alt) {
-        QString mode = press ? (key == Qt::Key_X ? "\"grid\"" : "\"point\"") : "\"none\"";
-        for (ViewportWidget* vw : panels_->views()) vw->set("snap", mode);
-        if (press) help_line_->setText(key == Qt::Key_X ? "Snap to grids" : "Snap to points");
-        return true;
-    }
-    // D held, or Insert to toggle: the manipulator moves the pivot.
-    if (key == Qt::Key_D && !ctrl && !alt && !shift) {
-        for (ViewportWidget* vw : panels_->views()) vw->set("pivotMode", press ? "true" : "false");
-        if (press) help_line_->setText("Pivot: drag the manipulator to move the pivot");
-        return true;
-    }
-    if (key == Qt::Key_Tab && tool_ == "quadDraw") {
-        for (ViewportWidget* v : panels_->views()) v->set("toolTab", press ? "true" : "false");
-        return true;
-    }
-    if (key == Qt::Key_B && (tool_ == "paintSkin" || tool_ == "sculpt") && !ctrl && !alt && !shift) {
-        for (ViewportWidget* v : panels_->views()) v->set("brushAdjust", press ? "true" : "false");
-        return true;
-    }
-    if (key == Qt::Key_T && ctrl && shift && press) {
-        show_tool_settings();
-        return true;
-    }
-    if (key == Qt::Key_Insert && press) {
-        pivot_mode_ = !pivot_mode_;
-        for (ViewportWidget* vw : panels_->views()) vw->set("pivotMode", pivot_mode_ ? "true" : "false");
-        return true;
-    }
-    if (!press) return false;
-    ViewportWidget* v = active_view();
-    auto view_set = [v](const char* key, const QString& j) {
-        if (v) v->set(key, j);
-    };
-    switch (key) {
-    case Qt::Key_Q: if (!ctrl) { set_tool("select"); return true; } break;
-    case Qt::Key_W:
-        if (shift) exec("setKeyframe", QJsonObject{{"attribute", "translate"}});
-        else set_tool("move");
-        return true;
-    case Qt::Key_E:
-        if (ctrl) exec("polyExtrude", OptionsDialog::saved("polyExtrude"));
-        else if (shift) exec("setKeyframe", QJsonObject{{"attribute", "rotate"}});
-        else set_tool("rotate");
-        return true;
-    case Qt::Key_R:
-        if (shift) exec("setKeyframe", QJsonObject{{"attribute", "scale"}});
-        else set_tool("scale");
-        return true;
-    case Qt::Key_V: if (alt) { toggle_play(1); return true; } break;
-    case Qt::Key_F2: menu_set_->setCurrentText("Animation"); return true;
-    case Qt::Key_F3: menu_set_->setCurrentText("Modeling"); return true;
-    case Qt::Key_F4: menu_set_->setCurrentText("Rigging"); return true;
-    case Qt::Key_Return:
-    case Qt::Key_Enter:
-        // The joint tool's chain ends; the next click starts another.
-        if (tool_ == "joint") { exec("select", QJsonObject{{"clear", true}}); return true; }
-        if (tool_.startsWith("curve") || tool_ == "multiCut" || tool_ == "createPolygon" || tool_ == "appendPolygon") {
-            for (ViewportWidget* v : panels_->views()) v->set("finishTool", "true");
-            Host::get()->poke();
-            return true;
-        }
-        break;
-    case Qt::Key_Escape: if (play_timer_->isActive()) { stop_play(); return true; } break;
-    case Qt::Key_F:
-        if (shift)
-            panels_->set_all("frame", "\"selection\"");
-        else
-            view_set("frame", "\"selection\"");
-        return true;
-    case Qt::Key_A:
-        if (ctrl && shift) {
-            QJsonArray all;
-            for (const QJsonValue& n : query("outliner").toArray())
-                if (n.toObject()["type"].toString() != "objectSet") all.append(n.toObject()["path"].toString());
-            exec("select", args(all));
-        } else if (ctrl)
-            show_attribute_editor();
-        else if (shift)
-            panels_->set_all("frame", "\"all\"");
-        else
-            view_set("frame", "\"all\"");
-        return true;
-    case Qt::Key_Z:
-        if (shift || (ctrl && shift)) aztek_redo();
-        else aztek_undo();
-        Host::get()->poke();
-        return true;
-    case Qt::Key_Y: if (ctrl) { aztek_redo(); Host::get()->poke(); return true; } break;
-    case Qt::Key_G:
-        if (ctrl) exec("group");
-        else repeat_last();
-        return true;
-    case Qt::Key_D:
-        if (ctrl && shift) OptionsDialog::open("duplicate", "Duplicate Special");
-        else if (ctrl) exec("duplicate");
-        else if (alt && shift) exec("delete", QJsonObject{{"constructionHistory", true}});
-        else if (shift) exec("duplicateWithTransform");
-        else return false;
-        return true;
-    case Qt::Key_P:
-        if (shift) exec("parent", QJsonObject{{"world", true}});
-        else exec("parent");
-        return true;
-    case Qt::Key_H:
-        if (ctrl && shift) exec("showLastHidden");
-        else if (ctrl) exec("hide");
-        else exec("toggleVisibility");
-        return true;
-    case Qt::Key_B:
-        if (ctrl) exec("polyBevel", OptionsDialog::saved("polyBevel"));
-        else if (!alt && !shift) {
-            bool on = ask("softSelect", QJsonObject{{"query", true}, {"queried", QJsonArray{"softSelectEnabled"}}}).toInt() != 0;
-            exec("softSelect", QJsonObject{{"softSelectEnabled", on ? 0 : 1}});
-            for (ViewportWidget* vw : panels_->views()) vw->update();
-            help_line_->setText(on ? "Soft Select off" : "Soft Select on: B toggles; the falloff radius is in Modify > Soft Select options");
-        } else return false;
-        return true;
-    case Qt::Key_N: if (ctrl) { aztek_free(aztek_file("new", "")); Host::get()->poke(); return true; } break;
-    case Qt::Key_O: if (ctrl) { open_scene(); return true; } break;
-    case Qt::Key_S:
-        if (ctrl) save_scene(shift);
-        else if (!alt) exec("setKeyframe");
-        else return false;
-        return true;
-    case Qt::Key_I: if (ctrl && shift) { exec("invertSelection"); return true; } break;
-    case Qt::Key_1: exec("smoothPreview", QJsonObject{{"level", 0}}); return true;
-    case Qt::Key_2:
-        for (ViewportWidget* vw : panels_->views()) vw->set("smoothCage", "true");
-        exec("smoothPreview", QJsonObject{{"level", 2}});
-        return true;
-    case Qt::Key_3:
-        for (ViewportWidget* vw : panels_->views()) vw->set("smoothCage", "false");
-        exec("smoothPreview", QJsonObject{{"level", 2}});
-        return true;
-    case Qt::Key_4: view_set("wireframe", "true"); return true;
-    case Qt::Key_5: view_set("wireframe", "false"); return true;
-    case Qt::Key_F8: {
-        QString mode = state()["mode"].toString();
-        set_mode(mode == "object" ? "vertex" : "object");
-        return true;
-    }
-    case Qt::Key_F9: if (ctrl) exec("convertSelection", args(QJsonArray{"vertex"})); else set_mode("vertex"); return true;
-    case Qt::Key_F10: if (ctrl) exec("convertSelection", args(QJsonArray{"edge"})); else set_mode("edge"); return true;
-    case Qt::Key_F11: if (ctrl) exec("convertSelection", args(QJsonArray{"face"})); else set_mode("face"); return true;
-    case Qt::Key_Delete:
-    case Qt::Key_Backspace:
-        if (tool_.startsWith("curve") || tool_ == "multiCut" || tool_ == "createPolygon" || tool_ == "appendPolygon" || tool_ == "quadDraw") {
-            for (ViewportWidget* v : panels_->views()) v->set("undoToolPoint", "true");
-            return true;
-        }
-        if (ctrl) exec("polyDissolve");
-        else if (state()["mode"].toString() == "object") exec("delete");
-        else exec("deleteComponents");
-        return true;
-    case Qt::Key_Greater:
-    case Qt::Key_Period:
-        if (shift || key == Qt::Key_Greater) exec("growSelection");
-        else if (alt) time_slider_->set_time(time_slider_->time() + 1);
-        else {
-            QJsonValue f = ask("findKeyframe", QJsonObject{{"which", "next"}});
-            if (f.isDouble()) time_slider_->set_time(f.toDouble());
-        }
-        return true;
-    case Qt::Key_Less:
-    case Qt::Key_Comma:
-        if (shift || key == Qt::Key_Less) exec("shrinkSelection");
-        else if (alt) time_slider_->set_time(time_slider_->time() - 1);
-        else {
-            QJsonValue f = ask("findKeyframe", QJsonObject{{"which", "previous"}});
-            if (f.isDouble()) time_slider_->set_time(f.toDouble());
-        }
-        return true;
-    case Qt::Key_Plus:
-    case Qt::Key_Equal:
-    case Qt::Key_Minus: {
-        QSettings s;
-        double m2 = s.value("prefs/manipSize", 1.0).toDouble();
-        m2 = key == Qt::Key_Minus ? qMax(0.25, m2 - 0.25) : qMin(4.0, m2 + 0.25);
-        s.setValue("prefs/manipSize", m2);
-        apply_prefs();
-        return true;
-    }
-    default: break;
-    }
-    return false;
 }
 
 void MainWindow::closeEvent(QCloseEvent* e) {

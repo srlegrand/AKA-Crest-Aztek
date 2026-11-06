@@ -1126,6 +1126,22 @@ impl View {
                     }
                 }
             }
+            "camState" => {
+                let c = &mut self.vp.cam;
+                let g = |k: &str, d: f64| v.get(k).and_then(Value::as_f64).unwrap_or(d);
+                c.yaw = g("yaw", c.yaw);
+                c.pitch = g("pitch", c.pitch);
+                c.distance = g("distance", c.distance);
+                c.ortho_width = g("orthoWidth", c.ortho_width);
+                c.hfov = g("hfov", c.hfov);
+                c.roll = g("roll", c.roll);
+                if let Some(a) = v.get("coi").and_then(Value::as_array) {
+                    if a.len() == 3 {
+                        c.coi = DVec3::new(a[0].as_f64().unwrap_or(0.0), a[1].as_f64().unwrap_or(0.0), a[2].as_f64().unwrap_or(0.0));
+                    }
+                }
+                self.write_camera(core);
+            }
             "stepMove" => self.vp.step_move = v.as_f64().unwrap_or(0.0),
             "stepRotate" => self.vp.step_rotate = v.as_f64().unwrap_or(0.0),
             "stepScale" => self.vp.step_scale = v.as_f64().unwrap_or(0.0),
@@ -1196,6 +1212,15 @@ impl View {
             "grid" => json!(self.show_grid),
             "dragging" => json!(self.vp.drag.is_some() || self.nav.is_some() || self.marquee.is_some()),
             "brushDragged" => json!(self.brush_dragged),
+            "camState" => {
+                let c = &self.vp.cam;
+                json!({"yaw": c.yaw, "pitch": c.pitch, "distance": c.distance, "orthoWidth": c.ortho_width, "hfov": c.hfov, "roll": c.roll, "coi": [c.coi.x, c.coi.y, c.coi.z]})
+            }
+            "unitsPerPixel" => json!(self.vp.cam.units_per_px_at(self.vp.cam.coi, self.vp.rect[3].max(1.0), self.vp.aspect()) * self.dpr),
+            "viewAxes" => {
+                let m = self.vp.cam.view();
+                json!({"right": [m.x_axis.x, m.y_axis.x, m.z_axis.x], "up": [m.x_axis.y, m.y_axis.y, m.z_axis.y]})
+            }
             "isolated" => json!(self.vp.iso.active()),
             "disp" => {
                 let d = &self.vp.disp;

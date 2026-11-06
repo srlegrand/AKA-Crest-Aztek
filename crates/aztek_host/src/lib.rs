@@ -105,6 +105,10 @@ pub extern "C" fn aztek_exec_quiet(name: *const c_char, call: *const c_char) -> 
     let name = cstr(name);
     let call: Value = serde_json::from_str(&cstr(call)).unwrap_or(json!({}));
     with(|h| {
+        // Echo All Commands: the quiet ones show too.
+        if ui_cmds::pref_bool("echoAllCommands", false) && name != "uiPref" {
+            h.core.push(mel::echo(&name, &call), core::LineKind::Echo);
+        }
         out_json(match h.core.exec_silent(&name, call) {
             Ok(v) => json!({ "ok": v }),
             Err(e) => {
@@ -178,6 +182,10 @@ pub extern "C" fn aztek_query(what: *const c_char, arg: *const c_char) -> *mut c
                 Value::Null
             }
             "runtimeCommands" => ui_cmds::runtime_commands(),
+            "melEcho" => {
+                let p: Value = serde_json::from_str(&arg).unwrap_or(json!({}));
+                json!(mel::echo(p["name"].as_str().unwrap_or(""), &p["call"]))
+            }
             "editors" => query::editors(c, &arg),
             "uvData" => query::uv_data(c),
             "attributeEditor" => query::attribute_editor(c, &arg),

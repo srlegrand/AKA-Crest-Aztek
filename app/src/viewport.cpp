@@ -4,6 +4,8 @@
 #include "icons.h"
 #include "panels.h"
 #include <QJsonArray>
+#include <QJsonDocument>
+#include <QStackedLayout>
 
 #include <QAction>
 #include <QActionGroup>
@@ -127,8 +129,16 @@ void ViewportWidget::mousePressEvent(QMouseEvent* e) {
     if (e->button() == Qt::MiddleButton && !(e->modifiers() & Qt::AltModifier) && !selected_channels().isEmpty()) {
         QJsonArray sel = state()["selection"].toArray();
         slide_plugs_.clear();
+        QStringList inputs = selected_input_plugs();
+        for (const QString& plug : inputs) {
+            QJsonValue v = ask("getAttr", QJsonObject{{"args", QJsonArray{plug}}});
+            if (v.isDouble()) slide_plugs_.append({plug, v.toDouble()});
+        }
         for (const QJsonValue& o : sel)
             for (const QString& a : selected_channels()) {
+                bool taken = false;
+                for (const QString& plug : inputs) taken = taken || plug.endsWith("." + a);
+                if (taken) continue;
                 QString plug = o.toString().section('.', 0, 0) + "." + a;
                 QJsonValue v = ask("getAttr", QJsonObject{{"args", QJsonArray{plug}}});
                 if (v.isDouble()) slide_plugs_.append({plug, v.toDouble()});
@@ -228,69 +238,10 @@ ModelPanel::ModelPanel(const QString& camera, QWidget* parent) : QWidget(parent)
     view_ = new ViewportWidget(camera, this);
     lay->addWidget(menus_);
     lay->addWidget(bar_);
-    lay->addWidget(view_, 1);
+    stack_ = new QStackedLayout();
+    stack_->addWidget(view_);
+    lay->addLayout(stack_, 1);
     build_menus();
-}
-
-void ModelPanel::build_menus() {
-    auto* v = view_;
-    auto set = [v](const char* k, const QString& j) { return [v, k, j] { v->set(k, j); }; };
-
-    QMenu* view = menus_->addMenu("View");
-    for (const char* c : {"persp", "top", "front", "side"}) {
-        QString cam = c;
-        view->addAction(QString("Camera: %1").arg(cam), [v, cam] { v->set("camera", "\"" + cam + "\""); });
-    }
-    view->addSeparator();
-    view->addAction("Frame All\tA", set("frame", "\"all\""));
-    view->addAction("Frame Selection\tF", set("frame", "\"selection\""));
-    view->addAction("Default Home", set("home", "true"));
-
-    QMenu* shading = menus_->addMenu("Shading");
-    auto* group = new QActionGroup(this);
-    QAction* wire = shading->addAction("Wireframe\t4", set("wireframe", "true"));
-    QAction* smooth = shading->addAction("Smooth Shade All\t5", set("wireframe", "false"));
-    wire->setCheckable(true);
-    smooth->setCheckable(true);
-    smooth->setChecked(true);
-    group->addAction(wire);
-    group->addAction(smooth);
-    shading->addSeparator();
-    QAction* wos = shading->addAction("Wireframe on Shaded");
-    wos->setCheckable(true);
-    connect(wos, &QAction::toggled, this, [v](bool on) { v->set("wireOnShaded", on ? "true" : "false"); });
-
-    menus_->addMenu("Lighting")->addAction("Use Default Lighting")->setEnabled(false);
-
-    QMenu* show = menus_->addMenu("Show");
-    QAction* grid = show->addAction("Grid");
-    grid->setCheckable(true);
-    grid->setChecked(true);
-    connect(grid, &QAction::toggled, this, [v](bool on) { v->set("grid", on ? "true" : "false"); });
-
-    QMenu* panels = menus_->addMenu("Panels");
-    panels->addAction("Single Pane / Four Panes\tSpace", [this] {
-        for (QWidget* w = parentWidget(); w; w = w->parentWidget())
-            if (auto* pl = qobject_cast<PanelLayout*>(w)) {
-                pl->toggle();
-                break;
-            }
-    });
-
-    bar_->addAction(icon("frameAll"), "Frame All (A)", set("frame", "\"all\""));
-    bar_->addAction(icon("frameSel"), "Frame Selection (F)", set("frame", "\"selection\""));
-    bar_->addSeparator();
-    bar_->addAction(icon("wireframe"), "Wireframe (4)", set("wireframe", "true"));
-    bar_->addAction(icon("shaded"), "Smooth Shade All (5)", set("wireframe", "false"));
-    QAction* wos2 = bar_->addAction(icon("wireOnShaded"), "Wireframe on Shaded");
-    wos2->setCheckable(true);
-    connect(wos2, &QAction::toggled, wos, &QAction::setChecked);
-    connect(wos, &QAction::toggled, wos2, &QAction::setChecked);
-    QAction* grid2 = bar_->addAction(icon("grid"), "Grid");
-    grid2->setCheckable(true);
-    grid2->setChecked(true);
-    connect(grid2, &QAction::toggled, grid, &QAction::setChecked);
-    connect(grid, &QAction::toggled, grid2, &QAction::setChecked);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -315,31 +266,69 @@ void PanelLayout::relayout() {
         grid_->removeWidget(p);
         p->hide();
     }
-    if (single_) {
-        grid_->addWidget(panels_[focus_], 0, 0);
-        panels_[focus_]->show();
-    } else {
-        for (int i = 0; i < 4; ++i) {
-            grid_->addWidget(panels_[i], i / 2, i % 2);
-            panels_[i]->show();
-        }
+    for (int i = 0; i < 2; ++i) {
+        grid_->setRowStretch(i, 0);
+        grid_->setColumnStretch(i, 0);
+    }
+    // The panel in focus comes first in the layouts with fewer panes than views.
+    QList<ModelPanel*> order{panels_[focus_]};
+    for (auto* p : panels_)
+        if (p != panels_[focus_]) order << p;
+    auto place = [this](ModelPanel* p, int r, int c, int rs, int cs) {
+        grid_->addWidget(p, r, c, rs, cs);
+        p->show();
+        for (int i = r; i < r + rs; ++i) grid_->setRowStretch(i, 1);
+        for (int i = c; i < c + cs; ++i) grid_->setColumnStretch(i, 1);
+    };
+    switch (kind_) {
+    case 0: place(order[0], 0, 0, 1, 1); break;
+    case 1: place(order[0], 0, 0, 1, 1); place(order[1], 0, 1, 1, 1); break;
+    case 2: place(order[0], 0, 0, 1, 1); place(order[1], 1, 0, 1, 1); break;
+    case 3: place(order[0], 0, 0, 1, 1); place(order[1], 0, 1, 1, 1); place(order[2], 1, 0, 1, 2); break;
+    default:
+        for (int i = 0; i < 4; ++i) place(panels_[i], i / 2, i % 2, 1, 1);
     }
 }
 
 void PanelLayout::set_single(bool single) {
-    single_ = single;
+    set_layout(single ? 0 : 4);
+}
+
+void PanelLayout::set_layout(int kind) {
+    if (kind_ != 0) last_multi_ = kind_;
+    kind_ = kind;
     relayout();
 }
 
 void PanelLayout::toggle() {
-    if (single_) {
-        single_ = false;
+    if (kind_ == 0) {
+        kind_ = last_multi_;
     } else {
         ViewportWidget* a = active();
         for (int i = 0; i < panels_.size(); ++i)
             if (panels_[i]->view() == a) focus_ = i;
-        single_ = true;
+        last_multi_ = kind_;
+        kind_ = 0;
     }
+    relayout();
+}
+
+QString PanelLayout::state_json() const {
+    QJsonArray ps;
+    for (auto* p : panels_) ps.append(QJsonObject{{"camera", p->view()->get("camera").remove('"')}, {"type", p->panel_type()}});
+    return QString::fromUtf8(QJsonDocument(QJsonObject{{"kind", kind_}, {"focus", focus_}, {"panels", ps}}).toJson(QJsonDocument::Compact));
+}
+
+void PanelLayout::restore_json(const QString& json) {
+    QJsonObject o = QJsonDocument::fromJson(json.toUtf8()).object();
+    QJsonArray ps = o["panels"].toArray();
+    for (int i = 0; i < panels_.size() && i < ps.size(); ++i) {
+        QJsonObject p = ps[i].toObject();
+        panels_[i]->set_panel_type(p["type"].toString("model"));
+        if (!p["camera"].toString().isEmpty()) panels_[i]->view()->set("camera", "\"" + p["camera"].toString() + "\"");
+    }
+    focus_ = qBound(0, o["focus"].toInt(1), int(panels_.size()) - 1);
+    kind_ = o["kind"].toInt(0);
     relayout();
 }
 
@@ -368,7 +357,7 @@ void PanelLayout::redraw_all() {
 
 void PanelLayout::set_all(const QString& key, const QString& json) {
     for (auto* p : panels_)
-        if (p->isVisible()) p->view()->set(key, json);
+        if (p->isVisible() && p->view()->isVisible()) p->view()->set(key, json);
 }
 
 } // namespace az

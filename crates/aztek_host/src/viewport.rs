@@ -600,7 +600,7 @@ impl Viewport {
             // Quad Draw's mesh sits on the live surface, chords and all, so it's pulled forward to stay in sight.
             let retopo = if self.tool == Tool::QuadDraw && !s.live_surface.contains(&it.shape) && !s.live_surface.is_empty() { 0.03 } else { 0.0 };
             // Bounding box display: twelve lines and nothing else.
-            if self.disp.bounding_box {
+            if self.disp.bounding_box || crate::ui_cmds::node_flag("boundingBox", it.xf) {
                 let (mut lo, mut hi) = (DVec3::splat(f64::MAX), DVec3::splat(f64::MIN));
                 for p in 0..it.mesh.point_capacity() {
                     if it.mesh.point_valid(p) {
@@ -2073,7 +2073,7 @@ pub fn rig_items(g: &Graph) -> Vec<RigItem> {
         let w = n.data().matrix(DagNode::WORLD_MATRIX);
         let c = w.w_axis.truncate();
         if ty.is_a("joint") {
-            let radius = n.data().float(Joint::RADIUS) * 0.5;
+            let radius = n.data().float(Joint::RADIUS) * 0.5 * crate::ui_cmds::pref_f64("jointScale", 1.0);
             let (x, y, z) = (w.x_axis.truncate().normalize_or_zero(), w.y_axis.truncate().normalize_or_zero(), w.z_axis.truncate().normalize_or_zero());
             let mut segs = Vec::new();
             circle(c, x, y, radius, &mut segs);
@@ -2111,7 +2111,7 @@ pub fn rig_items(g: &Graph) -> Vec<RigItem> {
             let color = override_color(g, id).unwrap_or([10, 10, 110, 255]);
             out.push(RigItem { node: aztek_scene::dag::transform_of(g, id), color, segs: aztek_scene::curves::curve_lines(n) });
         } else if ty.is_a("ikHandle") {
-            let k = 0.4;
+            let k = 0.4 * crate::ui_cmds::pref_f64("ikHandleScale", 1.0);
             let segs = vec![
                 (c - DVec3::X * k, c + DVec3::X * k),
                 (c - DVec3::Y * k, c + DVec3::Y * k),
