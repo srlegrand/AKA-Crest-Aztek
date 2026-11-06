@@ -112,6 +112,21 @@ fixed tangents and infinity modes; `setKeyframe`, `keyframe` (query and edit), `
 `findKeyframe`, `currentTime` (frames), `playbackOptions`, `autoKeyframe`; changed channels hold until the time moves,
 as in Maya. Graph Editor with key picking, dragging, tangent buttons and stats.
 
+Animation in full, as of 06/11/2026: tangents as Maya holds them, a vector of seconds and value, with angles in value per
+second; weighted curves are cubic Beziers in time and value (`keyTangent -wt -iw -ow -ix -iy -ox -oy -l -wl -unify -r`),
+unweighted ones Hermite. `keyframe`, `setKeyframe` (`-i` keeps the curve's shape), `cutKey -o`, `selectKey` with their
+remaining flags. `rotationInterpolation`, `filterCurve` (euler, butterworth, gaussian, keyReducer, keySync, peakRemover,
+resample, simplify), `simplify`, `bufferCurve`, `keyframeStats`, `mute`, `setAttr -k`. `motionPath`, `pathAnimation`,
+`snapshot`, `motionTrail` (drawn in the viewport). `animLayer` with blend node chains, keys resolved through the stack,
+`mergeAnimLayers`. `character`, `currentCharacters`, `clip`, `clipSchedule`, `pose`. `playbackOptions`, `play`,
+`timeControl`, `currentUnit`, ghosting as scene state. Graph Editor menus: infinities, tangents, Euler filter, simplify,
+resample, buffer curves, stacked and normalized views, isolate, copy, paste, snap, retime hotkeys.
+
+Not yet: tangent handles dragged in the Graph Editor; ghosts drawn; `flow` needs the lattice deformer; `-cp` keys no
+control points, which have no channels of their own; the Trax Editor. Bank amount and the unweighted-to-weighted
+conversion of fixed tangents are our reading, not checked against Maya, as are the tangent formulas beyond what its
+documentation states. Clips play through a `clipChannel` node per channel, which Maya does not have.
+
 UVs, as of 06/11/2026: maps (`pCube1.map[3]`) and shells derived from the per-corner UVs and seams; `polyProjection`
 (planar, cylindrical, spherical), `polyAutoProjection`, `u3dUnfold`, `u3dLayout`, `polyMapCut`, `polyMapSew`,
 `polyMapSewMove`, `polyEditUV` (query too), `polyNormalizeUV`, `polyFlipUV`, `polyRotateUVs`, each a history node

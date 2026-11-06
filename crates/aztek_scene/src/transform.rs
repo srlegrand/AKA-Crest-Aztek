@@ -218,7 +218,11 @@ impl DagNode {
     pub const OVERRIDE_COLOR: usize = 7;
     pub const OVERRIDE_RGB_COLORS: usize = 8;
     pub const OVERRIDE_COLOR_RGB: usize = 9;
-    pub const COUNT: usize = 10;
+    pub const GHOSTING: usize = 10;
+    pub const GHOST_PRE_FRAMES: usize = 11;
+    pub const GHOST_POST_FRAMES: usize = 12;
+    pub const GHOST_STEP: usize = 13;
+    pub const COUNT: usize = 14;
 
     pub fn make_type() -> NodeType {
         let keyable = flags::INPUT | flags::STORABLE | flags::KEYABLE;
@@ -312,6 +316,42 @@ impl DagNode {
                     ..Default::default()
                 },
                 crate::node::vec3_attr("overrideColorRGB", "ovrgb", DVec3::ZERO, IN_STORE, "The override colour, 0 to 1 per channel."),
+                AttrDef {
+                    name: "ghosting".into(),
+                    short_name: "gh".into(),
+                    ty: PlugType::Bool,
+                    default_value: PlugValue::Bool(false),
+                    flags: IN_STORE,
+                    doc: "Show this object at the frames around the current one.".into(),
+                    ..Default::default()
+                },
+                AttrDef {
+                    name: "ghostPreSteps".into(),
+                    short_name: "gprs".into(),
+                    ty: PlugType::Int,
+                    default_value: PlugValue::Int(3),
+                    flags: IN_STORE,
+                    doc: "How many ghosts before the current frame.".into(),
+                    ..Default::default()
+                },
+                AttrDef {
+                    name: "ghostPostSteps".into(),
+                    short_name: "gpos".into(),
+                    ty: PlugType::Int,
+                    default_value: PlugValue::Int(3),
+                    flags: IN_STORE,
+                    doc: "How many ghosts after the current frame.".into(),
+                    ..Default::default()
+                },
+                AttrDef {
+                    name: "ghostStepSize".into(),
+                    short_name: "gss".into(),
+                    ty: PlugType::Int,
+                    default_value: PlugValue::Int(1),
+                    flags: IN_STORE,
+                    doc: "Frames between ghosts.".into(),
+                    ..Default::default()
+                },
             ],
             ..Default::default()
         }

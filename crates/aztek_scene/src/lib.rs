@@ -3,10 +3,15 @@
 
 pub mod anim;
 pub mod anim_edit;
+pub mod anim_filter;
+pub mod anim_keys;
+pub mod anim_layers;
+pub mod anim_time;
 pub mod attr_defs;
 pub mod auto_bevel;
 pub mod booleans;
 pub mod cameras;
+pub mod characters;
 pub mod conform_commands;
 pub mod curves;
 pub mod surfaces;
@@ -42,6 +47,7 @@ pub mod mesh_edit;
 pub mod mesh_files;
 pub mod mesh_nodes;
 pub mod modifiers;
+pub mod motion_path;
 pub mod naming;
 pub mod node_bounds;
 pub mod object_ops;

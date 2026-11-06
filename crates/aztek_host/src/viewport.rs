@@ -1708,6 +1708,8 @@ pub fn rig_items(g: &Graph) -> Vec<RigItem> {
                     out.push(RigItem { node: aztek_scene::NO_NODE, color: [255, 200, 60, 255], segs });
                 }
             }
+        } else if ty.is_a("motionTrailShape") {
+            out.push(RigItem { node: aztek_scene::dag::transform_of(g, id), color: [220, 200, 80, 255], segs: aztek_scene::motion_path::trail_lines(n) });
         } else if ty.is_a("ikHandle") {
             let k = 0.4;
             let segs = vec![

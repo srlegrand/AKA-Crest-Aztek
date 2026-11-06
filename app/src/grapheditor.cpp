@@ -3,11 +3,14 @@
 #include "host.h"
 #include "icons.h"
 
+#include <QApplication>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
+#include <QMenuBar>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -45,6 +48,44 @@ QPointF CurveCanvas::to_graph(QPointF p) const {
     return QPointF(t0_ + p.x() * tpp_, v0_ - p.y() * vpp_);
 }
 
+QPointF CurveCanvas::curve_point(int ci, double t, double v) const {
+    if (ci >= 0 && ci < maps_.size()) v = v * maps_[ci].first + maps_[ci].second;
+    return to_screen(t, v);
+}
+
+// Normalized fits each curve between -1 and 1; stacked also gives each its own row.
+void CurveCanvas::update_maps() {
+    maps_.clear();
+    int row = 0;
+    for (const CurveView& c : curves_) {
+        if (display_ == CurveDisplay::Absolute || !c.visible) {
+            maps_.append({1.0, 0.0});
+            continue;
+        }
+        double lo = 1e18, hi = -1e18;
+        for (const QPointF& p : c.samples) lo = qMin(lo, p.y()), hi = qMax(hi, p.y());
+        for (const auto& k : c.keys) lo = qMin(lo, k[1]), hi = qMax(hi, k[1]);
+        double span = hi - lo;
+        double scale = span > 1e-9 ? 2.0 / span : 1.0;
+        double offset = span > 1e-9 ? -(hi + lo) / span : -lo;
+        if (display_ == CurveDisplay::Stacked) offset -= 2.4 * row++;
+        maps_.append({scale, offset});
+    }
+}
+
+void CurveCanvas::set_display(CurveDisplay d) {
+    display_ = d;
+    update_maps();
+    frame(false);
+}
+
+QList<QPair<QString, double>> CurveCanvas::selected_times() const {
+    QList<QPair<QString, double>> out;
+    for (auto [ci, ki] : sel_)
+        if (ci < curves_.size() && ki < curves_[ci].keys.size()) out.append({curves_[ci].curve, curves_[ci].keys[ki][0]});
+    return out;
+}
+
 void CurveCanvas::set_curves(const QVector<CurveView>& c, double time) {
     // Keep the selection on the same curves where they're still there.
     QSet<QPair<int, int>> keep;
@@ -57,6 +98,7 @@ void CurveCanvas::set_curves(const QVector<CurveView>& c, double time) {
     curves_ = c;
     sel_ = keep;
     time_ = time;
+    update_maps();
     if (!framed_ && !curves_.isEmpty()) {
         framed_ = true;
         frame(false);
@@ -71,8 +113,9 @@ void CurveCanvas::frame(bool selected_only) {
         for (int ki = 0; ki < curves_[ci].keys.size(); ++ki) {
             if (selected_only && !sel_.contains({ci, ki})) continue;
             auto& k = curves_[ci].keys[ki];
+            double shown = ci < maps_.size() ? k[1] * maps_[ci].first + maps_[ci].second : k[1];
             t_lo = qMin(t_lo, k[0]), t_hi = qMax(t_hi, k[0]);
-            v_lo = qMin(v_lo, k[1]), v_hi = qMax(v_hi, k[1]);
+            v_lo = qMin(v_lo, shown), v_hi = qMax(v_hi, shown);
         }
     }
     if (t_lo > t_hi) {
@@ -155,9 +198,18 @@ void CurveCanvas::paintEvent(QPaintEvent*) {
     for (int ci = 0; ci < curves_.size(); ++ci) {
         const CurveView& c = curves_[ci];
         if (!c.visible || c.samples.isEmpty()) continue;
+        // The buffer curve sits behind, grey.
+        if (!c.buffer.isEmpty()) {
+            QPainterPath held;
+            held.moveTo(curve_point(ci, c.buffer[0].x(), c.buffer[0].y()));
+            for (int i = 1; i < c.buffer.size(); ++i) held.lineTo(curve_point(ci, c.buffer[i].x(), c.buffer[i].y()));
+            p.setPen(QPen(QColor(120, 120, 120), 1));
+            p.setBrush(Qt::NoBrush);
+            p.drawPath(held);
+        }
         QPainterPath path;
-        path.moveTo(to_screen(c.samples[0].x(), c.samples[0].y()));
-        for (int i = 1; i < c.samples.size(); ++i) path.lineTo(to_screen(c.samples[i].x(), c.samples[i].y()));
+        path.moveTo(curve_point(ci, c.samples[0].x(), c.samples[0].y()));
+        for (int i = 1; i < c.samples.size(); ++i) path.lineTo(curve_point(ci, c.samples[i].x(), c.samples[i].y()));
         bool any_sel = false;
         for (int ki = 0; ki < c.keys.size(); ++ki) any_sel |= sel_.contains({ci, ki});
         p.setPen(QPen(any_sel ? c.color.lighter(125) : c.color, any_sel ? 1.6 : 1.2));
@@ -165,15 +217,21 @@ void CurveCanvas::paintEvent(QPaintEvent*) {
         p.drawPath(path);
         for (int ki = 0; ki < c.keys.size(); ++ki) {
             auto& k = c.keys[ki];
-            QPointF at = to_screen(k[0], k[1]);
+            QPointF at = curve_point(ci, k[0], k[1]);
             bool s = sel_.contains({ci, ki});
             if (s) {
-                // Tangent handles, a fixed length on screen.
+                double scale = ci < maps_.size() ? maps_[ci].first : 1.0;
+                // Tangent handles: as long as they are on a weighted curve, a fixed length on screen otherwise.
                 for (int side : {-1, 1}) {
                     double slope = side < 0 ? k[2] : k[3];
-                    QPointF d(1 / tpp_, -slope / vpp_);
+                    QPointF d(1 / tpp_, -slope * scale / vpp_);
                     double len = std::hypot(d.x(), d.y());
                     QPointF h = at + d / len * 40 * side;
+                    if (c.weighted && ki < c.handles.size()) {
+                        const auto& w = c.handles[ki];
+                        double hx = side < 0 ? w[0] : w[2], hy = side < 0 ? w[1] : w[3];
+                        h = at + QPointF(hx / tpp_, -hy * scale / vpp_) * side;
+                    }
                     p.setPen(QPen(QColor(150, 110, 60), 1));
                     p.drawLine(at, h);
                     p.setBrush(QColor(170, 120, 70));
@@ -203,7 +261,7 @@ QPair<int, int> CurveCanvas::key_at(QPointF pos) const {
         if (!curves_[ci].visible) continue;
         for (int ki = 0; ki < curves_[ci].keys.size(); ++ki) {
             auto& k = curves_[ci].keys[ki];
-            double d = QLineF(to_screen(k[0], k[1]), pos).length();
+            double d = QLineF(curve_point(ci, k[0], k[1]), pos).length();
             if (d < bd) bd = d, best = {ci, ki};
         }
     }
@@ -251,7 +309,8 @@ void CurveCanvas::apply_drag(QPointF to, bool final) {
     if (axis_lock_ == -1 && QLineF(press_, to).length() > 4) axis_lock_ = std::abs(d.x()) > std::abs(d.y()) ? 1 : 2;
     double dt = std::round(d.x() * tpp_);
     double dv = -d.y() * vpp_;
-    if (axis_lock_ == 1) dv = 0;
+    // Value units differ curve to curve in these views: keys move in time only.
+    if (axis_lock_ == 1 || display_ != CurveDisplay::Absolute) dv = 0;
     if (axis_lock_ == 2) dt = 0;
     if (drag_applied_) aztek_retract();
     drag_applied_ = false;
@@ -303,7 +362,7 @@ void CurveCanvas::mouseReleaseEvent(QMouseEvent* e) {
             if (!curves_[ci].visible) continue;
             for (int ki = 0; ki < curves_[ci].keys.size(); ++ki) {
                 auto& k = curves_[ci].keys[ki];
-                if (!r.contains(to_screen(k[0], k[1]))) continue;
+                if (!r.contains(curve_point(ci, k[0], k[1]))) continue;
                 if (ctrl) sel_.remove({ci, ki});
                 else if (shift && sel_.contains({ci, ki})) sel_.remove({ci, ki});
                 else sel_.insert({ci, ki});
@@ -332,10 +391,40 @@ void CurveCanvas::wheelEvent(QWheelEvent* e) {
     update();
 }
 
+void CurveCanvas::nudge_keys(double frames) {
+    QJsonArray keys;
+    for (auto& k : selected_keys()) keys.append(QJsonArray{k.first, k.second});
+    if (keys.isEmpty()) return;
+    exec("editKeys", QJsonObject{{"keys", keys}, {"timeOffset", frames}});
+    emit keysChanged();
+}
+
+// Stretches the selected keys in time about the first of them.
+void CurveCanvas::retime_keys(double factor) {
+    auto keys = selected_times();
+    if (keys.isEmpty()) return;
+    double pivot = keys[0].second;
+    for (auto& k : keys) pivot = qMin(pivot, k.second);
+    ask("selectKey", QJsonObject{{"clear", true}});
+    for (auto& k : keys) ask("selectKey", QJsonObject{{"args", QJsonArray{k.first}}, {"addTo", true}, {"time", k.second}});
+    exec("scaleKey", QJsonObject{{"selected", true}, {"timeScale", factor}, {"timePivot", pivot}});
+    emit keysChanged();
+}
+
 void CurveCanvas::keyPressEvent(QKeyEvent* e) {
+    bool alt = e->modifiers() & Qt::AltModifier;
     switch (e->key()) {
     case Qt::Key_F: frame(!sel_.isEmpty()); return;
     case Qt::Key_A: frame(false); return;
+    // Retiming: [ and ] move the selected keys a frame, with Alt they stretch or squeeze in time.
+    case Qt::Key_BracketLeft:
+        if (alt) retime_keys(0.9);
+        else nudge_keys(-1);
+        return;
+    case Qt::Key_BracketRight:
+        if (alt) retime_keys(1.1);
+        else nudge_keys(1);
+        return;
     case Qt::Key_Delete:
     case Qt::Key_Backspace: {
         QJsonArray keys;
@@ -357,6 +446,7 @@ GraphEditor::GraphEditor(QWidget* parent) : QWidget(parent) {
     auto* v = new QVBoxLayout(this);
     v->setContentsMargins(0, 0, 0, 0);
     v->setSpacing(0);
+    build_menus(v);
     auto* bar = new QToolBar(this);
     bar->setIconSize(QSize(18, 18));
     auto tan = [this, bar](const QString& label, const QString& in, const QString& out) {
@@ -439,6 +529,121 @@ GraphEditor::GraphEditor(QWidget* parent) : QWidget(parent) {
     resize(900, 480);
 }
 
+QJsonArray GraphEditor::target_curves() const {
+    QSet<QString> names;
+    for (auto& k : canvas_->selected_keys()) names.insert(k.first);
+    if (names.isEmpty())
+        for (const CurveView& c : canvas_->curves())
+            if (c.visible) names.insert(c.curve);
+    QJsonArray out;
+    for (const QString& n : names) out.append(n);
+    return out;
+}
+
+bool GraphEditor::sync_selection() {
+    auto keys = canvas_->selected_times();
+    ask("selectKey", QJsonObject{{"clear", true}});
+    for (auto& k : keys) ask("selectKey", QJsonObject{{"args", QJsonArray{k.first}}, {"addTo", true}, {"time", k.second}});
+    return !keys.isEmpty();
+}
+
+void GraphEditor::isolate(bool on) {
+    QSet<QString> keep;
+    for (auto& k : canvas_->selected_keys()) keep.insert(k.first);
+    for (QTreeWidgetItem* it : tree_->selectedItems()) keep.insert(it->data(0, Qt::UserRole).toString());
+    for (CurveView& c : canvas_->curves()) c.visible = !on || keep.isEmpty() || keep.contains(c.curve);
+    canvas_->set_display(CurveDisplay::Absolute);
+}
+
+void GraphEditor::build_menus(QVBoxLayout* v) {
+    auto* menus = new QMenuBar(this);
+    v->addWidget(menus);
+    // Runs a command on the target curves.
+    auto on_curves = [this](QMenu* m, const QString& label, const QString& name, QJsonObject call) {
+        m->addAction(label, [this, name, call]() mutable {
+            QJsonArray curves = target_curves();
+            if (curves.isEmpty()) return;
+            call["args"] = curves;
+            exec(name, call);
+            refresh();
+        });
+    };
+    // Runs a command on the selected keys.
+    auto on_keys = [this](QMenu* m, const QString& label, const QString& name, const QJsonObject& call) {
+        m->addAction(label, [this, name, call] {
+            if (!sync_selection()) return;
+            QJsonObject c = call;
+            c["selected"] = true;
+            exec(name, c);
+            refresh();
+        });
+    };
+
+    auto* view = menus->addMenu("View");
+    view->addAction("Frame All\tA", [this] { canvas_->frame(false); });
+    view->addAction("Frame Selection\tF", [this] { canvas_->frame(true); });
+    view->addSeparator();
+    view->addAction("Absolute View", [this] { canvas_->set_display(CurveDisplay::Absolute); });
+    view->addAction("Stacked View", [this] { canvas_->set_display(CurveDisplay::Stacked); });
+    view->addAction("Normalized View", [this] { canvas_->set_display(CurveDisplay::Normalized); });
+    view->addSeparator();
+    QAction* iso = view->addAction("Isolate Curve Display");
+    iso->setCheckable(true);
+    connect(iso, &QAction::toggled, this, [this](bool on) { isolate(on); });
+
+    auto* curves = menus->addMenu("Curves");
+    const QList<QPair<QString, QString>> infinities{{"Cycle", "cycle"}, {"Cycle with Offset", "cycleRelative"}, {"Oscillate", "oscillate"}, {"Linear", "linear"}, {"Constant", "constant"}};
+    auto* pre = curves->addMenu("Pre Infinity");
+    for (auto& i : infinities) on_curves(pre, i.first, "setInfinity", QJsonObject{{"preInfinite", i.second}});
+    auto* post = curves->addMenu("Post Infinity");
+    for (auto& i : infinities) on_curves(post, i.first, "setInfinity", QJsonObject{{"postInfinite", i.second}});
+    curves->addSeparator();
+    on_curves(curves, "Euler Filter", "filterCurve", QJsonObject{{"filter", "euler"}});
+    on_curves(curves, "Simplify Curve", "simplify", QJsonObject{});
+    on_curves(curves, "Resample Curve", "filterCurve", QJsonObject{{"filter", "resample"}, {"period", 1.0 / 24.0}, {"keepKeysOnFrame", true}});
+    curves->addSeparator();
+    on_curves(curves, "Buffer Curve Snapshot", "bufferCurve", QJsonObject{{"overwrite", true}});
+    on_curves(curves, "Swap Buffer Curve", "bufferCurve", QJsonObject{{"swap", true}});
+
+    auto* keys = menus->addMenu("Keys");
+    on_keys(keys, "Copy", "copyKey", QJsonObject{});
+    keys->addAction("Paste", [this] {
+        QJsonArray plugs;
+        for (const CurveView& c : canvas_->curves())
+            if (c.visible) plugs.append(c.node + "." + c.channel);
+        if (!plugs.isEmpty()) exec("pasteKey", QJsonObject{{"args", plugs}, {"option", "merge"}});
+        refresh();
+    });
+    on_keys(keys, "Delete", "cutKey", QJsonObject{{"clear", true}});
+    keys->addSeparator();
+    on_keys(keys, "Snap", "snapKey", QJsonObject{{"timeMultiple", 1.0}});
+    keys->addAction("Move Back a Frame\t[", [this] { canvas_->setFocus(); QKeyEvent e(QEvent::KeyPress, Qt::Key_BracketLeft, Qt::NoModifier); QApplication::sendEvent(canvas_, &e); });
+    keys->addAction("Move On a Frame\t]", [this] { canvas_->setFocus(); QKeyEvent e(QEvent::KeyPress, Qt::Key_BracketRight, Qt::NoModifier); QApplication::sendEvent(canvas_, &e); });
+    keys->addAction("Squeeze in Time\tAlt+[", [this] { canvas_->setFocus(); QKeyEvent e(QEvent::KeyPress, Qt::Key_BracketLeft, Qt::AltModifier); QApplication::sendEvent(canvas_, &e); });
+    keys->addAction("Stretch in Time\tAlt+]", [this] { canvas_->setFocus(); QKeyEvent e(QEvent::KeyPress, Qt::Key_BracketRight, Qt::AltModifier); QApplication::sendEvent(canvas_, &e); });
+    keys->addSeparator();
+    on_keys(keys, "Breakdown", "keyframe", QJsonObject{{"edit", true}, {"breakdown", true}});
+    on_keys(keys, "Key", "keyframe", QJsonObject{{"edit", true}, {"breakdown", false}});
+
+    auto* tangents = menus->addMenu("Tangents");
+    for (const char* t : {"auto", "spline", "clamped", "linear", "flat", "plateau", "step", "stepnext", "fixed"}) {
+        QString label(t);
+        label[0] = label[0].toUpper();
+        QJsonObject call{{"edit", true}, {"outTangentType", t}};
+        // Step tangents only say how a key leaves.
+        if (QString(t) != "step" && QString(t) != "stepnext") call["inTangentType"] = t;
+        on_keys(tangents, label, "keyTangent", call);
+    }
+    tangents->addSeparator();
+    on_keys(tangents, "Break Tangents", "keyTangent", QJsonObject{{"edit", true}, {"lock", false}});
+    on_keys(tangents, "Unify Tangents", "keyTangent", QJsonObject{{"edit", true}, {"unify", true}});
+    tangents->addSeparator();
+    on_curves(tangents, "Weighted Tangents", "keyTangent", QJsonObject{{"edit", true}, {"weightedTangents", true}});
+    on_curves(tangents, "Non-Weighted Tangents", "keyTangent", QJsonObject{{"edit", true}, {"weightedTangents", false}});
+    on_keys(tangents, "Free Tangent Weight", "keyTangent", QJsonObject{{"edit", true}, {"weightLock", false}});
+    on_keys(tangents, "Lock Tangent Weight", "keyTangent", QJsonObject{{"edit", true}, {"weightLock", true}});
+}
+
 void GraphEditor::set_tangents(const QString& in, const QString& out) {
     QJsonArray keys;
     for (auto& k : canvas_->selected_keys()) keys.append(QJsonArray{k.first, k.second});
@@ -463,9 +668,12 @@ void GraphEditor::refresh() {
             view.component = c["component"].toInt(-1);
             view.color = channel_color(view.channel, view.component);
             for (const QJsonValue& s : c["samples"].toArray()) view.samples.append(QPointF(s[0].toDouble(), s[1].toDouble()));
+            for (const QJsonValue& s : c["buffer"].toArray()) view.buffer.append(QPointF(s[0].toDouble(), s[1].toDouble()));
+            view.weighted = c["weighted"].toBool();
             for (const QJsonValue& k : c["keys"].toArray()) {
                 QJsonArray ka = k.toArray();
                 view.keys.append({ka[0].toDouble(), ka[1].toDouble(), ka[2].toDouble(), ka[3].toDouble()});
+                view.handles.append({ka[7].toDouble(), ka[8].toDouble(), ka[9].toDouble(), ka[10].toDouble()});
                 view.itt.append(ka[4].toString());
                 view.ott.append(ka[5].toString());
             }

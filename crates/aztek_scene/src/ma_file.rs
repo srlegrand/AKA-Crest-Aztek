@@ -1211,7 +1211,7 @@ fn curve_keys(n: &MaNode, doc: &Doc, fps: f64) -> Keys {
             k.out_slope = s;
         }
     }
-    let mut k = Keys { keys };
+    let mut k = Keys { keys, ..Default::default() };
     k.sort();
     k
 }

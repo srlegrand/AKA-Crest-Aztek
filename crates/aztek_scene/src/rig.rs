@@ -562,16 +562,18 @@ pub(crate) fn driven_scalar_set(g: &mut Graph, dst: &PlugRef, src: &PlugRef, v: 
 /// Installs what keeps rig nodes in step with the scene. The delete hook is shared with instancing.
 pub fn install(g: &mut Graph) {
     g.add_evaluate_hook(Arc::new(|g: &mut Graph, after: bool| sync(g, after)));
-    g.set_driven_vec_set_hook(Arc::new(|g: &mut Graph, dst: &PlugRef, src: &PlugRef, v: DVec3| {
-        let Some(driver) = g.node(src.node).map(|n| n.ty().name.clone()) else { return DrivenEdit::Reject };
-        if driver == "ikSolve" {
-            return crate::ik::set_fk(g, src, v);
-        }
-        if driver == "geometryConstraint" && dst.attr as usize == Transform::TRANSLATE {
-            return crate::constraint::set_wanted_position(g, src.node, v);
-        }
-        DrivenEdit::Reject
-    }));
+}
+
+/// A vector set on a channel IK or a geometry constraint drives. None leaves it to the animation hook.
+pub(crate) fn driven_vec_set(g: &mut Graph, dst: &PlugRef, src: &PlugRef, v: DVec3) -> Option<DrivenEdit> {
+    let driver = g.node(src.node).map(|n| n.ty().name.clone())?;
+    if driver == "ikSolve" {
+        return Some(crate::ik::set_fk(g, src, v));
+    }
+    if driver == "geometryConstraint" && dst.attr as usize == Transform::TRANSLATE {
+        return Some(crate::constraint::set_wanted_position(g, src.node, v));
+    }
+    None
 }
 
 /// Before a delete: nodes a rig needs go with it, and what the rig drives holds its pose.

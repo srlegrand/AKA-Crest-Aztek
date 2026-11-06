@@ -49,6 +49,10 @@ pub struct Session {
     pub key_clipboard: crate::anim_edit::KeyClipboard,
     /// selectKey's keys: curve and frame.
     pub key_selection: Vec<(NodeId, f64)>,
+    /// The curves' states the Graph Editor's buffer holds (bufferCurve).
+    pub buffer_curves: std::collections::HashMap<NodeId, crate::anim::Keys>,
+    /// The characters keys go to when nothing is selected (currentCharacters).
+    pub current_characters: Vec<NodeId>,
     /// The live surface: what Quad Draw and snapping draw on.
     pub live_surface: Vec<NodeId>,
     /// The sculpting tools' settings.
@@ -79,6 +83,8 @@ impl Session {
             paint_ctx: Default::default(),
             key_clipboard: Default::default(),
             key_selection: Vec::new(),
+            buffer_curves: Default::default(),
+            current_characters: Vec::new(),
             live_surface: Vec::new(),
             sculpt_ctx: Default::default(),
             scene_path: None,
@@ -148,6 +154,8 @@ impl Session {
             sculpt_ctx: Default::default(),
             scene_path: Default::default(),
             scene_type: Default::default(),
+            buffer_curves: Default::default(),
+            current_characters: Default::default(),
         }
     }
 
@@ -211,5 +219,6 @@ impl CommandHost for Session {
     fn top_level_finished(&mut self, name: &str, call: &Value, source: CallSource, ok: bool) {
         crate::components::command_finished(&mut self.graph, name, source, ok);
         crate::last_op::command_finished(self, name, call, source, ok);
+        crate::motion_path::after_command(self, name, ok);
     }
 }
