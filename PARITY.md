@@ -169,3 +169,14 @@ dependency nodes. Differences from Maya: only dependency nodes can come from plu
 path per DAG node, `setKeyable` only on added attributes, `MFnTransform` has no shear, and cycles are refused node by
 node, not plug by plug. MEL can't pass flags to a plug-in command with no syntax. `MRampAttribute` isn't there.
 
+NURBS surfaces, as of 06/11/2026: `nurbsSurface` shape, CVs as `surface1.cv[u][v]` (select, move, undo, tweaks on top of
+history), drawn shaded with isoparms and a CV hull in vertex mode, `selectType -cv`, `displaySmoothness` and the 1, 2, 3
+keys. `sphere`, `nurbsCube`, `cylinder`, `cone`, `torus`, `nurbsPlane` with `make*` nodes. `loft`, `revolve`, `extrude`
+and `planar` make NURBS, polygons with `-po 1`; `boundary`, `square`, `singleProfileBirailSurface`, `rebuildSurface`,
+`reverseSurface`, `insertKnotSurface`, `detachSurface`, `attachSurface`, `offsetSurface`, `closeSurface`, `nurbsToPoly`
+(`nurbsTessellate`), `duplicateCurve` for isoparms, `pointOnSurface`, and the `surfaceInfo`, `closestPointOnSurface` and
+`pointOnSurfaceInfo` nodes. Differs from Maya: no trims, so `planar` makes a surface only for a rectangle and otherwise
+polygons with a warning; non-rational, so a sphere is Maya's cubic approximation only; `-ut` and `-tol` on primitives
+are accepted and ignored; `loft` takes degrees 1 to 3; `attachSurface` copies its second surface rather than following
+it. None of this has been compared with a running Maya: the sphere's CV values, which way U runs on `loft` and `extrude`,
+the direction flags' numbering and the bare commands' axis of 1 0 0 are from memory of Maya's files and docs.

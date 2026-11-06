@@ -219,7 +219,15 @@ QMenu* MainWindow::create_menu() {
                 P{"Quad Sphere", "polyQuadSphere"}})
         cmd(polys, p.label, p.cmd, {}, QString(), true);
     QMenu* nurbs = m->addMenu("NURBS Primitives");
-    cmd(nurbs, "Circle", "circle", QJsonObject{{"normal", QJsonArray{0, 1, 0}}}, QString(), true);
+    const QJsonArray up{0, 1, 0};
+    cmd(nurbs, "Sphere", "sphere", QJsonObject{{"axis", up}}, QString(), true);
+    cmd(nurbs, "Cube", "nurbsCube", QJsonObject{{"axis", up}}, QString(), true);
+    cmd(nurbs, "Cylinder", "cylinder", QJsonObject{{"axis", up}}, QString(), true);
+    cmd(nurbs, "Cone", "cone", QJsonObject{{"axis", up}}, QString(), true);
+    cmd(nurbs, "Plane", "nurbsPlane", QJsonObject{{"axis", up}}, QString(), true);
+    cmd(nurbs, "Torus", "torus", QJsonObject{{"axis", up}}, QString(), true);
+    nurbs->addSeparator();
+    cmd(nurbs, "Circle", "circle", QJsonObject{{"normal", up}}, QString(), true);
     cmd(nurbs, "Square", "nurbsSquare", {}, QString(), true);
     QMenu* curves = m->addMenu("Curve Tools");
     curves->addAction("CV Curve Tool", [this] { set_tool("curveCv"); });
@@ -276,6 +284,8 @@ QMenu* MainWindow::modify_menu() {
     cmd(pivot, "Zero Pivot", "zeroPivot");
     cmd(m, "Match Pivots", "matchPivot");
     m->addSeparator();
+    QMenu* convert = m->addMenu("Convert");
+    cmd(convert, "NURBS to Polygons", "nurbsToPoly", QJsonObject{{"format", 3}, {"polygonType", 1}}, QString(), true);
     cmd(m, "Convert to Instance", "convertToInstance");
     cmd(m, "Make Unique", "makeUnique");
     m->addSeparator();
@@ -297,14 +307,20 @@ QMenu* MainWindow::display_menu() {
     grid->addAction("Hide", [this] { panels_->set_all("grid", "false"); });
     m->addSeparator();
     QMenu* sp = m->addMenu("Smooth Preview");
-    cmd(sp, "Off", "smoothPreview", QJsonObject{{"level", 0}}, "1");
-    sp->addAction("Cage + Smooth\t2", [this] {
+    // The same keys set how finely NURBS surfaces draw.
+    auto smoothness = [this](int div, int wire, int shaded) {
+        exec_quiet("displaySmoothness", QJsonObject{{"divisionsU", div}, {"divisionsV", div}, {"pointsWire", wire}, {"pointsShaded", shaded}});
+    };
+    connect(cmd(sp, "Off", "smoothPreview", QJsonObject{{"level", 0}}, "1"), &QAction::triggered, this, [smoothness] { smoothness(0, 4, 1); });
+    sp->addAction("Cage + Smooth\t2", [this, smoothness] {
         for (ViewportWidget* vw : panels_->views()) vw->set("smoothCage", "true");
         exec("smoothPreview", QJsonObject{{"level", 2}});
+        smoothness(1, 8, 2);
     });
-    sp->addAction("Smooth\t3", [this] {
+    sp->addAction("Smooth\t3", [this, smoothness] {
         for (ViewportWidget* vw : panels_->views()) vw->set("smoothCage", "false");
         exec("smoothPreview", QJsonObject{{"level", 2}});
+        smoothness(3, 16, 4);
     });
     return m;
 }
@@ -472,8 +488,20 @@ QMenu* MainWindow::surfaces_menu() {
     cmd(m, "Loft", "loft", {}, QString(), true);
     cmd(m, "Planar", "planar");
     cmd(m, "Revolve", "revolve", {}, QString(), true);
+    cmd(m, "Birail", "singleProfileBirailSurface", {}, QString(), true);
     cmd(m, "Extrude", "extrude", {}, QString(), true);
+    cmd(m, "Boundary", "boundary", {}, QString(), true);
+    cmd(m, "Square", "square", {}, QString(), true);
     cmd(m, "Sweep Mesh", "sweepMeshFromCurve", {}, QString(), true);
+    m->addSeparator();
+    cmd(m, "Duplicate NURBS Patch Curve", "duplicateCurve", {}, QString(), true);
+    cmd(m, "Attach", "attachSurface", {}, QString(), true);
+    cmd(m, "Detach", "detachSurface", {}, QString(), true);
+    cmd(m, "Open/Close", "closeSurface", {}, QString(), true);
+    cmd(m, "Insert Isoparms", "insertKnotSurface", {}, QString(), true);
+    cmd(m, "Offset", "offsetSurface", {}, QString(), true);
+    cmd(m, "Rebuild", "rebuildSurface", {}, QString(), true);
+    cmd(m, "Reverse Direction", "reverseSurface", {}, QString(), true);
     return m;
 }
 

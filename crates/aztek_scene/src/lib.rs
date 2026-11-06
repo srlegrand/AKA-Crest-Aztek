@@ -9,6 +9,7 @@ pub mod booleans;
 pub mod cameras;
 pub mod conform_commands;
 pub mod curves;
+pub mod surfaces;
 pub mod dag;
 pub mod deform;
 pub mod deform_cmds;

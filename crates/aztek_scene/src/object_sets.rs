@@ -340,6 +340,17 @@ pub fn parse(g: &Graph, items: &[String]) -> Result<Vec<Member>, String> {
             Ok(Some(n)) => n,
             _ => return Err(format!("no object named {node_name}")),
         };
+        // A surface's CVs too, by cv[u][v].
+        if let Some(sh) = crate::surfaces::as_surface(g, n) {
+            if suffix != "cv" {
+                return Err(format!("unknown component '{suffix}' in {item} (cv)"));
+            }
+            let Some(ids) = crate::surfaces::parse_cv_ranges(g, sh, &item[open + 1..item.len() - 1]) else {
+                return Err(format!("bad component range in {item}"));
+            };
+            out = merged(out, &[Member { node: sh, kind: ComponentMode::Vertex, ids }]);
+            continue;
+        }
         // A curve's CVs are its vertex components.
         if let Some(c) = crate::curves::as_curve(g, n) {
             if suffix != "cv" {
@@ -421,6 +432,10 @@ pub fn format(g: &Graph, list: &[Member]) -> Vec<String> {
         }
         if let Some(dims) = crate::components::point_grid(g, m.node) {
             out.extend(crate::components::grid_strings(&path, dims, &m.ids, false));
+            continue;
+        }
+        if let Some(stride) = crate::surfaces::id_stride(g, m.node) {
+            out.extend(crate::surfaces::format_cvs(&m.ids, stride).into_iter().map(|c| format!("{path}.{c}")));
             continue;
         }
         let prefix = format!("{path}.{}[", kind_suffix(m.kind));
