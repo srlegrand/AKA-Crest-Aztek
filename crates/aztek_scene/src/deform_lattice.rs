@@ -559,7 +559,7 @@ fn create(s: &mut Session, a: &Args) -> CmdResult {
         lo = lo.min(l);
         hi = hi.max(h);
     }
-    let centred = a.get("objectCentered").is_none_or(|v| v.as_bool().unwrap_or(true) && v.as_i64() != Some(0));
+    let centred = !a.has("objectCentered") || a.bool("objectCentered");
     let (centre, size) = if centred { ((lo + hi) * 0.5, (hi - lo).max(DVec3::splat(1e-3))) } else { (DVec3::ZERO, DVec3::ONE) };
     let divisions = a.vec3("divisions").unwrap_or([2.0, 2.0, 2.0]);
     let name = a.string("name", "ffd1");

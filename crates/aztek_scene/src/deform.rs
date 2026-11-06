@@ -389,6 +389,10 @@ pub fn register_types() {
         crate::plug::data::register_kind("deformFloats", Arc::new(|j| Ok(Arc::new(Floats(j.get("values").and_then(Value::as_array).map(|a| a.iter().map(|x| x.as_f64().unwrap_or(0.0)).collect()).unwrap_or_default())) as Arc<dyn crate::plug::Data>)));
         let gf = types::register_type(NodeType { name: "geometryFilter".into(), icon: "wave-sine".into(), doc: "What every deformer is: a mesh in, the deformed mesh out.".into(), own_attrs: shared(vec![]), ..Default::default() }).expect("geometryFilter");
         crate::deform_lattice::register_types(gf.clone());
+        crate::deform_soft::register_types(gf.clone());
+        crate::deform_mush::register_types(gf.clone());
+        crate::deform_wrap::register_types(gf.clone());
+        crate::deform_wire::register_types(gf.clone());
         let nl = types::register_type(NodeType { name: "nonLinear".into(), base: Some(gf.clone()), icon: "wave-sine".into(), doc: "A nonlinear deformer.".into(), ..Default::default() }).expect("nonLinear");
         let specs: [(&str, [(&str, &str, f64); 6]); 6] = [
             ("bend", [("curvature", "cur", 0.0), ("unusedB", "ub", 0.0), ("unusedC", "uc", 0.0), ("lowBound", "lb", -1.0), ("highBound", "hb", 1.0), ("unusedD", "ud", 0.0)]),
@@ -623,8 +627,33 @@ pub(crate) fn add_geometry(g: &mut Graph, leader: NodeId, mesh: NodeId, pts: &Op
 fn rebind(g: &mut Graph, n: NodeId) -> CmdResult<()> {
     match g.node(n).map(|x| x.ty().name.clone()).unwrap_or_default().as_str() {
         "ffd" if crate::deform_lattice::is_frozen(g, n) => crate::deform_lattice::capture_stu(g, n),
+        "deltaMush" | "tension" => crate::deform_mush::capture_rest(g, n),
+        "wrap" => crate::deform_wrap::bind(g, n),
+        "softMod" => crate::deform_soft::clear_selected(g, n),
         _ => Ok(()),
     }
+}
+
+/// Sets the attributes these flags name, where the flag has the attribute's own name.
+pub(crate) fn apply_flags(g: &mut Graph, n: NodeId, a: &aztek_ops::Args, names: &[&str]) -> CmdResult<()> {
+    for name in names {
+        let Some(v) = a.get(name) else { continue };
+        let Some(i) = g.node(n).and_then(|x| x.ty().attr_index(name)) else { continue };
+        let def = g.node(n).unwrap().ty().attrs[i].clone();
+        g.set_value(plug(n, i), crate::plug::from_json(&def, v)?)?;
+    }
+    Ok(())
+}
+
+/// Query mode's answer for attributes named like their flags.
+pub(crate) fn query_flags(g: &mut Graph, n: NodeId, a: &aztek_ops::Args, names: &[&str]) -> CmdResult {
+    for name in names {
+        if crate::skin::asked(a, name) {
+            let Some(i) = g.node(n).and_then(|x| x.ty().attr_index(name)) else { continue };
+            return Ok(crate::plug::to_json(&g.value(&plug(n, i))?));
+        }
+    }
+    fail!("nothing to query")
 }
 
 /// The flags every deformer command shares.
@@ -784,28 +813,34 @@ pub(crate) fn targets(s: &mut Session, a: &aztek_ops::Args) -> CmdResult<Vec<(No
     let g = &mut s.graph;
     let mut out: Vec<(NodeId, Option<Vec<u32>>)> = Vec::new();
     let names = a.named();
-    if names.is_empty() {
-        let mode = components::mode(g);
-        if mode != ComponentMode::Object {
-            for (node, ids) in components::selected_all(g, mode).clone() {
-                let Some(m) = components::as_mesh(g, node) else { continue };
-                let Some(cage) = crate::modifiers::cage(g, m) else { continue };
-                out.push((m, Some(components::convert(&cage, mode, &ids, ComponentMode::Vertex, false))));
-            }
-            if !out.is_empty() {
-                return Ok(out);
-            }
-        }
-        for id in g.selection().to_vec() {
-            if let Some(m) = components::as_mesh(g, id) {
-                out.push((m, None));
-            }
-        }
-        return Ok(out);
+    if !names.is_empty() {
+        return named_targets(g, &names);
     }
+    let mode = components::mode(g);
+    if mode != ComponentMode::Object {
+        for (node, ids) in components::selected_all(g, mode).clone() {
+            let Some(m) = components::as_mesh(g, node) else { continue };
+            let Some(cage) = crate::modifiers::cage(g, m) else { continue };
+            out.push((m, Some(components::convert(&cage, mode, &ids, ComponentMode::Vertex, false))));
+        }
+        if !out.is_empty() {
+            return Ok(out);
+        }
+    }
+    for id in g.selection().to_vec() {
+        if let Some(m) = components::as_mesh(g, id) {
+            out.push((m, None));
+        }
+    }
+    return Ok(out);
+}
+
+/// Meshes and vertices by name, with the points named on each (None for all).
+pub(crate) fn named_targets(g: &mut Graph, names: &[String]) -> CmdResult<Vec<(NodeId, Option<Vec<u32>>)>> {
+    let mut out: Vec<(NodeId, Option<Vec<u32>>)> = Vec::new();
     for n in names {
-        if components::is_component_string(&n) {
-            for (m, ids) in crate::skin::points_named(g, std::slice::from_ref(&n)) {
+        if components::is_component_string(n) {
+            for (m, ids) in crate::skin::points_named(g, std::slice::from_ref(n)) {
                 match out.iter_mut().find(|e| e.0 == m) {
                     Some((_, Some(v))) => v.extend(ids),
                     Some(_) => {}
@@ -814,7 +849,7 @@ pub(crate) fn targets(s: &mut Session, a: &aztek_ops::Args) -> CmdResult<Vec<(No
             }
             continue;
         }
-        let Some(id) = g.find(&n)? else { fail!("no object named {n}") };
+        let Some(id) = g.find(n)? else { fail!("no object named {n}") };
         let Some(m) = components::as_mesh(g, id) else { fail!("{n} is not a mesh") };
         if !out.iter().any(|e| e.0 == m) {
             out.push((m, None));
@@ -952,7 +987,10 @@ pub fn register(c: &mut Commands<Session>) {
                 let name = a.string("name", "cluster1");
                 g.open_chunk("Cluster");
                 let r = (|| -> CmdResult<(NodeId, NodeId)> {
-                    let h = make_handle(g, &format!("{name}Handle"), "cluster", centre, DVec3::ONE)?;
+                    // As Maya's: at zero, its pivot on the points' middle, so its translate is how far it has moved.
+                    let h = make_handle(g, &format!("{name}Handle"), "cluster", DVec3::ZERO, DVec3::ONE)?;
+                    g.set_value(plug(h, Transform::ROTATE_PIVOT), PlugValue::Vec3(centre))?;
+                    g.set_value(plug(h, Transform::SCALE_PIVOT), PlugValue::Vec3(centre))?;
                     g.evaluate();
                     let hw = world(g, h);
                     let mut first = NO_NODE;
@@ -1046,8 +1084,8 @@ pub fn handle_lines(kind: &str, w: &DMat4) -> Vec<(DVec3, DVec3)> {
     let p = |x: f64, y: f64, z: f64| w.transform_point3(DVec3::new(x, y, z));
     let mut out = Vec::new();
     match kind {
-        "cluster" => {
-            // A "C" in the view's plane is Maya's; a small diamond reads the same here.
+        "cluster" | "softMod" => {
+            // A letter in the view's plane is Maya's; a small diamond reads the same here.
             let k = 0.25;
             let pts = [p(k, 0.0, 0.0), p(0.0, k, 0.0), p(-k, 0.0, 0.0), p(0.0, -k, 0.0)];
             for i in 0..4 {

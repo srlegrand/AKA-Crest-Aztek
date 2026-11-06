@@ -442,6 +442,9 @@ pub fn register(c: &mut Commands<Session>) {
                     let Some((mesh, ids)) = targets.into_iter().next() else { fail!("pointPosition: no point {n}") };
                     let Some(&p) = ids.first() else { fail!("pointPosition: no point {n}") };
                     let Some(m) = components::mesh_of(g, mesh) else { fail!("pointPosition: no point {n}") };
+                    if p >= m.point_capacity() || !m.point_valid(p) {
+                        fail!("pointPosition: no point {n}");
+                    }
                     let w = crate::rig::world(g, crate::dag::transform_of(g, mesh));
                     let q = if local { m.position(p) } else { w.transform_point3(m.position(p)) };
                     return Ok(json!([q.x, q.y, q.z]));
