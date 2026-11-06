@@ -1345,11 +1345,11 @@ impl Build<'_> {
     /// DAG nodes built as themselves. Meshes marked intermediate are consumed by the mesh pass.
     fn keeps(&self, i: usize) -> bool {
         let n = &self.doc.nodes[i];
-        if self.used[i] && n.ty == "transform" {
+        if self.used[i] && (n.ty == "transform" || n.ty == "camera") {
             return false;
         }
         match n.ty.as_str() {
-            "transform" | "joint" | "locator" => true,
+            "transform" | "joint" | "locator" | "nurbsCurve" | "camera" => true,
             "mesh" => !n.truth(&["io", "intermediateObject"]).unwrap_or(false),
             _ => false,
         }
@@ -1495,6 +1495,75 @@ impl Build<'_> {
     }
 
     /// Geometry for a mesh shape: its source plug for a skinCluster or the shape, or a mesh to store.
+    /// A curve from `.cc`, or from the makeNurbCircle feeding it when it has no stored curve.
+    fn build_curve(&mut self, i: usize) {
+        use aztek_geo::nurbs::{self, Form, NurbsCurve};
+        let Some(shape) = self.id(i) else { return };
+        let doc = self.doc;
+        let n = &doc.nodes[i];
+        let mut curve = None;
+        if let Some(cc) = n.set_of(&["cc", "cached"]) {
+            // The rational flag is a word: only the numbers count here.
+            let nums: Vec<f64> = cc.values.iter().filter_map(|t| if let Tok::Num(v) = t { Some(*v) } else { None }).collect();
+            // degree spans form [rational, a word] dimension knotCount knots... cvCount cvs...
+            if nums.len() >= 6 {
+                let (degree, form) = (nums[0] as usize, nums[2] as i64);
+                let dim = nums[3] as usize;
+                let nk = nums[4] as usize;
+                if nums.len() > 5 + nk {
+                    let knots = nums[5..5 + nk].to_vec();
+                    let nc = nums[5 + nk] as usize;
+                    let start = 6 + nk;
+                    let stride = dim.max(2);
+                    let mut cvs = Vec::with_capacity(nc);
+                    for k in 0..nc {
+                        let at = start + k * stride;
+                        if at + stride > nums.len() {
+                            break;
+                        }
+                        cvs.push(if stride == 2 { DVec3::new(nums[at], nums[at + 1], 0.0) } else { DVec3::new(nums[at], nums[at + 1], nums[at + 2]) });
+                    }
+                    curve = Some(NurbsCurve::new(degree, Form::from_index(form), cvs, knots));
+                }
+            }
+        }
+        if curve.is_none() {
+            if let Some(c) = doc.input(i, &["cr", "create"]) {
+                let g = &doc.nodes[c.src];
+                if g.ty == "makeNurbCircle" {
+                    let nr = g.vec3(&["nr", "normal"]).unwrap_or(DVec3::Z);
+                    let cen = g.vec3(&["c", "center"]).unwrap_or(DVec3::ZERO);
+                    let fp = g.vec3(&["fp", "firstPoint"]).unwrap_or(DVec3::X);
+                    let r = g.num(&["r", "radius"]).unwrap_or(1.0);
+                    let deg = g.num(&["d", "degree"]).unwrap_or(3.0) as usize;
+                    let sec = g.num(&["s", "sections"]).unwrap_or(8.0) as usize;
+                    let sw = g.num(&["sw", "sweep"]).unwrap_or(360.0);
+                    curve = Some(nurbs::circle(cen, nr, fp, r, deg, sec, sw));
+                }
+            }
+        }
+        let Some(c) = curve else {
+            self.warnings.push(format!("{}: no stored curve", n.name));
+            return;
+        };
+        let at = crate::curves::CurveShape::CACHED;
+        let _ = self.s.graph.set_value(PlugRef::new(shape, at as i32), PlugValue::Data(Some(Arc::new(crate::curves::CurveData(c)))));
+    }
+
+    fn build_camera(&mut self, i: usize) {
+        use crate::cameras as cam;
+        let Some(shape) = self.id(i) else { return };
+        let n = &self.doc.nodes[i];
+        for (names, at) in [(["fl", "focalLength"], cam::FOCAL_LENGTH), (["hfa", "horizontalFilmAperture"], cam::H_APERTURE), (["vfa", "verticalFilmAperture"], cam::V_APERTURE), (["ncp", "nearClipPlane"], cam::NEAR_CLIP), (["fcp", "farClipPlane"], cam::FAR_CLIP), (["coi", "centerOfInterest"], cam::COI), (["ow", "orthographicWidth"], cam::ORTHO_WIDTH)] {
+            if let Some(v) = n.num(&names) {
+                let _ = self.s.graph.set_value(PlugRef::new(shape, at as i32), PlugValue::Float(v));
+            }
+        }
+        if let Some(o) = n.truth(&["o", "orthographic"]) {
+            let _ = self.s.graph.set_value(PlugRef::new(shape, cam::ORTHOGRAPHIC as i32), PlugValue::Bool(o));
+        }
+    }
+
     fn build_mesh(&mut self, i: usize) {
         let Some(shape) = self.id(i) else { return };
         let doc = self.doc;
@@ -2104,11 +2173,12 @@ fn build(s: &mut Session, doc: &Doc, import: bool) -> Vec<String> {
         if doc.nodes[i].ty != "camera" {
             continue;
         }
-        b.used[i] = true;
         let n = &doc.nodes[i];
         if !DEFAULT_CAMERAS.contains(&n.name.as_str()) {
-            b.warnings.push(format!("camera not represented: {}", n.name));
+            // A camera of the scene's own is made like any other shape.
+            continue;
         }
+        b.used[i] = true;
         if let Some(p) = n.parent {
             let only_cameras = doc.children(p).all(|k| doc.nodes[k].ty == "camera");
             if only_cameras {
@@ -2131,6 +2201,12 @@ fn build(s: &mut Session, doc: &Doc, import: bool) -> Vec<String> {
     for i in 0..count {
         if doc.nodes[i].ty == "mesh" && b.ids[i].is_some() {
             b.build_mesh(i);
+        }
+        if doc.nodes[i].ty == "nurbsCurve" && b.ids[i].is_some() {
+            b.build_curve(i);
+        }
+        if doc.nodes[i].ty == "camera" && b.ids[i].is_some() {
+            b.build_camera(i);
         }
     }
     // Generators can be animated too; their channels were set as they were made.
@@ -2583,10 +2659,14 @@ impl Writer<'_> {
             return false;
         }
         let t = n.ty();
-        if t.is_a("mesh") {
+        if t.is_a("mesh") || t.is_a("nurbsCurve") {
             return !n.bool(DagNode::INTERMEDIATE_OBJECT);
         }
-        t.name == "transform" || t.is_a("joint") || t.is_a("locator") || t.is_a("ikHandle")
+        // The default cameras are the application's own; every scene has them.
+        if crate::cameras::is_default_camera(&self.s.graph, id) {
+            return false;
+        }
+        t.name == "transform" || t.is_a("joint") || t.is_a("locator") || t.is_a("ikHandle") || t.is_a("camera")
     }
 
     fn write_dag(&mut self, id: NodeId) {
@@ -2601,6 +2681,12 @@ impl Writer<'_> {
             if ty == "mesh" {
                 self.write_mesh(id, &name, parent);
             }
+            if ty == "nurbsCurve" {
+                self.write_nurbs_curve(id);
+            }
+            if ty == "camera" {
+                self.write_camera(id);
+            }
             if ty == "ikHandle" {
                 let _ = writeln!(self.out, "\tsetAttr \".roc\" yes;");
             }
@@ -2611,6 +2697,35 @@ impl Writer<'_> {
         }
         for c in self.s.graph.children(id).to_vec() {
             self.write_dag(c);
+        }
+    }
+
+    /// The curve as `.cc`: degree, spans, form, rational, dimension, knots, CVs.
+    fn write_nurbs_curve(&mut self, shape: NodeId) {
+        let Some(c) = crate::curves::local_curve(&mut self.s.graph, shape) else { return };
+        let _ = writeln!(self.out, "\tsetAttr \".cc\" -type \"nurbsCurve\" ");
+        let _ = writeln!(self.out, "\t\t{} {} {} no 3", c.degree, c.spans(), c.form.index());
+        let knots: Vec<String> = c.knots.iter().map(|k| fmt_num(*k)).collect();
+        let _ = writeln!(self.out, "\t\t{} {}", c.knots.len(), knots.join(" "));
+        let _ = writeln!(self.out, "\t\t{}", c.cvs.len());
+        for p in &c.cvs {
+            let _ = writeln!(self.out, "\t\t{} {} {}", fmt_num(p.x), fmt_num(p.y), fmt_num(p.z));
+        }
+        let _ = writeln!(self.out, "\t\t;");
+    }
+
+    fn write_camera(&mut self, shape: NodeId) {
+        use crate::cameras as cam;
+        let Some(n) = self.s.graph.node(shape) else { return };
+        let d = n.data();
+        for (attr, at, def) in [(".fl", cam::FOCAL_LENGTH, 35.0), (".hfa", cam::H_APERTURE, 1.41732), (".vfa", cam::V_APERTURE, 0.94488), (".ncp", cam::NEAR_CLIP, 0.1), (".fcp", cam::FAR_CLIP, 10000.0), (".coi", cam::COI, 5.0), (".ow", cam::ORTHO_WIDTH, 30.0)] {
+            let v = d.float(at);
+            if (v - def).abs() > 1e-9 {
+                let _ = writeln!(self.out, "\tsetAttr \"{attr}\" {};", fmt_num(v));
+            }
+        }
+        if d.bool(cam::ORTHOGRAPHIC) {
+            let _ = writeln!(self.out, "\tsetAttr \".o\" yes;");
         }
     }
 
@@ -3262,6 +3377,8 @@ pub fn write_text(s: &mut Session, file_name: &str, only: Option<&[NodeId]>) -> 
             *unwritten.entry(ty.to_string()).or_default() += 1;
         } else if t.is_a("mesh") {
             // Intermediate shapes: geometry is baked.
+        } else if matches!(n.name(), "defaultLightSet" | "defaultObjectSet") {
+            // Every scene has these.
         } else if !n_is_baked(&t) {
             *unwritten.entry(ty.to_string()).or_default() += 1;
         }
@@ -3310,7 +3427,14 @@ pub fn write_text(s: &mut Session, file_name: &str, only: Option<&[NodeId]>) -> 
 
 /// Nodes whose result the mesh holds once baked: anything that outputs a mesh.
 fn n_is_baked(t: &NodeType) -> bool {
-    t.attrs.iter().any(|a| a.ty == PlugType::Mesh && a.has(flags::OUTPUT))
+    // Curve history bakes into the curve's .cc as mesh history does into .vt; the info nodes are written below.
+    const CURVE_HISTORY: &[&str] = &["makeNurbCircle", "makeNurbsSquare", "rebuildCurve", "reverseCurve", "closeCurve", "smoothCurve", "fitBspline", "extendCurve", "offsetCurve", "insertKnotCurve"];
+    CURVE_HISTORY.contains(&t.name.as_str()) || t.name == "camera" || t.attrs.iter().any(|a| a.ty == PlugType::Mesh && a.has(flags::OUTPUT))
+}
+
+/// A number as short as it stays exact.
+fn fmt_num(v: f64) -> String {
+    format!("{v}")
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

@@ -594,9 +594,9 @@ connectAttr "nobody.x" "keep.tx";
     assert!(w.iter().any(|x| x.contains("reference skipped") && x.contains("rig.ma")), "{w:?}");
     assert!(w.iter().any(|x| x.contains("nurbsSurface")), "{w:?}");
     assert!(w.iter().any(|x| x.contains("blendShape not represented: blendShape1, blendShape2")), "{w:?}");
-    assert!(w.iter().any(|x| x.contains("camera not represented: cameraShape1")), "{w:?}");
     assert!(s.graph.find("group1|keep").unwrap().is_some());
-    assert!(s.graph.find("kid").unwrap().is_none());
+    // A camera of the scene's own comes through.
+    assert_eq!(s.run("ls", json!({"type": "camera"})).unwrap(), json!(["cameraShape1"]));
 }
 
 #[test]
@@ -977,4 +977,64 @@ fn big_meshes_chunk_like_maya_and_read_back() {
     for f in 0..x.num_faces() {
         assert_eq!(x.face_points(f), y.face_points(f));
     }
+}
+
+#[test]
+fn curves_and_cameras_round_trip() {
+    let mut s = Session::new();
+    s.run("circle", json!({"normal": [0, 1, 0], "radius": 2.0, "name": "ctrl"})).unwrap();
+    s.run("curve", json!({"degree": 3, "point": [[0, 0, 0], [1, 1, 0], [2, 0, 0], [3, 1, 0], [4, 0, 0]], "name": "spline"})).unwrap();
+    s.run("camera", json!({"focalLength": 50.0, "name": "shot"})).unwrap();
+    aztek_scene::cameras::make_defaults(&mut s.graph);
+    let (text, _) = aztek_scene::ma_file::write_text(&mut s, "t.ma", None);
+    assert!(text.contains("createNode nurbsCurve -n \"splineShape\" -p \"spline\";"), "{text}");
+    assert!(text.contains("-type \"nurbsCurve\""));
+    assert!(text.contains("createNode camera -n \"shotShape\" -p \"shot\";"), "{text}");
+    assert!(!text.contains("-n \"persp\""));
+    let dir = std::env::temp_dir().join(format!("aztek_curve_{}.ma", std::process::id()));
+    std::fs::write(&dir, &text).unwrap();
+    let mut t = Session::new();
+    aztek_scene::ma_file::open_scene(&mut t, dir.to_str().unwrap()).unwrap();
+    std::fs::remove_file(&dir).ok();
+    let len = |s: &mut Session, n: &str| s.run("arclen", json!({"args": [n]})).unwrap().as_f64().unwrap();
+    assert!((len(&mut t, "ctrl") - std::f64::consts::TAU * 2.0).abs() < 0.2);
+    assert!((len(&mut t, "spline") - len(&mut s, "spline")).abs() < 1e-6);
+    assert_eq!(t.run("getAttr", json!({"args": ["ctrl.form"]})).unwrap().as_f64().unwrap(), 2.0);
+    assert_eq!(t.run("getAttr", json!({"args": ["shot.focalLength"]})).unwrap().as_f64().unwrap(), 50.0);
+}
+
+#[test]
+fn a_circle_from_maya_loads_with_its_cv_text() {
+    let ma = r#"//Maya ASCII 2024 scene
+requires maya "2024";
+currentUnit -l centimeter -a degree -t film;
+createNode transform -n "nurbsCircle1";
+createNode nurbsCurve -n "nurbsCircleShape1" -p "nurbsCircle1";
+	setAttr -k off ".v";
+	setAttr ".cc" -type "nurbsCurve" 
+		3 8 2 no 3
+		13 -2 -1 0 1 2 3 4 5 6 7 8 9 10
+		11
+		0.78361162489122504 4.7982373409884682e-17 -0.78361162489122382
+		-1.2643170607829326e-16 6.7857323231109134e-17 -1.1081941875543879
+		-0.78361162489122427 4.7982373409884713e-17 -0.78361162489122427
+		-1.1081941875543879 3.2112695072372299e-33 -5.2643170607829326e-16
+		-0.78361162489122449 -4.7982373409884694e-17 0.78361162489122405
+		-3.3392053635905195e-16 -6.7857323231109146e-17 1.1081941875543881
+		0.78361162489122382 -4.7982373409884719e-17 0.78361162489122438
+		1.1081941875543879 -8.7290431644343137e-33 1.4300133022715681e-15
+		0.78361162489122504 4.7982373409884682e-17 -0.78361162489122382
+		-1.2643170607829326e-16 6.7857323231109134e-17 -1.1081941875543879
+		-0.78361162489122427 4.7982373409884713e-17 -0.78361162489122427
+		;
+// End of test.ma
+"#;
+    let dir = std::env::temp_dir().join(format!("aztek_circle_{}.ma", std::process::id()));
+    std::fs::write(&dir, ma).unwrap();
+    let mut s = Session::new();
+    aztek_scene::ma_file::open_scene(&mut s, dir.to_str().unwrap()).unwrap();
+    std::fs::remove_file(&dir).ok();
+    assert_eq!(s.run("getAttr", json!({"args": ["nurbsCircle1.spans"]})).unwrap().as_f64().unwrap(), 8.0);
+    let len = s.run("arclen", json!({"args": ["nurbsCircle1"]})).unwrap().as_f64().unwrap();
+    assert!((len - std::f64::consts::TAU).abs() < 0.1, "{len}");
 }
