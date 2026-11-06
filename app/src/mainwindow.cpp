@@ -522,7 +522,7 @@ QMenu* MainWindow::skeleton_menu() {
     auto* m = new QMenu("Skeleton", this);
     m->addAction("Create Joints", [this] { set_tool("joint"); });
     // Runs on the selected joint until there is a tool to drag the new joint with.
-    cmd(m, "Insert Joint Tool", "insertJoint");
+    m->addAction("Insert Joint Tool", [this] { set_tool("insertJoint"); });
     cmd(m, "Mirror Skeleton", "mirrorJoint", QJsonObject{{"mirrorXY", true}, {"mirrorBehavior", true}}, QString(), true);
     cmd(m, "Mirror Skeleton (Orientation)", "mirrorJoint", QJsonObject{{"mirrorXY", true}});
     m->addAction("Orient Joint", [] { exec("joint", QJsonObject{{"edit", true}, {"orientJoint", "xyz"}, {"secondaryAxisOrient", "yup"}, {"children", true}}); });
@@ -538,6 +538,7 @@ QMenu* MainWindow::skeleton_menu() {
     m->addSeparator();
     cmd(m, "Create IK Handle", "ikHandle", QJsonObject{{"solver", "ikRPsolver"}}, QString(), true);
     cmd(m, "Create IK Handle (Single Chain)", "ikHandle", QJsonObject{{"solver", "ikSCsolver"}});
+    cmd(m, "Create IK Spline Handle", "ikHandle", QJsonObject{{"solver", "ikSplineSolver"}}, QString(), true);
     cmd(m, "Enable IK Handles", "ikHandle", QJsonObject{{"enableHandles", true}});
     cmd(m, "Disable IK Handles", "ikHandle", QJsonObject{{"disableHandles", true}});
     return m;
@@ -614,6 +615,7 @@ QMenu* MainWindow::constrain_menu() {
     cmd(m, "Pole Vector", "poleVectorConstraint", {}, QString(), true);
     cmd(m, "Geometry", "geometryConstraint", {}, QString(), true);
     cmd(m, "Normal", "normalConstraint", {}, QString(), true);
+    cmd(m, "Tangent", "tangentConstraint", {}, QString(), true);
     cmd(m, "Point on Poly", "pointOnPolyConstraint", {}, QString(), true);
     m->addSeparator();
     cmd(m, "Remove Target", "RemoveConstraintTarget");
@@ -1176,6 +1178,7 @@ void MainWindow::refresh_state() {
         else if (n == "TextureViewWindow" || n == "UVEditor") show_uv_editor();
         else if (n == "PreferencesWindow") show_preferences();
         else if (n == "JointTool") set_tool("joint");
+        else if (n == "InsertJointTool") set_tool("insertJoint");
         else if (n == "SculptMeshActivateBrushSculpt") set_tool("sculpt");
         else if (n == "MultiCutTool") set_tool("multiCut");
         else if (n == "SplitEdgeRingTool") set_tool("insertLoop");
@@ -1242,6 +1245,7 @@ void MainWindow::set_tool(const QString& tool) {
     if (tool_settings_) tool_settings_->set_tool(tool);
     static const QHash<QString, QString> tool_help{
         {"sculpt", "Sculpting: drag to sculpt, Ctrl inverts, Shift smooths, B-drag sizes the brush."},
+        {"insertJoint", "Insert Joint: drag from a joint to add a joint along the bone."},
         {"multiCut", "Multi-Cut: click to place cut points, Shift snaps along edges, Ctrl-click inserts a loop, Backspace takes the last back, Enter cuts."},
         {"insertLoop", "Insert Edge Loop: hover an edge to see the loop, click to insert it."},
         {"offsetLoop", "Offset Edge Loop: drag from an edge to add loops either side."},

@@ -438,6 +438,7 @@ pub const UI_COMMANDS: &[(&str, &str)] = &[
     ("FrameAll", "Frame everything in the active view."),
     ("PlaybackToggle", "Start or stop playback."),
     ("JointTool", "The joint tool: click to place joints."),
+    ("InsertJointTool", "The insert joint tool: drag from a joint to add one on the bone."),
     ("SculptMeshActivateBrushSculpt", "The sculpt brush."),
     ("MultiCutTool", "The Multi-Cut tool."),
     ("SplitEdgeRingTool", "The Insert Edge Loop tool."),

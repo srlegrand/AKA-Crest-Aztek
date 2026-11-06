@@ -591,6 +591,7 @@ impl View {
                     "joint" => Tool::Joint,
                     "paintSkin" => Tool::PaintSkin,
                     "sculpt" => Tool::Sculpt,
+                    "insertJoint" => Tool::InsertJoint,
                     "curveCv" => Tool::CurveCv,
                     "curveEp" => Tool::CurveEp,
                     "multiCut" => Tool::MultiCut,

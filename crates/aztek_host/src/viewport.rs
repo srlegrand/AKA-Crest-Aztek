@@ -98,6 +98,7 @@ pub enum Tool {
     /// EP Curve Tool: clicks place edit points; Enter makes the curve.
     CurveEp,
     Sculpt,
+    InsertJoint,
     MultiCut,
     InsertLoop,
     OffsetLoop,

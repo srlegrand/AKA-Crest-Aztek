@@ -1412,3 +1412,85 @@ fn rotate_axis_shows_in_xform() {
     let v = run(&mut s, "xform", json!({"args": ["joint1"], "query": true, "rotateAxis": true}));
     near(vec3(&v), [1.0, 2.0, 3.0]);
 }
+
+fn wpos(s: &mut Session, j: &str) -> [f64; 3] {
+    let v = s.run("xform", json!({"args": [j], "query": true, "worldSpace": true, "translation": true})).unwrap();
+    [v[0].as_f64().unwrap(), v[1].as_f64().unwrap(), v[2].as_f64().unwrap()]
+}
+
+fn spline_chain(s: &mut Session) {
+    s.run("select", json!({"clear": true})).unwrap();
+    for x in 0..5 {
+        s.run("joint", json!({"position": [x as f64, 0, 0]})).unwrap();
+    }
+}
+
+#[test]
+fn spline_ik_lays_the_chain_along_the_curve() {
+    let mut s = Session::new();
+    spline_chain(&mut s);
+    s.run("curve", json!({"degree": 3, "name": "path", "point": [[0, 0, 0], [1, 1, 0], [2, 2, 0], [3, 2, 0], [4, 1, 0], [5, 0, 0]]})).unwrap();
+    let r = s.run("ikHandle", json!({"startJoint": "joint1", "endEffector": "joint5", "solver": "ikSplineSolver", "curve": "path", "createCurve": false})).unwrap();
+    assert_eq!(r, json!(["ikHandle1", "effector1", "path"]));
+    s.graph.evaluate();
+    // Every joint sits on the curve, a bone's length from the one before.
+    let mut last = wpos(&mut s, "joint1");
+    assert!(last.iter().all(|v| v.abs() < 1e-6), "{last:?}");
+    for j in ["joint2", "joint3", "joint4", "joint5"] {
+        let p = wpos(&mut s, j);
+        let d = ((p[0] - last[0]).powi(2) + (p[1] - last[1]).powi(2) + (p[2] - last[2]).powi(2)).sqrt();
+        assert!((d - 1.0).abs() < 1e-4, "{j} {d}");
+        let near = s.run("createNode", json!({"args": ["nearestPointOnCurve"]})).unwrap();
+        let near = near.as_str().unwrap().to_string();
+        s.run("connectAttr", json!({"args": ["pathShape.worldSpace[0]", format!("{near}.inputCurve")]})).unwrap();
+        s.run("setAttr", json!({"args": [format!("{near}.inPosition"), p[0], p[1], p[2]]})).unwrap();
+        let q = s.run("getAttr", json!({"args": [format!("{near}.position")]})).unwrap();
+        let off: f64 = (0..3).map(|k| (q[k].as_f64().unwrap() - p[k]).powi(2)).sum::<f64>().sqrt();
+        assert!(off < 1e-3, "{j} is {off} off the curve");
+        last = p;
+    }
+    assert!(wpos(&mut s, "joint3")[1] > 0.8, "{:?}", wpos(&mut s, "joint3"));
+    // Moving a CV moves the chain.
+    let before = wpos(&mut s, "joint5");
+    s.run("xform", json!({"args": ["path.cv[3]"], "relative": true, "translation": [0, 0, 2]})).unwrap();
+    let after = wpos(&mut s, "joint5");
+    assert!((after[2] - before[2]).abs() > 0.05, "{before:?} {after:?}");
+    assert!(s.undo());
+    let back = wpos(&mut s, "joint5");
+    assert!((back[2] - before[2]).abs() < 1e-6);
+}
+
+#[test]
+fn spline_ik_makes_its_own_curve_and_twists() {
+    let mut s = Session::new();
+    spline_chain(&mut s);
+    let r = s.run("ikHandle", json!({"startJoint": "joint1", "endEffector": "joint5", "solver": "ikSplineSolver", "numSpans": 2})).unwrap();
+    assert_eq!(r[2], json!("curve1"));
+    assert_eq!(s.run("getAttr", json!({"args": ["curve1.spans"]})).unwrap(), json!(2));
+    s.graph.evaluate();
+    // A straight curve through a straight chain leaves it where it was.
+    let p = wpos(&mut s, "joint4");
+    assert!((p[0] - 3.0).abs() < 1e-3 && p[1].abs() < 1e-3, "{p:?}");
+    // Twist runs up the chain: the end joint's Y axis turns, the first's doesn't.
+    s.run("setAttr", json!({"args": ["ikHandle1.twist", 90.0]})).unwrap();
+    let axis = |s: &mut Session, j: &str| s.run("xform", json!({"args": [j], "query": true, "worldSpace": true, "matrix": true})).unwrap();
+    let m1 = axis(&mut s, "joint1");
+    let m4 = axis(&mut s, "joint4");
+    assert!((m1[5].as_f64().unwrap() - 1.0).abs() < 1e-6, "{m1}");
+    assert!(m4[5].as_f64().unwrap().abs() < 1e-6, "{m4}");
+}
+
+#[test]
+fn tangent_constraint_aims_along_the_curve() {
+    let mut s = Session::new();
+    s.run("curve", json!({"degree": 1, "name": "rail", "point": [[0, 0, 0], [0, 10, 0]]})).unwrap();
+    s.run("spaceLocator", json!({"name": "rider"})).unwrap();
+    s.run("move", json!({"args": ["rider"], "to": [1, 5, 0]})).unwrap();
+    let r = s.run("tangentConstraint", json!({"args": ["rail", "rider"], "aimVector": [1, 0, 0], "upVector": [0, 0, 1]})).unwrap();
+    assert_eq!(r, json!(["rider_tangentConstraint1"]));
+    s.graph.evaluate();
+    let m = s.run("xform", json!({"args": ["rider"], "query": true, "worldSpace": true, "matrix": true})).unwrap();
+    // Local X lies along the rail, which runs up Y.
+    assert!((m[1].as_f64().unwrap().abs() - 1.0).abs() < 1e-6, "{m}");
+    s.run("delete", json!({"args": ["rider_tangentConstraint1"]})).unwrap();
+}

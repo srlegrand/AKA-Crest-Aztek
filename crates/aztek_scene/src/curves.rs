@@ -811,6 +811,11 @@ fn create_curve(g: &mut Graph, name: &str, c: NurbsCurve, select: bool) -> CmdRe
     Ok((tr, sh))
 }
 
+/// A new curve object, selection untouched.
+pub(crate) fn create_curve_node(g: &mut Graph, name: &str, c: NurbsCurve) -> CmdResult<(NodeId, NodeId)> {
+    create_curve(g, name, c, false)
+}
+
 fn curve_arg(g: &Graph, name: &str, cmd: &str) -> CmdResult<NodeId> {
     let id = find(g, name, cmd)?;
     match as_curve(g, id) {

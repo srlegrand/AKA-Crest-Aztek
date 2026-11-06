@@ -36,6 +36,7 @@ pub const CONSTRAINT_TYPES: &[&str] = &[
     "geometryConstraint",
     "normalConstraint",
     "pointOnPolyConstraint",
+    "tangentConstraint",
 ];
 
 const PARENT: usize = 0;
@@ -47,6 +48,7 @@ const POLE: usize = 5;
 const GEOMETRY: usize = 6;
 const NORMAL: usize = 7;
 const POINT_ON_POLY: usize = 8;
+const TANGENT: usize = 9;
 
 const T_MATRIX: usize = 0;
 const T_OFFSET_T: usize = 1;
@@ -73,6 +75,7 @@ const UP_VECTOR: usize = 21;
 const WORLD_UP_VECTOR: usize = 22;
 const WORLD_UP_TYPE: usize = 23;
 const WORLD_UP_MATRIX: usize = 24;
+const T_CURVE: usize = 25;
 
 const WORLD_UP_NAMES: [&str; 5] = ["scene", "object", "objectrotation", "vector", "none"];
 
@@ -349,6 +352,27 @@ impl NodeBehavior for ConstraintNode {
                     }
                 }
             }
+            TANGENT => {
+                // Aim along the target curves' tangents at the points nearest the object.
+                let eye = pm.transform_point3(d.vec3(POSITION) + pivot);
+                let total: f64 = share.iter().sum();
+                let mut dir = DVec3::ZERO;
+                for (x, &w) in ts.iter().zip(&share) {
+                    let c = match d.element(T_CURVE, x.index) {
+                        Some(PlugValue::Data(Some(k))) => k.as_any().downcast_ref::<crate::curves::CurveData>(),
+                        _ => None,
+                    };
+                    if let Some(c) = c {
+                        dir += c.0.tangent(c.0.closest_param(eye)).normalize_or_zero() * w;
+                    }
+                }
+                if total > 1e-12 {
+                    if let Some(frame) = aim_rotation(d, dir, eye, &pr, rest_e) {
+                        let frame = pr.transpose() * frame * mat3(offset, RotateOrder::Xyz);
+                        e = rotate_for(d, &with_rest(vec![(DQuat::from_mat3(&frame), total)]));
+                    }
+                }
+            }
             _ => {
                 // Point on poly: the place at each target's UV; Y along the normal, X the way U grows.
                 let mut sum = rest_t * rest;
@@ -442,6 +466,15 @@ pub(crate) fn register_types() {
                 vec3_attr("worldUpVector", "wu", DVec3::Y, store, "The world direction up means, for worldUpType vector and objectrotation."),
                 AttrDef { short_name: "wut".into(), ..enum_attr("worldUpType", &["Scene Up", "Object Up", "Object Rotation Up", "Vector", "None"], 3, "What up means.") },
                 matrix_in("worldUpMatrix", "wum", false, "The world up object's world matrix."),
+                AttrDef {
+                    name: "target.targetCurve".into(),
+                    short_name: "tgc".into(),
+                    ty: PlugType::Data,
+                    default_value: PlugValue::Data(None),
+                    flags: flags::INPUT | flags::HIDDEN | flags::ARRAY,
+                    doc: "Tangent constraint: each target's curve, world space.".into(),
+                    ..Default::default()
+                },
             ],
             create: Some(Arc::new(move || Box::new(ConstraintNode { kind: k }))),
             ..Default::default()
@@ -512,7 +545,7 @@ fn sync_from(g: &mut Graph, c: NodeId, kind: usize, driven: NodeId) -> bool {
     set_if_changed(g, c, JOINT_ORIENT, jo, &mut changed);
     set_if_changed(g, c, ROTATE_AXIS, ra, &mut changed);
     set_if_changed(g, c, PIVOT, pivot, &mut changed);
-    if kind == AIM || kind == NORMAL {
+    if kind == AIM || kind == NORMAL || kind == TANGENT {
         set_if_changed(g, c, POSITION, t, &mut changed);
     }
     follow_parent(g, c, driven, &mut changed);
@@ -621,6 +654,10 @@ fn add_target(g: &mut Graph, c: NodeId, kind: usize, target: NodeId, component: 
         let Some(shape) = crate::components::as_mesh(g, target) else { fail!("{}: {} has no geometry", CONSTRAINT_TYPES[kind], g.path(target)) };
         g.connect(&plug(shape, crate::mesh_nodes::MeshNode::OUT_MESH), &PlugRef::element(c, T_GEOMETRY as i32, index), false)?;
     }
+    if kind == TANGENT {
+        let Some(shape) = crate::curves::as_curve(g, target) else { fail!("tangentConstraint: {} is not a curve", g.path(target)) };
+        g.connect(&plug(shape, crate::curves::CurveShape::WORLD_SPACE), &PlugRef::element(c, T_CURVE as i32, index), false)?;
+    }
     let stem = alias_stem(g, xf);
     add_float(g, c, &format!("{stem}W{index}"), weight, Some(0.0), "This target's weight.")?;
     if kind == POINT_ON_POLY {
@@ -645,6 +682,7 @@ fn remove_target(g: &mut Graph, c: NodeId, index: i32) -> CmdResult<()> {
     }
     g.disconnect(&PlugRef::element(c, T_MATRIX as i32, index));
     g.disconnect(&PlugRef::element(c, T_GEOMETRY as i32, index));
+    g.disconnect(&PlugRef::element(c, T_CURVE as i32, index));
     for attr in [T_OFFSET_T, T_OFFSET_R] {
         let e = PlugRef::element(c, attr as i32, index);
         if g.node(c).unwrap().element(attr, index).is_some() {
@@ -969,7 +1007,7 @@ fn constrain(s: &mut Session, a: &Args, cmd: &str, kind: usize) -> CmdResult {
         targets.push((find(g, node, cmd)?, component));
     }
     let skip_t = [axes_of(a.get("skipTranslate")), if kind == POINT || kind == GEOMETRY { axes_of(a.get("skip")) } else { Vec::new() }].concat();
-    let skip_r = [axes_of(a.get("skipRotate")), if matches!(kind, ORIENT | AIM | NORMAL) { axes_of(a.get("skip")) } else { Vec::new() }].concat();
+    let skip_r = [axes_of(a.get("skipRotate")), if matches!(kind, ORIENT | AIM | NORMAL | TANGENT) { axes_of(a.get("skip")) } else { Vec::new() }].concat();
     let skip_s = [axes_of(a.get("skipScale")), if kind == SCALE { axes_of(a.get("skip")) } else { Vec::new() }].concat();
     let weight = a.float("weight", 1.0);
     g.evaluate();
@@ -1039,7 +1077,7 @@ fn constrain(s: &mut Session, a: &Args, cmd: &str, kind: usize) -> CmdResult {
                     }
                     drive(g, c, OUT_T, driven, Transform::TRANSLATE, &skip_t)?;
                 }
-                ORIENT | AIM | NORMAL => {
+                ORIENT | AIM | NORMAL | TANGENT => {
                     if skip_r.len() >= 3 {
                         fail!("{cmd}: every channel is skipped");
                     }

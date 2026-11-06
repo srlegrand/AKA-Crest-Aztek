@@ -1759,7 +1759,19 @@ impl Build<'_> {
         let Some(eid) = self.id(end) else { return };
         let (sp, ep) = (self.s.graph.path(sid), self.s.graph.path(eid));
         let name = if Graph::valid_name(&n.name) { n.name.as_str() } else { "ikHandle1" };
-        match self.s.run("ikHandle", json!({"startJoint": sp, "endEffector": ep, "solver": solver_ty, "name": name})) {
+        let mut call = json!({"startJoint": sp, "endEffector": ep, "solver": solver_ty, "name": name});
+        // Spline IK: the curve wired to the handle's inCurve, if it came through.
+        if solver_ty == "ikSplineSolver" {
+            let curve = doc.input(i, &["ic", "inCurve"]).and_then(|c| self.id(c.src));
+            match curve {
+                Some(c) => {
+                    call["curve"] = json!(self.s.graph.path(crate::dag::transform_of(&self.s.graph, c)));
+                    call["createCurve"] = json!(false);
+                }
+                None => self.warnings.push(format!("{}: spline IK's curve is not in the file; one is made through the joints", n.name)),
+            }
+        }
+        match self.s.run("ikHandle", call) {
             Ok(v) => {
                 let Some(h) = v.get(0).and_then(Value::as_str).and_then(|p| self.s.graph.find(p).ok().flatten()) else { return };
                 self.ids[i] = Some(h);

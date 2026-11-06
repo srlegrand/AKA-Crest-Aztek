@@ -5,8 +5,8 @@
 //! their rotate through one `outRotate<n>` per joint. The rest pose is the preferred angles. Solving always starts from
 //! it, so a pose depends only on the handle's state, never on the pose before.
 //!
-//! Spline IK plugs in at `solve`: `SolverKind::Spline` has its own branch there, and `ikHandle` refuses the solver until
-//! it exists.
+//! Spline IK lays the chain along a curve, its bones keeping their lengths: `ikHandle -sol ikSplineSolver -c curve1`, or
+//! with -ccv a curve made through the joints. The handle's twist runs up the chain and roll turns it all.
 
 use std::any::Any;
 use std::sync::Arc;
@@ -97,6 +97,8 @@ const IK_ENABLE: usize = 8;
 const IK_GLOBAL: usize = 9;
 const IK_TYPE: usize = 10;
 const IK_REST_POLE: usize = 11;
+const IK_CURVE: usize = 12;
+const IK_ROOT: usize = 13;
 
 const SYSTEM_SOLVE: usize = 0;
 const SYSTEM_SNAP: usize = 1;
@@ -338,7 +340,10 @@ struct SolveInput<'a> {
     pole: DVec3,
     rest_pole: DVec3,
     twist: f64,
+    roll: f64,
     kind: SolverKind,
+    curve: Option<&'a aztek_geo::nurbs::NurbsCurve>,
+    root_on_curve: bool,
 }
 
 /// The rotation plane and single chain solvers. The chain bends in its rest plane until its end is the right distance
@@ -428,9 +433,80 @@ fn apply_limits(input: &SolveInput, solved: Vec<DVec3>) -> Vec<DVec3> {
 fn solve(input: &SolveInput) -> Vec<DVec3> {
     match input.kind {
         SolverKind::RotationPlane | SolverKind::SingleChain => apply_limits(input, solve_plane(input)),
-        // Spline IK goes here. Until then the command refuses the solver, so this only keeps the rest pose.
-        SolverKind::Spline => input.joints.iter().map(|j| j.pa).collect(),
+        SolverKind::Spline => apply_limits(input, solve_spline(input).0),
     }
+}
+
+/// Where the next joint goes: the first point along the polyline, from `at` on, a bone's length from `from`. Past the
+/// curve's end the chain carries straight on along it.
+fn walk_along(line: &[DVec3], at: &mut usize, from: DVec3, len: f64) -> DVec3 {
+    let mut i = *at;
+    while i + 1 < line.len() {
+        let (a, b) = (line[i], line[i + 1]);
+        if (b - from).length() >= len {
+            // Solve |a + t(b - a) - from| = len.
+            let d = b - a;
+            let m = a - from;
+            let (qa, qb, qc) = (d.dot(d), 2.0 * d.dot(m), m.dot(m) - len * len);
+            let root = (qb * qb - 4.0 * qa * qc).max(0.0).sqrt();
+            let t = if qa > 1e-18 { ((-qb + root) / (2.0 * qa)).clamp(0.0, 1.0) } else { 0.0 };
+            *at = i;
+            return a + d * t;
+        }
+        i += 1;
+    }
+    *at = line.len().saturating_sub(1);
+    let n = line.len();
+    let dir = if n >= 2 { (line[n - 1] - line[n - 2]).normalize_or_zero() } else { DVec3::X };
+    from + dir * len
+}
+
+/// The chain along the curve: rotates per joint, and where the start joint's translate goes with root on curve.
+fn solve_spline(input: &SolveInput) -> (Vec<DVec3>, Option<DVec3>) {
+    let rest_e: Vec<DVec3> = input.joints.iter().map(|j| j.pa).collect();
+    let n = input.joints.len();
+    let Some(curve) = input.curve.filter(|c| c.is_valid() && n > 0) else { return (rest_e, None) };
+    let (points, worlds) = pose(&input.parent, input.joints, input.end, &rest_e);
+    let line = curve.tessellate(32);
+    // Root on curve starts at the curve's start; otherwise the chain starts where the root is, at the nearest point.
+    let (start, mut at) = if input.root_on_curve {
+        (line[0], 0)
+    } else {
+        let u = curve.closest_param(points[0]);
+        let near = curve.eval(u);
+        let i = line.iter().enumerate().min_by(|a, b| (*a.1 - near).length_squared().total_cmp(&(*b.1 - near).length_squared())).map_or(0, |x| x.0);
+        (points[0], i)
+    };
+    let mut targets = vec![start];
+    for i in 0..n {
+        let len = (points[i + 1] - points[i]).length();
+        let from = targets[i];
+        targets.push(walk_along(&line, &mut at, from, len));
+    }
+    let mut js: Vec<ChainJoint> = input.joints.to_vec();
+    let root = input.root_on_curve.then(|| input.parent.inverse().transform_point3(start));
+    if let Some(t) = root {
+        js[0].t = t;
+    }
+    let mut prev = input.parent;
+    let mut turn = DQuat::IDENTITY;
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        let rest_dir = (points[i + 1] - points[i]).normalize_or_zero();
+        let want = (targets[i + 1] - targets[i]).normalize_or_zero();
+        let have = (turn * rest_dir).normalize_or_zero();
+        if have != DVec3::ZERO && want != DVec3::ZERO {
+            turn = DQuat::from_rotation_arc(have, want) * turn;
+        }
+        // Twist grows up the chain; roll turns all of it.
+        let t = if n > 1 { i as f64 / (n - 1) as f64 } else { 1.0 };
+        let spin = DQuat::from_axis_angle(want, (input.roll + input.twist * t).to_radians());
+        let w = DMat3::from_quat(spin * turn) * rot3(&worlds[i]);
+        let e = js[i].rotate_for(&prev, &w, js[i].pa);
+        prev *= js[i].local(e);
+        out.push(e);
+    }
+    (out, root)
 }
 
 fn blend_rotate(j: &ChainJoint, fk: DVec3, ik: DVec3, t: f64) -> DVec3 {
@@ -449,21 +525,37 @@ impl NodeBehavior for IkSolve {
             fk.get(i).and_then(Value::as_array).map(|a| DVec3::new(a[0].as_f64().unwrap_or(0.0), a[1].as_f64().unwrap_or(0.0), a[2].as_f64().unwrap_or(0.0))).unwrap_or(j.pa)
         };
         let weight = if chain.get("valid").and_then(Value::as_bool) == Some(true) && d.bool(IK_ENABLE) && d.bool(IK_GLOBAL) { d.float(IK_BLEND).clamp(0.0, 1.0) } else { 0.0 };
+        let curve = match d.value(IK_CURVE) {
+            PlugValue::Data(Some(x)) => x.as_any().downcast_ref::<crate::curves::CurveData>().map(|c| c.0.clone()),
+            _ => None,
+        };
+        let root_on_curve = chain.get("rootOnCurve").and_then(Value::as_bool).unwrap_or(false);
+        let mut root_at = None;
         let solved = if weight > 0.0 {
-            solve(&SolveInput {
+            let input = SolveInput {
                 parent: d.matrix(IK_PARENT),
                 handle: d.matrix(IK_HANDLE),
                 joints: &joints,
                 end: v3(&chain, "end"),
                 pole: d.vec3(IK_POLE),
                 rest_pole: d.vec3(IK_REST_POLE),
-                // Twist and roll both turn the plane about the handle line.
-                twist: d.float(IK_TWIST) + d.float(IK_ROLL),
+                // Outside spline IK, twist and roll both turn the plane about the handle line.
+                twist: if SolverKind::from_index(d.int(IK_TYPE)) == SolverKind::Spline { d.float(IK_TWIST) } else { d.float(IK_TWIST) + d.float(IK_ROLL) },
+                roll: d.float(IK_ROLL),
                 kind: SolverKind::from_index(d.int(IK_TYPE)),
-            })
+                curve: curve.as_ref(),
+                root_on_curve,
+            };
+            if input.kind == SolverKind::Spline {
+                root_at = solve_spline(&input).1;
+            }
+            solve(&input)
         } else {
             Vec::new()
         };
+        if let Some(t) = root_at {
+            d.set_output(IK_ROOT, PlugValue::Vec3(t));
+        }
         for (i, j) in joints.iter().enumerate() {
             let Some(attr) = d.ty().attr_index(&out_name(i)) else { continue };
             let e = fk_of(i, j);
@@ -548,6 +640,8 @@ pub(crate) fn register_types() {
             AttrDef { short_name: "gsl".into(), flags: flags::INPUT | flags::HIDDEN, ..bool_attr("globalSolve", true, "From the ikSystem node.") },
             AttrDef { short_name: "hst".into(), flags: flags::INPUT | flags::HIDDEN, ..enum_attr("solverType", &SOLVER_TYPES, 0, "From the handle.") },
             vec3_attr("restPoleVector", "rpv", DVec3::new(0.0, 0.0, -1.0), flags::INPUT | flags::STORABLE | flags::HIDDEN, "The bend side of a chain straight at rest."),
+            AttrDef { name: "inCurve".into(), short_name: "ic".into(), ty: PlugType::Data, default_value: PlugValue::Data(None), flags: flags::INPUT | flags::HIDDEN, doc: "Spline IK: the curve, world space.".into(), ..Default::default() },
+            vec3_attr("outRootTranslate", "ort", DVec3::ZERO, flags::OUTPUT | flags::HIDDEN, "Spline IK with root on curve: the start joint's translate."),
         ],
         create: Some(Arc::new(|| Box::new(IkSolve))),
         ..Default::default()
@@ -772,9 +866,6 @@ fn resolve_solver(g: &mut Graph, name: &str) -> CmdResult<(usize, NodeId)> {
 }
 
 fn set_solver(g: &mut Graph, handle: NodeId, kind: usize, node: NodeId) -> CmdResult<()> {
-    if SOLVER_TYPES[kind] == "ikSplineSolver" {
-        fail!("ikHandle: ikSplineSolver is not available yet");
-    }
     g.set_value(plug(handle, IkHandle::SOLVER_TYPE), PlugValue::Int(kind as i64))?;
     let name = g.path(node);
     g.set_value(plug(handle, IkHandle::IK_SOLVER), PlugValue::String(name))?;
@@ -839,9 +930,6 @@ fn wire_chain(g: &mut Graph, handle: NodeId, solver: NodeId, effector: NodeId, c
 fn create_handle(g: &mut Graph, name: &str, start: NodeId, end: NodeId, solver_name: &str) -> CmdResult<(NodeId, NodeId)> {
     let chain = chain_between(g, start, end)?;
     let (kind, solver_node) = resolve_solver(g, solver_name)?;
-    if SOLVER_TYPES[kind] == "ikSplineSolver" {
-        fail!("ikHandle: ikSplineSolver is not available yet");
-    }
     g.evaluate();
     let end_pos = world(g, end).w_axis.truncate();
     let ht = types::find("ikHandle").unwrap();
@@ -1011,6 +1099,7 @@ fn handle_query(g: &mut Graph, h: NodeId, a: &Args) -> CmdResult {
         "name" => json!(g.node(h).unwrap().name()),
         "startJoint" => json!(solver.and_then(|s| joints_of(g, s).first().copied()).map(|j| g.path(j))),
         "endEffector" => json!(effector_of(g, h).map(|e| g.path(e))),
+        "curve" => json!(solver_of(g, h).and_then(|sv| g.source(&plug(sv, IK_CURVE))).map(|c| g.path(crate::dag::transform_of(g, c.node)))),
         "jointList" => json!(solver.map(|s| joints_of(g, s)).unwrap_or_default().into_iter().map(|j| g.path(j)).collect::<Vec<_>>()),
         "solver" => json!(n.string(IkHandle::IK_SOLVER)),
         "priority" => json!(n.int(IkHandle::PRIORITY)),
@@ -1060,7 +1149,14 @@ fn handle_command(s: &mut Session, a: &Args) -> CmdResult {
         let g = &mut s.graph;
         if a.has("solver") {
             let (kind, node) = resolve_solver(g, &a.string("solver", ""))?;
+            let to_spline = SOLVER_TYPES[kind] == "ikSplineSolver";
+            if to_spline && !a.has("curve") {
+                fail!("ikHandle: ikSplineSolver needs a curve: give -c");
+            }
             set_solver(g, h, kind, node)?;
+            if to_spline {
+                setup_spline(g, h, a)?;
+            }
         }
         if a.has("startJoint") || a.has("endEffector") {
             let (Some(sv), Some(eff), Some(old_end)) = (solver_of(g, h), effector_of(g, h), end_of(g, h)) else { fail!("ikHandle: the handle has no chain") };
@@ -1101,15 +1197,61 @@ fn handle_command(s: &mut Session, a: &Args) -> CmdResult {
         },
     };
     g.open_chunk("IK Handle");
-    let r = (|| -> CmdResult<(NodeId, NodeId)> {
-        let (h, eff) = create_handle(g, &a.string("name", "ikHandle1"), start, end, &a.string("solver", "ikRPsolver"))?;
+    let r = (|| -> CmdResult<(NodeId, NodeId, Option<NodeId>)> {
+        let solver = a.string("solver", "ikRPsolver");
+        let (h, eff) = create_handle(g, &a.string("name", "ikHandle1"), start, end, &solver)?;
         apply_handle_flags(g, h, a)?;
+        let spline = solver == "ikSplineSolver" || solver.contains("Spline");
+        let curve = if spline { Some(setup_spline(g, h, a)?) } else { None };
         g.select(&[h], SelectMode::Replace);
-        Ok((h, eff))
+        Ok((h, eff, curve))
     })();
     g.close_chunk();
-    let (h, eff) = r?;
-    Ok(json!([g.path(h), g.path(eff)]))
+    let (h, eff, curve) = r?;
+    let mut out = vec![json!(g.path(h)), json!(g.path(eff))];
+    if let Some(c) = curve {
+        out.push(json!(g.path(c)));
+    }
+    Ok(Value::Array(out))
+}
+
+/// Spline IK's curve: the one given with -c, or (-ccv, the default) a new one through the joints with -ns spans. Returns its
+/// transform.
+fn setup_spline(g: &mut Graph, h: NodeId, a: &Args) -> CmdResult<NodeId> {
+    let Some(sv) = solver_of(g, h) else { fail!("ikHandle: the handle has no chain") };
+    let shape = match a.get("curve").and_then(Value::as_str) {
+        Some(n) => {
+            let id = find(g, n, "ikHandle")?;
+            match crate::curves::as_curve(g, id) {
+                Some(s) => s,
+                None => fail!("ikHandle: {n} is not a curve"),
+            }
+        }
+        None => {
+            if a.get("createCurve").is_some_and(|v| v == &json!(false)) {
+                fail!("ikHandle: ikSplineSolver needs -c, or -ccv on");
+            }
+            g.evaluate();
+            let mut pts: Vec<DVec3> = joints_of(g, sv).into_iter().map(|j| world(g, j).w_axis.truncate()).collect();
+            if let Some(e) = end_of(g, h) {
+                pts.push(world(g, e).w_axis.truncate());
+            }
+            let spans = a.int("numSpans", 4).max(1) as usize;
+            let c = aztek_geo::nurbs::NurbsCurve::through(3, &pts).rebuilt(spans, 3);
+            let (_, sh) = crate::curves::create_curve_node(g, "curve1", c)?;
+            sh
+        }
+    };
+    g.connect(&plug(shape, crate::curves::CurveShape::WORLD_SPACE), &plug(sv, IK_CURVE), false)?;
+    let root = a.get("rootOnCurve").and_then(Value::as_bool).unwrap_or(true);
+    let mut chain = json_of(g.node(sv).unwrap().data(), IK_CHAIN);
+    chain["rootOnCurve"] = json!(root);
+    set_json(g, sv, IK_CHAIN, chain)?;
+    if root {
+        let start = joints_of(g, sv)[0];
+        g.connect(&plug(sv, IK_ROOT), &plug(start, Transform::TRANSLATE), true)?;
+    }
+    Ok(crate::dag::transform_of(g, shape))
 }
 
 pub fn register(c: &mut Commands<Session>) {
@@ -1121,6 +1263,13 @@ pub fn register(c: &mut Commands<Session>) {
             handle_command,
         )
         .positional("start and end joints (the selection when -sj/-ee are not given), or the handle to query or edit")
+        .flag(f("curve", "c", ArgType::String, "Spline IK: the curve to follow. Queried, the curve."))
+        .flag(f("createCurve", "ccv", ArgType::Bool, "Spline IK: make a curve through the joints (the default)."))
+        .flag(f("parentCurve", "pcv", ArgType::Bool, "Accepted for Maya scripts: the curve drives in world space."))
+        .flag(f("rootOnCurve", "roc", ArgType::Bool, "Spline IK: the start joint goes to the curve's start (on by default)."))
+        .flag(f("simplifyCurve", "scv", ArgType::Bool, "Accepted for Maya scripts."))
+        .flag(f("rootTwistMode", "rtm", ArgType::Bool, "Accepted for Maya scripts."))
+        .flag(f("twistType", "tws", ArgType::String, "Accepted for Maya scripts (linear)."))
         .flag(f("startJoint", "sj", ArgType::String, "First joint of the chain."))
         .flag(f("endEffector", "ee", ArgType::String, "Last joint of the chain. Queried, the effector."))
         .flag(f("solver", "sol", ArgType::String, "ikRPsolver (default), ikSCsolver or a solver node's name."))
