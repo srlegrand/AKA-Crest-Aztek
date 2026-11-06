@@ -1,4 +1,5 @@
 //! Embedded Python: aztek.cmds and the maya.cmds shim.
+#![cfg(feature = "python")]
 
 use std::ffi::{CStr, CString};
 

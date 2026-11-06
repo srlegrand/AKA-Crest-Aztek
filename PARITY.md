@@ -123,5 +123,13 @@ Rigging and deformers, as of 06/11/2026: `joint` (create, edit with orient, quer
 solvers, pole vector, twist), `nonLinear` (bend, twist, squash, flare, sine, wave) with handles, `cluster`,
 `blendShape` with a weight per target. Everything saves and loads.
 
+MEL, as of 06/11/2026: a real interpreter (`crates/aztek_host/src/mel/`). Comments, all five types with arrays and
+coercions, globals, top-level variables that stay between runs, operators, control flow, procedures (array arguments by
+reference, local to their file), command and function syntax, backticks, `eval`, `source` and auto-sourcing from
+`AZTEK_SCRIPT_PATH` or `MAYA_SCRIPT_PATH`, `catch`, `python`, `whatIs`, `exists`, `about`, and the standard string, math
+and array functions. Multi-use flags read their arity; query mode gives a flag a value only by a per-command table.
+Differs from Maya: unknown procedures and undeclared variables fail when reached, not before the script starts; errors
+carry a line number only for syntax errors; an array of one element converts to a scalar on assignment.
+
 Not yet: weight painting, lattice, wrap, wire, delta mush, spline IK, set driven keys, NURBS curves, the dope sheet,
-the node editor, `.ma` files, the OpenMaya subset, MEL procedures and control flow.
+the node editor, `.ma` files, the OpenMaya subset.

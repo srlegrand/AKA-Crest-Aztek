@@ -60,11 +60,13 @@ pub struct Core {
     pub current_file: Option<String>,
     /// The undo entry the last silent command made, which `retract_preview` may take back.
     preview: Vec<u64>,
+    /// MEL's globals, procedures and top-level variables.
+    pub mel_state: mel::MelState,
 }
 
 impl Core {
     pub fn new() -> Core {
-        let mut c = Core { s: Session::new(), log: Vec::new(), log_read: 0, version: 1, current_file: None, preview: Vec::new() };
+        let mut c = Core { s: Session::new(), log: Vec::new(), log_read: 0, version: 1, current_file: None, preview: Vec::new(), mel_state: Default::default() };
         register_ui_commands(&mut c.s);
         c.ensure_defaults();
         c
@@ -148,49 +150,42 @@ impl Core {
         self.version += 1;
     }
 
-    /// MEL-style source: statements run in turn. Returns the last result.
+    /// Runs MEL source: echoes each statement and prints its result. An error goes to the history, ends the run and
+    /// gives null. Otherwise returns the value of the last statement.
     pub fn mel(&mut self, src: &str) -> Value {
-        let mut last = Value::Null;
-        for stmt in mel::statements(src) {
-            match mel::parse(&self.s.commands, &stmt) {
-                Ok((name, mut call)) => {
-                    self.push(format!("{stmt};"), LineKind::Echo);
-                    let qe = call.as_object_mut().and_then(|o| {
-                        o.remove("_query").map(|a| (true, a)).or_else(|| o.remove("_edit").map(|a| (false, a)))
-                    });
-                    if let Some((query, asked)) = qe {
-                        let o = call.as_object_mut().unwrap();
-                        let args: Vec<Value> = o.remove("args").and_then(|a| a.as_array().cloned()).unwrap_or_default();
-                        let mut flags = o.clone();
-                        for a in asked.as_array().into_iter().flatten() {
-                            if let Some(n) = a.as_str() {
-                                flags.insert(n.to_string(), Value::Null);
-                            }
-                        }
-                        match self.query_edit(&name, args, flags, query) {
-                            Ok(v) => {
-                                if let Some(t) = mel::result(&v) {
-                                    self.push(t, LineKind::Result);
-                                }
-                                last = v;
-                            }
-                            Err(e) => self.push(format!("// Error: {e} //"), LineKind::Error),
-                        }
-                        continue;
-                    }
-                    let (name, call) = self.components_first(name, call);
-                    if let Ok(v) = self.exec_quiet(&name, call, CallSource::Script) {
-                        last = v;
-                    }
-                }
-                Err(e) => {
-                    self.push(format!("{stmt};"), LineKind::Echo);
-                    self.push(format!("// Error: {e} //"), LineKind::Error);
+        mel::run(self, src).unwrap_or(Value::Null)
+    }
+
+    /// As `mel`, with the error back to the caller as well.
+    pub fn mel_checked(&mut self, src: &str) -> Result<Value, String> {
+        mel::run(self, src)
+    }
+
+    /// One command from MEL: no history lines; the interpreter reports the result or error as fits the statement.
+    pub(crate) fn run_mel_command(&mut self, typed: &str, toks: &[mel::Tok]) -> Result<Value, String> {
+        let (name, mut call) = mel::build(&self.s.commands, typed, toks)?;
+        let qe = call.as_object_mut().and_then(|o| o.remove("_query").map(|a| (true, a)).or_else(|| o.remove("_edit").map(|a| (false, a))));
+        if let Some((query, asked)) = qe {
+            let o = call.as_object_mut().unwrap();
+            let args: Vec<Value> = o.remove("args").and_then(|a| a.as_array().cloned()).unwrap_or_default();
+            let mut flags = o.clone();
+            for a in asked.as_array().into_iter().flatten() {
+                if let Some(n) = a.as_str() {
+                    flags.insert(n.to_string(), Value::Null);
                 }
             }
+            return self.query_edit(&name, args, flags, query);
         }
+        let (name, call) = self.components_first(name, call);
+        self.exec_plain(&name, call)
+    }
+
+    fn exec_plain(&mut self, name: &str, call: Value) -> Result<Value, String> {
+        let (name, call) = pivot_move(name, call);
+        let r = execute(&mut self.s, &name, &call, CallSource::Script);
         self.version += 1;
-        last
+        self.drain_captured();
+        r.map_err(|e| e.to_string())
     }
 
     /// Maya's component arguments (polyExtrudeFacet pCube1.f[2]): Aztek's component commands work on the selection,
@@ -220,8 +215,7 @@ impl Core {
                 }
             }
         }
-        let _ = self.exec_quiet("select", json!({ "args": comps }), CallSource::Script);
-        // The select's own result line isn't wanted.
+        let _ = self.exec_plain("select", json!({ "args": comps }));
         if let Some(o) = call.as_object_mut() {
             if rest.is_empty() {
                 o.remove("args");
@@ -427,6 +421,17 @@ impl Core {
         let _ = self.exec("newScene", json!({}));
         self.current_file = None;
     }
+}
+
+/// MEL's python("..."): runs Python and gives back the value of a lone expression.
+#[cfg(feature = "python")]
+pub(crate) fn python_from_mel(core: &mut Core, src: &str) -> Result<Value, String> {
+    crate::python::eval_from_mel(core, src)
+}
+
+#[cfg(not(feature = "python"))]
+pub(crate) fn python_from_mel(_core: &mut Core, _src: &str) -> Result<Value, String> {
+    Err("python: this build has no Python.".into())
 }
 
 /// Windows and tools scripts open by Maya's runtime command names; the UI takes them from `take_ui_requests`.
