@@ -107,6 +107,12 @@ pub fn flatten_component(g: &mut Graph, s: &str) -> Vec<String> {
     let Some((kind, inner)) = comp.split_once('[') else { return vec![s.to_string()] };
     let inner = inner.trim_end_matches(']');
     let Ok(Some(id)) = g.find(obj) else { return vec![s.to_string()] };
+    if let Some(sh) = crate::surfaces::as_surface(g, id) {
+        g.evaluate();
+        let Some(ids) = crate::surfaces::parse_cv_ranges(g, sh, inner) else { return vec![s.to_string()] };
+        let stride = crate::surfaces::id_stride(g, sh).unwrap_or(1);
+        return crate::surfaces::format_cvs_flat(&ids, stride).into_iter().map(|c| format!("{obj}.{c}")).collect();
+    }
     if let Some(c) = crate::curves::as_curve(g, id) {
         let count = crate::curves::local_curve(g, c).map(|k| k.distinct_cvs().len() as u32).unwrap_or(0);
         let mut out = Vec::new();

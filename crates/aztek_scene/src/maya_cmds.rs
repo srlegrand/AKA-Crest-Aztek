@@ -460,6 +460,45 @@ fn xform_cvs(g: &mut crate::graph::Graph, a: &aztek_ops::Args, named: &[String],
     for n in named {
         let Some((obj, comp)) = n.split_once('.') else { continue };
         let Ok(Some(id)) = g.find(obj) else { continue };
+        if let Some(shape) = crate::surfaces::as_surface(g, id) {
+            any = true;
+            let inner = comp.split_once('[').map(|x| x.1.trim_end_matches(']')).unwrap_or("");
+            let Some(ids) = crate::surfaces::parse_cv_ranges(g, shape, inner) else { fail!("xform: bad component range in {n}") };
+            let w = crate::rig::world(g, crate::dag::transform_of(g, shape));
+            let Some(pp) = g.node(shape).and_then(crate::components::point_provider) else { continue };
+            let Some(points) = pp.points else { continue };
+            let current: std::collections::HashMap<u32, DVec3> = points(g, shape).into_iter().collect();
+            if a.bool("query") {
+                for i in ids {
+                    let Some(&p) = current.get(&i) else { continue };
+                    let q = if ws { w.transform_point3(p) } else { p };
+                    out.extend([json!(q.x), json!(q.y), json!(q.z)]);
+                }
+            } else {
+                let Some(t) = a.vec3("translation").map(DVec3::from_array) else { fail!("xform: on components only -t is available") };
+                let inv = w.inverse();
+                let rel = a.bool("relative");
+                let moves: Vec<(u32, DVec3)> = ids
+                    .into_iter()
+                    .filter_map(|i| {
+                        let p = *current.get(&i)?;
+                        Some((
+                            i,
+                            match (rel, ws) {
+                                (true, true) => p + inv.transform_vector3(t),
+                                (true, false) => p + t,
+                                (false, true) => inv.transform_point3(t),
+                                (false, false) => t,
+                            },
+                        ))
+                    })
+                    .collect();
+                if let Some(set) = pp.set_points {
+                    set(g, shape, &moves);
+                }
+            }
+            continue;
+        }
         let Some(shape) = crate::curves::as_curve(g, id) else { continue };
         any = true;
         let Some(c) = crate::curves::local_curve(g, shape) else { continue };

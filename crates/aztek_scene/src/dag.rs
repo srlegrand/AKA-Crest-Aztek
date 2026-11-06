@@ -19,6 +19,7 @@ pub fn transform_stem(shape_type: &str) -> &str {
     match shape_type {
         "mesh" => "polySurface",
         "nurbsCurve" => "curve",
+        "nurbsSurface" => "nurbsSurface",
         other => other,
     }
 }

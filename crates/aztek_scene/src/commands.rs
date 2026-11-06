@@ -567,6 +567,13 @@ fn register_scene(c: &mut Commands<Session>) {
                         if let Some(c) = crate::curves::as_curve(g, id) {
                             crate::curves::bake_history(g, c)?;
                         }
+                        let mut under = g.descendants(id);
+                        under.push(id);
+                        for d in under {
+                            if crate::surfaces::is_surface(g, d) {
+                                crate::surfaces::bake_history(g, d)?;
+                            }
+                        }
                     }
                     Ok(())
                 })();
@@ -589,6 +596,9 @@ fn register_scene(c: &mut Commands<Session>) {
                     if crate::components::is_mesh(g, d) {
                         let (base, _) = crate::modifiers::chain_base(g, d);
                         history.extend(crate::history::upstream_nodes(g, &base).into_iter().filter(|&h| !g.node(h).unwrap().ty().dag));
+                    }
+                    if crate::surfaces::is_surface(g, d) {
+                        history.extend(crate::surfaces::surface_history(g, d));
                     }
                 }
             }

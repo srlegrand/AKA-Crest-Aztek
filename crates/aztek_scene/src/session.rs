@@ -101,6 +101,7 @@ impl Session {
         crate::skin::register(&mut s.commands);
         crate::deform::register(&mut s.commands);
         crate::curves::register(&mut s.commands);
+        crate::surfaces::register(&mut s.commands);
         crate::sculpt::register(&mut s.commands);
         crate::cameras::register(&mut s.commands);
         crate::maya_cmds::register(&mut s.commands);
