@@ -3,3 +3,4 @@ build/
 *.aztek.bak
 .vscode/
 .idea/
+.claude/
