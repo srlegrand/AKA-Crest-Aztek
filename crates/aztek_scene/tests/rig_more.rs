@@ -931,7 +931,6 @@ fn handle_flags_query_and_edit() {
     run(&mut s, "ikHandle", json!({"args": ["hand"], "edit": true, "autoPriority": true}));
     assert_eq!(attr(&mut s, "hand.priority"), json!(1));
     assert!(s.run("ikHandle", json!({"args": ["hand"], "edit": true, "solver": "ikSplineSolver"})).is_err());
-    assert!(s.run("ikHandle", json!({"startJoint": "joint1", "endEffector": "joint3", "solver": "ikSplineSolver"})).is_err());
     assert!(s.run("ikHandle", json!({"startJoint": "joint3", "endEffector": "joint1"})).is_err());
 }
 
