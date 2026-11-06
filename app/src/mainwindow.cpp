@@ -9,6 +9,7 @@
 #include "grapheditor.h"
 #include "uveditor.h"
 #include "toolsettings.h"
+#include "dopesheet.h"
 
 #include <QAction>
 #include <cstdio>
@@ -303,6 +304,7 @@ QMenu* MainWindow::windows_menu() {
     ge->addAction("Script Editor", this, &MainWindow::show_script_editor);
     auto* anim_ed = m->addMenu("Animation Editors");
     anim_ed->addAction("Graph Editor", this, &MainWindow::show_graph_editor);
+    anim_ed->addAction("Dope Sheet", this, &MainWindow::show_dope_sheet);
     auto* model_ed = m->addMenu("Modeling Editors");
     model_ed->addAction("UV Editor", this, &MainWindow::show_uv_editor);
     ge->addAction("Attribute Editor\tCtrl+A", this, &MainWindow::show_attribute_editor);
@@ -558,6 +560,17 @@ QMenu* MainWindow::key_menu() {
         exec("cutKey", QJsonObject{{"time", time_slider_->time()}});
     });
     m->addSeparator();
+    cmd(m, "Set Breakdown", "setKeyframe", QJsonObject{{"breakdown", true}}, QString(), false);
+    m->addAction("Convert to Breakdown", [this] { exec("keyframe", QJsonObject{{"edit", true}, {"time", time_slider_->time()}, {"breakdown", true}}); });
+    m->addAction("Convert to Key", [this] { exec("keyframe", QJsonObject{{"edit", true}, {"time", time_slider_->time()}, {"breakdown", false}}); });
+    m->addSeparator();
+    m->addAction("Copy Keys", [this] { exec("copyKey", QJsonObject{{"time", QString("%1").arg(time_slider_->time())}}); });
+    m->addAction("Paste Keys", [this] { exec("pasteKey", QJsonObject{{"time", time_slider_->time()}, {"option", "merge"}}); });
+    cmd(m, "Bake Animation", "bakeResults", {}, QString(), true);
+    m->addSeparator();
+    auto* sdk = m->addMenu("Set Driven Key");
+    sdk->addAction("Set...", this, &MainWindow::show_set_driven_key);
+    m->addSeparator();
     auto* tan = m->addMenu("Tangents");
     for (const char* t : {"auto", "spline", "clamped", "linear", "flat", "step", "plateau"}) {
         QString label = QString(t);
@@ -572,6 +585,7 @@ QMenu* MainWindow::key_menu() {
     }
     m->addSeparator();
     m->addAction("Graph Editor...", [this] { show_graph_editor(); });
+    m->addAction("Dope Sheet...", [this] { show_dope_sheet(); });
     return m;
 }
 
@@ -913,6 +927,10 @@ void MainWindow::build_bottom() {
         Host::get()->poke();
     });
     connect(current, &QSpinBox::valueChanged, time_slider_, [this](int t) { time_slider_->set_time(t); });
+    connect(time_slider_, &TimeSlider::contextMenuAt, this, &MainWindow::time_slider_menu);
+    connect(time_slider_, &TimeSlider::rangeMoved, this, [](double from, double to, double by) {
+        exec("keyframe", QJsonObject{{"edit", true}, {"time", QString("%1:%2").arg(from).arg(to)}, {"relative", true}, {"timeChange", by}});
+    });
     row1->addWidget(time_slider_, 1);
     row1->addWidget(current);
     auto* play = new QToolBar(w);
@@ -1041,6 +1059,8 @@ void MainWindow::refresh_state() {
     for (const QJsonValue& r : query("uiRequests").toArray()) {
         QString n = r.toString();
         if (n == "GraphEditor") show_graph_editor();
+        else if (n == "DopeSheetEditor") show_dope_sheet();
+        else if (n == "SetDrivenKeyOptions") show_set_driven_key();
         else if (n == "ScriptEditor") show_script_editor();
         else if (n == "OutlinerWindow") { outliner_dock_->show(); outliner_dock_->raise(); }
         else if (n == "AttributeEditor") show_attribute_editor();
@@ -1076,6 +1096,10 @@ void MainWindow::refresh_state() {
     QVector<double> kt;
     for (const QJsonValue& k : keys.toArray()) kt.append(k.toDouble());
     time_slider_->set_keys(kt);
+    QVector<double> bd;
+    if (!kt.isEmpty())
+        for (const QJsonValue& k : ask("keyframe", QJsonObject{{"query", true}, {"queried", QJsonArray{"breakdown"}}}).toArray()) bd.append(k.toDouble());
+    time_slider_->set_breakdowns(bd);
     auto_key_->blockSignals(true);
     auto_key_->setChecked(ask("autoKeyframe", QJsonObject{{"query", true}}).toBool());
     auto_key_->blockSignals(false);
@@ -1160,6 +1184,52 @@ void MainWindow::show_script_editor() {
     script_window_->show();
     script_window_->raise();
     script_window_->activateWindow();
+}
+
+void MainWindow::show_dope_sheet() {
+    if (!dope_window_) {
+        dope_window_ = new QWidget(this, Qt::Window);
+        dope_window_->setWindowTitle("Dope Sheet");
+        auto* l = new QVBoxLayout(dope_window_);
+        l->setContentsMargins(0, 0, 0, 0);
+        l->addWidget(new DopeSheet(dope_window_));
+        dope_window_->resize(1000, 460);
+    }
+    dope_window_->show();
+    dope_window_->raise();
+    dope_window_->activateWindow();
+}
+
+void MainWindow::show_set_driven_key() {
+    if (!sdk_window_) sdk_window_ = new SetDrivenKeyWindow(this);
+    sdk_window_->show();
+    sdk_window_->raise();
+    sdk_window_->activateWindow();
+}
+
+void MainWindow::time_slider_menu(QPoint global) {
+    QMenu m;
+    QString range = time_slider_->has_range() ? time_slider_->range_text() : QString::number(time_slider_->time());
+    auto keyed = [range](const QString& command, QJsonObject call = QJsonObject()) {
+        call["time"] = range;
+        return [command, call] { exec(command, call); };
+    };
+    m.addAction("Cut", keyed("cutKey"));
+    m.addAction("Copy", keyed("copyKey"));
+    m.addAction("Paste", [this] { exec("pasteKey", QJsonObject{{"time", time_slider_->time()}, {"option", "merge"}}); });
+    m.addAction("Delete", keyed("cutKey", QJsonObject{{"clear", true}}));
+    m.addSeparator();
+    m.addAction("Snap", keyed("snapKey"));
+    m.addAction("Convert to Breakdown", keyed("keyframe", QJsonObject{{"edit", true}, {"breakdown", true}}));
+    m.addAction("Convert to Key", keyed("keyframe", QJsonObject{{"edit", true}, {"breakdown", false}}));
+    m.addSeparator();
+    QMenu* tan = m.addMenu("Tangents");
+    for (const char* t : {"auto", "spline", "clamped", "linear", "flat", "step", "plateau"}) {
+        QString label = QString(t);
+        label[0] = label[0].toUpper();
+        tan->addAction(label, keyed("keyTangent", QJsonObject{{"inTangentType", t == QString("step") ? "clamped" : t}, {"outTangentType", t}}));
+    }
+    m.exec(global);
 }
 
 void MainWindow::show_tool_settings() {

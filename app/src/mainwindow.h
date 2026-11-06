@@ -88,6 +88,9 @@ private:
     void show_uv_editor();
     void show_preferences();
     void show_tool_settings();
+    void show_dope_sheet();
+    void show_set_driven_key();
+    void time_slider_menu(QPoint global);
     void update_title();
     void toggle_play(int dir);
     void stop_play();
@@ -98,6 +101,8 @@ private:
     QWidget* script_window_ = nullptr;
     QWidget* graph_window_ = nullptr;
     QWidget* uv_window_ = nullptr;
+    QWidget* dope_window_ = nullptr;
+    QWidget* sdk_window_ = nullptr;
     CommandLine* command_line_ = nullptr;
     TimeSlider* time_slider_ = nullptr;
     RangeSlider* range_slider_ = nullptr;

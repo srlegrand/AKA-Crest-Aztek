@@ -169,7 +169,7 @@ pub fn anim_curves(core: &Core, arg: &str) -> Value {
                 .map(|i| {
                     let (si, so) = k.slopes(i);
                     let key = &k.keys[i];
-                    json!([key.t, key.v, si, so, key.itt.name(), key.ott.name()])
+                    json!([key.t, key.v, si, so, key.itt.name(), key.ott.name(), key.breakdown])
                 })
                 .collect();
             let mut samples = Vec::new();

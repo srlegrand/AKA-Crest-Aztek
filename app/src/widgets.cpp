@@ -329,6 +329,17 @@ void TimeSlider::set_keys(const QVector<double>& k) {
     update();
 }
 
+void TimeSlider::set_breakdowns(const QVector<double>& k) {
+    if (k == breakdowns_) return;
+    breakdowns_ = k;
+    update();
+}
+
+QString TimeSlider::range_text() const {
+    double a = qMin(range_a_, range_b_), b = qMax(range_a_, range_b_);
+    return QString("%1:%2").arg(a).arg(b);
+}
+
 double TimeSlider::frame_at(int x) const {
     double w = qMax(1, width() - 16);
     return start_ + (x - 8) / w * (end_ - start_);
@@ -357,11 +368,17 @@ void TimeSlider::paintEvent(QPaintEvent*) {
         if (major) p.drawText(QPointF(x + 2, height() - 12), QString::number(fr));
     }
     double fw = qMax(2.0, w / span);
-    // Keys on the selection: red bars.
+    // The range selected with Shift-drag, red as in Maya.
+    if (range_a_ != range_b_) {
+        double a = 8 + (qMin(range_a_, range_b_) + move_by_ - start_) / span * w;
+        double b = 8 + (qMax(range_a_, range_b_) + move_by_ - start_) / span * w;
+        p.fillRect(QRectF(a, 0, b - a, height()), QColor(200, 60, 60, 110));
+    }
+    // Keys on the selection: red bars; breakdowns green.
     for (double k : keys_) {
         if (k < start_ || k > end_) continue;
         double kx = 8 + (k - start_) / span * w;
-        p.fillRect(QRectF(kx - qMax(1.0, fw * 0.25), 3, qMax(2.0, fw * 0.5), height() - 6), QColor(204, 40, 40));
+        p.fillRect(QRectF(kx - qMax(1.0, fw * 0.25), 3, qMax(2.0, fw * 0.5), height() - 6), breakdowns_.contains(k) ? QColor(60, 190, 80) : QColor(204, 40, 40));
     }
     double x = 8 + (time_ - start_) / span * w;
     p.fillRect(QRectF(x - fw / 2, 0, fw, height()), QColor(210, 210, 210, 120));
@@ -370,11 +387,54 @@ void TimeSlider::paintEvent(QPaintEvent*) {
 }
 
 void TimeSlider::mousePressEvent(QMouseEvent* e) {
-    set_time(frame_at(int(e->position().x())));
+    double fr = std::round(frame_at(int(e->position().x())));
+    if (e->button() == Qt::RightButton) {
+        emit contextMenuAt(e->globalPosition().toPoint());
+        return;
+    }
+    if (e->modifiers() & Qt::ShiftModifier) {
+        selecting_ = true;
+        range_a_ = fr;
+        range_b_ = fr + 1;
+        update();
+        return;
+    }
+    double lo = qMin(range_a_, range_b_), hi = qMax(range_a_, range_b_);
+    if (range_a_ != range_b_ && fr >= lo && fr <= hi) {
+        moving_ = true;
+        move_from_ = fr;
+        move_by_ = 0;
+        return;
+    }
+    range_a_ = range_b_ = 0;
+    set_time(fr);
 }
 
 void TimeSlider::mouseMoveEvent(QMouseEvent* e) {
-    if (e->buttons()) set_time(frame_at(int(e->position().x())));
+    if (!e->buttons()) return;
+    double fr = std::round(frame_at(int(e->position().x())));
+    if (selecting_) {
+        range_b_ = fr >= range_a_ ? fr + 1 : fr;
+        update();
+    } else if (moving_) {
+        move_by_ = fr - move_from_;
+        update();
+    } else {
+        set_time(fr);
+    }
+}
+
+void TimeSlider::mouseReleaseEvent(QMouseEvent*) {
+    if (moving_ && move_by_ != 0) {
+        double lo = qMin(range_a_, range_b_), hi = qMax(range_a_, range_b_);
+        emit rangeMoved(lo, hi, move_by_);
+        range_a_ += move_by_;
+        range_b_ += move_by_;
+    }
+    moving_ = false;
+    move_by_ = 0;
+    selecting_ = false;
+    update();
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

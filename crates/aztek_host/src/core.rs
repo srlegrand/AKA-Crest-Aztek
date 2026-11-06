@@ -420,6 +420,8 @@ static UI_REQUESTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 pub const UI_COMMANDS: &[(&str, &str)] = &[
     ("GraphEditor", "Open the Graph Editor."),
+    ("DopeSheetEditor", "Open the Dope Sheet."),
+    ("SetDrivenKeyOptions", "Open the Set Driven Key window."),
     ("ScriptEditor", "Open the Script Editor."),
     ("OutlinerWindow", "Show the Outliner."),
     ("AttributeEditor", "Show the Attribute Editor."),

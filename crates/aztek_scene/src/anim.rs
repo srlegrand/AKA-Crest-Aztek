@@ -336,7 +336,7 @@ pub enum Infinity {
 
 pub const INFINITY_NAMES: &[&str] = &["constant", "linear", "constant", "cycle", "cycleRelative", "oscillate"];
 
-fn infinity(i: i64) -> Infinity {
+pub(crate) fn infinity(i: i64) -> Infinity {
     match i {
         1 => Infinity::Linear,
         3 => Infinity::Cycle,
@@ -506,7 +506,7 @@ fn curve_type_for(g: &Graph, p: &PlugRef) -> &'static str {
     }
 }
 
-fn channel_name(g: &Graph, p: &PlugRef) -> String {
+pub(crate) fn channel_name(g: &Graph, p: &PlugRef) -> String {
     let a = g.attr(p);
     if p.component >= 0 && a.ty == PlugType::Vec3 {
         a.child_names[p.component as usize].clone()
@@ -564,7 +564,7 @@ pub fn key_plug(g: &mut Graph, p: &PlugRef, t: f64, value: Option<f64>, itt: Opt
 
 /// Turns the plug arguments of a key command into plugs: "node.attr" as named, a node as its keyable channels (or the
 /// -attribute ones).
-fn targets(s: &Session, a: &aztek_ops::Args, cmd: &str) -> CmdResult<Vec<PlugRef>> {
+pub(crate) fn targets(s: &Session, a: &aztek_ops::Args, cmd: &str) -> CmdResult<Vec<PlugRef>> {
     let g = &s.graph;
     let attrs: Vec<String> = match a.get("attribute") {
         Some(Value::String(x)) => vec![x.clone()],
@@ -603,7 +603,7 @@ fn targets(s: &Session, a: &aztek_ops::Args, cmd: &str) -> CmdResult<Vec<PlugRef
 }
 
 /// A -time flag: a frame, "10:20", "10:" or ":20", or [start, end]. None means all time.
-fn time_range(a: &aztek_ops::Args) -> CmdResult<Option<(f64, f64)>> {
+pub(crate) fn time_range(a: &aztek_ops::Args) -> CmdResult<Option<(f64, f64)>> {
     let Some(v) = a.get("time") else { return Ok(None) };
     let parse = |s: &str| -> CmdResult<(f64, f64)> {
         let s = s.trim().trim_matches(|c| c == '"' || c == '(' || c == ')');
@@ -633,7 +633,7 @@ fn time_range(a: &aztek_ops::Args) -> CmdResult<Option<(f64, f64)>> {
     }))
 }
 
-fn in_range(r: Option<(f64, f64)>, t: f64) -> bool {
+pub(crate) fn in_range(r: Option<(f64, f64)>, t: f64) -> bool {
     r.is_none_or(|(a, b)| t >= a - 1e-6 && t <= b + 1e-6)
 }
 
@@ -642,7 +642,7 @@ fn queried(a: &aztek_ops::Args, names: &[&str]) -> bool {
     names.iter().any(|n| q.contains(n) || a.get(n).is_some_and(|v| v == &Value::Bool(true)))
 }
 
-fn tangent_flag(a: &aztek_ops::Args, name: &str) -> CmdResult<Option<Tangent>> {
+pub(crate) fn tangent_flag(a: &aztek_ops::Args, name: &str) -> CmdResult<Option<Tangent>> {
     match a.get(name).and_then(Value::as_str) {
         None => Ok(None),
         Some(s) => match Tangent::parse(s) {
@@ -653,7 +653,7 @@ fn tangent_flag(a: &aztek_ops::Args, name: &str) -> CmdResult<Option<Tangent>> {
 }
 
 /// The curves of the targets, each with the channel it drives.
-fn target_curves(s: &Session, a: &aztek_ops::Args, cmd: &str) -> CmdResult<Vec<(PlugRef, NodeId)>> {
+pub(crate) fn target_curves(s: &Session, a: &aztek_ops::Args, cmd: &str) -> CmdResult<Vec<(PlugRef, NodeId)>> {
     let g = &s.graph;
     let mut out = Vec::new();
     // Curves named directly.
@@ -721,6 +721,9 @@ pub fn key_times(g: &Graph, nodes: &[NodeId]) -> Vec<f64> {
     let mut t: Vec<f64> = Vec::new();
     for &n in nodes {
         for (_, c) in curves_on(g, n) {
+            if crate::anim_edit::is_driven_curve(g, c) {
+                continue;
+            }
             t.extend(keys_of(g, c).keys.iter().map(|k| k.t));
         }
     }
@@ -747,6 +750,7 @@ fn query_flags(c: Cmd) -> Cmd {
 pub fn register(c: &mut Commands<Session>) {
     register_types();
     register_edit_keys(c);
+    crate::anim_edit::register(c);
 
     c.register(
         query_flags(Cmd::new(
@@ -869,6 +873,15 @@ pub fn register(c: &mut Commands<Session>) {
                     for &t in &times {
                         // A held (changed but unkeyed) value is what gets keyed at the current frame.
                         if key_plug(&mut s.graph, &p, t, value, itt, ott)? {
+                            if let Some(bd) = a.get("breakdown").and_then(Value::as_bool) {
+                                if let Some(c) = curve_of(&s.graph, &p) {
+                                    let mut k = keys_of(&s.graph, c);
+                                    if let Some(e) = k.keys.iter_mut().find(|e| (e.t - t).abs() < 1e-6) {
+                                        e.breakdown = bd;
+                                    }
+                                    set_keys(&mut s.graph, c, k)?;
+                                }
+                            }
                             n += 1;
                         }
                     }
@@ -882,7 +895,7 @@ pub fn register(c: &mut Commands<Session>) {
         .flag(f("value", "v", ArgType::Float, "Value to key instead of the current one."))
         .flag(f("inTangentType", "itt", ArgType::String, "Tangent into the key.").choices(Tangent::NAMES))
         .flag(f("outTangentType", "ott", ArgType::String, "Tangent out of the key.").choices(Tangent::NAMES))
-        .flag(f("breakdown", "bd", ArgType::Bool, "Accepted for Maya scripts."))
+        .flag(f("breakdown", "bd", ArgType::Bool, "The key is a breakdown: it keeps its place between the keys around it."))
         .flag(f("hierarchy", "hi", ArgType::String, "Accepted for Maya scripts."))
         .flag(f("controlPoints", "cp", ArgType::Bool, "Accepted for Maya scripts."))
         .flag(f("shape", "s", ArgType::Bool, "Accepted for Maya scripts.")),
@@ -924,6 +937,20 @@ pub fn register(c: &mut Commands<Session>) {
                     if queried(a, &["keyframeCount"]) {
                         return Ok(json!(count));
                     }
+                    if queried(a, &["breakdown"]) {
+                        let mut v = Vec::new();
+                        for (_, c) in &curves {
+                            for (i, k) in keys_of(&s.graph, *c).keys.iter().enumerate() {
+                                if pick(i, k) && k.breakdown {
+                                    v.push(json!(k.t));
+                                }
+                            }
+                        }
+                        return Ok(Value::Array(v));
+                    }
+                    if queried(a, &["floatChange"]) {
+                        return Ok(Value::Array(times));
+                    }
                     if queried(a, &["valueChange"]) && queried(a, &["timeChange"]) {
                         return Ok(Value::Array(both));
                     }
@@ -938,14 +965,19 @@ pub fn register(c: &mut Commands<Session>) {
                     return Ok(Value::Array(times));
                 }
                 let rel = a.bool("relative");
-                let tc = a.get("timeChange").and_then(Value::as_f64);
+                let tc = a.get("timeChange").and_then(Value::as_f64).or(a.get("floatChange").and_then(Value::as_f64));
                 let vc = a.get("valueChange").and_then(Value::as_f64);
+                let bd = a.get("breakdown").and_then(|v| v.as_bool().or(v.as_i64().map(|i| i != 0)));
                 let mut n = 0;
                 for (_, c) in &curves {
                     let mut k = keys_of(&s.graph, *c);
+                    let before = k.keys.clone();
                     for (i, key) in k.keys.iter_mut().enumerate() {
                         if !pick(i, key) {
                             continue;
+                        }
+                        if let Some(b) = bd {
+                            key.breakdown = b;
                         }
                         if let Some(t) = tc {
                             key.t = if rel { key.t + t } else { t };
@@ -955,6 +987,7 @@ pub fn register(c: &mut Commands<Session>) {
                         }
                         n += 1;
                     }
+                    crate::anim_edit::retime_breakdowns(&before, &mut k.keys);
                     k.keys.sort_by(|a, b| a.t.total_cmp(&b.t));
                     set_keys(&mut s.graph, *c, k)?;
                 }
@@ -964,6 +997,8 @@ pub fn register(c: &mut Commands<Session>) {
         .positional("objects, plugs or curves (the selection when none)")
         .flag(f("attribute", "at", ArgType::Any, "Channel name(s)."))
         .flag(f("time", "t", ArgType::Any, "A frame or range \"10:20\"."))
+        .flag(f("floatChange", "fc", ArgType::Float, "Driven keys: the driver value, as -tc for time keys."))
+        .flag(f("breakdown", "bd", ArgType::Bool, "Query: the breakdown keys' frames. Edit: make keys breakdowns, or not."))
         .flag(f("index", "in", ArgType::Any, "Key index(es) on each curve."))
         .flag(f("keyframeCount", "kc", ArgType::Bool, "Query: how many keys."))
         .flag(f("timeChange", "tc", ArgType::Float, "Query: the keys' frames. Edit: their new frame (or offset with -r)."))
@@ -984,6 +1019,28 @@ pub fn register(c: &mut Commands<Session>) {
             |s, a| {
                 let curves = target_curves(s, a, "cutKey")?;
                 let range = time_range(a)?;
+                if !a.bool("clear") {
+                    // Maya's cut leaves what it took on the clipboard.
+                    let mut clip = crate::anim_edit::KeyClipboard::default();
+                    let (mut lo, mut hi) = (f64::MAX, f64::MIN);
+                    for (p, c) in &curves {
+                        let keys: Vec<Key> = keys_of(&s.graph, *c).keys.into_iter().filter(|k| in_range(range, k.t)).collect();
+                        if keys.is_empty() {
+                            continue;
+                        }
+                        for k in &keys {
+                            lo = lo.min(k.t);
+                            hi = hi.max(k.t);
+                        }
+                        let g = &s.graph;
+                        clip.entries.push(crate::anim_edit::ClipEntry { attr: channel_name(g, p), keys, pre: g.node(*c).map(|n| n.data().int(PRE)).unwrap_or(0), post: g.node(*c).map(|n| n.data().int(POST)).unwrap_or(0) });
+                    }
+                    if !clip.entries.is_empty() {
+                        clip.start = lo;
+                        clip.end = hi;
+                        s.key_clipboard = clip;
+                    }
+                }
                 let mut n = 0;
                 for (p, c) in curves {
                     let mut k = keys_of(&s.graph, c);
@@ -1006,7 +1063,7 @@ pub fn register(c: &mut Commands<Session>) {
         .positional("objects, plugs or curves (the selection when none)")
         .flag(f("attribute", "at", ArgType::Any, "Channel name(s)."))
         .flag(f("time", "t", ArgType::Any, "A frame or range \"10:20\"."))
-        .flag(f("clear", "cl", ArgType::Bool, "Delete without copying (the only way here)."))
+        .flag(f("clear", "cl", ArgType::Bool, "Delete without copying to the clipboard."))
         .flag(f("option", "o", ArgType::String, "Accepted for Maya scripts."))
         .flag(f("index", "in", ArgType::Any, "Accepted for Maya scripts.")),
     );
@@ -1203,8 +1260,12 @@ fn register_edit_keys(c: &mut Commands<Session>) {
                         set_keys(&mut s.graph, curve, k)?;
                         continue;
                     }
+                    let before = k.keys.clone();
                     for &i in &idx {
                         let Some(key) = k.keys.get_mut(i) else { continue };
+                        if let Some(b) = a.get("breakdown").and_then(Value::as_bool) {
+                            key.breakdown = b;
+                        }
                         key.t = a.get("time").and_then(Value::as_f64).unwrap_or(key.t + dt);
                         key.v = a.get("value").and_then(Value::as_f64).unwrap_or(key.v + dv);
                         if let Some(t) = itt {
@@ -1215,6 +1276,7 @@ fn register_edit_keys(c: &mut Commands<Session>) {
                         }
                         n += 1;
                     }
+                    crate::anim_edit::retime_breakdowns(&before, &mut k.keys);
                     // Keys passing others replace them, as in Maya.
                     let moved: Vec<Key> = idx.iter().filter_map(|&i| k.keys.get(i).copied()).collect();
                     let mut rest: Vec<Key> = k.keys.iter().enumerate().filter(|(i, _)| !idx.contains(i)).map(|(_, k)| *k).collect();
@@ -1234,6 +1296,7 @@ fn register_edit_keys(c: &mut Commands<Session>) {
         .flag(f("value", "v", ArgType::Float, "Value to give them."))
         .flag(f("inTangentType", "itt", ArgType::String, "Tangent into them.").choices(Tangent::NAMES))
         .flag(f("outTangentType", "ott", ArgType::String, "Tangent out of them.").choices(Tangent::NAMES))
+        .flag(f("breakdown", "bd", ArgType::Bool, "Make them breakdowns, or normal keys."))
         .flag(f("delete", "del", ArgType::Bool, "Remove them.")),
     );
 }

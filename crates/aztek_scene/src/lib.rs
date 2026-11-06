@@ -2,6 +2,7 @@
 //! Ported from `src/scene` (Graph, Node, Plug, Naming, Transform) and the graph part of `src/io/SceneFile`.
 
 pub mod anim;
+pub mod anim_edit;
 pub mod attr_defs;
 pub mod auto_bevel;
 pub mod booleans;

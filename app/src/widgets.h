@@ -60,17 +60,30 @@ public:
     double start() const { return start_; }
     double end() const { return end_; }
     void set_keys(const QVector<double>& k);
+    void set_breakdowns(const QVector<double>& k);
     const QVector<double>& keys() const { return keys_; }
+    bool has_range() const { return range_a_ != range_b_ || selecting_; }
+    QString range_text() const;
 signals:
     void timeChanged(double t);
+    // A selected range was dragged by this many frames.
+    void rangeMoved(double from, double to, double by);
+    void contextMenuAt(QPoint global);
 protected:
     void paintEvent(QPaintEvent*) override;
     void mousePressEvent(QMouseEvent*) override;
     void mouseMoveEvent(QMouseEvent*) override;
+    void mouseReleaseEvent(QMouseEvent*) override;
 private:
     double frame_at(int x) const;
     double time_ = 1, start_ = 1, end_ = 120;
     QVector<double> keys_;
+    QVector<double> breakdowns_;
+    // Shift-drag selects a range (drawn red); a drag in it moves its keys.
+    double range_a_ = 0, range_b_ = 0;
+    bool selecting_ = false;
+    bool moving_ = false;
+    double move_from_ = 0, move_by_ = 0;
 };
 
 // The bar under the time slider: the playback range inside the animation range, dragged by its ends or middle.

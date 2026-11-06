@@ -45,6 +45,10 @@ pub struct Session {
     pub(crate) last_op: crate::last_op::State,
     /// The paint skin weights tool's settings (artAttrSkinPaintCtx).
     pub paint_ctx: crate::skin::PaintCtx,
+    /// What copyKey and cutKey took.
+    pub key_clipboard: crate::anim_edit::KeyClipboard,
+    /// selectKey's keys: curve and frame.
+    pub key_selection: Vec<(NodeId, f64)>,
 }
 
 impl Default for Session {
@@ -65,6 +69,8 @@ impl Session {
             naming_prefs: json!({}),
             last_op: Default::default(),
             paint_ctx: Default::default(),
+            key_clipboard: Default::default(),
+            key_selection: Vec::new(),
         };
         crate::commands::register(&mut s.commands);
         crate::components::register(&mut s.commands);
