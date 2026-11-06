@@ -76,7 +76,10 @@ class _Cmds(types.ModuleType):
 
 
 def _mel_eval(src):
-    return json.loads(_aztek.mel(src))
+    result = json.loads(_aztek.mel(src))
+    if isinstance(result, dict) and "__error__" in result:
+        raise RuntimeError(result["__error__"])
+    return result
 
 
 aztek = types.ModuleType("aztek")
@@ -130,4 +133,20 @@ def _run(src):
         sys.stderr.flush()
 
 
+def _eval_from_mel(src):
+    """MEL's python(): a lone expression's value as JSON, statements give null. Exceptions go back to MEL."""
+    g = __main__.__dict__
+    try:
+        try:
+            code = compile(src, "<python>", "eval")
+        except SyntaxError:
+            exec(compile(src, "<python>", "exec"), g)
+            return "null"
+        return json.dumps(_plain(eval(code, g)), default=str)
+    finally:
+        sys.stdout.flush()
+        sys.stderr.flush()
+
+
 __main__.__dict__["_aztek_run"] = _run
+__main__.__dict__["_aztek_eval"] = _eval_from_mel

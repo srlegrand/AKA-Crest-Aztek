@@ -326,7 +326,7 @@ pub fn register(c: &mut Commands<Session>) {
                 Ok(json!([r]))
             },
         )
-        .flag(f("point", "p", ArgType::List, "The face's points, in order."))
+        .flag(f("point", "p", ArgType::List, "The face's points, in order.").multi(3))
         .flag(f("constructionHistory", "ch", ArgType::Bool, "Accepted for Maya scripts.")),
     );
 
