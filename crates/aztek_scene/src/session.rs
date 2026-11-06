@@ -109,6 +109,22 @@ impl Session {
         s
     }
 
+    /// An empty session to hold the place of a real one moved elsewhere for a moment: no scene, no commands.
+    pub fn hollow() -> Self {
+        Session {
+            graph: Graph::new(),
+            commands: Commands::default(),
+            walk_ghosts: WalkGhosts::default(),
+            pending_compounds: BTreeMap::new(),
+            naming_prefs: json!({}),
+            last_op: Default::default(),
+            paint_ctx: Default::default(),
+            key_clipboard: Default::default(),
+            key_selection: Vec::new(),
+            live_surface: Vec::new(),
+        }
+    }
+
     pub fn register(&mut self, def: CommandDef<Session>) {
         self.commands.register(def);
     }

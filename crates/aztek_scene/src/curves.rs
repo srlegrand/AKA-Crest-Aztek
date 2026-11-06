@@ -1276,6 +1276,25 @@ pub fn register(c: &mut Commands<Session>) {
     );
 
     c.register(
+        Cmd::new("setCurvePoints", "Move a curve's CVs at once, in object space: -p [[x, y, z], ...], from the first CV. A periodic curve's wrapped CVs follow their first lap.", |s, a| {
+            let names = objects(s, a);
+            let Some(n) = names.first() else { fail!("setCurvePoints: name or select a curve") };
+            let g = &mut s.graph;
+            let shape = curve_arg(g, n, "setCurvePoints")?;
+            let pts = points_flag(a, "points");
+            let Some(cur) = local_curve(g, shape) else { fail!("setCurvePoints: {n} has no curve") };
+            if pts.len() > cur.cvs.len() {
+                fail!("setCurvePoints: {n} has {} CVs, got {}", cur.cvs.len(), pts.len());
+            }
+            let moves: Vec<(u32, DVec3)> = pts.iter().enumerate().map(|(i, p)| (i as u32, *p)).collect();
+            move_cvs(g, shape, &moves);
+            Ok(json!(pts.len()))
+        })
+        .positional("a curve (the selection when none)")
+        .flag(f("points", "p", ArgType::List, "[[x, y, z], ...].")),
+    );
+
+    c.register(
         Cmd::new("arclen", "The length of a curve along its arc, world space.", |s, a| {
             let names = objects(s, a);
             let Some(n) = names.first() else { fail!("arclen: name or select a curve") };
