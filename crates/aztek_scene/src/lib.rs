@@ -30,6 +30,7 @@ pub mod history;
 pub mod instancing;
 pub mod isolation;
 pub mod last_op;
+pub mod ma_file;
 pub mod maya_cmds;
 pub mod maya_core;
 pub mod mesh_boolean;

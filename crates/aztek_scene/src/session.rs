@@ -53,6 +53,10 @@ pub struct Session {
     pub live_surface: Vec<NodeId>,
     /// The sculpting tools' settings.
     pub sculpt_ctx: crate::sculpt::SculptCtx,
+    /// The scene's file, what `file -q -sn` returns. None while untitled.
+    pub scene_path: Option<String>,
+    /// The file type asked for with `file -type`, for the next save.
+    pub scene_type: Option<crate::ma_file::Format>,
 }
 
 impl Default for Session {
@@ -77,6 +81,8 @@ impl Session {
             key_selection: Vec::new(),
             live_surface: Vec::new(),
             sculpt_ctx: Default::default(),
+            scene_path: None,
+            scene_type: None,
         };
         crate::commands::register(&mut s.commands);
         crate::components::register(&mut s.commands);
@@ -111,6 +117,7 @@ impl Session {
         crate::deform_cmds::register(&mut s.commands);
         crate::maya_cmds::register(&mut s.commands);
         crate::maya_core::register(&mut s.commands);
+        crate::ma_file::register(&mut s.commands);
         // Last: history node types take their attributes from the commands registered above.
         crate::history::register(&mut s.commands);
         crate::instancing::install(&mut s.graph);

@@ -131,8 +131,6 @@ and array functions. Multi-use flags read their arity; query mode gives a flag a
 Differs from Maya: unknown procedures and undeclared variables fail when reached, not before the script starts; errors
 carry a line number only for syntax errors; an array of one element converts to a scalar on assignment.
 
-Not yet: weight painting, lattice, wrap, wire, delta mush, spline IK, set driven keys, NURBS curves, the dope sheet,
-the node editor, `.ma` files, the OpenMaya subset.
 Deform menu, as of 06/11/2026: `lattice` (`ffd`, `lattice`, `baseLattice`; `ffd1Lattice.pt[s][t][u]` select, move and list with
 `ls -fl`; local influence, outside modes, freeze mapping, `-e -remap`, `-e -resetLattice`), `softMod` (selection or centre,
 volume or surface, `falloffCurve` ramp), `deltaMush`, `tension`, `wrap` (with `deformer -type wrap` and `wrap -e -inf`), `wire`,
@@ -142,5 +140,12 @@ first node's settings connected in, so `ls` shows ffd1 and ffd2 where Maya has o
 polyline, so a NURBS curve follows its control points until a sampler is added; the base wire is data on the node, with no
 `curve1BaseWire` shape. Deformer sets are not made; `percent` holds membership as weights.
 
-Not yet: weight painting, spline IK, set driven keys, NURBS curves, the dope sheet,
-the node editor, `.ma` files, the OpenMaya subset, MEL procedures and control flow.
+Files, as of 06/11/2026: `.ma` read and write (`ma_file.rs`) and the `file` command (`-new`, `-open`, `-save`, `-rename`,
+`-import`, `-exportAll`, `-exportSelected`, `-type`, `-q -sn -ex -type`). Reads transforms, joints, locators, meshes
+(`.vt .ed .fc`, UV sets, `.pt`, hard edges), poly creators, `polyTweak` over stored geometry, animCurves (T and U kinds,
+tangents, infinities), skinCluster, dagPose, constraints, RP and SC ikHandle, display layers and user attributes. Other
+history is taken from stored geometry; what cannot be represented is a warning naming its node type. Writes the same,
+meshes baked. Written from knowledge of the format with no Maya to check against; `.kit`/`.kot` codes, `.kix`/`.kiy`
+units and `.xm` xform order are the parts to check first. Not handled: references, instances, NURBS, blendShape and
+cluster (baked with a warning), multiple shapes sharing a skinCluster.
+
