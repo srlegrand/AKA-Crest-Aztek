@@ -16,6 +16,17 @@ pub const SHIFT: i32 = 1;
 pub const CTRL: i32 = 2;
 pub const ALT: i32 = 4;
 
+/// One stroke of the paint skin weights brush: the weights as they build up. The stroke undoes as one.
+struct PaintStroke {
+    skin: aztek_scene::plug::NodeId,
+    inf: u32,
+    bind: aztek_scene::skin::SkinBind,
+    applied: bool,
+    invert: bool,
+    smooth: bool,
+    last: Option<DVec3>,
+}
+
 pub struct View {
     pub gpu: Gpu,
     pub r: Renderer,
@@ -25,6 +36,11 @@ pub struct View {
     nav: Option<(i32, DVec2)>,
     marquee: Option<DVec2>,
     joint_press: Option<DVec2>,
+    /// A paint stroke in progress.
+    stroke: Option<PaintStroke>,
+    /// B held with the paint tool: a drag sizes the brush.
+    pub brush_adjust: bool,
+    brush_drag: Option<(DVec2, f64)>,
     /// Lines a drag's preview step wrote to the history, retracted before the next step.
     drag_lines: usize,
     /// The drag's last preview command, run for real on release.
@@ -48,6 +64,9 @@ impl View {
             nav: None,
             marquee: None,
             joint_press: None,
+            stroke: None,
+            brush_adjust: false,
+            brush_drag: None,
             drag_lines: 0,
             last_drag: None,
             background: [0.36, 0.36, 0.36, 1.0],
@@ -172,6 +191,25 @@ impl View {
                     self.nav = Some((button, px));
                     return false;
                 }
+                if self.vp.tool == Tool::PaintSkin && button == 1 {
+                    if self.brush_adjust {
+                        self.brush_drag = Some((px, core.s.paint_ctx.radius));
+                        return true;
+                    }
+                    if let Some((i, wp, n)) = self.vp.brush_hit(&core.s, &items, px) {
+                        let skin = aztek_scene::skin::skin_of(&core.s.graph, items[i].shape);
+                        if let Some(skin) = skin {
+                            if let (Some(b), Some(inf)) = (aztek_scene::skin::bind_of(&core.s.graph, skin), aztek_scene::skin::paint_influence(&core.s, skin)) {
+                                self.stroke = Some(PaintStroke { skin, inf, bind: (*b).clone(), applied: false, invert: mods & CTRL != 0, smooth: mods & SHIFT != 0, last: None });
+                                self.paint_dab(core, &items, i, wp, n);
+                                self.vp.brush = Some((wp, n));
+                            }
+                        }
+                        return true;
+                    }
+                    self.marquee = Some(px);
+                    return false;
+                }
                 let pivot = self.vp.manip_pivot(&mut core.s, &items);
                 let hit = pivot.and_then(|pv| self.vp.manip_hit(pv, px, self.dpr));
                 let start_drag = match (button, hit, pivot) {
@@ -231,6 +269,24 @@ impl View {
                     self.nav = Some((b, px));
                     return true;
                 }
+                if let Some((start, radius)) = self.brush_drag {
+                    let upp = self.vp.cam.units_per_px_at(self.vp.brush.map(|b| b.0).unwrap_or(self.vp.cam.coi), self.vp.rect[3], self.vp.aspect());
+                    let next = (radius + (px.x - start.x) * upp).max(1e-3);
+                    let _ = core.exec_silent("artAttrSkinPaintCtx", json!({"edit": true, "radius": next}));
+                    return true;
+                }
+                if self.stroke.is_some() {
+                    if let Some((i, wp, n)) = self.vp.brush_hit(&core.s, &items, px) {
+                        self.paint_dab(core, &items, i, wp, n);
+                        self.vp.brush = Some((wp, n));
+                    }
+                    return true;
+                }
+                if self.vp.tool == Tool::PaintSkin && buttons == 0 {
+                    let was = self.vp.brush.is_some();
+                    self.vp.brush = self.vp.brush_hit(&core.s, &items, px).map(|x| (x.1, x.2));
+                    return was || self.vp.brush.is_some();
+                }
                 if let Some(d) = &self.vp.drag {
                     if px == d.start {
                         return false;
@@ -279,6 +335,14 @@ impl View {
                     self.nav = None;
                     return true;
                 }
+                if self.brush_drag.take().is_some() {
+                    return true;
+                }
+                if self.stroke.take().is_some() {
+                    // The dabs' one undo entry stays; the panels hear of it.
+                    core.version += 1;
+                    return true;
+                }
                 if let Some(d) = self.vp.drag.take() {
                     if d.applied {
                         if let Some((cmd, call)) = self.last_drag.take() {
@@ -309,6 +373,29 @@ impl View {
         }
     }
 
+    /// A dab of the brush, replacing the stroke's previous undo entry so the whole stroke undoes in one step.
+    fn paint_dab(&mut self, core: &mut Core, items: &[crate::viewport::DrawItem], i: usize, wp: DVec3, n: DVec3) {
+        let Some(st) = self.stroke.as_mut() else { return };
+        let ctx = core.s.paint_ctx.clone();
+        // Dabs spaced by a fraction of the radius, so a fast drag leaves no gaps.
+        let dabs = match st.last {
+            Some(l) => {
+                let steps = (((wp - l).length() / (ctx.radius * 0.25).max(1e-6)).ceil() as usize).clamp(1, 32);
+                (1..=steps).map(|k| l.lerp(wp, k as f64 / steps as f64)).collect()
+            }
+            None => vec![wp],
+        };
+        for at in dabs {
+            aztek_scene::skin::stamp(&mut st.bind, &items[i].mesh, &items[i].world, at, Some(n), st.inf, &ctx, st.invert, st.smooth);
+        }
+        st.last = Some(wp);
+        if st.applied {
+            core.s.undo();
+        }
+        st.applied = aztek_scene::skin::commit_paint(&mut core.s.graph, st.skin, st.bind.clone()).is_ok();
+        core.version += 1;
+    }
+
     pub fn wheel(&mut self, delta: f64) {
         self.vp.cam.dolly(delta * 0.5);
     }
@@ -321,6 +408,7 @@ impl View {
                     "rotate" => Tool::Rotate,
                     "scale" => Tool::Scale,
                     "joint" => Tool::Joint,
+                    "paintSkin" => Tool::PaintSkin,
                     _ => Tool::Select,
                 }
             }
@@ -347,6 +435,7 @@ impl View {
                 self.background = [g, g, g, 1.0];
             }
             "manipSize" => self.vp.manip_scale = v.as_f64().unwrap_or(1.0),
+            "brushAdjust" => self.brush_adjust = v.as_bool().unwrap_or(false),
             "smoothCage" => self.vp.smooth_cage = v.as_bool().unwrap_or(false),
             "pivotMode" => self.vp.pivot_mode = v.as_bool().unwrap_or(false),
             "snap" => {

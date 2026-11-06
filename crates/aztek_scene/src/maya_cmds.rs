@@ -421,4 +421,81 @@ pub fn register(c: &mut Commands<Session>) {
         .flag(f("translate", "t", ArgType::Vec3, "World offset.")),
     );
     let _ = SelectMode::Replace;
+
+    c.register(
+        Cmd::new(
+            "pointPosition",
+            "The world position of a point: a vertex, a joint or transform (its pivot), or a locator. -l for local space.",
+            |s, a| {
+                let Some(n) = a.named().into_iter().next() else { fail!("pointPosition: name a point") };
+                let g = &mut s.graph;
+                g.evaluate();
+                let local = a.bool("local");
+                if components::is_component_string(&n) {
+                    let targets = crate::skin::points_named(g, &[n.clone()]);
+                    let Some((mesh, ids)) = targets.into_iter().next() else { fail!("pointPosition: no point {n}") };
+                    let Some(&p) = ids.first() else { fail!("pointPosition: no point {n}") };
+                    let Some(m) = components::mesh_of(g, mesh) else { fail!("pointPosition: no point {n}") };
+                    let w = crate::rig::world(g, crate::dag::transform_of(g, mesh));
+                    let q = if local { m.position(p) } else { w.transform_point3(m.position(p)) };
+                    return Ok(json!([q.x, q.y, q.z]));
+                }
+                let id = crate::rig::find(g, &n, "pointPosition")?;
+                let q = crate::rig::world(g, crate::dag::transform_of(g, id)).w_axis.truncate();
+                Ok(json!([q.x, q.y, q.z]))
+            },
+        )
+        .undoable(false)
+        .positional("a point")
+        .flag(f("world", "w", ArgType::Bool, "World space (the default)."))
+        .flag(f("local", "l", ArgType::Bool, "Object space.")),
+    );
+}
+
+/// xform on points: pCube1.vtx[0:3]. A query returns x, y, z per point, world space with -ws; a set moves them all to the
+/// position, or by it with -r.
+pub(crate) fn xform_components(s: &mut Session, a: &aztek_ops::Args, named: &[String]) -> CmdResult {
+    use glam::DVec3;
+    let g = &mut s.graph;
+    g.evaluate();
+    let targets = crate::skin::points_named(g, named);
+    let ws = a.bool("worldSpace");
+    if a.bool("query") {
+        let mut out = Vec::new();
+        for (mesh, ids) in &targets {
+            let Some(m) = crate::components::mesh_of(g, *mesh) else { continue };
+            let w = crate::rig::world(g, crate::dag::transform_of(g, *mesh));
+            for &p in ids {
+                if !m.point_valid(p) {
+                    continue;
+                }
+                let q = if ws { w.transform_point3(m.position(p)) } else { m.position(p) };
+                out.extend([json!(q.x), json!(q.y), json!(q.z)]);
+            }
+        }
+        return Ok(Value::Array(out));
+    }
+    let Some(t) = a.vec3("translation").map(DVec3::from_array) else { fail!("xform: on components only -t is available") };
+    let rel = a.bool("relative");
+    for (mesh, ids) in targets {
+        let Some(m) = crate::modifiers::cage(g, mesh) else { continue };
+        let w = crate::rig::world(g, crate::dag::transform_of(g, mesh));
+        let inv = w.inverse();
+        let moves: Vec<(u32, DVec3)> = ids
+            .into_iter()
+            .filter(|&p| m.point_valid(p))
+            .map(|p| {
+                let at = if rel {
+                    if ws { m.position(p) + inv.transform_vector3(t) } else { m.position(p) + t }
+                } else if ws {
+                    inv.transform_point3(t)
+                } else {
+                    t
+                };
+                (p, at)
+            })
+            .collect();
+        crate::mesh_edit::transform::set_points(g, mesh, &moves)?;
+    }
+    Ok(Value::Null)
 }

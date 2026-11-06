@@ -4,23 +4,22 @@
 use std::any::Any;
 use std::sync::Arc;
 
-use aztek_geo::Mesh;
 use aztek_ops::{fail, objects, ArgType, Args, CmdResult, CommandDef, Commands, FlagDef};
 use glam::{DMat3, DMat4, DQuat, DVec3};
 use serde_json::{json, Value};
 
-use crate::attr_defs::{float_attr_short, mesh_attr};
+use crate::attr_defs::float_attr_short;
 use crate::graph::{Graph, SelectMode};
 use crate::node::{types, vec3_attr, EvalContext, NodeBehavior, NodeData, NodeType};
 use crate::plug::{flags, AttrDef, NodeId, PlugRef, PlugType, PlugValue, NO_NODE};
 use crate::session::Session;
 use crate::transform::{euler_to_matrix, matrix_to_euler, RotateOrder, Transform, TransformBehavior};
 
-fn plug(n: NodeId, a: usize) -> PlugRef {
+pub(crate) fn plug(n: NodeId, a: usize) -> PlugRef {
     PlugRef::new(n, a as i32)
 }
 
-fn data_attr(name: &str, short: &str, doc: &str) -> AttrDef {
+pub(crate) fn data_attr(name: &str, short: &str, doc: &str) -> AttrDef {
     AttrDef {
         name: name.into(),
         short_name: short.into(),
@@ -32,7 +31,7 @@ fn data_attr(name: &str, short: &str, doc: &str) -> AttrDef {
     }
 }
 
-fn matrix_in(name: &str, short: &str, array: bool, doc: &str) -> AttrDef {
+pub(crate) fn matrix_in(name: &str, short: &str, array: bool, doc: &str) -> AttrDef {
     AttrDef {
         name: name.into(),
         short_name: short.into(),
@@ -67,23 +66,23 @@ impl crate::plug::Data for JsonData {
     }
 }
 
-fn json_of(d: &NodeData, attr: usize) -> Value {
+pub(crate) fn json_of(d: &NodeData, attr: usize) -> Value {
     match d.value(attr) {
         PlugValue::Data(Some(x)) => x.as_any().downcast_ref::<JsonData>().map(|j| j.0.clone()).unwrap_or(Value::Null),
         _ => Value::Null,
     }
 }
 
-fn set_json(g: &mut Graph, n: NodeId, attr: usize, v: Value) -> CmdResult<()> {
+pub(crate) fn set_json(g: &mut Graph, n: NodeId, attr: usize, v: Value) -> CmdResult<()> {
     g.set_value(plug(n, attr), PlugValue::Data(Some(Arc::new(JsonData(v)))))?;
     Ok(())
 }
 
-fn mat_json(m: &DMat4) -> Value {
+pub(crate) fn mat_json(m: &DMat4) -> Value {
     json!(m.to_cols_array().to_vec())
 }
 
-fn mat_from(v: &Value) -> DMat4 {
+pub(crate) fn mat_from(v: &Value) -> DMat4 {
     let a: Vec<f64> = v.as_array().map(|a| a.iter().filter_map(Value::as_f64).collect()).unwrap_or_default();
     if a.len() == 16 {
         DMat4::from_cols_array(&a.try_into().unwrap())
@@ -258,121 +257,6 @@ pub fn orient_joint(g: &mut Graph, j: NodeId, order: &str, up: &str) -> CmdResul
 // ---------------------------------------------------------------------------------------------------------------------
 // Skin
 
-pub const SKIN_TYPE: &str = "skinCluster";
-const SK_IN: usize = 0;
-const SK_OUT: usize = 1;
-const SK_MATRIX: usize = 2;
-const SK_BIND: usize = 3;
-const SK_ENVELOPE: usize = 4;
-
-pub struct SkinNode;
-
-/// Per point: [(influence, weight), ...].
-fn weights_of(v: &Value) -> Vec<Vec<(usize, f64)>> {
-    v.get("weights")
-        .and_then(Value::as_array)
-        .map(|pts| {
-            pts.iter()
-                .map(|p| {
-                    p.as_array()
-                        .map(|a| a.chunks(2).filter_map(|c| Some((c.first()?.as_u64()? as usize, c.get(1)?.as_f64()?))).collect())
-                        .unwrap_or_default()
-                })
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-impl NodeBehavior for SkinNode {
-    fn compute(&mut self, _ctx: &EvalContext, d: &mut NodeData) {
-        let Some(input) = d.mesh(SK_IN).cloned() else {
-            d.set_output(SK_OUT, PlugValue::Mesh(None));
-            return;
-        };
-        let bind = json_of(d, SK_BIND);
-        let pre: Vec<DMat4> = bind.get("bindPre").and_then(Value::as_array).map(|a| a.iter().map(mat_from).collect()).unwrap_or_default();
-        let geom = mat_from(bind.get("geom").unwrap_or(&Value::Null));
-        let weights = weights_of(&bind);
-        let env = d.float(SK_ENVELOPE);
-        let mats: Vec<DMat4> = (0..pre.len())
-            .map(|i| match d.element(SK_MATRIX, i as i32) {
-                Some(PlugValue::Matrix(m)) => *m * pre[i],
-                _ => DMat4::IDENTITY,
-            })
-            .collect();
-        let gi = geom.inverse();
-        let mut m: Mesh = (*input).clone();
-        for p in 0..m.point_capacity() {
-            if !m.point_valid(p) {
-                continue;
-            }
-            let Some(w) = weights.get(p as usize) else { continue };
-            let wp = geom.transform_point3(m.position(p));
-            let mut acc = DVec3::ZERO;
-            let mut tw = 0.0;
-            for &(i, wt) in w {
-                if let Some(mm) = mats.get(i) {
-                    acc += mm.transform_point3(wp) * wt;
-                    tw += wt;
-                }
-            }
-            if tw <= 0.0 {
-                continue;
-            }
-            let skinned = gi.transform_point3(acc / tw);
-            let rest = m.position(p);
-            m.set_position(p, rest + (skinned - rest) * env);
-        }
-        d.set_output(SK_OUT, PlugValue::Mesh(Some(Arc::new(m))));
-    }
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
-fn seg_dist(p: DVec3, a: DVec3, b: DVec3) -> f64 {
-    let ab = b - a;
-    let t = if ab.length_squared() < 1e-12 { 0.0 } else { ((p - a).dot(ab) / ab.length_squared()).clamp(0.0, 1.0) };
-    (p - (a + ab * t)).length()
-}
-
-/// Closest-distance weights: each point to its nearest bones, falling off with distance^dropoff.
-fn bind_weights(m: &Mesh, geom: &DMat4, bones: &[(DVec3, DVec3)], max_inf: usize, dropoff: f64) -> Vec<Vec<(usize, f64)>> {
-    let mut out = vec![Vec::new(); m.point_capacity() as usize];
-    for p in 0..m.point_capacity() {
-        if !m.point_valid(p) {
-            continue;
-        }
-        let wp = geom.transform_point3(m.position(p));
-        let mut d: Vec<(usize, f64)> = bones.iter().enumerate().map(|(i, (a, b))| (i, seg_dist(wp, *a, *b).max(1e-6))).collect();
-        d.sort_by(|a, b| a.1.total_cmp(&b.1));
-        d.truncate(max_inf.max(1));
-        let nearest = d[0].1;
-        let mut w: Vec<(usize, f64)> = d.iter().map(|&(i, x)| (i, (nearest / x).powf(dropoff))).collect();
-        w.retain(|x| x.1 > 1e-3);
-        let s: f64 = w.iter().map(|x| x.1).sum();
-        for x in w.iter_mut() {
-            x.1 /= s;
-        }
-        out[p as usize] = w;
-    }
-    out
-}
-
-pub fn skin_of(g: &Graph, mesh: NodeId) -> Option<NodeId> {
-    crate::history::history_of(g, mesh).into_iter().find(|&h| g.node(h).is_some_and(|n| n.ty().name == SKIN_TYPE))
-}
-
-fn influences(g: &Graph, skin: NodeId) -> Vec<NodeId> {
-    let mut v: Vec<(i32, NodeId)> = g
-        .connections()
-        .into_iter()
-        .filter(|(d, s)| d.node == skin && d.attr == SK_MATRIX as i32 && d.element >= 0 && s.attr == Transform::WORLD_MATRIX as i32)
-        .map(|(d, s)| (d.element, s.node))
-        .collect();
-    v.sort();
-    v.into_iter().map(|x| x.1).collect()
-}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Constraints
@@ -729,21 +613,6 @@ fn register_types_now() {
         ..Default::default()
     })
     .expect("ikSolve");
-    types::register_type(NodeType {
-        name: SKIN_TYPE.into(),
-        icon: "bone".into(),
-        doc: "Smooth skin: the mesh follows its influence joints by weight.".into(),
-        own_attrs: vec![
-            mesh_attr("inputPolymesh", "ip", flags::INPUT | flags::HIDDEN, "The mesh in bind pose."),
-            mesh_attr("output", "out", flags::OUTPUT | flags::HIDDEN, "The skinned mesh."),
-            matrix_in("matrix", "ma", true, "Each influence's world matrix."),
-            data_attr("bindData", "bd", "Bind pre-matrices, the mesh's bind matrix and the weights."),
-            float_attr_short("envelope", "en", 1.0, "How much of the skinning applies.", Some(0.0), Some(1.0)),
-        ],
-        create: Some(Arc::new(|| Box::new(SkinNode))),
-        ..Default::default()
-    })
-    .expect(SKIN_TYPE);
     for (k, name) in CONSTRAINT_TYPES.iter().enumerate() {
         types::register_type(NodeType {
             name: name.to_string(),
@@ -765,7 +634,7 @@ fn register_types_now() {
 }
 
 pub fn is_rig_chain_node(type_name: &str) -> bool {
-    type_name == SKIN_TYPE || crate::deform::is_deformer(type_name)
+    type_name == crate::skin::SKIN_TYPE || crate::deform::is_deformer(type_name)
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -777,7 +646,7 @@ fn f(name: &str, short: &str, ty: ArgType, doc: &str) -> FlagDef {
     FlagDef::new(name, short, ty, Value::Null, doc)
 }
 
-fn find(g: &Graph, name: &str, cmd: &str) -> CmdResult<NodeId> {
+pub(crate) fn find(g: &Graph, name: &str, cmd: &str) -> CmdResult<NodeId> {
     match g.find(name)? {
         Some(id) => Ok(id),
         None => fail!("{cmd}: no object named {name}"),
@@ -896,186 +765,6 @@ pub fn register(c: &mut Commands<Session>) {
         .flag(f("children", "ch", ArgType::Bool, "The joints below too (default on).")),
     );
 
-    c.register(
-        Cmd::new(
-            "skinCluster",
-            "Bind skin: the mesh named last (or selected last) follows the joints, weighted by closest distance. -mi caps the \
-             influences per point, -dr sets the falloff, -tsb binds to only the joints given. -e -ub unbinds.",
-            |s, a| {
-                let names = named_or_selected(s, a);
-                let g = &mut s.graph;
-                if a.bool("edit") && a.bool("unbind") {
-                    for n in &names {
-                        let id = find(g, n, "skinCluster")?;
-                        let Some(m) = crate::components::as_mesh(g, id) else { continue };
-                        if let Some(sk) = skin_of(g, m) {
-                            let src = g.source(&plug(sk, SK_IN));
-                            let dsts = g.destinations(&plug(sk, SK_OUT));
-                            g.delete_node(sk)?;
-                            if let Some(src) = src {
-                                for d in dsts {
-                                    g.connect(&src, &d, true)?;
-                                }
-                            }
-                        }
-                    }
-                    return Ok(Value::Null);
-                }
-                if a.bool("query") {
-                    let n = names.first().cloned().unwrap_or_default();
-                    let id = find(g, &n, "skinCluster")?;
-                    let sk = if g.node(id).is_some_and(|x| x.ty().name == SKIN_TYPE) { Some(id) } else { crate::components::as_mesh(g, id).and_then(|m| skin_of(g, m)) };
-                    let Some(sk) = sk else { fail!("skinCluster: {n} has no skin") };
-                    return Ok(json!(influences(g, sk).into_iter().map(|j| g.path(j)).collect::<Vec<_>>()));
-                }
-                let mut joints = Vec::new();
-                let mut mesh = None;
-                for n in &names {
-                    let id = find(g, n, "skinCluster")?;
-                    if is_joint(g, id) {
-                        joints.push(id);
-                    } else if let Some(m) = crate::components::as_mesh(g, id) {
-                        mesh = Some(m);
-                    }
-                }
-                let Some(mesh) = mesh else { fail!("skinCluster: name or select joints and a mesh") };
-                if joints.is_empty() {
-                    fail!("skinCluster: name or select the joints to bind to");
-                }
-                if skin_of(g, mesh).is_some() {
-                    fail!("skinCluster: {} is already skinned", crate::components::display_path(g, mesh));
-                }
-                // The whole skeleton unless -tsb.
-                if !a.bool("toSelectedBones") {
-                    let mut root = joints[0];
-                    while g.parent(root) != NO_NODE && is_joint(g, g.parent(root)) {
-                        root = g.parent(root);
-                    }
-                    let mut all = vec![root];
-                    all.extend(g.descendants(root).into_iter().filter(|&d| is_joint(g, d)));
-                    for j in all {
-                        if !joints.contains(&j) {
-                            joints.push(j);
-                        }
-                    }
-                }
-                g.evaluate();
-                let Some(cage) = crate::modifiers::cage(g, mesh) else { fail!("skinCluster: not a mesh") };
-                let geom = world(g, crate::dag::transform_of(g, mesh));
-                let jw: Vec<DMat4> = joints.iter().map(|&j| world(g, j)).collect();
-                let bones: Vec<(DVec3, DVec3)> = joints
-                    .iter()
-                    .zip(&jw)
-                    .map(|(&j, w)| {
-                        let a0 = w.w_axis.truncate();
-                        let kid = g.children(j).iter().copied().find(|&k| is_joint(g, k));
-                        let b0 = kid.map(|k| world(g, k).w_axis.truncate()).unwrap_or(a0);
-                        (a0, b0)
-                    })
-                    .collect();
-                let weights = bind_weights(&cage, &geom, &bones, a.int("maximumInfluences", 5).max(1) as usize, a.float("dropoffRate", 4.0));
-                let wj: Vec<Value> = weights.iter().map(|w| json!(w.iter().flat_map(|&(i, x)| [json!(i), json!(x)]).collect::<Vec<_>>())).collect();
-                let bind = json!({"bindPre": jw.iter().map(|m| mat_json(&m.inverse())).collect::<Vec<_>>(), "geom": mat_json(&geom), "weights": wj});
-                g.open_chunk("Bind Skin");
-                let r = (|| -> CmdResult<NodeId> {
-                    let t = types::find(SKIN_TYPE).unwrap();
-                    let (base, src) = crate::history::upstream(g, mesh)?;
-                    let sk = g.create_node(&t, &a.string("name", "skinCluster1"), NO_NODE, true)?;
-                    set_json(g, sk, SK_BIND, bind)?;
-                    for (i, &j) in joints.iter().enumerate() {
-                        g.connect(&plug(j, Transform::WORLD_MATRIX), &PlugRef::element(sk, SK_MATRIX as i32, i as i32), false)?;
-                    }
-                    g.disconnect(&base);
-                    g.connect(&src, &plug(sk, SK_IN), false)?;
-                    g.connect(&plug(sk, SK_OUT), &base, false)?;
-                    Ok(sk)
-                })();
-                g.close_chunk();
-                let sk = r?;
-                Ok(json!([g.path(sk)]))
-            },
-        )
-        .positional("joints, then the mesh (the selection when none)")
-        .flag(f("toSelectedBones", "tsb", ArgType::Bool, "Only the joints given, not their whole skeleton."))
-        .flag(f("maximumInfluences", "mi", ArgType::Int, "Most joints per point (5)."))
-        .flag(f("dropoffRate", "dr", ArgType::Float, "Falloff with distance (4)."))
-        .flag(f("bindMethod", "bm", ArgType::Int, "Accepted for Maya scripts (closest distance)."))
-        .flag(f("skinMethod", "sm", ArgType::Int, "Accepted for Maya scripts (linear)."))
-        .flag(f("normalizeWeights", "nw", ArgType::Int, "Accepted for Maya scripts."))
-        .flag(f("name", "n", ArgType::String, "Name of the skinCluster."))
-        .flag(f("unbind", "ub", ArgType::Bool, "With -e: remove the skin, back to the bind pose."))
-        .flag(f("influence", "inf", ArgType::Bool, "Query: the influence joints."))
-        .flag(f("edit", "e", ArgType::Bool, "Edit mode."))
-        .flag(f("query", "q", ArgType::Bool, "Query mode."))
-        .flag(f("queried", "", ArgType::List, "Flags asked about in query mode.")),
-    );
-
-    c.register(
-        Cmd::new(
-            "skinPercent",
-            "Set (-tv joint weight) or query (-q -v) skin weights of vertices: skinPercent -tv joint1 1 skinCluster1 pCube1.vtx[0].",
-            |s, a| {
-                let names: Vec<String> = a.named();
-                let g = &mut s.graph;
-                let Some(skin_name) = names.first() else { fail!("skinPercent: name the skinCluster") };
-                let sk = find(g, skin_name, "skinPercent")?;
-                let infl = influences(g, sk);
-                let mut pts: Vec<u32> = Vec::new();
-                for n in &names[1..] {
-                    if let (Some(o), Some(c)) = (n.find("[").map(|i| &n[i + 1..n.len() - 1]), Some(())) {
-                        let _ = c;
-                        for part in o.split(',') {
-                            match part.split_once(':') {
-                                Some((x, y)) => {
-                                    let (x, y): (u32, u32) = (x.parse().unwrap_or(0), y.parse().unwrap_or(0));
-                                    pts.extend(x..=y);
-                                }
-                                None => pts.extend(part.parse::<u32>().ok()),
-                            }
-                        }
-                    }
-                }
-                let mut data = g.node(sk).map(|n| json_of(n.data(), SK_BIND)).unwrap_or(Value::Null);
-                let mut w = weights_of(&data);
-                if a.bool("query") {
-                    let mut out = Vec::new();
-                    let Some(&p) = pts.first() else { fail!("skinPercent: name a vertex") };
-                    let pw = w.get(p as usize).cloned().unwrap_or_default();
-                    for (i, _) in infl.iter().enumerate() {
-                        out.push(json!(pw.iter().find(|x| x.0 == i).map(|x| x.1).unwrap_or(0.0)));
-                    }
-                    return Ok(Value::Array(out));
-                }
-                let Some(tv) = a.get("transformValue").and_then(Value::as_array) else { fail!("skinPercent: -tv joint weight") };
-                let mut sets = Vec::new();
-                for pair in tv.chunks(2) {
-                    let (Some(jn), Some(v)) = (pair[0].as_str(), pair.get(1).and_then(Value::as_f64)) else { continue };
-                    let j = find(g, jn, "skinPercent")?;
-                    let Some(i) = infl.iter().position(|&x| x == j) else { fail!("skinPercent: {jn} is not an influence of {skin_name}") };
-                    sets.push((i, v.clamp(0.0, 1.0)));
-                }
-                for p in pts {
-                    let Some(pw) = w.get_mut(p as usize) else { continue };
-                    let fixed: f64 = sets.iter().map(|x| x.1).sum::<f64>().min(1.0);
-                    let others: f64 = pw.iter().filter(|x| !sets.iter().any(|s| s.0 == x.0)).map(|x| x.1).sum();
-                    let k = if others > 1e-12 { (1.0 - fixed) / others } else { 0.0 };
-                    let mut next: Vec<(usize, f64)> = pw.iter().filter(|x| !sets.iter().any(|s| s.0 == x.0)).map(|&(i, x)| (i, x * k)).collect();
-                    next.extend(sets.iter().copied());
-                    next.retain(|x| x.1 > 1e-6);
-                    *pw = next;
-                }
-                let wj: Vec<Value> = w.iter().map(|w| json!(w.iter().flat_map(|&(i, x)| [json!(i), json!(x)]).collect::<Vec<_>>())).collect();
-                data["weights"] = json!(wj);
-                set_json(g, sk, SK_BIND, data)?;
-                Ok(Value::Null)
-            },
-        )
-        .positional("skinCluster, then vertices")
-        .flag(f("transformValue", "tv", ArgType::List, "joint weight pairs."))
-        .flag(f("value", "v", ArgType::Bool, "Query: weights per influence."))
-        .flag(f("query", "q", ArgType::Bool, "Query mode."))
-        .flag(f("queried", "", ArgType::List, "Flags asked about in query mode.")),
-    );
 
     for (k, name) in CONSTRAINT_TYPES.iter().enumerate() {
         let name = name.to_string();

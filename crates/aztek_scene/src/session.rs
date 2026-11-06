@@ -43,6 +43,8 @@ pub struct Session {
     pub naming_prefs: Value,
     /// The last adjustable op run from the UI.
     pub(crate) last_op: crate::last_op::State,
+    /// The paint skin weights tool's settings (artAttrSkinPaintCtx).
+    pub paint_ctx: crate::skin::PaintCtx,
 }
 
 impl Default for Session {
@@ -62,6 +64,7 @@ impl Session {
             pending_compounds: BTreeMap::new(),
             naming_prefs: json!({}),
             last_op: Default::default(),
+            paint_ctx: Default::default(),
         };
         crate::commands::register(&mut s.commands);
         crate::components::register(&mut s.commands);
@@ -83,8 +86,10 @@ impl Session {
         crate::anim::register(&mut s.commands);
         crate::uv_ops::register(&mut s.commands);
         crate::rig::register(&mut s.commands);
+        crate::skin::register(&mut s.commands);
         crate::deform::register(&mut s.commands);
         crate::maya_cmds::register(&mut s.commands);
+        crate::maya_core::register(&mut s.commands);
         // Last: history node types take their attributes from the commands registered above.
         crate::history::register(&mut s.commands);
         crate::instancing::install(&mut s.graph);

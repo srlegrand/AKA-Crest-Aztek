@@ -77,6 +77,10 @@ struct GpuMesh {
     lines: Option<(Buffer, u32)>,
     points: Option<(Buffer, u32)>,
     tint: Option<(Buffer, u32)>,
+    /// One vertex per render vertex's source point, for the weight colours.
+    vertex_point: Vec<Index>,
+    weight_tris: Option<(Buffer, Buffer, u32)>,
+    weight_key: u64,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -87,6 +91,8 @@ pub enum Tool {
     Scale,
     /// Click to place joints, each under the last.
     Joint,
+    /// Paint skin weights: the brush on the selected skinned meshes.
+    PaintSkin,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -131,6 +137,8 @@ pub struct Viewport {
     pub smooth_cage: bool,
     /// The component under the cursor: (shape, kind, id).
     pub hover_comp: Option<(NodeId, ComponentMode, Index)>,
+    /// The paint brush under the cursor: world centre and normal.
+    pub brush: Option<(DVec3, DVec3)>,
 }
 
 const LEAD: [u8; 4] = [66, 255, 163, 255];
@@ -160,6 +168,7 @@ impl Viewport {
             manip_scale: 1.0,
             smooth_cage: false,
             hover_comp: None,
+            brush: None,
         }
     }
 
@@ -258,6 +267,9 @@ impl Viewport {
                 lines: None,
                 points: None,
                 tint: None,
+                vertex_point: Vec::new(),
+                weight_tris: None,
+                weight_key: u64::MAX,
             });
             let key = Arc::as_ptr(&it.mesh) as usize;
             let mesh_changed = entry.mesh_key != key || entry.smooth != it.smooth;
@@ -286,6 +298,7 @@ impl Viewport {
                         rm.indices.len() as u32,
                     ));
                 }
+                entry.vertex_point = rm.vertex_point.clone();
                 entry.tri_faces = rm.triangle_faces.clone();
                 entry.tri_indices = rm.indices.clone();
                 entry.bvh = None;
@@ -394,7 +407,50 @@ impl Viewport {
                 }
             }
             let mvp = vp * it.world;
-            if !self.wireframe {
+            // Paint skin weights: the painted influence's weight in grey, white for 1, as Maya's colour feedback.
+            let mut painted = false;
+            if self.tool == Tool::PaintSkin && selected && s.paint_ctx.color_feedback && !self.wireframe && entry.display.is_none() {
+                if let Some(sk) = aztek_scene::skin::skin_of(g, it.shape) {
+                    if let (Some(bind), Some(inf)) = (aztek_scene::skin::bind_of(g, sk), aztek_scene::skin::paint_influence(s, sk)) {
+                        let w = aztek_scene::skin::point_weights(&bind, inf);
+                        let mut h = DefaultHasher::new();
+                        for x in &w {
+                            x.to_bits().hash(&mut h);
+                        }
+                        (Arc::as_ptr(&it.mesh) as usize, inf).hash(&mut h);
+                        let wk = h.finish();
+                        if wk != entry.weight_key || entry.weight_tris.is_none() {
+                            entry.weight_key = wk;
+                            if let Some((a, b, _)) = entry.weight_tris.take() {
+                                gpu.drop_buffer(a);
+                                gpu.drop_buffer(b);
+                            }
+                            let verts: Vec<LineVertex> = entry
+                                .vertex_point
+                                .iter()
+                                .map(|&pt| {
+                                    let x = w.get(pt as usize).copied().unwrap_or(0.0).clamp(0.0, 1.0) as f32;
+                                    LineVertex { pos: it.mesh.position(pt).as_vec3().to_array(), color: [x, x, x, 1.0] }
+                                })
+                                .collect();
+                            if !verts.is_empty() && !entry.tri_indices.is_empty() {
+                                entry.weight_tris = Some((
+                                    gpu.buffer_with(vk::BufferUsageFlags::VERTEX_BUFFER, &verts),
+                                    gpu.buffer_with(vk::BufferUsageFlags::INDEX_BUFFER, &entry.tri_indices),
+                                    entry.tri_indices.len() as u32,
+                                ));
+                            }
+                        }
+                        if let Some((vb, ib, n)) = &entry.weight_tris {
+                            r.bind(gpu, Kind::ColorTris);
+                            r.push(gpu, &push(mvp, it.world, view, [1.0; 4], 0.0, 1.0));
+                            r.draw(gpu, vb, Some((ib, *n)), 0);
+                            painted = true;
+                        }
+                    }
+                }
+            }
+            if !self.wireframe && !painted {
                 if let Some((vb, ib, n)) = &entry.tris {
                     r.bind(gpu, Kind::Shaded);
                     r.push(gpu, &push(mvp, it.world, view, [0.5, 0.5, 0.5, 1.0], 0.0, 1.0));
@@ -421,6 +477,48 @@ impl Viewport {
         self.draw_rig(gpu, r, s, scale);
         self.draw_hover(gpu, r, items, scale);
         self.draw_manip(gpu, r, s, scale);
+        self.draw_brush(gpu, r, s);
+    }
+
+    /// The brush's ring on the surface and its normal line, in red as Maya draws it.
+    fn draw_brush(&mut self, gpu: &mut Gpu, r: &Renderer, s: &Session) {
+        let Some((c, n)) = self.brush else { return };
+        if self.tool != Tool::PaintSkin {
+            return;
+        }
+        let radius = s.paint_ctx.radius;
+        let (u, w) = n.any_orthonormal_pair();
+        let mut v = Vec::new();
+        let col = c8([230, 40, 40, 255]);
+        let steps = 48;
+        for i in 0..steps {
+            let a = i as f64 / steps as f64 * std::f64::consts::TAU;
+            let b = (i + 1) as f64 / steps as f64 * std::f64::consts::TAU;
+            v.push(LineVertex { pos: (c + (u * a.cos() + w * a.sin()) * radius).as_vec3().to_array(), color: col });
+            v.push(LineVertex { pos: (c + (u * b.cos() + w * b.sin()) * radius).as_vec3().to_array(), color: col });
+        }
+        v.push(LineVertex { pos: c.as_vec3().to_array(), color: col });
+        v.push(LineVertex { pos: (c + n * radius * 0.5).as_vec3().to_array(), color: col });
+        let b = gpu.buffer_with(vk::BufferUsageFlags::VERTEX_BUFFER, &v);
+        r.bind(gpu, Kind::LinesOnTop);
+        r.set_line_width(gpu, 1.5);
+        r.push(gpu, &push(self.view_proj(), DMat4::IDENTITY, self.cam.view(), [1.0; 4], 0.0, 1.0));
+        r.draw(gpu, &b, None, v.len() as u32);
+        gpu.drop_buffer(b);
+    }
+
+    /// The selected skinned mesh under a pixel, for the brush: (item, world point, world normal).
+    pub fn brush_hit(&mut self, s: &Session, items: &[DrawItem], px: DVec2) -> Option<(usize, DVec3, DVec3)> {
+        let g = &s.graph;
+        let sel = g.selection();
+        let picked: Vec<usize> = (0..items.len()).filter(|&i| (sel.contains(&items[i].xf) || sel.contains(&items[i].shape)) && aztek_scene::skin::skin_of(g, items[i].shape).is_some()).collect();
+        let list: Vec<DrawItem> = picked
+            .iter()
+            .map(|&i| DrawItem { shape: items[i].shape, xf: items[i].xf, world: items[i].world, mesh: items[i].mesh.clone(), smooth: 0 })
+            .collect();
+        let (k, f, wp) = self.raycast(&list, px)?;
+        let n = list[k].world.transform_vector3(list[k].mesh.face_normal(f)).normalize_or_zero();
+        Some((picked[k], wp, n))
     }
 
     // -----------------------------------------------------------------------------------------------------------------
@@ -733,7 +831,7 @@ impl Viewport {
 
     /// Where the manipulator sits: the lead object's pivot, or the selected components' centre.
     pub fn manip_pivot(&self, s: &mut Session, items: &[DrawItem]) -> Option<DVec3> {
-        if matches!(self.tool, Tool::Select | Tool::Joint) {
+        if matches!(self.tool, Tool::Select | Tool::Joint | Tool::PaintSkin) {
             return None;
         }
         let mode = components::mode(&s.graph);
@@ -895,7 +993,7 @@ impl Viewport {
 
     /// The tool the manipulator acts as: pivot mode moves pivots whatever the tool.
     pub fn eff_tool(&self) -> Tool {
-        if self.pivot_mode && !matches!(self.tool, Tool::Select | Tool::Joint) {
+        if self.pivot_mode && !matches!(self.tool, Tool::Select | Tool::Joint | Tool::PaintSkin) {
             Tool::Move
         } else {
             self.tool
@@ -978,7 +1076,7 @@ impl Viewport {
                     ("scale".into(), serde_json::json!({ "args": targets, "by": by }))
                 })
             }
-            Tool::Select | Tool::Joint => None,
+            Tool::Select | Tool::Joint | Tool::PaintSkin => None,
         }
     }
 
@@ -1061,6 +1159,10 @@ fn drop_mesh(gpu: &mut Gpu, m: GpuMesh) {
     }
     for b in [m.lines, m.points, m.tint].into_iter().flatten() {
         gpu.drop_buffer(b.0);
+    }
+    if let Some((a, b, _)) = m.weight_tris {
+        gpu.drop_buffer(a);
+        gpu.drop_buffer(b);
     }
 }
 

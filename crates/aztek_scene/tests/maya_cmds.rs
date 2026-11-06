@@ -28,3 +28,23 @@ fn scripting_commands() {
     assert!(r[0].is_string());
     run(&mut s, "polyAverageVertex", json!({"args": ["pCube1.vtx[0]"], "iterations": 3}));
 }
+
+#[test]
+fn ls_lists_as_maya_does() {
+    let mut s = Session::new();
+    s.run("polyCube", json!({})).unwrap();
+    s.run("polyCube", json!({})).unwrap();
+    s.run("group", json!({"args": ["pCube2"], "name": "grp"})).unwrap();
+    assert_eq!(s.run("ls", json!({"args": ["pCube*"], "transforms": true})).unwrap(), json!(["pCube1", "pCube2"]));
+    assert_eq!(s.run("ls", json!({"args": ["pCube*"], "shapes": true})).unwrap(), json!(["pCubeShape1", "pCubeShape2"]));
+    assert_eq!(s.run("ls", json!({"args": ["pCube2"], "long": true})).unwrap(), json!(["|grp|pCube2"]));
+    assert_eq!(s.run("ls", json!({"args": ["grp"], "dagObjects": true, "shapes": true})).unwrap(), json!(["pCubeShape2"]));
+    assert_eq!(s.run("ls", json!({"type": "polyCube"})).unwrap(), json!(["polyCube1", "polyCube2"]));
+    assert_eq!(s.run("ls", json!({"args": ["pCube1.vtx[*]"], "flatten": true})).unwrap().as_array().unwrap().len(), 8);
+    assert_eq!(s.run("ls", json!({"args": ["pCube1.vtx[*]"]})).unwrap(), json!(["pCube1.vtx[0:7]"]));
+    assert_eq!(s.run("ls", json!({"args": ["pCube1.f[1:2]"], "flatten": true})).unwrap(), json!(["pCube1.f[1]", "pCube1.f[2]"]));
+    assert_eq!(s.run("ls", json!({"assemblies": true})).unwrap(), json!(["pCube1", "grp"]));
+    assert_eq!(s.run("ls", json!({"args": ["pCube1"], "showType": true})).unwrap(), json!(["pCube1", "transform"]));
+    s.run("select", json!({"args": ["pCube1", "grp"]})).unwrap();
+    assert_eq!(s.run("ls", json!({"selection": true, "head": 1})).unwrap(), json!(["pCube1"]));
+}

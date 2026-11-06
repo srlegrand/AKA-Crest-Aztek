@@ -1435,6 +1435,9 @@ fn register_queries(c: &mut Commands<Session>) {
             )
             .example("xform(\"cube1\", worldSpace=True, translation=(0, 2, 0))"),
         )
+        .flag(flag("relative", "r", T::Bool, json!(false), "On components: -t moves by the offset."))
+        .flag(flag("absolute", "a", T::Bool, json!(false), "The values are absolute (the default)."))
+        .flag(flag("objectSpace", "os", T::Bool, json!(false), "Object space (the default)."))
         .flag(
             flag("translation", "t", T::Any, Value::Null, "Position as (x, y, z) to set, or True to read it with query.")
                 .example("xform(\"cube1\", translation=(1, 0, 0))"),
@@ -1462,7 +1465,11 @@ fn register_queries(c: &mut Commands<Session>) {
 }
 
 fn xform(s: &mut Session, a: &Args) -> CmdResult {
-    let objs = ids_of(&s.graph, &objects(s, a))?;
+    let named = objects(s, a);
+    if named.iter().any(|n| crate::components::is_component_string(n)) {
+        return crate::maya_cmds::xform_components(s, a, &named);
+    }
+    let objs = ids_of(&s.graph, &named)?;
     let g = &mut s.graph;
     let ws = a.bool("worldSpace");
     if a.bool("query") {

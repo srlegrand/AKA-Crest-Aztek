@@ -8,6 +8,7 @@
 #include "widgets.h"
 #include "grapheditor.h"
 #include "uveditor.h"
+#include "toolsettings.h"
 
 #include <QAction>
 #include <cstdio>
@@ -318,6 +319,7 @@ QMenu* MainWindow::windows_menu() {
     layouts->addAction("Single Perspective View", [this] { panels_->set_single(true); });
     layouts->addAction("Four View", [this] { panels_->set_single(false); });
     m->addSeparator();
+    m->addAction("Tool Settings...\tCtrl+Shift+T", this, &MainWindow::show_tool_settings);
     QMenu* prefs = m->addMenu("Settings/Preferences");
     prefs->addAction("Preferences...", this, &MainWindow::show_preferences);
     prefs->addAction("Hotkey Editor...", [this] {
@@ -467,6 +469,60 @@ QMenu* MainWindow::skin_menu() {
     auto* m = new QMenu("Skin", this);
     cmd(m, "Bind Skin", "skinCluster", QJsonObject{{"toSelectedBones", false}}, QString(), true);
     cmd(m, "Unbind Skin", "skinCluster", QJsonObject{{"edit", true}, {"unbind", true}});
+    cmd(m, "Go to Bind Pose", "dagPose", QJsonObject{{"restore", true}, {"global", true}, {"bindPose", true}});
+    m->addSeparator();
+    m->addAction("Paint Skin Weights", [this] { set_tool("paintSkin"); show_tool_settings(); });
+    // Mirror and copy work on the selection: one skinned mesh mirrors onto itself, two copy from the first to the second.
+    QMenu* mirror = m->addMenu("Mirror Skin Weights");
+    for (auto [label, plane, inv] : {std::tuple{"Across YZ, +X to -X", "YZ", false}, {"Across YZ, -X to +X", "YZ", true}, {"Across XZ, +Y to -Y", "XZ", false}, {"Across XY, +Z to -Z", "XY", false}}) {
+        QString pl = plane;
+        bool in = inv;
+        mirror->addAction(label, [pl, in] {
+            QString obj = state()["selection"].toArray().at(0).toString().section('.', 0, 0);
+            QString sk = ask("findRelatedSkinCluster", QJsonObject{{"args", QJsonArray{obj}}}).toString();
+            if (sk.isEmpty()) { log("// Warning: select a skinned mesh //", 4); return; }
+            exec("copySkinWeights", QJsonObject{{"sourceSkin", sk}, {"destinationSkin", sk}, {"mirrorMode", pl}, {"mirrorInverse", in}, {"influenceAssociation", QJsonArray{"label", "closestJoint"}}});
+        });
+    }
+    m->addAction("Copy Skin Weights", [] {
+        QJsonArray sel = state()["selection"].toArray();
+        if (sel.size() < 2) { log("// Warning: select the source mesh, then the destination //", 4); return; }
+        exec("copySkinWeights", QJsonObject{{"args", QJsonArray{sel.at(0), sel.at(sel.size() - 1)}}, {"noMirror", true}, {"influenceAssociation", QJsonArray{"closestJoint", "oneToOne"}}});
+    });
+    auto on_selected = [](const QString& what, std::function<QJsonObject()> call, const QString& command) {
+        return [what, call, command] {
+            QString obj = state()["selection"].toArray().at(0).toString().section('.', 0, 0);
+            QString sk = ask("findRelatedSkinCluster", QJsonObject{{"args", QJsonArray{obj}}}).toString();
+            if (sk.isEmpty()) { log("// Warning: select a skinned mesh //", 4); return; }
+            QJsonObject c = call();
+            c["args"] = QJsonArray{sk};
+            exec(command, c);
+        };
+    };
+    m->addAction("Smooth Skin Weights", on_selected("smooth", [] { return QJsonObject{{"edit", true}, {"smoothWeights", 0.5}, {"smoothWeightsMaxIterations", 2}}; }, "skinCluster"));
+    m->addAction("Prune Small Weights", on_selected("prune", [] { return QJsonObject{{"pruneWeights", 0.01}}; }, "skinPercent"));
+    m->addAction("Normalize Weights", on_selected("normalize", [] { return QJsonObject{{"edit", true}, {"forceNormalizeWeights", true}}; }, "skinCluster"));
+    m->addAction("Reset Weights to Default", on_selected("reset", [] { return QJsonObject{{"resetToDefault", true}}; }, "skinPercent"));
+    m->addSeparator();
+    // Selection order: the skinned mesh and the joints.
+    auto influence = [](const char* flag) {
+        QString fl = flag;
+        return [fl] {
+            QString sk;
+            QJsonArray joints;
+            for (const QJsonValue& s : state()["selection"].toArray()) {
+                QString found = ask("findRelatedSkinCluster", QJsonObject{{"args", QJsonArray{s.toString().section('.', 0, 0)}}}).toString();
+                if (!found.isEmpty()) sk = found;
+                else joints.append(s);
+            }
+            if (sk.isEmpty() || joints.isEmpty()) { log("// Warning: select a skinned mesh and joints //", 4); return; }
+            QJsonObject c{{"args", QJsonArray{sk}}, {"edit", true}};
+            c[fl] = joints;
+            exec("skinCluster", c);
+        };
+    };
+    m->addAction("Add Influence", influence("addInfluence"));
+    m->addAction("Remove Influence", influence("removeInfluence"));
     return m;
 }
 
@@ -814,6 +870,14 @@ void MainWindow::build_docks() {
     tabifyDockWidget(channel_dock_, attr_dock_);
     channel_dock_->raise();
     resizeDocks({channel_dock_}, {290}, Qt::Horizontal);
+
+    tool_dock_ = new QDockWidget("Tool Settings", this);
+    tool_dock_->setObjectName("toolDock");
+    tool_settings_ = new ToolSettings(tool_dock_);
+    tool_dock_->setWidget(tool_settings_);
+    addDockWidget(Qt::LeftDockWidgetArea, tool_dock_);
+    tabifyDockWidget(outliner_dock_, tool_dock_);
+    tool_dock_->hide();
 }
 
 void MainWindow::build_bottom() {
@@ -987,6 +1051,9 @@ void MainWindow::refresh_state() {
         else if (n == "TextureViewWindow" || n == "UVEditor") show_uv_editor();
         else if (n == "PreferencesWindow") show_preferences();
         else if (n == "JointTool") set_tool("joint");
+        else if (n == "ArtPaintSkinWeightsTool") set_tool("paintSkin");
+        else if (n == "ArtPaintSkinWeightsToolOptions") { set_tool("paintSkin"); show_tool_settings(); }
+        else if (n == "ToolSettingsWindow") show_tool_settings();
         else if (n == "SelectTool") set_tool("select");
         else if (n == "MoveTool") set_tool("move");
         else if (n == "RotateTool") set_tool("rotate");
@@ -1031,7 +1098,10 @@ void MainWindow::set_tool(const QString& tool) {
     tool_ = tool;
     if (tool_buttons_.contains(tool)) tool_buttons_[tool]->setChecked(true);
     for (ViewportWidget* v : panels_->views()) v->set("tool", "\"" + tool + "\"");
-    if (tool == "joint")
+    if (tool_settings_) tool_settings_->set_tool(tool);
+    if (tool == "paintSkin")
+        help_line_->setText("Paint Skin Weights Tool: drag to paint, Ctrl paints the inverse, Shift smooths, B-drag sizes the brush.");
+    else if (tool == "joint")
         help_line_->setText("Joint Tool: click to place joints, each under the last. Enter ends the chain.");
     else
         help_line_->setText(QString("%1 Tool: drag a handle; middle-drag anywhere moves the active handle.").arg(tool.left(1).toUpper() + tool.mid(1)));
@@ -1090,6 +1160,11 @@ void MainWindow::show_script_editor() {
     script_window_->show();
     script_window_->raise();
     script_window_->activateWindow();
+}
+
+void MainWindow::show_tool_settings() {
+    tool_dock_->show();
+    tool_dock_->raise();
 }
 
 void MainWindow::show_preferences() {
@@ -1262,6 +1337,14 @@ bool MainWindow::hotkey(QKeyEvent* k, bool press) {
     if (key == Qt::Key_D && !ctrl && !alt && !shift) {
         for (ViewportWidget* vw : panels_->views()) vw->set("pivotMode", press ? "true" : "false");
         if (press) help_line_->setText("Pivot: drag the manipulator to move the pivot");
+        return true;
+    }
+    if (key == Qt::Key_B && tool_ == "paintSkin" && !ctrl && !alt && !shift) {
+        for (ViewportWidget* v : panels_->views()) v->set("brushAdjust", press ? "true" : "false");
+        return true;
+    }
+    if (key == Qt::Key_T && ctrl && shift && press) {
+        show_tool_settings();
         return true;
     }
     if (key == Qt::Key_Insert && press) {

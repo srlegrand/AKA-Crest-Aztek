@@ -106,6 +106,8 @@ pub enum Kind {
     /// Lines over everything: manipulators.
     LinesOnTop,
     Points,
+    /// Triangles with a colour per vertex, unlit: weight painting's feedback.
+    ColorTris,
 }
 
 pub struct Renderer {
@@ -132,7 +134,7 @@ impl Renderer {
             let lfs = module(LINE_FS, naga::ShaderStage::Fragment);
             let feats = gpu.shared.features;
             let mut pipelines = Vec::new();
-            for kind in [Kind::Shaded, Kind::Tint, Kind::Lines, Kind::LinesOnTop, Kind::Points] {
+            for kind in [Kind::Shaded, Kind::Tint, Kind::Lines, Kind::LinesOnTop, Kind::Points, Kind::ColorTris] {
                 let shaded = matches!(kind, Kind::Shaded | Kind::Tint);
                 let (vs, fs) = if shaded { (svs, sfs) } else { (lvs, lfs) };
                 let stages = [
@@ -159,7 +161,7 @@ impl Renderer {
                 let binding = [vk::VertexInputBindingDescription::default().stride(stride).input_rate(vk::VertexInputRate::VERTEX)];
                 let vin = vk::PipelineVertexInputStateCreateInfo::default().vertex_binding_descriptions(&binding).vertex_attribute_descriptions(&attrs);
                 let topo = match kind {
-                    Kind::Shaded | Kind::Tint => vk::PrimitiveTopology::TRIANGLE_LIST,
+                    Kind::Shaded | Kind::Tint | Kind::ColorTris => vk::PrimitiveTopology::TRIANGLE_LIST,
                     Kind::Lines | Kind::LinesOnTop => vk::PrimitiveTopology::LINE_LIST,
                     Kind::Points => vk::PrimitiveTopology::POINT_LIST,
                 };
@@ -174,7 +176,7 @@ impl Renderer {
                 let on_top = kind == Kind::LinesOnTop;
                 let ds = vk::PipelineDepthStencilStateCreateInfo::default()
                     .depth_test_enable(!on_top)
-                    .depth_write_enable(kind == Kind::Shaded || kind == Kind::Lines)
+                    .depth_write_enable(matches!(kind, Kind::Shaded | Kind::Lines | Kind::ColorTris))
                     .depth_compare_op(vk::CompareOp::GREATER_OR_EQUAL);
                 let blend = [vk::PipelineColorBlendAttachmentState::default()
                     .blend_enable(true)

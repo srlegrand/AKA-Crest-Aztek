@@ -61,6 +61,9 @@ pub struct FlagDef {
     /// Bounds of an Int or Float flag: calls are clamped to them.
     pub min: Option<f64>,
     pub max: Option<f64>,
+    /// MEL: tokens each use of the flag takes, for multi-use flags (`-tv joint1 0.5 -tv joint2 0.5`); values gather
+    /// into one flat list. 0 reads the flag by its type.
+    pub arity: u8,
 }
 
 impl FlagDef {
@@ -75,7 +78,13 @@ impl FlagDef {
             example: String::new(),
             min: None,
             max: None,
+            arity: 0,
         }
+    }
+    /// A multi-use flag taking n values per use.
+    pub fn multi(mut self, n: u8) -> Self {
+        self.arity = n;
+        self
     }
     pub fn choices(mut self, c: &[&str]) -> Self {
         self.choices = c.iter().map(|s| s.to_string()).collect();

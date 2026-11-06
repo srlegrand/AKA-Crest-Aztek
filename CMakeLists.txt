@@ -54,6 +54,7 @@ add_executable(aztek WIN32
   app/src/mainwindow.cpp
   app/src/grapheditor.cpp
   app/src/uveditor.cpp
+  app/src/toolsettings.cpp
   app/src/resources.qrc
   $<$<PLATFORM_ID:Windows>:app/icons/aztek.rc>)
 add_dependencies(aztek aztek_host_build)

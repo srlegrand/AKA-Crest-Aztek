@@ -197,7 +197,26 @@ pub fn register(c: &mut Commands<Session>) {
                         continue;
                     }
                     if is_joint(g, id) {
-                        fail!("freezeTransforms: joints are not supported yet");
+                        // Maya's makeIdentity on joints: rotate goes into jointOrient and scale to 1; translate stays,
+                        // since a joint's place is its translate. Children keep their world placement.
+                        let children = children_worlds(g, id);
+                        let n = g.node(id).unwrap();
+                        let (r, jo) = (n.vec3(Transform::ROTATE), n.vec3(crate::rig::Joint::JOINT_ORIENT));
+                        if flag_on("rotate") {
+                            let order = crate::transform::RotateOrder::from_index(n.int(Transform::ROTATE_ORDER));
+                            let m = crate::transform::euler_to_matrix(jo, crate::transform::RotateOrder::Xyz) * crate::transform::euler_to_matrix(r, order);
+                            let e = crate::transform::matrix_to_euler(&glam::DMat3::from_mat4(m), crate::transform::RotateOrder::Xyz);
+                            set(g, id, crate::rig::Joint::JOINT_ORIENT, e)?;
+                            set(g, id, Transform::ROTATE, DVec3::ZERO)?;
+                        }
+                        if flag_on("scale") {
+                            set(g, id, Transform::SCALE, DVec3::ONE)?;
+                        }
+                        g.evaluate();
+                        for (c, world) in children {
+                            keep_world(g, c, &world)?;
+                        }
+                        continue;
                     }
                     let n = g.node(id).unwrap();
                     let before = n.matrix(Transform::MATRIX);
@@ -237,9 +256,12 @@ pub fn register(c: &mut Commands<Session>) {
             },
         )
         .positional("objects")
-        .flag(flag("translate", T::Bool, json!(true), "Freeze translation."))
-        .flag(flag("rotate", T::Bool, json!(true), "Freeze rotation."))
-        .flag(flag("scale", T::Bool, json!(true), "Freeze scale."))
+        .flag(flag("apply", T::Bool, json!(true), "Maya's makeIdentity -a: bake the transform into the geometry (always on)."))
+        .flag(FlagDef::new("normal", "n", T::Int, Value::Null, "Accepted for Maya scripts."))
+        .flag(FlagDef::new("preserveNormals", "pn", T::Bool, Value::Null, "Accepted for Maya scripts."))
+        .flag(FlagDef::new("translate", "t", T::Bool, json!(true), "Freeze translation."))
+        .flag(FlagDef::new("rotate", "r", T::Bool, json!(true), "Freeze rotation."))
+        .flag(FlagDef::new("scale", "s", T::Bool, json!(true), "Freeze scale."))
         .flag(flag("hierarchy", T::Bool, json!(true), "Freeze everything parented under the objects too."))
         .flag(flag("jointOrient", T::Bool, json!(false), "Also line joints' axes up with the world, zeroing their orientation.")),
     );

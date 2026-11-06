@@ -26,6 +26,7 @@ class TimeSlider;
 class RangeSlider;
 class Hotbox;
 class ViewportWidget;
+class ToolSettings;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -86,6 +87,7 @@ private:
     void show_graph_editor();
     void show_uv_editor();
     void show_preferences();
+    void show_tool_settings();
     void update_title();
     void toggle_play(int dir);
     void stop_play();
@@ -104,6 +106,8 @@ private:
     int play_dir_ = 1;
     QAction* auto_key_ = nullptr;
     QLabel* help_line_ = nullptr;
+    ToolSettings* tool_settings_ = nullptr;
+    QDockWidget* tool_dock_ = nullptr;
     QComboBox* menu_set_ = nullptr;
     QList<QMenu*> set_menus_;
     QHash<QString, QAction*> mode_buttons_;

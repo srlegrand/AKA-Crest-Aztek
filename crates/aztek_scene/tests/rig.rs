@@ -115,3 +115,205 @@ fn rig_animation_and_uvs_survive_save_and_load() {
     assert_eq!(a.len(), b.len());
     assert!(a.iter().zip(&b).all(|(x, y)| (x - y).abs() < 1e-6));
 }
+
+fn skinned(s: &mut Session) {
+    run(s, "polyCube", json!({"width": 4, "subdivisionsX": 8}));
+    run(s, "move", json!({"args": ["pCube1"], "to": [2, 0, 0]}));
+    chain(s);
+    run(s, "skinCluster", json!({"args": ["joint1", "pCube1"]}));
+}
+
+fn weight(s: &mut Session, j: &str, c: &str) -> f64 {
+    run(s, "skinPercent", json!({"args": ["skinCluster1", c], "query": true, "transform": j})).as_f64().unwrap()
+}
+
+#[test]
+fn skin_percent_sets_queries_and_normalizes() {
+    let mut s = Session::new();
+    skinned(&mut s);
+    run(&mut s, "skinPercent", json!({"args": ["skinCluster1", "pCube1.vtx[0]"], "transformValue": [["joint1", 1.0]]}));
+    assert!((weight(&mut s, "joint1", "pCube1.vtx[0]") - 1.0).abs() < 1e-9);
+    assert!(weight(&mut s, "joint2", "pCube1.vtx[0]").abs() < 1e-9);
+    // Setting one influence makes the others up to 1.
+    run(&mut s, "skinPercent", json!({"args": ["skinCluster1", "pCube1.vtx[0]"], "transformValue": ["joint2", 0.25]}));
+    let (a, b) = (weight(&mut s, "joint1", "pCube1.vtx[0]"), weight(&mut s, "joint2", "pCube1.vtx[0]"));
+    assert!((b - 0.25).abs() < 1e-9 && (a - 0.75).abs() < 1e-9, "{a} {b}");
+    // Relative.
+    run(&mut s, "skinPercent", json!({"args": ["skinCluster1", "pCube1.vtx[0]"], "transformValue": ["joint2", 0.25], "relative": true}));
+    assert!((weight(&mut s, "joint2", "pCube1.vtx[0]") - 0.5).abs() < 1e-9);
+    let vals = run(&mut s, "skinPercent", json!({"args": ["skinCluster1", "pCube1.vtx[0]"], "query": true, "value": true}));
+    let sum: f64 = vals.as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).sum();
+    assert!((sum - 1.0).abs() < 1e-9);
+    assert_eq!(vals.as_array().unwrap().len(), 3);
+    // Prune drops the small ones and normalizes.
+    run(&mut s, "skinPercent", json!({"args": ["skinCluster1", "pCube1.vtx[0]"], "transformValue": [["joint1", 0.05], ["joint2", 0.95]]}));
+    run(&mut s, "skinPercent", json!({"args": ["skinCluster1", "pCube1.vtx[0]"], "pruneWeights": 0.1}));
+    assert!((weight(&mut s, "joint2", "pCube1.vtx[0]") - 1.0).abs() < 1e-9);
+    // Move weight.
+    run(&mut s, "skinPercent", json!({"args": ["skinCluster1", "pCube1.vtx[0]"], "transformMoveWeights": ["joint2", "joint3"]}));
+    assert!((weight(&mut s, "joint3", "pCube1.vtx[0]") - 1.0).abs() < 1e-9);
+}
+
+#[test]
+fn skin_cluster_edit_and_query() {
+    let mut s = Session::new();
+    skinned(&mut s);
+    assert_eq!(run(&mut s, "skinCluster", json!({"args": ["pCube1"], "query": true, "maximumInfluences": true})), json!(5));
+    assert_eq!(run(&mut s, "skinCluster", json!({"args": ["skinCluster1"], "query": true, "geometry": true})), json!(["pCubeShape1"]));
+    assert_eq!(run(&mut s, "findRelatedSkinCluster", json!({"args": ["pCube1"]})), json!("skinCluster1"));
+    // Locked weights hold while the rest changes.
+    run(&mut s, "skinPercent", json!({"args": ["skinCluster1", "pCube1.vtx[0]"], "transformValue": [["joint1", 0.5], ["joint2", 0.5]]}));
+    run(&mut s, "skinCluster", json!({"args": ["skinCluster1"], "edit": true, "influence": "joint1", "lockWeights": true}));
+    assert_eq!(run(&mut s, "skinCluster", json!({"args": ["skinCluster1"], "query": true, "influence": "joint1", "lockWeights": true})), json!(true));
+    run(&mut s, "skinPercent", json!({"args": ["skinCluster1", "pCube1.vtx[0]"], "transformValue": ["joint2", 0.1]}));
+    assert!((weight(&mut s, "joint1", "pCube1.vtx[0]") - 0.5).abs() < 1e-9);
+    assert!((weight(&mut s, "joint2", "pCube1.vtx[0]") - 0.1).abs() < 1e-9);
+    assert!((weight(&mut s, "joint3", "pCube1.vtx[0]") - 0.4).abs() < 1e-9);
+    run(&mut s, "skinCluster", json!({"args": ["skinCluster1"], "edit": true, "influence": "joint1", "lockWeights": false}));
+    // Add and remove influences.
+    run(&mut s, "select", json!({"clear": true}));
+    run(&mut s, "joint", json!({"position": [1, 3, 0], "name": "extra"}));
+    run(&mut s, "skinCluster", json!({"args": ["skinCluster1"], "edit": true, "addInfluence": "extra", "weight": 0.0}));
+    let inf = run(&mut s, "skinCluster", json!({"args": ["skinCluster1"], "query": true, "influence": true}));
+    assert_eq!(inf.as_array().unwrap().len(), 4, "{inf}");
+    run(&mut s, "skinPercent", json!({"args": ["skinCluster1", "pCube1.vtx[0]"], "transformValue": ["extra", 1.0]}));
+    run(&mut s, "skinCluster", json!({"args": ["skinCluster1"], "edit": true, "removeInfluence": "extra"}));
+    let inf = run(&mut s, "skinCluster", json!({"args": ["skinCluster1"], "query": true, "influence": true}));
+    assert_eq!(inf.as_array().unwrap().len(), 3);
+    // Smoothing evens out a spike.
+    run(&mut s, "select", json!({"args": ["pCube1"]}));
+    run(&mut s, "skinPercent", json!({"args": ["skinCluster1", "pCube1"], "transformValue": [["joint1", 1.0]]}));
+    run(&mut s, "skinPercent", json!({"args": ["skinCluster1", "pCube1.vtx[4]"], "transformValue": [["joint3", 1.0]]}));
+    run(&mut s, "skinCluster", json!({"args": ["skinCluster1"], "edit": true, "smoothWeights": 0.5, "smoothWeightsMaxIterations": 1}));
+    let v = weight(&mut s, "joint3", "pCube1.vtx[4]");
+    assert!(v > 0.2 && v < 0.9, "{v}");
+    assert!(weight(&mut s, "joint3", "pCube1.vtx[5]") > 0.0);
+}
+
+#[test]
+fn dual_quaternion_keeps_volume_at_a_bend() {
+    let mut s = Session::new();
+    let mut heights = Vec::new();
+    for method in [0, 1] {
+        let mut s2 = Session::new();
+        run(&mut s2, "polyCube", json!({"width": 4, "subdivisionsX": 8}));
+        run(&mut s2, "move", json!({"args": ["pCube1"], "to": [2, 0, 0]}));
+        run(&mut s2, "select", json!({"clear": true}));
+        run(&mut s2, "joint", json!({"position": [0, 0, 0]}));
+        run(&mut s2, "joint", json!({"position": [2, 0, 0]}));
+        run(&mut s2, "joint", json!({"position": [4, 0, 0]}));
+        run(&mut s2, "skinCluster", json!({"args": ["joint1", "pCube1"], "skinMethod": method, "maximumInfluences": 2, "dropoffRate": 1.0}));
+        assert_eq!(run(&mut s2, "skinCluster", json!({"args": ["pCube1"], "query": true, "skinMethod": true})), json!(method));
+        run(&mut s2, "setAttr", json!({"args": ["joint2.rotateX", 180.0]}));
+        let i = run(&mut s2, "meshInfo", json!({"args": ["pCube1"]}));
+        let h = i["boundsMax"][1].as_f64().unwrap() - i["boundsMin"][1].as_f64().unwrap();
+        heights.push(h);
+    }
+    let _ = &mut s;
+    // Linear blending pinches a half turn; dual quaternions don't.
+    assert!(heights[1] >= heights[0] - 1e-6, "{heights:?}");
+}
+
+#[test]
+fn mirror_weights_copy_across_the_plane() {
+    let mut s = Session::new();
+    run(&mut s, "polyCube", json!({"width": 4, "subdivisionsX": 4}));
+    run(&mut s, "select", json!({"clear": true}));
+    run(&mut s, "joint", json!({"position": [0, 0, 0], "name": "root"}));
+    run(&mut s, "joint", json!({"position": [2, 0, 0], "name": "L_arm"}));
+    run(&mut s, "select", json!({"args": ["root"]}));
+    run(&mut s, "joint", json!({"position": [-2, 0, 0], "name": "R_arm"}));
+    run(&mut s, "skinCluster", json!({"args": ["root", "pCube1"]}));
+    // All of the positive side to the left arm.
+    let info = run(&mut s, "meshInfo", json!({"args": ["pCube1"]}));
+    let n = info["points"].as_i64().unwrap_or(info["vertices"].as_i64().unwrap_or(0));
+    assert!(n > 0, "{info}");
+    let mut plus = Vec::new();
+    let mut minus = Vec::new();
+    for p in 0..n {
+        let c = format!("pCube1.vtx[{p}]");
+        let v = run(&mut s, "xform", json!({"args": [c.clone()], "query": true, "worldSpace": true, "translation": true}));
+        let x = v[0].as_f64().unwrap();
+        if x > 0.1 {
+            plus.push(c.clone());
+        } else if x < -0.1 {
+            minus.push(c.clone());
+        }
+    }
+    run(&mut s, "skinPercent", json!({"args": [json!("skinCluster1"), plus], "transformValue": [["L_arm", 1.0]]}));
+    run(&mut s, "skinPercent", json!({"args": [json!("skinCluster1"), minus.clone()], "transformValue": [["root", 1.0]]}));
+    run(&mut s, "select", json!({"clear": true}));
+    run(&mut s, "copySkinWeights", json!({"sourceSkin": "skinCluster1", "destinationSkin": "skinCluster1", "mirrorMode": "YZ", "influenceAssociation": ["name", "closestJoint"]}));
+    for c in &minus {
+        assert!((weight(&mut s, "R_arm", c) - 1.0).abs() < 1e-3, "{c}: {}", weight(&mut s, "R_arm", c));
+    }
+}
+
+#[test]
+fn copy_weights_to_another_mesh() {
+    let mut s = Session::new();
+    skinned(&mut s);
+    run(&mut s, "skinPercent", json!({"args": ["skinCluster1", "pCube1"], "transformValue": [["joint3", 1.0]]}));
+    run(&mut s, "polyCube", json!({"width": 4, "subdivisionsX": 8}));
+    run(&mut s, "move", json!({"args": ["pCube2"], "to": [2, 0, 0]}));
+    run(&mut s, "skinCluster", json!({"args": ["joint1", "pCube2"], "name": "other"}));
+    run(&mut s, "select", json!({"clear": true}));
+    run(&mut s, "copySkinWeights", json!({"sourceSkin": "skinCluster1", "destinationSkin": "other", "noMirror": true}));
+    let v = run(&mut s, "skinPercent", json!({"args": ["other", "pCube2.vtx[0]"], "query": true, "transform": "joint3"})).as_f64().unwrap();
+    assert!((v - 1.0).abs() < 1e-6, "{v}");
+}
+
+#[test]
+fn the_brush_paints_and_falls_off_and_undoes() {
+    let mut s = Session::new();
+    skinned(&mut s);
+    run(&mut s, "skinPercent", json!({"args": ["skinCluster1", "pCube1"], "transformValue": [["joint1", 1.0]]}));
+    run(&mut s, "artAttrSkinPaintCtx", json!({"edit": true, "influence": "joint3", "radius": 1.0, "value": 1.0, "opacity": 1.0, "selectedattroper": "absolute"}));
+    assert_eq!(run(&mut s, "artAttrSkinPaintCtx", json!({"query": true, "queried": ["radius"]})), json!(1.0));
+    let far = "pCube1.vtx[0]"; // x = 0
+    let n = run(&mut s, "skinPaintStamp", json!({"args": ["pCube1"], "position": [4, 0.5, 0.5]})).as_i64().unwrap();
+    assert!(n > 0);
+    assert!(weight(&mut s, "joint3", far).abs() < 1e-9, "far points are out of reach");
+    // The corner under the brush is all joint3's now.
+    let v = run(&mut s, "ls", json!({"args": ["pCube1.vtx[*]"], "flatten": true}));
+    let mut best = 0.0_f64;
+    for c in v.as_array().unwrap() {
+        best = best.max(weight(&mut s, "joint3", c.as_str().unwrap()));
+    }
+    assert!(best > 0.9, "{best}");
+    assert!(s.undo());
+    let mut after = 0.0_f64;
+    for c in v.as_array().unwrap() {
+        after = after.max(weight(&mut s, "joint3", c.as_str().unwrap()));
+    }
+    assert!(after < 1e-9, "{after}");
+    // Flood.
+    run(&mut s, "select", json!({"args": ["pCube1"]}));
+    run(&mut s, "artAttrSkinPaintCtx", json!({"edit": true, "influence": "joint2", "clear": true}));
+    assert!((weight(&mut s, "joint2", "pCube1.vtx[0]") - 1.0).abs() < 1e-9);
+}
+
+#[test]
+fn bind_pose_comes_back() {
+    let mut s = Session::new();
+    skinned(&mut s);
+    let before = jpos(&mut s, "joint3");
+    run(&mut s, "setAttr", json!({"args": ["joint1.rotateZ", 40.0]}));
+    assert!(!near(jpos(&mut s, "joint3"), before));
+    assert_eq!(run(&mut s, "dagPose", json!({"args": ["joint1"], "query": true, "bindPose": true})), json!(["bindPose1"]));
+    run(&mut s, "dagPose", json!({"args": ["joint1"], "restore": true, "global": true, "bindPose": true}));
+    assert!(near(jpos(&mut s, "joint3"), before));
+}
+
+#[test]
+fn skin_saves_and_loads() {
+    let mut s = Session::new();
+    skinned(&mut s);
+    run(&mut s, "skinPercent", json!({"args": ["skinCluster1", "pCube1.vtx[0]"], "transformValue": [["joint3", 0.75]]}));
+    s.graph.evaluate();
+    let doc = aztek_scene::scene_file::serialize(&s.graph, false);
+    let mut t = Session::new();
+    aztek_scene::scene_file::deserialize(&mut t.graph, &doc).unwrap();
+    let v = run(&mut t, "skinPercent", json!({"args": ["skinCluster1", "pCube1.vtx[0]"], "query": true, "transform": "joint3"})).as_f64().unwrap();
+    assert!((v - 0.75).abs() < 1e-9);
+}

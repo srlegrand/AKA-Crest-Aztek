@@ -832,6 +832,29 @@ fn deform_selected(
     r
 }
 
+/// Points of a mesh set to the positions a script worked out, through a polyTweak when the mesh has history.
+pub fn set_points(g: &mut Graph, node: NodeId, moves: &[(Index, DVec3)]) -> CmdResult<()> {
+    let tweak = crate::history::tweak_node(g, node)?;
+    let base = if tweak.is_none() { Some(base_plug(g, node)?) } else { None };
+    let mut m = match &base {
+        Some(b) => base_mesh(g, b),
+        None => modifiers::cage(g, node).map(|m| (*m).clone()).unwrap_or_default(),
+    };
+    for &(p, at) in moves {
+        if m.point_valid(p) {
+            m.set_position(p, at);
+        }
+    }
+    match (base, tweak) {
+        (Some(b), _) => {
+            g.set_value(b, PlugValue::Mesh(Some(Arc::new(m))))?;
+        }
+        (None, Some(t)) => crate::history::set_tweak(g, t, &m)?,
+        (None, None) => {}
+    }
+    Ok(())
+}
+
 /// Provided points moved by uvn along their own world frames; points without a frame stay put.
 fn along_provided_frames(uvn: DVec3) -> impl Fn(&mut Graph, NodeId, &PointProvider, &[u32]) -> Option<PointTarget> {
     move |g, node, pp, ids| {
