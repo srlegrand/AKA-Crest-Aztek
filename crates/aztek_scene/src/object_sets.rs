@@ -26,6 +26,8 @@ pub const MEMBERS_KIND: &str = "objectSetMembers";
 
 pub const QUICK_SELECT: usize = 0;
 pub const MEMBERS: usize = 1;
+/// Connected into a deformer's deformerSet when this is its set.
+pub const USED_BY: usize = 2;
 
 /// One member: a whole node (kind Object) or some of a mesh's components (ids sorted, unique).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -450,16 +452,30 @@ pub fn create(g: &mut Graph, name: &str, list: &[Member], quick_select: bool) ->
 }
 
 pub fn add(g: &mut Graph, set: NodeId, list: &[Member]) -> CmdResult<()> {
+    let deformer = crate::deform_sets::deformer_of_set(g, set);
+    let converted = if deformer.is_some() { crate::deform_sets::as_points(g, list) } else { Vec::new() };
+    let list = if deformer.is_some() { &converted[..] } else { list };
     let before = resolve(g, set);
     let after = merged(before.clone(), list);
     if after != before {
         store(g, set, &after)?;
     }
+    if let Some(d) = deformer {
+        crate::deform_sets::members_changed(g, d, list, true)?;
+    }
     Ok(())
+}
+
+/// A set's members replaced as they are, with no change to weights: for a deformer's set, kept in step by its callers.
+pub(crate) fn set_members_raw(g: &mut Graph, set: NodeId, list: &[Member]) -> CmdResult<()> {
+    store(g, set, &merged(Vec::new(), list))
 }
 
 /// An object member removes the node with all its components; a component member removes just those ids.
 pub fn remove(g: &mut Graph, set: NodeId, list: &[Member]) -> CmdResult<()> {
+    let deformer = crate::deform_sets::deformer_of_set(g, set);
+    let converted = if deformer.is_some() { crate::deform_sets::as_points(g, list) } else { Vec::new() };
+    let list = if deformer.is_some() { &converted[..] } else { list };
     let before = resolve(g, set);
     let mut after = before.clone();
     for r in list {
@@ -476,6 +492,9 @@ pub fn remove(g: &mut Graph, set: NodeId, list: &[Member]) -> CmdResult<()> {
     after.retain(|m| m.kind == ComponentMode::Object || !m.ids.is_empty());
     if after != before {
         store(g, set, &after)?;
+    }
+    if let Some(d) = deformer {
+        crate::deform_sets::members_changed(g, d, list, false)?;
     }
     Ok(())
 }
@@ -603,6 +622,15 @@ pub fn register_types() {
                 default_value: PlugValue::Data(None),
                 flags: flags::INPUT | flags::STORABLE | flags::HIDDEN,
                 doc: "The objects and components in the set.".into(),
+                ..Default::default()
+            },
+            AttrDef {
+                name: "usedBy".into(),
+                short_name: "ub".into(),
+                ty: PlugType::Float,
+                default_value: PlugValue::Float(0.0),
+                flags: flags::INPUT | flags::HIDDEN,
+                doc: "Tells the deformer this is the set of: connected into its deformerSet.".into(),
                 ..Default::default()
             },
         ],

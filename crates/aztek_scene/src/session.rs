@@ -45,6 +45,8 @@ pub struct Session {
     pub(crate) last_op: crate::last_op::State,
     /// The paint skin weights tool's settings (artAttrSkinPaintCtx).
     pub paint_ctx: crate::skin::PaintCtx,
+    /// The paint attribute tool's settings (artAttrCtx).
+    pub attr_ctx: crate::deform_paint::AttrCtx,
     /// What copyKey and cutKey took.
     pub key_clipboard: crate::anim_edit::KeyClipboard,
     /// selectKey's keys: curve and frame.
@@ -73,6 +75,7 @@ impl Session {
             naming_prefs: json!({}),
             last_op: Default::default(),
             paint_ctx: Default::default(),
+            attr_ctx: Default::default(),
             key_clipboard: Default::default(),
             key_selection: Vec::new(),
             live_surface: Vec::new(),
@@ -108,6 +111,11 @@ impl Session {
         crate::deform_mush::register(&mut s.commands);
         crate::deform_wrap::register(&mut s.commands);
         crate::deform_wire::register(&mut s.commands);
+        crate::deform_blend::register(&mut s.commands);
+        crate::deform_extra::register(&mut s.commands);
+        crate::deform_sets::register(&mut s.commands);
+        crate::deform_paint::register(&mut s.commands);
+        crate::skin_extra::register(&mut s.commands);
         crate::deform_cmds::register(&mut s.commands);
         crate::maya_cmds::register(&mut s.commands);
         crate::maya_core::register(&mut s.commands);

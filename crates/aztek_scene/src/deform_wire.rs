@@ -15,7 +15,7 @@ use serde_json::{json, Value};
 
 use crate::attr_defs::float_attr_short;
 use crate::components;
-use crate::deform::{self, data_attr, f, flat, floats_of, input_mesh, insert_at, plug, set_floats, unflat, weight_at, weights_for, Cmd, Floats, Place, BASE_COUNT, ENVELOPE, GEOM, IN, OUT, WEIGHTS};
+use crate::deform::{self, data_attr, f, flat, floats_of, input_mesh, insert_at, plug, set_floats, unflat, weight_at, Cmd, Floats, Place, BASE_COUNT, ENVELOPE, GEOM, IN, OUT, WEIGHTS};
 use crate::graph::Graph;
 use crate::node::{types, EvalContext, NodeBehavior, NodeData, NodeType};
 use crate::plug::{flags, AttrDef, NodeId, PlugRef, PlugType, PlugValue};
@@ -312,9 +312,7 @@ fn create(s: &mut Session, a: &Args) -> CmdResult {
         }
         set_dropoffs(g, n, a)?;
         if let Some(input) = input_mesh(g, n) {
-            if let Some(w) = weights_for(input.point_capacity(), &meshes[0].1) {
-                set_floats(g, n, WEIGHTS, w)?;
-            }
+            deform::limit_to(g, n, input.point_capacity(), &meshes[0].1)?;
         }
         for (m, pts) in &meshes[1..] {
             deform::add_geometry(g, n, *m, pts)?;

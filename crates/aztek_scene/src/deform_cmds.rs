@@ -29,6 +29,17 @@ fn maker(ty: &str) -> Option<(&'static str, Option<&str>)> {
         "tension" => ("tension", None),
         "wrap" => ("wrap", None),
         "wire" => ("wire", None),
+        "blendShape" => ("blendShape", None),
+        "sculpt" => ("sculpt", None),
+        "jiggle" => ("jiggle", None),
+        "shrinkWrap" => ("shrinkWrap", None),
+        "morph" => ("morph", None),
+        "wrinkle" => ("wrinkle", None),
+        "proximityWrap" => ("proximityWrap", None),
+        "solidify" => ("solidify", None),
+        "pointOnCurve" => ("pointOnCurveDeformer", None),
+        "textureDeformer" => ("textureDeformer", None),
+        "curveWarp" => ("curveWarp", None),
         t if deform::NONLINEAR.contains(&t) => ("nonLinear", Some(ty)),
         _ => return None,
     })
@@ -36,7 +47,7 @@ fn maker(ty: &str) -> Option<(&'static str, Option<&str>)> {
 
 fn create(s: &mut Session, a: &Args, ty: &str) -> CmdResult {
     let Some((cmd, kind)) = maker(ty) else {
-        fail!("deformer: can't make a {ty} (ffd, cluster, softMod, deltaMush, tension, wrap, wire or a nonlinear type)")
+        fail!("deformer: can't make a {ty} (ffd, cluster, softMod, deltaMush, tension, wrap, wire, blendShape, sculpt, jiggle, shrinkWrap, morph, wrinkle, proximityWrap, solidify, pointOnCurve, textureDeformer, curveWarp or a nonlinear type)")
     };
     let mut call = Map::new();
     let mut args: Vec<Value> = a.named().into_iter().map(Value::String).collect();
@@ -104,6 +115,16 @@ fn deformer_cmd(s: &mut Session, a: &Args) -> CmdResult {
             };
             for (m, pts) in targets {
                 let on = deform::node_on(g, leader, m);
+                // Points named of a mesh already on the deformer: membership, by way of its set.
+                if let (Some(_), Some(ids), Some(set)) = (on, &pts, crate::deform_sets::set_of(g, leader)) {
+                    let list = [crate::object_sets::Member { node: m, kind: components::ComponentMode::Vertex, ids: ids.clone() }];
+                    if remove {
+                        crate::object_sets::remove(g, set, &list)?;
+                    } else {
+                        crate::object_sets::add(g, set, &list)?;
+                    }
+                    continue;
+                }
                 if remove {
                     let Some(x) = on else { fail!("deformer: {geo} is not deformed by {name}") };
                     deform::splice(g, x)?;
@@ -172,7 +193,12 @@ fn percent(s: &mut Session, a: &Args) -> CmdResult {
             continue;
         }
         let value = a.float("value", 1.0);
+        let members = crate::deform_sets::member_mask(g, x, size);
         for p in ids {
+            // A point out of the deformer's set has no weight to set.
+            if members.as_ref().is_some_and(|m| !m.get(p as usize).copied().unwrap_or(false)) {
+                continue;
+            }
             if let Some(v) = w.get_mut(p as usize) {
                 *v = if a.bool("multiply") { *v * value } else { value };
             }

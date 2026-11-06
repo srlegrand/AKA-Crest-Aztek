@@ -10,7 +10,7 @@ use std::any::Any;
 use std::sync::Arc;
 
 use aztek_geo::Mesh;
-use aztek_ops::{fail, objects, ArgType, CmdResult, CommandDef, Commands, FlagDef};
+use aztek_ops::{fail, ArgType, CmdResult, CommandDef, Commands, FlagDef};
 use glam::{DMat4, DVec3};
 use serde_json::{json, Value};
 
@@ -95,12 +95,14 @@ pub(crate) const HANDLE: usize = 4;
 pub(crate) const WEIGHTS: usize = 5;
 /// World matrix of the mesh's transform. The older deformers keep theirs in deformerData from when they were made.
 pub(crate) const GEOM: usize = 6;
-pub(crate) const BASE_COUNT: usize = 7;
+/// Connected from the deformer's set (cluster1Set).
+pub(crate) const DEFORMER_SET: usize = 7;
+pub(crate) const BASE_COUNT: usize = 8;
 
 pub const NONLINEAR: &[&str] = &["bend", "twist", "squash", "flare", "sine", "wave"];
 
 pub fn is_deformer(type_name: &str) -> bool {
-    NONLINEAR.contains(&type_name) || matches!(type_name, "cluster" | "blendShape" | "ffd" | "softMod" | "deltaMush" | "tension" | "wrap" | "wire")
+    NONLINEAR.contains(&type_name) || matches!(type_name, "cluster" | "blendShape" | "ffd" | "softMod" | "deltaMush" | "tension" | "wrap" | "wire") || crate::deform_extra::TYPES.contains(&type_name)
 }
 
 /// Heavy per-point data: weights, rest points, lattice mappings, wrap bindings. A flat list of numbers.
@@ -294,44 +296,6 @@ impl NodeBehavior for Cluster {
     }
 }
 
-pub struct BlendShape;
-
-impl NodeBehavior for BlendShape {
-    fn compute(&mut self, _ctx: &EvalContext, d: &mut NodeData) {
-        let Some(input) = d.mesh(IN).cloned() else {
-            d.set_output(OUT, PlugValue::Mesh(None));
-            return;
-        };
-        let data = json_of(d, DATA);
-        let targets = data.get("targets").and_then(Value::as_array).cloned().unwrap_or_default();
-        let env = d.float(ENVELOPE);
-        let mut m = (*input).clone();
-        for (i, t) in targets.iter().enumerate() {
-            let attr = BASE_COUNT + i;
-            if attr >= d.ty().attrs.len() {
-                break;
-            }
-            let w = d.float(attr) * env;
-            if w == 0.0 {
-                continue;
-            }
-            let deltas = t.get("deltas").and_then(Value::as_array).cloned().unwrap_or_default();
-            for e in deltas {
-                let f = |k: usize| e.get(k).and_then(Value::as_f64).unwrap_or(0.0);
-                let p = f(0) as u32;
-                if p < m.point_capacity() && m.point_valid(p) {
-                    let at = m.position(p);
-                    m.set_position(p, at + DVec3::new(f(1), f(2), f(3)) * w);
-                }
-            }
-        }
-        d.set_output(OUT, PlugValue::Mesh(Some(Arc::new(m))));
-    }
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
 /// A deformer handle: a transform drawn as the deformer's frame.
 pub struct DeformHandle;
 impl TransformBehavior for DeformHandle {}
@@ -382,6 +346,7 @@ pub fn register_types() {
                 matrix_in("handleMatrix", "hm", "The handle's world matrix."),
                 data_attr("weightList", "wl", "Each point's weight (percent)."),
                 matrix_in("geomMatrix", "gm", "World matrix of the deformed mesh."),
+                AttrDef { flags: flags::INPUT | flags::HIDDEN, ..float_attr_short("deformerSet", "dfs", 0.0, "The deformer's set of points, connected from it.", None, None) },
             ];
             v.extend(extra);
             v
@@ -393,6 +358,8 @@ pub fn register_types() {
         crate::deform_mush::register_types(gf.clone());
         crate::deform_wrap::register_types(gf.clone());
         crate::deform_wire::register_types(gf.clone());
+        crate::deform_blend::register_types(gf.clone());
+        crate::deform_extra::register_types(gf.clone());
         let nl = types::register_type(NodeType { name: "nonLinear".into(), base: Some(gf.clone()), icon: "wave-sine".into(), doc: "A nonlinear deformer.".into(), ..Default::default() }).expect("nonLinear");
         let specs: [(&str, [(&str, &str, f64); 6]); 6] = [
             ("bend", [("curvature", "cur", 0.0), ("unusedB", "ub", 0.0), ("unusedC", "uc", 0.0), ("lowBound", "lb", -1.0), ("highBound", "hb", 1.0), ("unusedD", "ud", 0.0)]),
@@ -434,15 +401,6 @@ pub fn register_types() {
             ..Default::default()
         })
         .expect("cluster");
-        types::register_type(NodeType {
-            name: "blendShape".into(),
-            base: Some(gf.clone()),
-            icon: "shape".into(),
-            doc: "Blends the mesh toward target shapes, one weight per target.".into(),
-            create: Some(Arc::new(|| Box::new(BlendShape))),
-            ..Default::default()
-        })
-        .expect("blendShape");
     });
 }
 
@@ -485,12 +443,14 @@ pub(crate) fn insert_at(g: &mut Graph, mesh: NodeId, ty: &str, name: &str, place
             }
         }
     }
+    let src = crate::deform_sets::orig_source(g, mesh, src)?;
     let n = g.create_node(&t, name, NO_NODE, true)?;
     g.disconnect(&base);
     g.connect(&src, &plug(n, IN), false)?;
     g.connect(&plug(n, OUT), &base, false)?;
     let xf = crate::dag::transform_of(g, mesh);
     g.connect(&plug(xf, Transform::WORLD_MATRIX), &plug(n, GEOM), false)?;
+    crate::deform_sets::make_set(g, n, mesh)?;
     Ok(n)
 }
 
@@ -498,6 +458,17 @@ pub(crate) fn insert_at(g: &mut Graph, mesh: NodeId, ty: &str, name: &str, place
 pub(crate) fn input_mesh(g: &mut Graph, n: NodeId) -> Option<Arc<Mesh>> {
     g.evaluate();
     g.node(n)?.data().mesh(IN).cloned()
+}
+
+/// Limits a new deformer to some points: 1 on those and 0 elsewhere, and only those in its deformer set. None leaves all in.
+pub(crate) fn limit_to(g: &mut Graph, n: NodeId, capacity: u32, pts: &Option<Vec<u32>>) -> CmdResult<()> {
+    if let Some(w) = weights_for(capacity, pts) {
+        set_floats(g, n, WEIGHTS, w)?;
+    }
+    if let (Some(ids), Some(mesh)) = (pts, mesh_fed_by(g, n)) {
+        crate::deform_sets::replace_members(g, n, mesh, ids)?;
+    }
+    Ok(())
 }
 
 /// Weights for a deformer limited to some points: 1 on those, 0 elsewhere. None when all points are in.
@@ -518,6 +489,7 @@ pub(crate) fn weights_for(capacity: u32, pts: &Option<Vec<u32>>) -> Option<Vec<f
 
 /// Connects leader's settings into follower's, so the two read as one deformer.
 pub(crate) fn link_follower(g: &mut Graph, leader: NodeId, follower: NodeId) -> CmdResult<()> {
+    crate::deform_sets::merge_sets(g, leader, follower)?;
     let attrs: Vec<(usize, bool)> = g.node(leader).unwrap().ty().attrs.iter().enumerate().map(|(i, a)| (i, a.is_array() || a.has(flags::HIDDEN) || !a.has(flags::INPUT) || a.ty == PlugType::Mesh || a.ty == PlugType::Data || a.ty == PlugType::Matrix)).collect();
     for (i, skip) in attrs {
         if !skip {
@@ -615,9 +587,7 @@ pub(crate) fn add_geometry(g: &mut Graph, leader: NodeId, mesh: NodeId, pts: &Op
         set_data(g, n, data)?;
     }
     if let Some(input) = input_mesh(g, n) {
-        if let Some(w) = weights_for(input.point_capacity(), pts) {
-            set_floats(g, n, WEIGHTS, w)?;
-        }
+        limit_to(g, n, input.point_capacity(), pts)?;
     }
     rebind(g, n)?;
     Ok(n)
@@ -630,6 +600,7 @@ fn rebind(g: &mut Graph, n: NodeId) -> CmdResult<()> {
         "deltaMush" | "tension" => crate::deform_mush::capture_rest(g, n),
         "wrap" => crate::deform_wrap::bind(g, n),
         "softMod" => crate::deform_soft::clear_selected(g, n),
+        "blendShape" => crate::deform_blend::rebind(g, n),
         _ => Ok(()),
     }
 }
@@ -687,7 +658,7 @@ pub(crate) fn splice(g: &mut Graph, n: NodeId) -> CmdResult<()> {
 
 /// Whether an input of a deformer is its own handle or lattice, which goes when the deformer goes.
 fn driver_attr(name: &str) -> bool {
-    matches!(name, "handleMatrix" | "handleLocalMatrix" | "deformedLatticePoints" | "deformedLatticeMatrix" | "baseLatticeMatrix")
+    matches!(name, "handleMatrix" | "handleLocalMatrix" | "startPosMatrix" | "deformedLatticePoints" | "deformedLatticeMatrix" | "baseLatticeMatrix")
 }
 
 fn is_deformer_node(g: &Graph, id: NodeId) -> bool {
@@ -748,6 +719,11 @@ pub(crate) fn expand_delete(g: &mut Graph, ids: Vec<NodeId>) -> CmdResult<Vec<No
         seen.push(id);
         if is_deformer_node(g, id) {
             deformers.push(id);
+            if let Some(set) = crate::deform_sets::set_of(g, id) {
+                if !out.contains(&set) {
+                    out.push(set);
+                }
+            }
             for x in group(g, id) {
                 queue.push(x);
                 if !out.contains(&x) {
@@ -761,6 +737,8 @@ pub(crate) fn expand_delete(g: &mut Graph, ids: Vec<NodeId>) -> CmdResult<Vec<No
                 }
             }
         } else {
+            // A target about to go: what the blend shapes take from it stays with them, baked.
+            crate::deform_blend::bake_from(g, id)?;
             for d in driven_deformers(g, id) {
                 queue.push(d);
                 if !out.contains(&d) {
@@ -770,7 +748,11 @@ pub(crate) fn expand_delete(g: &mut Graph, ids: Vec<NodeId>) -> CmdResult<Vec<No
         }
     }
     for d in deformers {
+        let mesh = mesh_fed_by(g, d);
         splice(g, d)?;
+        if let Some(m) = mesh {
+            crate::deform_sets::drop_unused_orig(g, m)?;
+        }
     }
     // Children go with their parents.
     let all = out.clone();
@@ -999,9 +981,7 @@ pub fn register(c: &mut Commands<Session>) {
                         let geom = world(g, crate::dag::transform_of(g, *m));
                         let n = insert(g, *m, "cluster", &name)?;
                         set_data(g, n, json!({"geom": mat_json(&geom), "bindPre": mat_json(&hw.inverse())}))?;
-                        if let Some(w) = weights_for(cage.point_capacity(), pts) {
-                            set_floats(g, n, WEIGHTS, w)?;
-                        }
+                        limit_to(g, n, cage.point_capacity(), pts)?;
                         g.connect(&plug(h, Transform::WORLD_MATRIX), &plug(n, HANDLE), false)?;
                         if first == NO_NODE {
                             first = n;
@@ -1022,61 +1002,6 @@ pub fn register(c: &mut Commands<Session>) {
         .flag(f("name", "n", ArgType::String, "Name of the cluster; its handle takes the name plus Handle.")),
     );
 
-    c.register(
-        Cmd::new(
-            "blendShape",
-            "Blend shapes: the targets named first, the base mesh last (or selected the same way). Each target gets a weight \
-             on the blendShape node, named after it. Returns [blendShape].",
-            |s, a| {
-                let names = objects(s, a);
-                let g = &mut s.graph;
-                if names.len() < 2 {
-                    fail!("blendShape: select the targets, then the base mesh");
-                }
-                let ids: Vec<NodeId> = names.iter().map(|n| g.find(n).ok().flatten().ok_or_else(|| aztek_ops::CommandError::new(format!("blendShape: no object named {n}")))).collect::<CmdResult<_>>()?;
-                let Some(base) = components::as_mesh(g, *ids.last().unwrap()) else { fail!("blendShape: the base is not a mesh") };
-                g.evaluate();
-                let base_mesh = crate::modifiers::cage(g, base).unwrap();
-                let mut targets = Vec::new();
-                let mut target_names = Vec::new();
-                for &t in &ids[..ids.len() - 1] {
-                    let Some(tm) = components::as_mesh(g, t) else { fail!("blendShape: {} is not a mesh", g.path(t)) };
-                    let tmesh = crate::modifiers::cage(g, tm).unwrap();
-                    if tmesh.point_capacity() != base_mesh.point_capacity() {
-                        fail!("blendShape: {} has a different number of points from the base", g.path(t));
-                    }
-                    let mut deltas = Vec::new();
-                    for p in 0..base_mesh.point_capacity() {
-                        if base_mesh.point_valid(p) && tmesh.point_valid(p) {
-                            let d = tmesh.position(p) - base_mesh.position(p);
-                            if d.length_squared() > 1e-18 {
-                                deltas.push(json!([p, d.x, d.y, d.z]));
-                            }
-                        }
-                    }
-                    let tname = g.node(crate::dag::transform_of(g, t)).map(|n| n.name.clone()).unwrap_or_default();
-                    targets.push(json!({"name": tname, "deltas": deltas}));
-                    target_names.push(tname);
-                }
-                g.open_chunk("Blend Shape");
-                let r = (|| -> CmdResult<NodeId> {
-                    let n = insert(g, base, "blendShape", &a.string("name", "blendShape1"))?;
-                    set_data(g, n, json!({"targets": targets}))?;
-                    for t in &target_names {
-                        let mut def = float_attr_short(t, "", 0.0, "Weight of this target.", Some(0.0), Some(1.0));
-                        def.flags |= flags::USER;
-                        g.add_attr(n, def)?;
-                    }
-                    Ok(n)
-                })();
-                g.close_chunk();
-                let n = r?;
-                Ok(json!([g.path(n)]))
-            },
-        )
-        .positional("targets, then the base")
-        .flag(f("name", "n", ArgType::String, "Name of the blendShape node.")),
-    );
 }
 
 /// Lines drawing a deformer handle, in world space.
@@ -1084,7 +1009,21 @@ pub fn handle_lines(kind: &str, w: &DMat4) -> Vec<(DVec3, DVec3)> {
     let p = |x: f64, y: f64, z: f64| w.transform_point3(DVec3::new(x, y, z));
     let mut out = Vec::new();
     match kind {
-        "cluster" | "softMod" => {
+        "sculpt" => {
+            for plane in 0..3 {
+                let n = 32;
+                for i in 0..n {
+                    let (a, b) = (i as f64 / n as f64 * std::f64::consts::TAU, (i + 1) as f64 / n as f64 * std::f64::consts::TAU);
+                    let at = |t: f64| match plane {
+                        0 => p(t.cos(), t.sin(), 0.0),
+                        1 => p(t.cos(), 0.0, t.sin()),
+                        _ => p(0.0, t.cos(), t.sin()),
+                    };
+                    out.push((at(a), at(b)));
+                }
+            }
+        }
+        "cluster" | "softMod" | "wrinkle" => {
             // A letter in the view's plane is Maya's; a small diamond reads the same here.
             let k = 0.25;
             let pts = [p(k, 0.0, 0.0), p(0.0, k, 0.0), p(-k, 0.0, 0.0), p(0.0, -k, 0.0)];

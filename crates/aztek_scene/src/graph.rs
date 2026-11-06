@@ -1528,10 +1528,33 @@ impl Graph {
                 }
             }
         }
+        // An alias, as blendShape1.pSphere2 is blendShape1.weight[0].
+        if let Some((_, target)) = self.aliases(id).into_iter().find(|(alias, _)| *alias == attr_name) {
+            return self.plug(&format!("{node_part}.{target}"));
+        }
         Err(GraphError::invalid(format!(
             "'{}' has no attribute '{attr_name}'",
             n.name
         )))
+    }
+
+    /// A node's attribute aliases: (alias, attribute as weight[0]), from its attributeAliasList.
+    pub fn aliases(&self, id: NodeId) -> Vec<(String, String)> {
+        let Some(n) = self.node(id) else { return Vec::new() };
+        let Some(i) = n.ty().attr_index("attributeAliasList") else { return Vec::new() };
+        let PlugValue::Data(Some(d)) = n.data().value(i) else { return Vec::new() };
+        let Some(j) = d.as_any().downcast_ref::<crate::rig::JsonData>() else { return Vec::new() };
+        j.0.as_array()
+            .map(|a| a.iter().filter_map(|e| Some((e.get(0)?.as_str()?.to_string(), e.get(1)?.as_str()?.to_string()))).collect())
+            .unwrap_or_default()
+    }
+
+    /// The alias of a plug, if it has one.
+    pub fn alias_of(&self, p: &PlugRef) -> Option<String> {
+        let n = self.node(p.node)?;
+        let a = &n.ty().attrs[p.attr as usize];
+        let name = if p.element >= 0 { format!("{}[{}]", a.name, p.element) } else { a.name.clone() };
+        self.aliases(p.node).into_iter().find(|x| x.1 == name).map(|x| x.0)
     }
 
     /// The node's shortest unique path, a dot and the attr.

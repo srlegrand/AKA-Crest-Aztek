@@ -394,6 +394,25 @@ pub(crate) fn upstream(g: &mut Graph, mesh: NodeId) -> CmdResult<(PlugRef, PlugR
     Ok((base, plug(orig, MeshNode::OUT_MESH)))
 }
 
+/// A polyTweak's offsets as they can be saved.
+pub(crate) fn tweaks_json(g: &Graph, tweak: NodeId) -> Value {
+    match g.node(tweak).map(|n| n.data().value(TWEAK)) {
+        Some(PlugValue::Data(Some(d))) => d.to_json(),
+        _ => Value::Null,
+    }
+}
+
+/// Puts a polyTweak's offsets back, or empties them.
+pub(crate) fn set_tweaks_json(g: &mut Graph, tweak: NodeId, saved: Option<&Value>) -> CmdResult<()> {
+    let mut t = Tweaks::default();
+    for e in saved.and_then(|s| s.get("points")).and_then(Value::as_array).into_iter().flatten() {
+        let c = |k: usize| e.get(k).and_then(Value::as_f64).unwrap_or(0.0);
+        t.points.insert(c(0) as Index, DVec3::new(c(1), c(2), c(3)));
+    }
+    g.set_value(plug(tweak, TWEAK), PlugValue::Data(Some(Arc::new(t))))?;
+    Ok(())
+}
+
 /// Inserts a history node for op at the bottom of mesh's chain, holding args, the components and the symmetry.
 pub fn insert(
     g: &mut Graph,
@@ -512,6 +531,9 @@ pub fn history_of(g: &Graph, mesh: NodeId) -> Vec<NodeId> {
         let Some(n) = g.node(src.node) else { break };
         if n.ty().is_a(BASE_TYPE) || n.ty().name == TWEAK_TYPE || crate::uv_ops::is_uv_node(n.ty().name.as_str()) || crate::rig::is_rig_chain_node(n.ty().name.as_str()) {
             p = plug(src.node, INPUT_POLYMESH);
+        } else if n.ty().is_a("mesh") && n.bool(DagNode::INTERMEDIATE_OBJECT) {
+            // A deformed mesh's original: what made it is history too.
+            p = plug(src.node, MeshNode::IN_MESH);
         } else {
             break;
         }
@@ -549,7 +571,8 @@ pub fn register(c: &mut Commands<Session>) {
             |s, a| {
                 let g = &s.graph;
                 let ty = a.get("type").and_then(Value::as_str);
-                let wanted = |id: NodeId| ty.is_none_or(|t| g.node(id).is_some_and(|n| n.ty().is_a(t)));
+                let prune = a.bool("pruneDagObjects");
+                let wanted = |id: NodeId| ty.is_none_or(|t| g.node(id).is_some_and(|n| n.ty().is_a(t))) && !(prune && g.node(id).is_some_and(|n| n.ty().dag));
                 let mut out = Vec::new();
                 for name in objects(s, a) {
                     let Some(id) = g.find(&name)? else { aztek_ops::fail!("listHistory: no object named {name}") };
@@ -568,7 +591,8 @@ pub fn register(c: &mut Commands<Session>) {
         )
         .undoable(false)
         .positional("objects")
-        .flag(FlagDef::new("type", "typ", ArgType::String, Value::Null, "Only nodes of this type or a type derived from it (geometryFilter for every deformer).")),
+        .flag(FlagDef::new("type", "typ", ArgType::String, Value::Null, "Only nodes of this type or a type derived from it (geometryFilter for every deformer)."))
+        .flag(FlagDef::new("pruneDagObjects", "pdo", ArgType::Bool, json!(false), "Leave out shapes and transforms: only the history nodes.")),
     );
     register_types(c);
 }

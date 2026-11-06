@@ -52,7 +52,7 @@ fn curve_from_json(j: &Value) -> NurbsCurve {
     }
 }
 
-fn curve_value(v: &PlugValue) -> Option<&NurbsCurve> {
+pub(crate) fn curve_value(v: &PlugValue) -> Option<&NurbsCurve> {
     match v {
         PlugValue::Data(Some(x)) => x.as_any().downcast_ref::<CurveData>().map(|c| &c.0),
         _ => None,

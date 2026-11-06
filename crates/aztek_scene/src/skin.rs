@@ -28,10 +28,14 @@ const SK_MATRIX: usize = 2;
 const SK_BIND: usize = 3;
 const SK_ENVELOPE: usize = 4;
 const SK_METHOD: usize = 5;
-const SK_MAX_INF: usize = 6;
+pub(crate) const SK_MAX_INF: usize = 6;
 const SK_MAINTAIN: usize = 7;
 const SK_DROPOFF: usize = 8;
 const SK_NORMALIZE: usize = 9;
+const SK_HEAT: usize = 10;
+pub(crate) const SK_BLEND: usize = 11;
+const SK_MOVE: usize = 12;
+const SK_BIND_METHOD: usize = 13;
 
 /// What a skinCluster stores: per influence (by matrix[] element) its bind pre-matrix and lock, per point its weights.
 #[derive(Debug, Clone, Default)]
@@ -41,6 +45,8 @@ pub struct SkinBind {
     /// Per point: (influence element, weight), no zero entries.
     pub weights: Vec<Vec<(u32, f64)>>,
     pub locks: Vec<bool>,
+    /// Edits leave the other influences alone: normalizeWeights is not interactive. Read from the node, not stored.
+    pub raw_edit: bool,
 }
 
 impl SkinBind {
@@ -59,6 +65,7 @@ impl SkinBind {
             geom: mat_from(v.get("geom").unwrap_or(&Value::Null)),
             weights,
             locks: v.get("locks").and_then(Value::as_array).map(|a| a.iter().map(|x| x.as_bool().unwrap_or(false)).collect()).unwrap_or_default(),
+            raw_edit: false,
         }
     }
 
@@ -97,7 +104,12 @@ fn bind_from_value(v: &PlugValue) -> Option<Arc<SkinBind>> {
 }
 
 pub fn bind_of(g: &Graph, sk: NodeId) -> Option<Arc<SkinBind>> {
-    g.node(sk).and_then(|n| bind_from_value(n.data().value(SK_BIND)))
+    let n = g.node(sk)?;
+    let mut b = bind_from_value(n.data().value(SK_BIND))?;
+    if let Some(x) = Arc::get_mut(&mut b) {
+        x.raw_edit = n.data().int(SK_NORMALIZE) != 1;
+    }
+    Some(b)
 }
 
 fn set_bind(g: &mut Graph, sk: NodeId, b: SkinBind) -> CmdResult<()> {
@@ -136,8 +148,14 @@ impl NodeBehavior for SkinNode {
             d.set_output(SK_OUT, PlugValue::Mesh(Some(input)));
             return;
         };
+        // Move joints mode: the joints go where they like and the mesh stays.
+        if d.bool(SK_MOVE) {
+            d.set_output(SK_OUT, PlugValue::Mesh(Some(input)));
+            return;
+        }
         let env = d.float(SK_ENVELOPE);
         let method = d.int(SK_METHOD);
+        let blend = crate::deform::floats_of(d, SK_BLEND);
         let mats: Vec<Option<DMat4>> = bind
             .bind_pre
             .iter()
@@ -147,7 +165,7 @@ impl NodeBehavior for SkinNode {
                 _ => None,
             })
             .collect();
-        let duals: Vec<Option<(DQuat, DQuat)>> = if method == 1 { mats.iter().map(|m| m.as_ref().map(dual_quat)).collect() } else { Vec::new() };
+        let duals: Vec<Option<(DQuat, DQuat)>> = if method != 0 { mats.iter().map(|m| m.as_ref().map(dual_quat)).collect() } else { Vec::new() };
         let gi = bind.geom.inverse();
         let mut m: Mesh = (*input).clone();
         for p in 0..m.point_capacity() {
@@ -156,7 +174,8 @@ impl NodeBehavior for SkinNode {
             }
             let Some(w) = bind.weights.get(p as usize) else { continue };
             let wp = bind.geom.transform_point3(m.position(p));
-            let world_pos = if method == 1 {
+            let mut dq_pos = None;
+            if method != 0 {
                 let mut real = DQuat::from_xyzw(0.0, 0.0, 0.0, 0.0);
                 let mut dual = real;
                 let mut tw = 0.0;
@@ -172,8 +191,10 @@ impl NodeBehavior for SkinNode {
                 if tw <= 0.0 {
                     continue;
                 }
-                dq_transform(real, dual, wp)
-            } else {
+                dq_pos = Some(dq_transform(real, dual, wp));
+            }
+            let mut linear_pos = None;
+            if method != 1 {
                 let mut acc = DVec3::ZERO;
                 let mut tw = 0.0;
                 for &(i, wt) in w {
@@ -185,7 +206,14 @@ impl NodeBehavior for SkinNode {
                 if tw <= 0.0 {
                     continue;
                 }
-                acc / tw
+                linear_pos = Some(acc / tw);
+            }
+            // Weight blended: each point between the two by its blend weight, 0 linear and 1 dual quaternion.
+            let world_pos = match (linear_pos, dq_pos) {
+                (Some(l), Some(q)) => l.lerp(q, blend.and_then(|b| b.0.get(p as usize)).copied().unwrap_or(0.0)),
+                (Some(l), None) => l,
+                (None, Some(q)) => q,
+                (None, None) => continue,
             };
             let skinned = gi.transform_point3(world_pos);
             let rest = m.position(p);
@@ -233,11 +261,15 @@ fn register_types() {
                 matrix_in("matrix", "ma", true, "Each influence's world matrix."),
                 data_attr("bindData", "bd", "Bind pre-matrices, the mesh's bind matrix, locks and the weights."),
                 float_attr_short("envelope", "en", 1.0, "How much of the skinning applies.", Some(0.0), Some(1.0)),
-                int_attr("skinningMethod", "sm", 0, "0 classic linear, 1 dual quaternion."),
+                int_attr("skinningMethod", "sm", 0, "0 classic linear, 1 dual quaternion, 2 blended by blendWeights."),
                 int_attr("maxInfluences", "mi", 5, "The most influences per point when maintainMaxInfluences is on."),
                 AttrDef { flags: flags::INPUT | flags::STORABLE, ..crate::attr_defs::bool_attr("maintainMaxInfluences", false, "Hold points to maxInfluences while weights are edited.") },
                 float_attr_short("dropoffRate", "dr", 4.0, "How fast influence falls off with distance at bind.", Some(0.1), None),
                 int_attr("normalizeWeights", "nw", 1, "0 none, 1 interactive, 2 post."),
+                float_attr_short("heatmapFalloff", "hmf", 0.68, "Heat map bind: 1 keeps the heat as solved, less tightens it.", Some(0.0), Some(1.0)),
+                data_attr("blendWeights", "bw", "Each point between linear (0) and dual quaternion (1), with skinningMethod 2."),
+                AttrDef { flags: flags::INPUT | flags::STORABLE, ..crate::attr_defs::bool_attr("moveJointsMode", false, "Joints move without moving the mesh.") },
+                int_attr("bindMethod", "bm", 0, "How the skin was bound: 0 closest distance, 1 closest in hierarchy, 2 heat map, 3 geodesic voxel."),
             ],
             create: Some(Arc::new(|| Box::new(SkinNode))),
             ..Default::default()
@@ -282,6 +314,14 @@ pub fn normalize_point(pw: &mut Vec<(u32, f64)>, b: &SkinBind) {
 /// holds any weight, `fallback` takes it. Locked influences never change, and a locked influence can't be painted.
 pub fn set_point_weight(pw: &mut Vec<(u32, f64)>, inf: u32, value: f64, b: &SkinBind, fallback: Option<u32>) {
     if b.locked(inf) {
+        return;
+    }
+    if b.raw_edit {
+        pw.retain(|x| x.0 != inf);
+        if value > 1e-9 {
+            pw.push((inf, value.max(0.0)));
+            pw.sort_by_key(|x| x.0);
+        }
         return;
     }
     let locked: f64 = pw.iter().filter(|x| x.0 != inf && b.locked(x.0)).map(|x| x.1).sum();
@@ -402,7 +442,7 @@ impl Default for PaintCtx {
     }
 }
 
-fn falloff(stamp: Stamp, t: f64) -> f64 {
+pub(crate) fn falloff(stamp: Stamp, t: f64) -> f64 {
     if t >= 1.0 {
         return 0.0;
     }
@@ -608,7 +648,7 @@ fn expand_range(s: &str, cap: u32) -> Vec<u32> {
 }
 
 /// The selected points of a mesh: its selected components as points, or all of them when none are.
-fn selected_points(g: &mut Graph, mesh: NodeId) -> Vec<u32> {
+pub(crate) fn selected_points(g: &mut Graph, mesh: NodeId) -> Vec<u32> {
     let Some(m) = components::mesh_of(g, mesh) else { return Vec::new() };
     let mode = components::mode(g);
     if mode != ComponentMode::Object {
@@ -829,14 +869,19 @@ fn bind(s: &mut Session, a: &Args, names: &[String]) -> CmdResult {
         .collect();
     let max_inf = a.int("maximumInfluences", 5).max(1);
     let dropoff = a.float("dropoffRate", 4.0);
-    let weights = bind_weights(&cage, &geom, &bones, &joined, a.int("bindMethod", 0), max_inf as usize, dropoff);
-    let data = SkinBind { bind_pre: jw.iter().map(|m| m.inverse()).collect(), geom, weights, locks: vec![false; joints.len()] };
+    let method = a.int("bindMethod", 0);
+    let heat_falloff = a.float("heatmapFalloff", 0.68);
+    let weights = if method == 2 { crate::skin_extra::heat_weights(&cage, &geom, &bones, max_inf as usize, heat_falloff) } else { bind_weights(&cage, &geom, &bones, &joined, method, max_inf as usize, dropoff) };
+    let data = SkinBind { bind_pre: jw.iter().map(|m| m.inverse()).collect(), geom, weights, locks: vec![false; joints.len()], raw_edit: false };
     g.open_chunk("Bind Skin");
     let r = (|| -> CmdResult<NodeId> {
         let t = types::find(SKIN_TYPE).unwrap();
         let (base, src) = crate::history::upstream(g, mesh)?;
+        let src = crate::deform_sets::orig_source(g, mesh, src)?;
         let sk = g.create_node(&t, &a.string("name", "skinCluster1"), NO_NODE, true)?;
         set_bind(g, sk, data)?;
+        g.set_value(plug(sk, SK_HEAT), PlugValue::Float(heat_falloff))?;
+        g.set_value(plug(sk, SK_BIND_METHOD), PlugValue::Int(method))?;
         g.set_value(plug(sk, SK_MAX_INF), PlugValue::Int(max_inf))?;
         g.set_value(plug(sk, SK_DROPOFF), PlugValue::Float(dropoff))?;
         g.set_value(plug(sk, SK_METHOD), PlugValue::Int(a.int("skinMethod", 0)))?;
@@ -906,6 +951,15 @@ fn skin_cluster_query(s: &mut Session, a: &Args, names: &[String]) -> CmdResult 
     if asked(a, "normalizeWeights") {
         return Ok(json!(attr_i(g, SK_NORMALIZE)));
     }
+    if asked(a, "bindMethod") {
+        return Ok(json!(attr_i(g, SK_BIND_METHOD)));
+    }
+    if asked(a, "heatmapFalloff") {
+        return Ok(json!(g.node(sk).map(|x| x.data().float(SK_HEAT)).unwrap_or(0.68)));
+    }
+    if asked(a, "moveJointsMode") {
+        return Ok(json!(g.node(sk).is_some_and(|x| x.data().bool(SK_MOVE))));
+    }
     if asked(a, "dropoffRate") {
         return Ok(json!(g.node(sk).map(|x| x.data().float(SK_DROPOFF)).unwrap_or(4.0)));
     }
@@ -954,6 +1008,21 @@ fn skin_cluster_edit(s: &mut Session, a: &Args, names: &[String]) -> CmdResult {
     let mut b = (*bind_of(g, sk).unwrap_or_default()).clone();
     g.evaluate();
     let mut changed = false;
+    if a.has("moveJointsMode") {
+        let on = a.bool("moveJointsMode");
+        let was = g.node(sk).is_some_and(|x| x.data().bool(SK_MOVE));
+        g.set_value(plug(sk, SK_MOVE), PlugValue::Bool(on))?;
+        // Leaving it: where the joints now are is the bind pose, so the mesh stays where it is.
+        if was && !on {
+            for (i, j) in influences(g, sk) {
+                b.bind_pre[i as usize] = world(g, j).inverse();
+            }
+            changed = true;
+        }
+    }
+    if a.has("heatmapFalloff") {
+        g.set_value(plug(sk, SK_HEAT), PlugValue::Float(a.float("heatmapFalloff", 0.68)))?;
+    }
     for (flag, at) in [("skinMethod", SK_METHOD), ("maximumInfluences", SK_MAX_INF), ("normalizeWeights", SK_NORMALIZE)] {
         if a.has(flag) {
             g.set_value(plug(sk, at), PlugValue::Int(a.int(flag, 0)))?;
@@ -978,7 +1047,14 @@ fn skin_cluster_edit(s: &mut Session, a: &Args, names: &[String]) -> CmdResult {
             b.bind_pre[i as usize] = world(g, j).inverse();
             g.connect(&plug(j, Transform::WORLD_MATRIX), &PlugRef::element(sk, SK_MATRIX as i32, i), false)?;
             let wt = a.float("weight", 0.0);
-            if wt > 0.0 {
+            if a.bool("useGeometry") {
+                let Some(inf_mesh) = components::as_mesh(g, j) else { fail!("skinCluster: {n} is not a mesh, for -ug") };
+                let (Some(own), Some(other)) = (skin_geometry(g, sk).and_then(|m| crate::modifiers::cage(g, m)), crate::modifiers::cage(g, inf_mesh)) else { fail!("skinCluster: no geometry") };
+                let xf = crate::dag::transform_of(g, inf_mesh);
+                let wm = world(g, xf);
+                let rate = a.float("dropoffRate", 4.0);
+                crate::skin_extra::geometry_influence_weights(&mut b, &own, i as u32, &other, &wm, rate);
+            } else if wt > 0.0 {
                 for w in b.weights.iter_mut() {
                     w.push((i as u32, wt));
                     normalize_point(w, &SkinBind { locks: b.locks.clone(), ..Default::default() });
@@ -1118,6 +1194,20 @@ fn skin_percent(s: &mut Session, a: &Args) -> CmdResult {
         }
         return Ok(json!(kept.iter().map(|x| g.path(x.1)).collect::<Vec<_>>()));
     }
+    if let Some(v) = a.get("dqBlendWeight").and_then(Value::as_f64) {
+        let size = b.weights.len();
+        let mut bw = g.node(sk).and_then(|n| crate::deform::floats_of(n.data(), SK_BLEND)).map(|x| x.0.clone()).unwrap_or_else(|| vec![0.0; size]);
+        bw.resize(size, 0.0);
+        for &p in &pts {
+            if let Some(x) = bw.get_mut(p as usize) {
+                *x = v.clamp(0.0, 1.0);
+            }
+        }
+        crate::deform::set_floats(g, sk, SK_BLEND, bw)?;
+        if !["transformValue", "transformMoveWeights", "pruneWeights", "normalize", "resetToDefault"].iter().any(|x| a.has(x)) {
+            return Ok(Value::Null);
+        }
+    }
     let mut touched = false;
     if a.bool("resetToDefault") {
         let Some(mesh) = skin_geometry(g, sk) else { fail!("skinPercent: no geometry") };
@@ -1138,7 +1228,7 @@ fn skin_percent(s: &mut Session, a: &Args) -> CmdResult {
         let rel = a.bool("relative");
         let sets: Vec<(u32, f64)> = pairs(tv).iter().map(|(n, v)| Ok((inf_named(g, n)?, *v))).collect::<CmdResult<_>>()?;
         let zero_rest = a.bool("zeroRemainingInfluences");
-        let locks = SkinBind { locks: b.locks.clone(), ..Default::default() };
+        let locks = SkinBind { locks: b.locks.clone(), raw_edit: b.raw_edit, ..Default::default() };
         for &p in &pts {
             let Some(mut pw) = b.weights.get(p as usize).cloned() else { continue };
             if zero_rest {
@@ -1320,6 +1410,7 @@ fn copy_skin_weights(s: &mut Session, a: &Args) -> CmdResult {
     let map = influence_map(g, &sl, &dl, &rules, mirror);
     let sg = sb.geom;
     let dg = db.geom;
+    let uv_lookup = a.has("uvSpace").then(|| crate::skin_extra::UvLookup::new(&sm));
     let sa = a.string("surfaceAssociation", "closestPoint");
     let bvh = (sa == "closestPoint" || sa == "rayCast").then(|| MeshBvh::new(&sm));
     let near: Vec<(u32, DVec3)> = (0..sm.point_capacity()).filter(|&p| sm.point_valid(p)).map(|p| (p, sm.position(p))).collect();
@@ -1345,7 +1436,8 @@ fn copy_skin_weights(s: &mut Session, a: &Args) -> CmdResult {
             }
             None => wp,
         };
-        let samples = surface_sample(&sm, bvh.as_ref(), &near, sgi.transform_point3(query));
+        let by_uv = uv_lookup.as_ref().and_then(|l| crate::skin_extra::uv_of_point(&dm, p).and_then(|uv| l.sample(uv)));
+        let samples = by_uv.unwrap_or_else(|| surface_sample(&sm, bvh.as_ref(), &near, sgi.transform_point3(query)));
         let mut acc: HashMap<u32, f64> = HashMap::new();
         for (q, share) in samples {
             for &(i, x) in sb.weights.get(q as usize).map(|v| v.as_slice()).unwrap_or(&[]) {
@@ -1399,8 +1491,13 @@ pub fn register(c: &mut Commands<Session>) {
         .flag(f("maximumInfluences", "mi", ArgType::Int, "Most joints per point (5)."))
         .flag(f("obeyMaxInfluences", "omi", ArgType::Bool, "Hold points to maximumInfluences while weights are edited."))
         .flag(f("dropoffRate", "dr", ArgType::Float, "Falloff with distance (4)."))
+        .flag(f("heatmapFalloff", "hmf", ArgType::Float, "Heat map bind: 1 keeps the heat as solved, less tightens it (0.68)."))
+        .flag(f("moveJointsMode", "mjm", ArgType::Bool, "With -e: on, joints move without moving the mesh; off, where they are becomes the bind pose."))
+        .flag(f("useGeometry", "ug", ArgType::Bool, "With -ai: the influence is a mesh, and points take weight by their distance from its surface."))
+        .flag(f("baseShape", "bsh", ArgType::Any, "Accepted for Maya scripts."))
+        .flag(f("polySmoothness", "ps", ArgType::Float, "Accepted for Maya scripts."))
         .flag(f("bindMethod", "bm", ArgType::Int, "0 closest distance, 1 closest in hierarchy, 2 heat map, 3 geodesic voxel."))
-        .flag(f("skinMethod", "sm", ArgType::Int, "0 classic linear, 1 dual quaternion."))
+        .flag(f("skinMethod", "sm", ArgType::Int, "0 classic linear, 1 dual quaternion, 2 blended point by point by .blendWeights."))
         .flag(f("normalizeWeights", "nw", ArgType::Int, "0 none, 1 interactive, 2 post."))
         .flag(f("weightDistribution", "wd", ArgType::Int, "Accepted for Maya scripts."))
         .flag(f("includeHiddenSelections", "ihs", ArgType::Bool, "Accepted for Maya scripts."))
@@ -1431,6 +1528,7 @@ pub fn register(c: &mut Commands<Session>) {
         )
         .positional("skinCluster, then points or components (the selection when none)")
         .flag(f("transformValue", "tv", ArgType::List, "joint weight pairs.").multi(2))
+        .flag(f("dqBlendWeight", "dqb", ArgType::Float, "The points' blend between linear and dual quaternion, for skinningMethod 2."))
         .flag(f("transformMoveWeights", "tmw", ArgType::List, "from to pairs: moves the weight of one influence to another.").multi(2))
         .flag(f("relative", "r", ArgType::Bool, "-tv adds to the current weight."))
         .flag(f("zeroRemainingInfluences", "zri", ArgType::Bool, "-tv zeroes the influences it doesn't name."))
@@ -1458,6 +1556,7 @@ pub fn register(c: &mut Commands<Session>) {
         .flag(f("surfaceAssociation", "sa", ArgType::String, "closestPoint (default), rayCast or closestComponent."))
         .flag(f("influenceAssociation", "ia", ArgType::Any, "closestJoint (default), closestBone, oneToOne, label or name, tried in turn.").multi(1))
         .flag(f("normalize", "nr", ArgType::Bool, "Normalize the copied weights (default on)."))
+        .flag(f("uvSpace", "uv", ArgType::Any, "Source and destination UV sets: points read the source at their UV position, between the corners of the face there. Sets beyond map1 aren't kept here.").multi(2))
         .flag(f("sampleSpace", "spa", ArgType::Int, "Accepted for Maya scripts.")),
     );
 
@@ -1704,7 +1803,27 @@ fn flood(s: &mut Session, sk: NodeId, mesh: NodeId, inf: u32) -> CmdResult<()> {
     set_bind(&mut s.graph, sk, b)
 }
 
-fn op_name(o: PaintOp) -> &'static str {
+pub(crate) fn op_named(o: &str, cmd: &str) -> CmdResult<PaintOp> {
+    Ok(match o {
+        "absolute" => PaintOp::Replace,
+        "additive" => PaintOp::Add,
+        "scale" => PaintOp::Scale,
+        "smooth" => PaintOp::Smooth,
+        o => fail!("{cmd}: unknown operation {o}"),
+    })
+}
+
+pub(crate) fn stamp_named(o: &str, cmd: &str) -> CmdResult<Stamp> {
+    Ok(match o {
+        "gaussian" => Stamp::Gaussian,
+        "poly" => Stamp::Poly,
+        "solid" => Stamp::Solid,
+        "square" => Stamp::Square,
+        o => fail!("{cmd}: unknown stamp {o}"),
+    })
+}
+
+pub(crate) fn op_name(o: PaintOp) -> &'static str {
     match o {
         PaintOp::Replace => "absolute",
         PaintOp::Add => "additive",
@@ -1713,7 +1832,7 @@ fn op_name(o: PaintOp) -> &'static str {
     }
 }
 
-fn stamp_name(s: Stamp) -> &'static str {
+pub(crate) fn stamp_name(s: Stamp) -> &'static str {
     match s {
         Stamp::Gaussian => "gaussian",
         Stamp::Poly => "poly",

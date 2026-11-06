@@ -507,6 +507,9 @@ fn curve_type_for(g: &Graph, p: &PlugRef) -> &'static str {
 }
 
 pub(crate) fn channel_name(g: &Graph, p: &PlugRef) -> String {
+    if let Some(alias) = g.alias_of(p) {
+        return alias;
+    }
     let a = g.attr(p);
     if p.component >= 0 && a.ty == PlugType::Vec3 {
         a.child_names[p.component as usize].clone()

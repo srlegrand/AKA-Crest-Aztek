@@ -736,6 +736,9 @@ fn register_attrs(c: &mut Commands<Session>) {
                     fail!("setAttr: expected (plug, value)");
                 }
                 let g = &mut s.graph;
+                if let Some(r) = a.pos_str(0).and_then(|path| crate::deform_paint::set_weights(g, path, &a.positional[1..])) {
+                    return r;
+                }
                 let p = plug_arg(g, &a.positional[0])?;
                 // Unlock before setting and lock after, so setAttr(plug, v, lock=...) works either way.
                 if a.has("lock") && !a.bool("lock") {
@@ -774,6 +777,9 @@ fn register_attrs(c: &mut Commands<Session>) {
             |s, a| {
                 let Some(first) = a.positional.first().filter(|v| v.is_string()) else { fail!("getAttr: expected a plug") };
                 let g = &mut s.graph;
+                if let Some(r) = first.as_str().and_then(|path| crate::deform_paint::get_weights(g, path)) {
+                    return r;
+                }
                 let p = plug_arg(g, first)?;
                 if a.bool("lock") {
                     return Ok(json!(g.is_locked(&p)));
@@ -977,6 +983,12 @@ fn register_attrs(c: &mut Commands<Session>) {
             let Some(first) = objs.first() else {
                 fail!("listAttr: no object")
             };
+            if a.bool("multi") && first.contains('.') {
+                let g = &s.graph;
+                let p = g.plug(first)?;
+                let name = g.attr(&p).name.clone();
+                return Ok(json!(g.elements(&p.whole()).iter().map(|e| g.alias_of(e).unwrap_or_else(|| format!("{name}[{}]", e.element))).collect::<Vec<_>>()));
+            }
             let id = node_named(&s.graph, first)?;
             let n = s.graph.node(id).unwrap();
             let mut out = Vec::new();
@@ -1002,6 +1014,7 @@ fn register_attrs(c: &mut Commands<Session>) {
             Ok(Value::Array(out))
         })
         .positional("object")
+        .flag(flag("multi", "m", T::Bool, json!(false), "With node.attr: the array's elements, by their aliases where they have them."))
         .flag(flag(
             "keyable",
             "k",
