@@ -11,6 +11,7 @@ mod python;
 mod query;
 mod render;
 pub mod tools;
+pub mod ui_cmds;
 pub mod view;
 pub mod viewport;
 
@@ -171,6 +172,13 @@ pub extern "C" fn aztek_query(what: *const c_char, arg: *const c_char) -> *mut c
             "animCurves" => query::anim_curves(c, &arg),
             "nodeGraph" => query::node_graph(c, &arg),
             "uiRequests" => core::take_ui_requests(),
+            "registerUiNames" => {
+                let list: Value = serde_json::from_str(&arg).unwrap_or(json!([]));
+                ui_cmds::register_ui_names(&mut c.s, &list);
+                Value::Null
+            }
+            "runtimeCommands" => ui_cmds::runtime_commands(),
+            "editors" => query::editors(c, &arg),
             "uvData" => query::uv_data(c),
             "attributeEditor" => query::attribute_editor(c, &arg),
             "layers" => query::layers(c),

@@ -107,6 +107,19 @@ pub enum Tool {
     CreatePolygon,
     AppendPolygon,
     QuadDraw,
+    /// Drag a free-form outline; what's inside is selected.
+    Lasso,
+    /// Drag a brush over components to select them.
+    PaintSelect,
+    /// Click component after component: the shortest edge path between them.
+    ShortestPath,
+    /// Camera tools: the left button does what Alt+drag does.
+    CamTumble,
+    CamTrack,
+    CamDolly,
+    CamZoom,
+    CamRoll,
+    CamYawPitch,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -114,6 +127,75 @@ pub enum Handle {
     Axis(usize),
     /// Move in the view plane / uniform scale.
     Center,
+    /// Move or scale in the plane with this axis as its normal.
+    Plane(usize),
+    /// Rotate tool: the ring facing the camera.
+    ViewRing,
+    /// Rotate tool: the inside of the sphere turns freely.
+    Trackball,
+}
+
+/// What a view shows and how, as the panel's Shading and Show menus set it.
+#[derive(Clone)]
+pub struct Display {
+    pub polygons: bool,
+    pub curves: bool,
+    pub joints: bool,
+    pub ik_handles: bool,
+    pub deformers: bool,
+    pub locators: bool,
+    pub cameras: bool,
+    pub manipulators: bool,
+    pub flat: bool,
+    pub bounding_box: bool,
+    pub xray: bool,
+    pub xray_joints: bool,
+    pub xray_active: bool,
+    pub backface: bool,
+    pub film_gate: bool,
+    pub res_gate: bool,
+    pub safe_action: bool,
+    pub highlight: bool,
+    pub border_edges: bool,
+    pub face_normals: bool,
+    pub vertex_normals: bool,
+    pub hard_edges: bool,
+    pub crease_edges: bool,
+    pub normal_size: f64,
+    /// Polygon display options apply to the selection only (Display > Polygons > Limit to Selected).
+    pub limit_to_selected: bool,
+}
+
+impl Default for Display {
+    fn default() -> Display {
+        Display {
+            polygons: true,
+            curves: true,
+            joints: true,
+            ik_handles: true,
+            deformers: true,
+            locators: true,
+            cameras: true,
+            manipulators: true,
+            flat: false,
+            bounding_box: false,
+            xray: false,
+            xray_joints: false,
+            xray_active: false,
+            backface: false,
+            film_gate: false,
+            res_gate: false,
+            safe_action: false,
+            highlight: true,
+            border_edges: false,
+            face_normals: false,
+            vertex_normals: false,
+            hard_edges: false,
+            crease_edges: false,
+            normal_size: 0.4,
+            limit_to_selected: true,
+        }
+    }
 }
 
 pub struct Drag {
@@ -126,11 +208,30 @@ pub struct Drag {
     pub targets: Vec<String>,
     /// World points a point-snapping move can land on.
     pub snap_points: Vec<DVec3>,
+    /// World segments a curve-snapping move can land on.
+    pub snap_curves: Vec<(DVec3, DVec3)>,
 }
 
 pub struct Viewport {
-    /// Held snap: 0 none, 1 grid (X), 2 point (V).
+    /// Snap: 0 none, 1 grid (X), 2 point (V), 3 curve (C), 4 view plane, 5 live surface.
     pub snap: i32,
+    /// The handle Ctrl-click made the default for middle drags.
+    pub constraint: Option<Handle>,
+    /// Tool Settings' step snaps; 0 off.
+    pub step_move: f64,
+    pub step_rotate: f64,
+    pub step_scale: f64,
+    /// J held: rotate in discrete steps.
+    pub discrete_hold: bool,
+    pub disp: Display,
+    /// Where a live-surface move lands, worked out before the drag's call.
+    pub live_hit: Option<DVec3>,
+    /// The lasso's outline so far, in pixels.
+    pub lasso: Vec<DVec2>,
+    /// The select brush under the cursor, in pixels, and its radius.
+    pub select_brush: Option<(DVec2, f64)>,
+    /// Isolate Select: what this view shows.
+    pub iso: aztek_scene::isolation::Set,
     /// D held (or Insert): the move manipulator moves pivots.
     pub pivot_mode: bool,
     pub cam: Camera,
@@ -145,6 +246,8 @@ pub struct Viewport {
     pub rect: [f64; 4],
     pub marquee: Option<(DVec2, DVec2)>,
     pub grid_spacing: f64,
+    /// How far the grid reaches each way from the origin.
+    pub grid_extent: f64,
     pub show_grid: bool,
     pub manip_scale: f64,
     /// Smooth preview draws the cage too (the 2 key) rather than the smooth mesh alone (3).
@@ -186,7 +289,18 @@ impl Viewport {
             rect: [0.0, 0.0, 1.0, 1.0],
             marquee: None,
             grid_spacing: 1.0,
+            grid_extent: 12.0,
             snap: 0,
+            constraint: None,
+            step_move: 0.0,
+            step_rotate: 0.0,
+            step_scale: 0.0,
+            discrete_hold: false,
+            disp: Display::default(),
+            live_hit: None,
+            lasso: Vec::new(),
+            select_brush: None,
+            iso: Default::default(),
             pivot_mode: false,
             show_grid: true,
             manip_scale: 1.0,
@@ -221,7 +335,7 @@ impl Viewport {
     /// Maya's grid: 12 units each way, a line per unit, darker every 5, black axes; in the view's own plane for the
     /// orthographic cameras.
     fn grid_lines(&self) -> Vec<LineVertex> {
-        let n = 12i32;
+        let n = ((self.grid_extent / self.grid_spacing).round() as i32).clamp(1, 200);
         let s = self.grid_spacing as f32;
         let ext = n as f32 * s;
         // Maps (u, v) in the grid plane to world.
@@ -336,14 +450,15 @@ impl Viewport {
                 entry.sel_key = u64::MAX;
                 // Tint reuses the triangle vertex buffer; rebuilt with the selection key below.
             }
-            let selected = sel.contains(&it.xf) || sel.contains(&it.shape);
+            let templated = aztek_scene::display_layers::display(g, it.xf).ty == aztek_scene::display_layers::DisplayType::Template || override_type(g, it.xf) == 1;
+            let selected = self.disp.highlight && (sel.contains(&it.xf) || sel.contains(&it.shape));
             let hilited = selected && mode != ComponentMode::Object;
             let comps: &[u32] = if hilited { components::selected(g, it.shape, mode) } else { &[] };
             let comp_set: std::collections::HashSet<u32> = comps.iter().copied().collect();
             let soft = aztek_scene::soft_select::state();
             let soft_on = soft.0 && hilited && !comps.is_empty();
             let mut h = DefaultHasher::new();
-            (mode as i32, selected, lead == Some(it.xf), self.wireframe, self.wire_on_shaded, comps, self.smooth_cage, entry.smooth).hash(&mut h);
+            (mode as i32, selected, lead == Some(it.xf), self.wireframe, self.wire_on_shaded, comps, self.smooth_cage, entry.smooth, templated).hash(&mut h);
             (soft_on, soft.1.to_bits(), Arc::as_ptr(&it.mesh) as usize).hash(&mut h);
             let sel_key = h.finish();
             if sel_key != entry.sel_key {
@@ -368,11 +483,13 @@ impl Viewport {
                         } else {
                             SELECTED
                         }
+                    } else if templated {
+                        [120, 120, 120, 255]
                     } else {
                         WIRE
                     }
                 };
-                let want_lines = selected || self.wireframe || self.wire_on_shaded || (entry.display.is_some() && self.smooth_cage);
+                let want_lines = selected || templated || self.wireframe || self.wire_on_shaded || (entry.display.is_some() && self.smooth_cage);
                 if want_lines {
                     let mut lv = Vec::new();
                     for e in 0..m.edge_capacity() {
@@ -482,10 +599,67 @@ impl Viewport {
             }
             // Quad Draw's mesh sits on the live surface, chords and all, so it's pulled forward to stay in sight.
             let retopo = if self.tool == Tool::QuadDraw && !s.live_surface.contains(&it.shape) && !s.live_surface.is_empty() { 0.03 } else { 0.0 };
-            if !self.wireframe && !painted {
+            // Bounding box display: twelve lines and nothing else.
+            if self.disp.bounding_box {
+                let (mut lo, mut hi) = (DVec3::splat(f64::MAX), DVec3::splat(f64::MIN));
+                for p in 0..it.mesh.point_capacity() {
+                    if it.mesh.point_valid(p) {
+                        let q = it.mesh.position(p);
+                        lo = lo.min(q);
+                        hi = hi.max(q);
+                    }
+                }
+                let c = c8(if selected { if lead == Some(it.xf) { LEAD } else { SELECTED } } else { WIRE });
+                let corner = |i: usize| DVec3::new(if i & 1 == 0 { lo.x } else { hi.x }, if i & 2 == 0 { lo.y } else { hi.y }, if i & 4 == 0 { lo.z } else { hi.z }).as_vec3().to_array();
+                let mut v = Vec::new();
+                for i in 0..8usize {
+                    for bit in [1usize, 2, 4] {
+                        if i & bit == 0 {
+                            v.push(LineVertex { pos: corner(i), color: c });
+                            v.push(LineVertex { pos: corner(i | bit), color: c });
+                        }
+                    }
+                }
+                let b = gpu.buffer_with(vk::BufferUsageFlags::VERTEX_BUFFER, &v);
+                r.bind(gpu, Kind::Lines);
+                r.set_line_width(gpu, 1.0);
+                r.push(gpu, &push(mvp, it.world, view, [1.0; 4], 1e-3, 1.0));
+                r.draw(gpu, &b, None, v.len() as u32);
+                gpu.drop_buffer(b);
+                continue;
+            }
+            // A partly isolated mesh draws only its shown faces.
+            let shown_mask = self.iso.shown_faces(it.shape, &it.mesh);
+            let shown_mask = if shown_mask.is_empty() { self.iso.shown_faces(it.xf, &it.mesh) } else { shown_mask };
+            let partial = if shown_mask.is_empty() || entry.display.is_some() {
+                None
+            } else {
+                let mut ti = Vec::new();
+                for (t, &f) in entry.tri_faces.iter().enumerate() {
+                    if shown_mask.get(f as usize).copied().unwrap_or(1) != 0 {
+                        ti.extend_from_slice(&entry.tri_indices[t * 3..t * 3 + 3]);
+                    }
+                }
+                (!ti.is_empty()).then(|| (gpu.buffer_with(vk::BufferUsageFlags::INDEX_BUFFER, &ti), ti.len() as u32))
+            };
+            if !self.wireframe && !painted && !templated {
                 if let Some((vb, ib, n)) = &entry.tris {
-                    r.bind(gpu, Kind::Shaded);
-                    r.push(gpu, &push(mvp, it.world, view, [0.5, 0.5, 0.5, 1.0], retopo, 1.0));
+                    let (ib, n) = match &partial {
+                        Some((pb, pn)) => (pb, pn),
+                        None => (ib, n),
+                    };
+                    if self.disp.xray {
+                        // X-Ray: see-through, no sorting.
+                        r.bind(gpu, Kind::Tint);
+                        let mut pc = push(mvp, it.world, view, [0.55, 0.55, 0.55, 0.45], retopo, 1.0);
+                        pc.n2[3] = self.disp.flat as i32 as f32;
+                        r.push(gpu, &pc);
+                    } else {
+                        r.bind(gpu, if self.disp.backface { Kind::ShadedCull } else { Kind::Shaded });
+                        let mut pc = push(mvp, it.world, view, [0.5, 0.5, 0.5, 1.0], retopo, 1.0);
+                        pc.n2[3] = self.disp.flat as i32 as f32;
+                        r.push(gpu, &pc);
+                    }
                     r.draw(gpu, vb, Some((ib, *n)), 0);
                     if let Some((ti, tn)) = &entry.tint {
                         r.bind(gpu, Kind::Tint);
@@ -494,18 +668,22 @@ impl Viewport {
                     }
                 }
             }
+            if let Some((b, _)) = partial {
+                gpu.drop_buffer(b);
+            }
             if let Some((lb, ln)) = &entry.lines {
-                r.bind(gpu, Kind::Lines);
+                r.bind(gpu, if self.disp.xray_active && hilited { Kind::LinesOnTop } else { Kind::Lines });
                 r.set_line_width(gpu, if selected && mode == ComponentMode::Object { 1.5 } else { 1.0 });
                 r.push(gpu, &push(mvp, it.world, view, [1.0; 4], 1.5e-3 + retopo, 1.0));
                 r.draw(gpu, lb, None, *ln);
             }
             if let Some((pb, pn)) = &entry.points {
-                r.bind(gpu, Kind::Points);
+                r.bind(gpu, if self.disp.xray_active && hilited { Kind::PointsOnTop } else { Kind::Points });
                 r.push(gpu, &push(mvp, it.world, view, [1.0; 4], 2e-3, (5.0 * scale) as f32));
                 r.draw(gpu, pb, None, *pn);
             }
         }
+        self.draw_poly_display(gpu, r, s, items);
         self.draw_rig(gpu, r, s, scale);
         self.draw_hover(gpu, r, items, scale);
         self.draw_manip(gpu, r, s, scale);
@@ -540,7 +718,130 @@ impl Viewport {
 
     /// Whether the tool has a manipulator.
     fn manipulates(&self) -> bool {
-        matches!(self.tool, Tool::Move | Tool::Rotate | Tool::Scale)
+        self.disp.manipulators && matches!(self.tool, Tool::Move | Tool::Rotate | Tool::Scale)
+    }
+
+    /// Display > Polygons: border, hard and crease edges, face and vertex normals, as lines over the mesh.
+    fn draw_poly_display(&mut self, gpu: &mut Gpu, r: &Renderer, s: &Session, items: &[DrawItem]) {
+        let d = self.disp.clone();
+        if !(d.border_edges || d.face_normals || d.vertex_normals || d.hard_edges || d.crease_edges) {
+            return;
+        }
+        let sel = s.graph.selection().to_vec();
+        for it in items {
+            if d.limit_to_selected && !sel.contains(&it.xf) && !sel.contains(&it.shape) {
+                continue;
+            }
+            let m = &it.mesh;
+            let mut wide = Vec::new();
+            let mut thin = Vec::new();
+            for e in 0..m.edge_capacity() {
+                if !m.edge_valid(e) {
+                    continue;
+                }
+                let mut faces = 0;
+                m.for_each_edge_corner(e, |_| faces += 1);
+                let is_hard = edge_flag(m, aztek_geo::attribute::names::HARD, e);
+                let is_crease = edge_flag(m, aztek_geo::attribute::names::CREASE, e);
+                let c = if d.border_edges && faces == 1 {
+                    Some([240, 240, 90, 255])
+                } else if d.crease_edges && is_crease {
+                    Some([255, 100, 160, 255])
+                } else if d.hard_edges && is_hard {
+                    Some([20, 20, 20, 255])
+                } else {
+                    None
+                };
+                if let Some(c) = c {
+                    wide.push(LineVertex { pos: m.position(m.edge_point(e, 0)).as_vec3().to_array(), color: c8(c) });
+                    wide.push(LineVertex { pos: m.position(m.edge_point(e, 1)).as_vec3().to_array(), color: c8(c) });
+                }
+            }
+            if d.face_normals {
+                for f in 0..m.face_capacity() {
+                    if !m.face_valid(f) {
+                        continue;
+                    }
+                    let pts = m.face_points(f);
+                    let c = pts.iter().map(|&p| m.position(p)).sum::<DVec3>() / pts.len().max(1) as f64;
+                    let n = m.face_normal(f);
+                    thin.push(LineVertex { pos: c.as_vec3().to_array(), color: c8([40, 230, 230, 255]) });
+                    thin.push(LineVertex { pos: (c + n * d.normal_size).as_vec3().to_array(), color: c8([40, 230, 230, 255]) });
+                }
+            }
+            if d.vertex_normals {
+                let mut acc = vec![DVec3::ZERO; m.point_capacity() as usize];
+                for f in 0..m.face_capacity() {
+                    if m.face_valid(f) {
+                        let n = m.face_normal(f);
+                        for p in m.face_points(f) {
+                            acc[p as usize] += n;
+                        }
+                    }
+                }
+                for p in 0..m.point_capacity() {
+                    if m.point_valid(p) {
+                        let q = m.position(p);
+                        thin.push(LineVertex { pos: q.as_vec3().to_array(), color: c8([230, 230, 60, 255]) });
+                        thin.push(LineVertex { pos: (q + acc[p as usize].normalize_or_zero() * d.normal_size).as_vec3().to_array(), color: c8([230, 230, 60, 255]) });
+                    }
+                }
+            }
+            let mvp = self.view_proj() * it.world;
+            for (v, w) in [(wide, 3.0f32), (thin, 1.0f32)] {
+                if v.is_empty() {
+                    continue;
+                }
+                let b = gpu.buffer_with(vk::BufferUsageFlags::VERTEX_BUFFER, &v);
+                r.bind(gpu, Kind::Lines);
+                r.set_line_width(gpu, w);
+                r.push(gpu, &push(mvp, it.world, self.cam.view(), [1.0; 4], 2e-3, 1.0));
+                r.draw(gpu, &b, None, v.len() as u32);
+                gpu.drop_buffer(b);
+            }
+        }
+    }
+
+    /// Whether the selection masks and display type let a click select this node.
+    pub fn pickable(&self, g: &Graph, id: NodeId) -> bool {
+        if !aztek_scene::display_layers::pickable(g, id) || override_type(g, id) != 0 {
+            return false;
+        }
+        crate::ui_cmds::mask_allows(type_category(g, id))
+    }
+
+    fn rig_shown(&self, g: &Graph, node: NodeId) -> bool {
+        match type_category(g, node) {
+            "joint" => self.disp.joints,
+            "ikHandle" => self.disp.ik_handles,
+            "deformer" => self.disp.deformers,
+            "locator" => self.disp.locators,
+            "curve" => self.disp.curves,
+            _ => true,
+        }
+    }
+
+    /// Does Isolate Select let this view show the node?
+    pub fn node_shown(&self, g: &Graph, id: NodeId) -> bool {
+        if !self.iso.active() {
+            return true;
+        }
+        let mut n = id;
+        while n != NO_NODE {
+            if self.iso.nodes.contains(&n) {
+                return true;
+            }
+            n = g.parent(n);
+        }
+        false
+    }
+
+    /// Items this view shows, from what `gather` found.
+    pub fn filter_items(&self, g: &Graph, items: Vec<DrawItem>) -> Vec<DrawItem> {
+        if !self.disp.polygons {
+            return Vec::new();
+        }
+        items.into_iter().filter(|it| self.node_shown(g, it.shape) || self.node_shown(g, it.xf)).collect()
     }
 
     /// A curve tool's points so far, with the curve they'd make.
@@ -771,6 +1072,9 @@ impl Viewport {
         let screen = self.screen();
         let mut best: Option<(f64, NodeId)> = None;
         for it in rig_items(g) {
+            if !self.rig_shown(g, it.node) || !self.node_shown(g, it.node) || !self.pickable(g, it.node) {
+                continue;
+            }
             for (a, b) in &it.segs {
                 let (Some(pa), Some(pb)) = (screen.project(*a), screen.project(*b)) else { continue };
                 let d = seg_distance(px, pa, pb);
@@ -787,7 +1091,11 @@ impl Viewport {
         let sel = g.selection();
         let lead = sel.last().copied();
         let mut v = Vec::new();
+        let mut joints_v = Vec::new();
         for it in rig_items(g) {
+            if !self.rig_shown(g, it.node) || !self.node_shown(g, it.node) {
+                continue;
+            }
             let c = if Some(it.node) == lead {
                 [100, 255, 160, 255]
             } else if sel.contains(&it.node) {
@@ -795,10 +1103,20 @@ impl Viewport {
             } else {
                 it.color
             };
+            let joint = g.node(it.node).is_some_and(|n| n.ty().is_a("joint"));
+            let out = if joint && self.disp.xray_joints { &mut joints_v } else { &mut v };
             for (a, b) in &it.segs {
-                v.push(LineVertex { pos: a.as_vec3().to_array(), color: c8(c) });
-                v.push(LineVertex { pos: b.as_vec3().to_array(), color: c8(c) });
+                out.push(LineVertex { pos: a.as_vec3().to_array(), color: c8(c) });
+                out.push(LineVertex { pos: b.as_vec3().to_array(), color: c8(c) });
             }
+        }
+        if !joints_v.is_empty() {
+            let b = gpu.buffer_with(vk::BufferUsageFlags::VERTEX_BUFFER, &joints_v);
+            r.bind(gpu, Kind::LinesOnTop);
+            r.set_line_width(gpu, (1.5 * scale) as f32);
+            r.push(gpu, &push(self.view_proj(), DMat4::IDENTITY, self.cam.view(), [1.0; 4], 1e-3, 1.0));
+            r.draw(gpu, &b, None, joints_v.len() as u32);
+            gpu.drop_buffer(b);
         }
         if !v.is_empty() {
             let b = gpu.buffer_with(vk::BufferUsageFlags::VERTEX_BUFFER, &v);
@@ -806,6 +1124,50 @@ impl Viewport {
             r.set_line_width(gpu, (1.5 * scale) as f32);
             r.push(gpu, &push(self.view_proj(), DMat4::IDENTITY, self.cam.view(), [1.0; 4], 1e-3, 1.0));
             r.draw(gpu, &b, None, v.len() as u32);
+            gpu.drop_buffer(b);
+        }
+        // Display > Transform Display: local axes, pivots and selection handles.
+        let mut marks = Vec::new();
+        for flag in ["localAxis", "rotatePivot", "scalePivot", "selectHandle"] {
+            for id in crate::ui_cmds::node_flag_nodes(flag) {
+                let Some(n) = g.node(id) else { continue };
+                let w = n.data().matrix(DagNode::WORLD_MATRIX);
+                let o = w.w_axis.truncate();
+                let k = self.units_per_px(o) * 30.0;
+                let mut line = |a: DVec3, b: DVec3, c: [u8; 4]| {
+                    marks.push(LineVertex { pos: a.as_vec3().to_array(), color: c8(c) });
+                    marks.push(LineVertex { pos: b.as_vec3().to_array(), color: c8(c) });
+                };
+                match flag {
+                    "localAxis" => {
+                        line(o, o + w.x_axis.truncate().normalize_or_zero() * k, [230, 40, 40, 255]);
+                        line(o, o + w.y_axis.truncate().normalize_or_zero() * k, [40, 230, 40, 255]);
+                        line(o, o + w.z_axis.truncate().normalize_or_zero() * k, [40, 80, 255, 255]);
+                    }
+                    "selectHandle" => {
+                        let t = k * 0.25;
+                        line(o - DVec3::X * t, o + DVec3::X * t, [240, 240, 120, 255]);
+                        line(o - DVec3::Y * t, o + DVec3::Y * t, [240, 240, 120, 255]);
+                    }
+                    _ => {
+                        use aztek_scene::transform::Transform;
+                        let attr = if flag == "rotatePivot" { Transform::ROTATE_PIVOT } else { Transform::SCALE_PIVOT };
+                        let p = if n.ty().is_a("transform") { w.transform_point3(n.vec3(attr)) } else { o };
+                        let t = k * 0.2;
+                        let c = if flag == "rotatePivot" { [120, 220, 240, 255] } else { [240, 170, 90, 255] };
+                        line(p - DVec3::X * t, p + DVec3::X * t, c);
+                        line(p - DVec3::Y * t, p + DVec3::Y * t, c);
+                        line(p - DVec3::Z * t, p + DVec3::Z * t, c);
+                    }
+                }
+            }
+        }
+        if !marks.is_empty() {
+            let b = gpu.buffer_with(vk::BufferUsageFlags::VERTEX_BUFFER, &marks);
+            r.bind(gpu, Kind::LinesOnTop);
+            r.set_line_width(gpu, 1.5);
+            r.push(gpu, &push(self.view_proj(), DMat4::IDENTITY, self.cam.view(), [1.0; 4], 0.0, 1.0));
+            r.draw(gpu, &b, None, marks.len() as u32);
             gpu.drop_buffer(b);
         }
         // CVs of the selected curves in a component mode, and of curves with dispCV on, with the hull.
@@ -874,9 +1236,15 @@ impl Viewport {
         let g = &s.graph;
         if components::mode(g) == ComponentMode::Object {
             if let Some(id) = self.pick_rig(g, px) {
-                return vec![g.path(id)];
+                return vec![g.path(crate::ui_cmds::scoped(g, id))];
             }
-            return self.raycast(items, px).map(|(i, _, _)| vec![g.path(items[i].xf)]).unwrap_or_default();
+            // The nearest object the masks allow.
+            let allowed: Vec<DrawItem> = items
+                .iter()
+                .filter(|it| self.pickable(g, it.xf))
+                .map(|it| DrawItem { shape: it.shape, xf: it.xf, world: it.world, mesh: it.mesh.clone(), smooth: 0 })
+                .collect();
+            return self.raycast(&allowed, px).map(|(i, _, _)| vec![g.path(crate::ui_cmds::scoped(g, allowed[i].xf))]).unwrap_or_default();
         }
         if components::mode(g) == ComponentMode::Vertex {
             if let Some((shape, i)) = self.pick_cv(g, px) {
@@ -936,15 +1304,40 @@ impl Viewport {
     /// Everything inside a viewport-pixel rectangle.
     pub fn pick_rect(&self, s: &Session, items: &[DrawItem], a: DVec2, b: DVec2) -> Vec<String> {
         let (lo, hi) = (a.min(b), a.max(b));
-        let inside = |p: DVec2| p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y;
+        self.pick_inside(s, items, &|p: DVec2| p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y)
+    }
+
+    /// Everything inside a free-form outline, in pixels.
+    pub fn pick_lasso(&self, s: &Session, items: &[DrawItem], outline: &[DVec2]) -> Vec<String> {
+        self.pick_inside(s, items, &|p: DVec2| {
+            let mut odd = false;
+            let n = outline.len();
+            for i in 0..n {
+                let (a, b) = (outline[i], outline[(i + 1) % n]);
+                if (a.y > p.y) != (b.y > p.y) && p.x < a.x + (p.y - a.y) / (b.y - a.y) * (b.x - a.x) {
+                    odd = !odd;
+                }
+            }
+            odd
+        })
+    }
+
+    /// Everything whose points the test takes in.
+    pub fn pick_inside(&self, s: &Session, items: &[DrawItem], inside: &dyn Fn(DVec2) -> bool) -> Vec<String> {
         let g = &s.graph;
         let mode = components::mode(g);
         let screen = self.screen();
         let mut out = Vec::new();
         if mode == ComponentMode::Object {
             for it in rig_items(g) {
+                if !self.rig_shown(g, it.node) || !self.node_shown(g, it.node) || !self.pickable(g, it.node) {
+                    continue;
+                }
                 if it.segs.iter().any(|(a, b)| screen.project(*a).is_some_and(inside) || screen.project(*b).is_some_and(inside)) {
-                    out.push(g.path(it.node));
+                    let path = g.path(crate::ui_cmds::scoped(g, it.node));
+                    if !out.contains(&path) {
+                        out.push(path);
+                    }
                 }
             }
         }
@@ -965,8 +1358,11 @@ impl Viewport {
             let proj = |p: Index| screen.project(it.world.transform_point3(m.position(p)));
             match mode {
                 ComponentMode::Object => {
-                    if (0..m.point_capacity()).any(|p| m.point_valid(p) && proj(p).is_some_and(inside)) {
-                        out.push(g.path(it.xf));
+                    if self.pickable(g, it.xf) && (0..m.point_capacity()).any(|p| m.point_valid(p) && proj(p).is_some_and(inside)) {
+                        let path = g.path(crate::ui_cmds::scoped(g, it.xf));
+                        if !out.contains(&path) {
+                            out.push(path);
+                        }
                     }
                 }
                 _ if !g.selection().contains(&it.xf) => {}
@@ -1100,47 +1496,73 @@ impl Viewport {
         let p = pivot.as_vec3();
         let colors = [[230, 40, 40, 255], [40, 230, 40, 255], [40, 80, 255, 255]];
         let active = self.drag.as_ref().map(|d| d.handle).or(self.hover);
+        let constraint = self.constraint;
+        // Handles lit: the hovered or dragged one, and the set constraint in yellow.
+        let tint = |h: Handle, c: [u8; 4]| if active == Some(h) || constraint == Some(h) { [255, 255, 0, 255] } else { c };
         let mut v = Vec::new();
+        let mut line = |a: Vec3, b: Vec3, c: [u8; 4]| {
+            v.push(LineVertex { pos: a.to_array(), color: c8(c) });
+            v.push(LineVertex { pos: b.to_array(), color: c8(c) });
+        };
         self.update_frame(s);
         let axes = [self.frame.x_axis.as_vec3(), self.frame.y_axis.as_vec3(), self.frame.z_axis.as_vec3()];
+        let view = self.cam.view();
+        let right = Vec3::new(view.x_axis.x as f32, view.y_axis.x as f32, view.z_axis.x as f32);
+        let up = Vec3::new(view.x_axis.y as f32, view.y_axis.y as f32, view.z_axis.y as f32);
         match self.eff_tool() {
             Tool::Rotate => {
-                for (i, ax) in axes.iter().enumerate() {
-                    let c = if active == Some(Handle::Axis(i)) { [255, 255, 0, 255] } else { colors[i] };
-                    let (u, w) = ax.any_orthonormal_pair();
+                let ring = |u: Vec3, w: Vec3, r: f32, c: [u8; 4], line: &mut dyn FnMut(Vec3, Vec3, [u8; 4])| {
                     let n = 64;
                     for k in 0..n {
                         let a0 = k as f32 / n as f32 * std::f32::consts::TAU;
                         let a1 = (k + 1) as f32 / n as f32 * std::f32::consts::TAU;
-                        v.push(LineVertex { pos: (p + (u * a0.cos() + w * a0.sin()) * len).to_array(), color: c8(c) });
-                        v.push(LineVertex { pos: (p + (u * a1.cos() + w * a1.sin()) * len).to_array(), color: c8(c) });
+                        line(p + (u * a0.cos() + w * a0.sin()) * r, p + (u * a1.cos() + w * a1.sin()) * r, c);
                     }
+                };
+                for (i, ax) in axes.iter().enumerate() {
+                    let (u, w) = ax.any_orthonormal_pair();
+                    ring(u, w, len, tint(Handle::Axis(i), colors[i]), &mut line);
                 }
+                // The outer ring turns about the view axis; the sphere's outline shows the trackball.
+                ring(right, up, len * 1.25, tint(Handle::ViewRing, [90, 200, 230, 255]), &mut line);
+                ring(right, up, len, tint(Handle::Trackball, [140, 140, 140, 255]), &mut line);
             }
             _ => {
+                let scaling = self.eff_tool() == Tool::Scale;
                 for (i, ax) in axes.iter().enumerate() {
-                    let c = if active == Some(Handle::Axis(i)) { [255, 255, 0, 255] } else { colors[i] };
+                    let c = tint(Handle::Axis(i), colors[i]);
                     let tip = p + *ax * len;
-                    v.push(LineVertex { pos: p.to_array(), color: c8(c) });
-                    v.push(LineVertex { pos: tip.to_array(), color: c8(c) });
-                    // A small cross at the tip: arrow for move, box for scale.
+                    line(p, tip, c);
                     let (u, w) = ax.any_orthonormal_pair();
                     let k = len * 0.08;
-                    let base = if self.eff_tool() == Tool::Move { tip - *ax * len * 0.2 } else { tip };
-                    for d in [u, -u, w, -w] {
-                        v.push(LineVertex { pos: tip.to_array(), color: c8(c) });
-                        v.push(LineVertex { pos: (base + d * k).to_array(), color: c8(c) });
+                    if scaling {
+                        // A small box at the tip.
+                        let q = [tip + (u + w) * k, tip + (w - u) * k, tip - (u + w) * k, tip + (u - w) * k];
+                        for j in 0..4 {
+                            line(q[j], q[(j + 1) % 4], c);
+                        }
+                    } else {
+                        let base = tip - *ax * len * 0.2;
+                        for d in [u, -u, w, -w] {
+                            line(tip, base + d * k, c);
+                        }
                     }
                 }
-                let c = if active == Some(Handle::Center) { [255, 255, 0, 255] } else { [230, 230, 120, 255] };
-                let view = self.cam.view();
-                let right = Vec3::new(view.x_axis.x as f32, view.y_axis.x as f32, view.z_axis.x as f32);
-                let up = Vec3::new(view.x_axis.y as f32, view.y_axis.y as f32, view.z_axis.y as f32);
+                // Plane handles: a small square between each pair of axes, coloured for the axis it locks.
+                for i in 0..3 {
+                    let (a, b) = (axes[(i + 1) % 3], axes[(i + 2) % 3]);
+                    let c = tint(Handle::Plane(i), colors[i]);
+                    let (l0, l1) = (len * 0.22, len * 0.38);
+                    let q = [p + a * l0 + b * l0, p + a * l1 + b * l0, p + a * l1 + b * l1, p + a * l0 + b * l1];
+                    for j in 0..4 {
+                        line(q[j], q[(j + 1) % 4], c);
+                    }
+                }
+                let c = tint(Handle::Center, [230, 230, 120, 255]);
                 let k = len * 0.1;
                 let corners = [p + (right + up) * k, p + (up - right) * k, p - (right + up) * k, p + (right - up) * k];
                 for i in 0..4 {
-                    v.push(LineVertex { pos: corners[i].to_array(), color: c8(c) });
-                    v.push(LineVertex { pos: corners[(i + 1) % 4].to_array(), color: c8(c) });
+                    line(corners[i], corners[(i + 1) % 4], c);
                 }
             }
         }
@@ -1157,13 +1579,36 @@ impl Viewport {
         let screen = self.screen();
         let len = self.handle_len(pivot, scale);
         let c = screen.project(pivot)?;
-        if self.eff_tool() != Tool::Rotate && (px - c).abs().max_element() < 10.0 * scale {
+        let rotate = self.eff_tool() == Tool::Rotate;
+        if !rotate && (px - c).abs().max_element() < 10.0 * scale {
             return Some(Handle::Center);
+        }
+        if rotate {
+            // The view ring, on the outside.
+            let radius_px = {
+                let view = self.cam.view();
+                let right = DVec3::new(view.x_axis.x, view.y_axis.x, view.z_axis.x);
+                (screen.project(pivot + right * len).unwrap_or(c) - c).length()
+            };
+            let d = (px - c).length();
+            if (d - radius_px * 1.25).abs() < 7.0 * scale {
+                return Some(Handle::ViewRing);
+            }
+        } else {
+            for i in 0..3 {
+                let (a, b) = (self.frame.col((i + 1) % 3), self.frame.col((i + 2) % 3));
+                let mid = pivot + (a + b) * len * 0.3;
+                if let Some(q) = screen.project(mid) {
+                    if (px - q).length() < 9.0 * scale {
+                        return Some(Handle::Plane(i));
+                    }
+                }
+            }
         }
         let mut best: Option<(f64, Handle)> = None;
         for i in 0..3 {
             let ax = self.frame.col(i);
-            let d = if self.eff_tool() == Tool::Rotate {
+            let d = if rotate {
                 let (u, w) = ax.any_orthonormal_pair();
                 (0..48)
                     .filter_map(|k| {
@@ -1181,12 +1626,33 @@ impl Viewport {
                 best = Some((d, Handle::Axis(i)));
             }
         }
-        best.map(|b| b.1)
+        if let Some((_, h)) = best {
+            return Some(h);
+        }
+        if rotate {
+            let view = self.cam.view();
+            let right = DVec3::new(view.x_axis.x, view.y_axis.x, view.z_axis.x);
+            let radius_px = (screen.project(pivot + right * len).unwrap_or(c) - c).length();
+            if (px - c).length() < radius_px {
+                return Some(Handle::Trackball);
+            }
+        }
+        None
     }
 
-    /// A move's offset with X (grid) or V (point) snapping held: the pivot lands on the grid, or on the vertex nearest the
-    /// cursor; along an axis handle only that axis moves.
-    fn snapped(&self, d: &Drag, world: DVec3, axis: Option<DVec3>, px: DVec2) -> DVec3 {
+    /// What a Ctrl-click on a handle does to the constraint: an axis locks it (moves stay in the plane across it), a plane
+    /// handle sets that plane, the centre goes back to the view plane.
+    pub fn set_constraint(&mut self, h: Handle) {
+        self.constraint = match h {
+            Handle::Axis(i) => Some(Handle::Plane(i)),
+            Handle::Plane(i) => Some(Handle::Plane(i)),
+            _ => None,
+        };
+    }
+
+    /// A move's offset with snapping on: the pivot lands on the grid, a vertex or curve near the cursor, or the live surface;
+    /// along an axis handle only that axis moves, in a plane handle only that plane.
+    fn snapped(&self, d: &Drag, world: DVec3, handle: Handle, px: DVec2) -> DVec3 {
         let target = match self.snap {
             1 => {
                 let s = self.grid_spacing;
@@ -1209,12 +1675,51 @@ impl Viewport {
                     None => return world,
                 }
             }
-            _ => return world,
+            3 => {
+                let screen = self.screen();
+                let mut best: Option<(f64, DVec3)> = None;
+                for &(a, b) in &d.snap_curves {
+                    let Some((pa, pb)) = screen.project_segment(a, b) else { continue };
+                    let ab = pb - pa;
+                    let t = if ab.length_squared() < 1e-9 { 0.0 } else { ((px - pa).dot(ab) / ab.length_squared()).clamp(0.0, 1.0) };
+                    let dist = (pa + ab * t - px).length();
+                    if dist < 40.0 && best.is_none_or(|x| dist < x.0) {
+                        best = Some((dist, a.lerp(b, t)));
+                    }
+                }
+                match best {
+                    Some((_, p)) => p,
+                    None => return world,
+                }
+            }
+            4 => {
+                // Stays in the plane through the pivot facing the camera.
+                let n = (self.cam.eye() - d.pivot).normalize_or_zero();
+                return world - n * world.dot(n);
+            }
+            5 => match self.live_hit {
+                Some(p) => p,
+                None => return world,
+            },
+            _ => {
+                // Tool Settings' step: the offset goes in whole steps.
+                if self.step_move > 0.0 {
+                    return (world / self.step_move).round() * self.step_move;
+                }
+                return world;
+            }
         };
         let off = target - d.pivot;
-        match axis {
-            Some(a) => a * off.dot(a),
-            None => off,
+        match handle {
+            Handle::Axis(i) => {
+                let a = self.frame.col(i);
+                a * off.dot(a)
+            }
+            Handle::Plane(i) => {
+                let n = self.frame.col(i);
+                off - n * off.dot(n)
+            }
+            _ => off,
         }
     }
 
@@ -1227,6 +1732,22 @@ impl Viewport {
         }
     }
 
+    fn plane_hit(&self, pivot: DVec3, n: DVec3, px: DVec2) -> Option<DVec3> {
+        let (o, d) = self.cam.ray(px, self.size());
+        let den = d.dot(n);
+        if den.abs() < 1e-6 {
+            return None;
+        }
+        Some(o + d * ((pivot - o).dot(n) / den))
+    }
+
+    /// World Euler angles for a rotation about a world axis.
+    fn euler_about(axis: DVec3, deg: f64) -> [f64; 3] {
+        let q = glam::DQuat::from_axis_angle(axis.normalize_or_zero(), deg.to_radians());
+        let e = aztek_scene::transform::matrix_to_euler(&DMat3::from_quat(q), aztek_scene::transform::RotateOrder::Xyz);
+        [e.x, e.y, e.z]
+    }
+
     /// The command for a drag from d.start to px: (command, call).
     pub fn drag_call(&self, d: &Drag, px: DVec2, scale: f64) -> Option<(String, serde_json::Value)> {
         let screen = self.screen();
@@ -1235,9 +1756,16 @@ impl Viewport {
         let upp = self.units_per_px(d.pivot);
         let comps = d.components;
         let targets = serde_json::json!(d.targets);
+        let view = self.cam.view();
+        let right = DVec3::new(view.x_axis.x, view.y_axis.x, view.z_axis.x);
+        let up = DVec3::new(view.x_axis.y, view.y_axis.y, view.z_axis.y);
         match self.eff_tool() {
             Tool::Move => {
-                let world = match d.handle {
+                let handle = match d.handle {
+                    Handle::Center => self.constraint.unwrap_or(Handle::Center),
+                    h => h,
+                };
+                let world = match handle {
                     Handle::Axis(i) => {
                         let ax = self.frame.col(i);
                         let tip = screen.project(d.pivot + ax * upp * 100.0)?;
@@ -1248,18 +1776,13 @@ impl Viewport {
                         }
                         ax * (delta.dot(sdir) / l2) * upp * 100.0
                     }
-                    Handle::Center => {
-                        let view = self.cam.view();
-                        let right = DVec3::new(view.x_axis.x, view.y_axis.x, view.z_axis.x);
-                        let up = DVec3::new(view.x_axis.y, view.y_axis.y, view.z_axis.y);
-                        (right * delta.x - up * delta.y) * upp
+                    Handle::Plane(i) => {
+                        let n = self.frame.col(i);
+                        self.plane_hit(d.pivot, n, px)? - self.plane_hit(d.pivot, n, d.start)?
                     }
+                    _ => (right * delta.x - up * delta.y) * upp,
                 };
-                let axis = match d.handle {
-                    Handle::Axis(i) => Some(self.frame.col(i)),
-                    Handle::Center => None,
-                };
-                let world = self.snapped(d, world, axis, px);
+                let world = self.snapped(d, world, handle, px);
                 let by = serde_json::json!(world.to_array());
                 Some(if comps {
                     ("moveComponents".into(), serde_json::json!({ "by": by }))
@@ -1271,22 +1794,44 @@ impl Viewport {
                 })
             }
             Tool::Rotate => {
-                let Handle::Axis(i) = d.handle else { return None };
-                // Angle swept about the pivot on screen.
-                let a0 = (d.start - c).to_angle();
-                let a1 = (px - c).to_angle();
-                let mut ang = (a1 - a0).to_degrees();
-                // Screen y runs down: flip so the ring turns the way the cursor does when the axis faces the camera.
-                let toward = (self.cam.eye() - d.pivot).dot(self.frame.col(i)).signum();
-                ang *= -toward;
-                let mut by = [0.0; 3];
-                by[i] = ang;
-                // About a turned axis: the same rotation as world Euler angles.
-                if self.frame != DMat3::IDENTITY {
-                    let q = glam::DQuat::from_axis_angle(self.frame.col(i), ang.to_radians());
-                    let e = aztek_scene::transform::matrix_to_euler(&DMat3::from_quat(q), aztek_scene::transform::RotateOrder::Xyz);
-                    by = [e.x, e.y, e.z];
-                }
+                let step = if self.step_rotate > 0.0 { self.step_rotate } else if self.discrete_hold { 15.0 } else { 0.0 };
+                let snap = |a: f64| if step > 0.0 { (a / step).round() * step } else { a };
+                let sweep = |ax: DVec3| {
+                    // Angle swept about the pivot on screen; screen y runs down, so the sign follows the axis's facing.
+                    let a0 = (d.start - c).to_angle();
+                    let a1 = (px - c).to_angle();
+                    let mut ang = (a1 - a0).to_degrees();
+                    if ang > 180.0 {
+                        ang -= 360.0;
+                    } else if ang < -180.0 {
+                        ang += 360.0;
+                    }
+                    ang * -(self.cam.eye() - d.pivot).dot(ax).signum()
+                };
+                let by: [f64; 3] = match d.handle {
+                    Handle::Axis(i) => {
+                        let ax = self.frame.col(i);
+                        let ang = snap(sweep(ax));
+                        if self.frame == DMat3::IDENTITY {
+                            let mut by = [0.0; 3];
+                            by[i] = ang;
+                            by
+                        } else {
+                            Self::euler_about(ax, ang)
+                        }
+                    }
+                    Handle::ViewRing => {
+                        let ax = (self.cam.eye() - d.pivot).normalize_or_zero();
+                        Self::euler_about(ax, snap(sweep(ax)))
+                    }
+                    Handle::Trackball => {
+                        // Left and right turn about the view's up, up and down about its right.
+                        let q = glam::DQuat::from_axis_angle(up, (delta.x * 0.5).to_radians()) * glam::DQuat::from_axis_angle(right, (delta.y * 0.5).to_radians());
+                        let e = aztek_scene::transform::matrix_to_euler(&DMat3::from_quat(q), aztek_scene::transform::RotateOrder::Xyz);
+                        [e.x, e.y, e.z]
+                    }
+                    _ => return None,
+                };
                 Some(if comps {
                     ("rotateComponents".into(), serde_json::json!({ "by": by, "pivot": d.pivot.to_array() }))
                 } else {
@@ -1294,17 +1839,31 @@ impl Viewport {
                 })
             }
             Tool::Scale => {
-                let f = (1.0 + (delta.x - delta.y) / (100.0 * scale)).max(0.001);
+                let mut f = (1.0 + (delta.x - delta.y) / (100.0 * scale)).max(0.001);
+                if self.step_scale > 0.0 {
+                    f = ((f / self.step_scale).round() * self.step_scale).max(0.001);
+                }
                 let by = match d.handle {
                     Handle::Axis(i) => {
                         let mut b = [1.0; 3];
                         b[i] = f;
                         b
                     }
-                    Handle::Center => [f; 3],
+                    Handle::Plane(i) => {
+                        let mut b = [f; 3];
+                        b[i] = 1.0;
+                        b
+                    }
+                    _ => [f; 3],
                 };
                 Some(if comps {
-                    ("scaleComponents".into(), serde_json::json!({ "by": by, "pivot": d.pivot.to_array() }))
+                    // Component scale follows the manipulator's axes: world, object, normal.
+                    let mut call = serde_json::json!({ "by": by, "pivot": d.pivot.to_array() });
+                    if self.frame != DMat3::IDENTITY {
+                        let e = aztek_scene::transform::matrix_to_euler(&self.frame, aztek_scene::transform::RotateOrder::Xyz);
+                        call["orient"] = serde_json::json!([e.x, e.y, e.z]);
+                    }
+                    ("scaleComponents".into(), call)
                 } else {
                     ("scale".into(), serde_json::json!({ "args": targets, "by": by }))
                 })
@@ -1573,4 +2132,65 @@ pub fn rig_items(g: &Graph) -> Vec<RigItem> {
         let _ = Transform::TRANSLATE;
     }
     out
+}
+
+/// A node's drawing override display type: 0 normal, 1 template, 2 reference, as Maya inherits it.
+pub fn override_type(g: &Graph, id: NodeId) -> i64 {
+    let mut n = id;
+    while n != NO_NODE {
+        let Some(node) = g.node(n) else { return 0 };
+        if node.ty().dag && node.bool(DagNode::OVERRIDE_ENABLED) {
+            let t = node.int(DagNode::OVERRIDE_DISPLAY_TYPE);
+            if t != 0 {
+                return t;
+            }
+        }
+        n = g.parent(n);
+    }
+    0
+}
+
+/// The selection mask and Show menu category of a node: its transform takes its shape's.
+pub fn type_category(g: &Graph, id: NodeId) -> &'static str {
+    let Some(n) = g.node(id) else { return "other" };
+    let ty = n.ty();
+    if ty.is_a("joint") {
+        return "joint";
+    }
+    if ty.is_a("ikHandle") {
+        return "ikHandle";
+    }
+    if ty.is_a("deformHandle") {
+        return "deformer";
+    }
+    if ty.is_a("mesh") {
+        return "polymesh";
+    }
+    if ty.is_a("nurbsCurve") {
+        return "curve";
+    }
+    if ty.is_a("locator") {
+        return "locator";
+    }
+    if ty.is_a("camera") {
+        return "camera";
+    }
+    if ty.is_a("transform") {
+        if let Some(&s) = aztek_scene::dag::shapes(g, id, false).first() {
+            if s != id {
+                return type_category(g, s);
+            }
+        }
+        return "group";
+    }
+    "other"
+}
+
+/// Whether an edge attribute holds a set value on this edge.
+fn edge_flag(m: &Mesh, name: &str, e: Index) -> bool {
+    if name == aztek_geo::attribute::names::HARD {
+        m.edge_attrs().get::<bool>(name).get(e as usize).copied().unwrap_or(false)
+    } else {
+        m.edge_attrs().get::<f32>(name).get(e as usize).copied().unwrap_or(0.0) > 0.0
+    }
 }

@@ -68,6 +68,7 @@ impl Core {
     pub fn new() -> Core {
         let mut c = Core { s: Session::new(), log: Vec::new(), log_read: 0, version: 1, current_file: None, preview: Vec::new(), mel_state: Default::default() };
         register_ui_commands(&mut c.s);
+        crate::ui_cmds::register(&mut c.s);
         c.ensure_defaults();
         c
     }
@@ -487,6 +488,11 @@ fn register_ui_commands(s: &mut Session) {
             .undoable(false),
         );
     }
+}
+
+/// Asks the shell to do something, by runtime command name or "name|payload".
+pub fn push_ui_request(r: String) {
+    UI_REQUESTS.lock().unwrap().push(r);
 }
 
 pub fn take_ui_requests() -> Value {

@@ -495,3 +495,49 @@ pub fn node_graph(core: &Core, arg: &str) -> Value {
         .collect();
     json!({"nodes": nodes, "edges": edges})
 }
+
+/// Tables for the General Editors. arg is JSON with "what":
+/// spreadSheet: the selection's keyable and shape attributes; skinWeights: weights of the selected vertices per influence;
+/// connections: {"node"}'s attributes both ways; hypergraph: the DAG as nodes and parents; namespaces: names with a colon.
+pub fn editors(core: &mut Core, arg: &str) -> Value {
+    let parsed: Value = serde_json::from_str(arg).unwrap_or(json!({}));
+    let what = parsed.get("what").and_then(Value::as_str).unwrap_or("");
+    let g = &core.s.graph;
+    match what {
+        "spreadSheet" => {
+            let rows: Vec<Value> = g
+                .selection()
+                .iter()
+                .map(|&id| {
+                    let shapes = aztek_scene::dag::shapes(g, id, false);
+                    json!({"node": g.path(id), "channels": channels(g, id, false), "shape": shapes.first().map(|&s| channels(g, s, true)).unwrap_or_default()})
+                })
+                .collect();
+            Value::Array(rows)
+        }
+        "hypergraph" => {
+            let mut out = Vec::new();
+            for id in g.nodes() {
+                let Some(n) = g.node(id) else { continue };
+                if !n.ty().dag {
+                    continue;
+                }
+                let p = g.parent(id);
+                out.push(json!({"name": n.name(), "path": g.path(id), "type": n.ty().name, "parent": if p == NO_NODE { Value::Null } else { json!(g.path(p)) }, "selected": g.selection().contains(&id)}));
+            }
+            Value::Array(out)
+        }
+        "namespaces" => {
+            let mut names = std::collections::BTreeMap::<String, i64>::new();
+            for id in g.nodes() {
+                if let Some(n) = g.node(id) {
+                    if let Some((ns, _)) = n.name().rsplit_once(':') {
+                        *names.entry(ns.to_string()).or_default() += 1;
+                    }
+                }
+            }
+            json!(names)
+        }
+        _ => Value::Null,
+    }
+}
