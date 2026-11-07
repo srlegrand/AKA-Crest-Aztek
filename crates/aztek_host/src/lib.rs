@@ -4,6 +4,7 @@
 mod camera;
 mod core;
 pub mod ctx_cmds;
+pub mod feedback;
 use aztek_geo::stroke_font as font;
 mod gpu;
 pub mod mel;
@@ -155,6 +156,28 @@ pub extern "C" fn aztek_exec(name: *const c_char, call: *const c_char) -> *mut c
     with(|h| {
         out_json(match h.core.exec(&name, call) {
             Ok(v) => json!({ "ok": v }),
+            Err(e) => json!({ "error": e }),
+        })
+    })
+}
+
+/// The feedback report's link and text from its JSON. See feedback.rs.
+#[no_mangle]
+pub extern "C" fn aztek_feedback_issue(call: *const c_char) -> *mut c_char {
+    let call: Value = serde_json::from_str(&cstr(call)).unwrap_or(json!({}));
+    with(|h| {
+        let gpu = h.shared.as_ref().map(|s| s.device_name.clone());
+        out_json(feedback::issue_from_json(&call, gpu))
+    })
+}
+
+/// A zipped copy of the scene at this path, leaving the scene as it was. Returns {"ok": bytes} or {"error": message}.
+#[no_mangle]
+pub extern "C" fn aztek_feedback_scene_zip(path: *const c_char) -> *mut c_char {
+    let path = cstr(path);
+    with(|h| {
+        out_json(match feedback::scene_zip(&mut h.core.s, std::path::Path::new(&path)) {
+            Ok(bytes) => json!({ "ok": bytes }),
             Err(e) => json!({ "error": e }),
         })
     })

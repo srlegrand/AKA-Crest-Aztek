@@ -17,6 +17,8 @@ public:
     explicit ShelfBar(std::function<void(const QString&, const QString&)> run, QWidget* parent = nullptr);
     void add_to_current(const QString& label, const QString& icon_name, const QString& command, const QString& language);
     void open_editor();
+    // A widget at the far right of the tab row. Tabs that don't fit scroll; it stays.
+    void set_corner(QWidget* w);
     // Reads Maya's shelf_Name.mel into a new shelf: its shelfButton blocks.
     void import_mel(const QString& path);
     void rebuild();

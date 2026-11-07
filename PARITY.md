@@ -609,3 +609,15 @@ Shallower than Maya:
 ### Default cameras (07/11/2026)
 
 `persp`, `top`, `front` and `side` with `perspShape` and the rest, in every new scene from start-up, with the positions, centres of interest, `.rnd`, image names and home commands a new scene saved by Maya holds (checked against Maya-written files in `tests/data/maya_refs`). The camera shape has the node reference's stored attributes by long and short name, read and written in `.ma`; those past the view's own are kept and don't yet change a view. They can't be deleted until `camera -e -startupCamera false`.
+
+## The feedback button (07/11/2026)
+
+A project feature, not a behaviour of the reference application. "This doesn't feel right!" sits in the shelf tab row's corner, so it stays when tabs scroll, at any window width and with any shelf or menu set. Help has an entry, and `AztekFeedback` is a runtime command. `app/src/feedback.cpp` is the window, `crates/aztek_host/src/feedback.rs` the link and the zip.
+
+GitHub has no API for attachments and a write token can't go in a public binary, so the report goes through the browser: the text in a `issues/new` link of at most 7,000 characters, the picture on the clipboard and as a PNG, the scene as `aztek-scene.zip`. A long description is cut in the link with a note, keeping the environment section, and Copy Full Text gets the whole of it. `AZTEK_FEEDBACK_DRYRUN=<file>` writes the link to the file and opens no browser or folder.
+
+Shallower than it could be:
+
+- Checked under Xvfb in dry-run mode only. The real browser, pasting into GitHub, a real upload, opening the folder with the file selected, and Windows have not been exercised.
+- The screenshot covers the app's own windows, placed as they are on the screen and overlapping in no particular order. Under Wayland they go one under another (not exercised).
+- Folders under `feedback/` in the data location are kept, and nothing cleans them up.

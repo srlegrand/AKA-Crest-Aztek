@@ -193,6 +193,23 @@ The command line and the Script Editor take MEL (`polyCube -w 2 -sx 3; select -r
 `aztek.cmds` is the module of record; `maya.cmds`, `maya.mel` and `maya.api.OpenMaya` map onto it. Python plug-ins load
 with `loadPlugin`. C++ plug-ins can't load.
 
+## This doesn't feel right!
+
+The orange button at the far right of the shelf bar (also Help > This doesn't feel right!, or the `AztekFeedback` runtime command) is the
+quick way to report something that behaves differently from what you expect. Write what you did and what you expected, and optionally add:
+
+- a screenshot of the app, which you can draw on with a pen, arrows, rectangles and text;
+- a zipped `.ma` copy of the current scene. Your scene stays as it is, and the copy has a generic name. It holds the names of everything in
+  the scene and may hold file paths. Referenced files and textures are not included.
+
+Both are off by default and ask you to confirm. **Reports are public: never include work under NDA or anything confidential. If you do, it
+is at your own risk.**
+
+The app makes no network requests. "Open on GitHub" opens a filled-in issue page in your browser, puts the picture on the clipboard (Ctrl+V
+in the description box) and shows the folder holding the attachments, under `feedback/` in the app's data location, so the zip can be dragged
+in. You need a GitHub account, and nothing is public until you press Submit on that page. The window shows exactly what the page will be
+filled in with. GitHub takes files up to 25 MB and images up to 10 MB.
+
 ## Maya compatibility
 
 The target is that Maya's scripts, habits and `.ma` files carry over. A production rig from Maya 2020 opens, poses and saves; see "A real rig" in [PARITY.md](PARITY.md). It has been developed without a copy of Maya to

@@ -22,6 +22,11 @@ char* aztek_file(const char* op, const char* path);
 void aztek_undo(void);
 void aztek_redo(void);
 
+// The feedback report. The link and text from {title, description, version, os, qt, attachments}: {url, title, body,
+// fullBody, shortened}. A zipped copy of the scene, the scene untouched: {ok: bytes} or {error}.
+char* aztek_feedback_issue(const char* call_json);
+char* aztek_feedback_scene_zip(const char* path);
+
 // Script UI: operations for the shell to mirror (null when none), what the user did, and the hook for what must answer
 // at once. Dialogs run the event loop inside the hook, on top of a suspended command.
 char* aztek_ui_take_ops(void);
