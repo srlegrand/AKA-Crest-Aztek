@@ -692,12 +692,10 @@ pub fn register(s: &mut Session) {
             }
             if a.bool("template") {
                 for &id in &targets {
-                    let en = aztek_scene::plug::PlugRef::new(id, aztek_scene::transform::DagNode::OVERRIDE_ENABLED as i32);
-                    let ty = aztek_scene::plug::PlugRef::new(id, aztek_scene::transform::DagNode::OVERRIDE_DISPLAY_TYPE as i32);
-                    let cur = g.node(id).is_some_and(|n| n.int(aztek_scene::transform::DagNode::OVERRIDE_DISPLAY_TYPE) == 1);
+                    let tmp = aztek_scene::transform::DagNode::TEMPLATE;
+                    let cur = g.node(id).is_some_and(|n| n.ty().dag && n.bool(tmp));
                     let on = if a.has("state") { a.bool("state") } else { !cur };
-                    let _ = g.set_value(en, aztek_scene::plug::PlugValue::Bool(on));
-                    let _ = g.set_value(ty, aztek_scene::plug::PlugValue::Int(if on { 1 } else { 0 }));
+                    let _ = g.set_value(aztek_scene::plug::PlugRef::new(id, tmp as i32), aztek_scene::plug::PlugValue::Bool(on));
                 }
             }
             Ok(Value::Null)

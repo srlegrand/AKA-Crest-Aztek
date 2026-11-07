@@ -85,6 +85,7 @@ impl Session {
     /// A session with the built-in node types and every ported command registered.
     pub fn new() -> Self {
         types::register_builtins();
+        crate::draw_style::reset_colors();
         let mut s = Session {
             graph: Graph::new(),
             commands: Commands::default(),
@@ -123,6 +124,7 @@ impl Session {
         crate::conform_commands::register(&mut s.commands);
         crate::object_ops::register(&mut s.commands);
         crate::display_layers::register(&mut s.commands);
+        crate::draw_style::register(&mut s.commands);
         crate::duplicate::register(&mut s.commands);
         crate::booleans::register(&mut s.commands);
         crate::anim::register(&mut s.commands);

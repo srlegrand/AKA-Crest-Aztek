@@ -554,3 +554,58 @@ Shallower than Maya:
 - A written deformed mesh with per-face materials has `.gcl` but no groupParts in its chain: unchecked in Maya.
 - No lights, light linking commands, `Create Render Node` window or material favourites. Hypershade has no work area;
   Graph opens the Node Editor. Assign Existing is a plain popup, not a submenu of the marking menu.
+
+## Drawing overrides and wireframe colours (07/11/2026)
+
+The colour a control has in its file now carries through. Found on a production rig: `.ove` and `.ovc` on curve shapes were dropped on
+reading, so every control drew the default blue. Names, short names and defaults are from Autodesk's 2024 node reference for dagNode and
+displayLayer. `crates/aztek_scene/src/draw_style.rs` makes every decision, so `tests/draw_style.rs` tests them with no GPU; the viewport
+only asks it.
+
+Done:
+
+- `drawOverride` (`do`) and its children on every DAG node, read, written, by long and short name: `ovdt`, `ovlod`, `ovs`, `ovt`, `ovp`,
+  `ove`, `ovv`, `hpb`, `ovrgbf`, `ovc`, `ovrgb` with `ovcr` `ovcg` `ovcb`, `ovca`. Also `tmp`, `uoc`, `oc`, `obcc`, `wfcc`, `uocol`, `oclr`,
+  `hio`, `sech`. `getAttr` and `setAttr` take `.do` as a compound.
+- `displayLayer` as the reference has it: `color` is a palette index and 0 is none, with `overrideRGBColors`, `overrideColorRGB`,
+  `levelOfDetail`, `shading`, `texturing`, `playback`, `enabled`, `identification`. The old `useColor` and RGB `color` are gone, and the
+  `displayLayer` command takes `-c` index or `-rgb` r g b. Layers read and write all of it, and a shape can be a member.
+- A layer works by its connection: while `layer.di` drives `node.do`, the node's override children read the layer's values and `setAttr` on
+  them refuses, as on any connected plug.
+- Drawn: index and RGB overrides, inherited from parents with the nearest winning; template and reference; shading, texturing, visibility,
+  level of detail, hide on playback; object colours; selected, lead and child highlight colours. For curves, surfaces, meshes, joints,
+  locators, IK handles, lattices, deformer handles. Template and reference refuse viewport picks, on the shape as well as the transform.
+- One palette: `colorIndex` edits what is drawn, and `displayColor` and `displayRGBColor` change the type defaults, the lead and the template
+  colour. They were stored and not read. The `color` command is new. `play` now tells hide on playback, which nothing called before.
+- Attribute Editor: Drawing Overrides laid out as a section, greyed until enabled, index slider with swatch or RGB swatch. Display >
+  Wireframe Color. Layer Editor swatch opens the 32 entries and RGB. Outliner: `outlinerColor`, templates dim. `toggle -template` from Display
+  > Object Display now sets `.template`, not an override. `createDisplayLayer -e` is empty rather than edit mode.
+
+Not confirmed against Maya, which we have no copy of. These are best readings, and the order is written at the top of `draw_style.rs`:
+
+- Precedence: selection, then display type, then the nearest override colour, then object colour, then the type default. The reference
+  gives the attributes but not this order.
+- A child with its own colour keeps it under a coloured layer. A child in a normal layer of its own is normal under a template layer; a
+  child with its own normal override is not (it stays template or reference, on the API's description of a templated path).
+- Reference draws black whatever its override colour, and template draws in the template colour.
+- Shading, texturing and level of detail count as off if off anywhere on the path.
+- `overridePlayback` off hides during playback. The reference only says it overrides the ability to animate.
+- `objectColor` 0 to 7 is palette entries 24 to 31. `color` writes on the node named and on a transform's shapes. Object colour looks at the
+  shape and its transform, no further up.
+- The child highlight colour and the selected template colour (index 20) are chosen by eye. So is the outliner's dimming of templates.
+- RGB overrides draw as stored, with no colour management.
+- `useOutlinerColor`, `outlinerColor` and `hiddenInOutliner` are not on the reference's dagNode or transform pages. Their names and short
+  names are from memory, and the test rig stores none of them.
+
+Shallower than Maya:
+
+- Level of detail is a world aligned box for line items and an object one for meshes. Overrides don't reach component display or CV colours.
+- A see-through material keeps its textures with texturing off. `overrideColorA` is stored and not drawn. `objectColorRGB` is stored and not drawn.
+- `colorIndex` and `displayColor` aren't undoable, aren't saved as preferences, and `-rs` resets to factory. `displayColor -qi` and the 2024
+  `colorIndex -atv -dor -uc` flags are not done.
+- The Wireframe Color window's Index row sets drawing overrides on what is selected: unverified whether that is what Maya's does.
+- A wheel over a combo box in the Attribute Editor changes it, which is how Qt behaves and predates this.
+
+### Default cameras (07/11/2026)
+
+`persp`, `top`, `front` and `side` with `perspShape` and the rest, in every new scene from start-up, with the positions, centres of interest, `.rnd`, image names and home commands a new scene saved by Maya holds (checked against Maya-written files in `tests/data/maya_refs`). The camera shape has the node reference's stored attributes by long and short name, read and written in `.ma`; those past the view's own are kept and don't yet change a view. They can't be deleted until `camera -e -startupCamera false`.

@@ -143,7 +143,7 @@ fn query_takes_value(cmd: &str, flag: &str) -> bool {
 
 /// Commands whose -e means something other than edit: scriptJob's event, timer's end.
 pub fn e_is_own_flag(cmd: &str) -> bool {
-    matches!(cmd, "scriptJob" | "timer")
+    matches!(cmd, "scriptJob" | "timer" | "createDisplayLayer")
 }
 
 /// A Maya command spelled as one of ours: the command it runs, and its flags (long or short) as ours.

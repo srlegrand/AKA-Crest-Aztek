@@ -1027,8 +1027,15 @@ fn mark_seams(m: &mut Mesh, ids: &[i64]) {
 
 const XFORM_CHANNELS: &[&str] = &[
     "visibility", "translate", "rotate", "scale", "rotateOrder", "rotatePivot", "scalePivot", "rotatePivotTranslate", "scalePivotTranslate", "rotateAxis", "shear", "offsetParentMatrix",
-    "inheritsTransform", "displayHandle", "displayRotatePivot", "displayScalePivot", "displayLocalAxis", "selectHandle", "template", "lodVisibility", "hiddenInOutliner",
+    "inheritsTransform", "displayHandle", "displayRotatePivot", "displayScalePivot", "displayLocalAxis", "selectHandle", "lodVisibility",
     "minTransLimit", "maxTransLimit", "minTransLimitEnable", "maxTransLimitEnable", "minRotLimit", "maxRotLimit", "minRotLimitEnable", "maxRotLimitEnable", "minScaleLimit", "maxScaleLimit", "minScaleLimitEnable", "maxScaleLimitEnable",
+];
+
+/// What every DAG node reads and writes: transforms, shapes, joints, handles.
+const DRAW_CHANNELS: &[&str] = &[
+    "overrideEnabled", "overrideDisplayType", "overrideLevelOfDetail", "overrideShading", "overrideTexturing", "overridePlayback", "overrideVisibility", "hideOnPlayback",
+    "overrideRGBColors", "overrideColor", "overrideColorRGB", "overrideColorA", "template", "useObjectColor", "objectColor", "objectColorRGB", "wireColorRGB", "useOutlinerColor", "outlinerColor",
+    "hiddenInOutliner", "selectionChildHighlighting",
 ];
 
 /// Rigging and animation nodes that are all attributes and connections.
@@ -1061,6 +1068,9 @@ fn creator_attrs(ty: &str) -> Option<&'static [(&'static str, &'static str)]> {
 
 fn channels_of(t: &NodeType) -> Vec<&'static str> {
     let mut v: Vec<&'static str> = Vec::new();
+    if t.dag {
+        v.extend(DRAW_CHANNELS);
+    }
     if t.is_a("transform") {
         v.extend(XFORM_CHANNELS);
     }
@@ -1870,6 +1880,14 @@ impl Build<'_> {
         if let Some(o) = n.truth(&["o", "orthographic"]) {
             let _ = self.s.graph.set_value(PlugRef::new(shape, cam::ORTHOGRAPHIC as i32), PlugValue::Bool(o));
         }
+        let t = self.s.graph.node(shape).unwrap().type_arc().clone();
+        for (at, short) in cam::plain_attrs(&self.s.graph, shape) {
+            let def = &t.attrs[at];
+            let Some(set) = n.set_of(&[short.as_str(), def.name.as_str()]) else { continue };
+            if let Some(v) = plug_value(def, -1, &set.values, 1.0) {
+                let _ = self.s.graph.set_value(PlugRef::new(shape, at as i32), v);
+            }
+        }
     }
 
     fn build_mesh(&mut self, i: usize) {
@@ -2369,6 +2387,29 @@ impl Build<'_> {
         if let Some(v) = n.num(&["do", "displayOrder"]) {
             let _ = g.set_value(PlugRef::new(id, dl::DISPLAY_ORDER as i32), PlugValue::Int(v as i64));
         }
+        for (names, attr) in [(["lod", "levelOfDetail"], dl::LEVEL_OF_DETAIL), (["c", "color"], dl::COLOR), (["id", "identification"], dl::IDENTIFICATION)] {
+            if let Some(v) = n.num(&names) {
+                let _ = g.set_value(PlugRef::new(id, attr as i32), PlugValue::Int(v as i64));
+            }
+        }
+        for (names, attr) in [
+            (["s", "shading"], dl::SHADING),
+            (["t", "texturing"], dl::TEXTURING),
+            (["p", "playback"], dl::PLAYBACK),
+            (["e", "enabled"], dl::ENABLED),
+            (["hpb", "hideOnPlayback"], dl::HIDE_ON_PLAYBACK),
+            (["ovrgbf", "overrideRGBColors"], dl::OVERRIDE_RGB_COLORS),
+        ] {
+            if let Some(v) = n.truth(&names) {
+                let _ = g.set_value(PlugRef::new(id, attr as i32), PlugValue::Bool(v));
+            }
+        }
+        if let Some(v) = n.vec3(&["ovrgb", "overrideColorRGB"]) {
+            let _ = g.set_value(PlugRef::new(id, dl::OVERRIDE_COLOR_RGB as i32), PlugValue::Vec3(v));
+        }
+        if let Some(v) = n.num(&["ovca", "overrideColorA"]) {
+            let _ = g.set_value(PlugRef::new(id, dl::OVERRIDE_COLOR_A as i32), PlugValue::Float(v));
+        }
     }
 
     fn create_curve(&mut self, i: usize, fps: f64) {
@@ -2423,7 +2464,8 @@ impl Build<'_> {
             }
             // A CV driven by a locator or anything else, as an eyelid rig does.
             let into_cv = dt.name == crate::curves::SHAPE_TYPE && matches!(plain_attr(&c.dst_attr).as_str(), "cp" | "controlPoints");
-            if into_cv || is_plain_node(&dt.name) || is_plain_node(&st.name) {
+            let from_layer = st.name == crate::display_layers::TYPE_NAME;
+            if !from_layer && (into_cv || is_plain_node(&dt.name) || is_plain_node(&st.name)) {
                 self.plain_connection(c, sn, &sa, src, dst);
                 continue;
             }
@@ -3198,7 +3240,8 @@ impl Writer<'_> {
             let kflag = if is_shape && a.name == "visibility" { "-k off " } else { "" };
             match v {
                 PlugValue::Vec3(x) => {
-                    let _ = writeln!(self.out, "\tsetAttr \".{name}\" -type \"double3\" {} ;", vec_text(x));
+                    let ty = if a.has(flags::COLOR) { "float3" } else { "double3" };
+                    let _ = writeln!(self.out, "\tsetAttr \".{name}\" -type \"{ty}\" {} ;", vec_text(x));
                 }
                 PlugValue::Float(x) => {
                     let _ = writeln!(self.out, "\tsetAttr {kflag}\".{name}\" {x};");
@@ -3418,6 +3461,23 @@ impl Writer<'_> {
         }
         if d.bool(cam::ORTHOGRAPHIC) {
             let _ = writeln!(self.out, "\tsetAttr \".o\" yes;");
+        }
+        let t = n.type_arc().clone();
+        for (at, short) in cam::plain_attrs(&self.s.graph, shape) {
+            let def = &t.attrs[at];
+            let Some(n) = self.s.graph.node(shape) else { return };
+            match n.value(at).clone() {
+                PlugValue::Bool(v) if !matches!(def.default_value, PlugValue::Bool(x) if x == v) => {
+                    let _ = writeln!(self.out, "\tsetAttr \".{short}\" {};", if v { "yes" } else { "no" });
+                }
+                PlugValue::Float(v) if !matches!(def.default_value, PlugValue::Float(x) if (x - v).abs() < 1e-12) => {
+                    let _ = writeln!(self.out, "\tsetAttr \".{short}\" {};", fmt_num(v));
+                }
+                PlugValue::String(v) if !v.is_empty() => {
+                    let _ = writeln!(self.out, "\tsetAttr \".{short}\" -type \"string\" {};", quoted(&v));
+                }
+                _ => {}
+            }
         }
     }
 
@@ -3865,6 +3925,23 @@ impl Writer<'_> {
             let _ = writeln!(body, "\tsetAttr \".dt\" {dt};");
         }
         let _ = writeln!(body, "\tsetAttr \".do\" {};", n.data().int(dl::DISPLAY_ORDER));
+        let lod = n.data().int(dl::LEVEL_OF_DETAIL);
+        if lod != 0 {
+            let _ = writeln!(body, "\tsetAttr \".lod\" {lod};");
+        }
+        for (name, attr, default) in [("s", dl::SHADING, true), ("t", dl::TEXTURING, true), ("p", dl::PLAYBACK, true), ("e", dl::ENABLED, true), ("hpb", dl::HIDE_ON_PLAYBACK, false), ("ovrgbf", dl::OVERRIDE_RGB_COLORS, false)] {
+            if n.bool(attr) != default {
+                let _ = writeln!(body, "\tsetAttr \".{name}\" {};", if default { "no" } else { "yes" });
+            }
+        }
+        let color = n.data().int(dl::COLOR);
+        if color != 0 {
+            let _ = writeln!(body, "\tsetAttr \".c\" {color};");
+        }
+        let rgb = n.vec3(dl::OVERRIDE_COLOR_RGB);
+        if rgb != DVec3::ZERO {
+            let _ = writeln!(body, "\tsetAttr \".ovrgb\" -type \"float3\" {} ;", vec_text(rgb));
+        }
         let lines: Vec<String> = members.iter().map(|&m| g.path(m)).collect();
         self.pending.push(body);
         for m in lines {

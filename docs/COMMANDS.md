@@ -3,7 +3,7 @@
 Generated from the command registry by `cargo run -p aztek_host --example gen_commands`; do not edit by hand.
 Commands take Maya's flags, long or short, in MEL and in Python (`aztek.cmds` or `maya.cmds`).
 
-962 commands.
+963 commands.
 
 ## AppendToPolygonTool
 
@@ -2828,6 +2828,17 @@ Arguments: meshes or vertices (the selection when none)
 | --- | --- | --- |
 | `name` | `n` | Name of the cluster; its handle takes the name plus Handle. |
 
+## color
+
+Set the dormant wireframe colour of objects (the selection by default): -ud 1 to 8, -rgb r g b, or neither for the class colour.
+
+Arguments: objects
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `rgbColor` | `rgb` | An RGB colour. |
+| `userDefined` | `ud` | One of the eight user colours, 1 to 8. |
+
 ## colorIndex
 
 A palette entry's colour: index r g b, 1 to 31, -q asks.
@@ -4372,7 +4383,7 @@ Arguments: objects
 
 ## displayLayer
 
-Edit a display layer's switches (V, P, display type, colour, name); with no flags, query it. Returns its info: name, visibility, hideOnPlayback, displayType, color (null for none), order and members.
+Edit a display layer's switches (V, P, display type, colour, name); with no flags, query it. Returns its info: name, visibility, hideOnPlayback, displayType, color (RGB, null for none), colorIndex, order and members.
 
 Arguments: layer
 
@@ -4381,8 +4392,8 @@ Arguments: layer
 | `visibility` | `v` | Show or hide its objects. |
 | `hideOnPlayback` | `hpb` | Hide its objects while the animation plays. |
 | `displayType` | `dt` | normal, template or reference. |
-| `color` | `c` | Wireframe tint, linear RGB; turns the tint on. |
-| `useColor` | `uc` | Turn the wireframe tint on or off. |
+| `color` | `c` | Palette index for its objects' wireframe, 0 to 31; 0 is none. Turns RGB off. |
+| `rgbColor` | `rgb` | An RGB wireframe colour; turns RGB on. |
 | `name` | `n` | Rename the layer; made unique. |
 
 ## displayLevelOfDetail

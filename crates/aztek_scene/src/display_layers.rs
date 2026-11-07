@@ -1,16 +1,17 @@
 //! Port of `src/scene/DisplayLayers.{h,cpp}`: Maya's display layers. A `displayLayer` node (non-DAG) holds the layer's
-//! switches; an object joins one by having the layer's drawInfo connected to its displayLayer plug, as Maya wires
-//! drawInfo into drawOverride. An object is in at most one layer, and a layer on a group governs everything under it
-//! unless a child has a layer of its own.
+//! switches; an object joins one by having the layer's drawInfo connected to its drawOverride plug. While connected,
+//! the layer's values replace the object's own drawing overrides (`draw_style::override_on`). An object is in at most
+//! one layer, and a layer on a group governs everything under it unless a child has a layer of its own.
 //!
 //!   visibility       off hides the members, like their own visibility.
-//!   hideOnPlayback   hides the members only while the animation plays (Maya's P).
+//!   hideOnPlayback   hides the members only while the animation plays (the panel's P).
 //!   displayType      normal; template: grey wire that can't be picked; reference: drawn as usual but can't be picked.
-//!   useColor/color   tints the members' wireframe (linear RGB). Off by default: no colour.
+//!   color            palette index for the members' wireframe; 0 is no colour.
+//!   overrideRGBColors, overrideColorRGB   an RGB colour in place of the index.
+//!   levelOfDetail, shading, texturing, playback, enabled   as the drawing overrides they drive.
 //!   displayOrder     row order in the Display Layers panel, lowest first.
 
 use std::any::Any;
-use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
 
 use aztek_ops::{fail, objects, ArgType as T, Args, CmdResult, CommandDef, CommandError, Commands, FlagDef};
@@ -26,11 +27,19 @@ use crate::transform::Transform;
 pub const VISIBILITY: usize = 0;
 pub const HIDE_ON_PLAYBACK: usize = 1;
 pub const DISPLAY_TYPE: usize = 2;
-pub const USE_COLOR: usize = 3;
-pub const COLOR: usize = 4;
-pub const DISPLAY_ORDER: usize = 5;
-pub const DRAW_INFO: usize = 6;
-pub const COUNT: usize = 7;
+pub const COLOR: usize = 3;
+pub const DISPLAY_ORDER: usize = 4;
+pub const DRAW_INFO: usize = 5;
+pub const LEVEL_OF_DETAIL: usize = 6;
+pub const SHADING: usize = 7;
+pub const TEXTURING: usize = 8;
+pub const PLAYBACK: usize = 9;
+pub const ENABLED: usize = 10;
+pub const OVERRIDE_RGB_COLORS: usize = 11;
+pub const OVERRIDE_COLOR_RGB: usize = 12;
+pub const OVERRIDE_COLOR_A: usize = 13;
+pub const IDENTIFICATION: usize = 14;
+pub const COUNT: usize = 15;
 
 pub const TYPE_NAME: &str = "displayLayer";
 /// Maya's implicit layer: naming it as the target of a membership edit takes objects out of their layer.
@@ -56,12 +65,7 @@ impl DisplayType {
     }
 }
 
-/// Which way the animation plays: 0 stopped. Set by the animation player; hideOnPlayback reads it.
-static PLAY_DIRECTION: AtomicI32 = AtomicI32::new(0);
-
-pub fn set_play_direction(d: i32) {
-    PLAY_DIRECTION.store(d, Ordering::Relaxed);
-}
+pub use crate::draw_style::set_play_direction;
 
 struct DisplayLayerNode;
 
@@ -73,7 +77,7 @@ impl NodeBehavior for DisplayLayerNode {
 }
 
 fn has_layer_plug(n: &Node) -> bool {
-    n.ty().dag && n.ty().is_a("transform")
+    n.ty().dag
 }
 
 pub fn is_layer(n: &Node) -> bool {
@@ -112,22 +116,21 @@ pub fn members(g: &Graph, layer: NodeId) -> Vec<NodeId> {
     out
 }
 
-/// True when the node's own layer hides it: visibility off, or hideOnPlayback while playing.
-pub fn hidden_by_own_layer(g: &Graph, id: NodeId) -> bool {
-    let Some(layer) = layer_of(g, id) else { return false };
-    let l = g.node(layer).unwrap();
-    if !l.bool(VISIBILITY) {
-        return true;
-    }
-    l.bool(HIDE_ON_PLAYBACK) && PLAY_DIRECTION.load(Ordering::Relaxed) != 0
-}
-
 /// How the layer governing a node (its own, else the nearest ancestor's) draws it.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Display {
     pub ty: DisplayType,
-    /// Linear RGB wire tint.
-    pub color: Option<DVec3>,
+    /// The layer's wire colour, 0 to 1; None when it has none.
+    pub color: Option<[f64; 3]>,
+}
+
+/// The colour a layer gives: RGB when overrideRGBColors is on, else its palette index, where 0 is none.
+pub fn layer_color(l: &Node) -> Option<[f64; 3]> {
+    if l.bool(OVERRIDE_RGB_COLORS) {
+        return Some(l.vec3(OVERRIDE_COLOR_RGB).to_array());
+    }
+    let i = l.int(COLOR);
+    (i > 0).then(|| crate::draw_style::palette(i))
 }
 
 pub fn display(g: &Graph, id: NodeId) -> Display {
@@ -137,7 +140,7 @@ pub fn display(g: &Graph, id: NodeId) -> Display {
             let l = g.node(layer).unwrap();
             return Display {
                 ty: DisplayType::from_index(l.int(DISPLAY_TYPE)),
-                color: l.bool(USE_COLOR).then(|| l.vec3(COLOR)),
+                color: layer_color(l),
             };
         }
         n = g.parent(n);
@@ -211,16 +214,17 @@ fn names_of(g: &Graph, ids: &[NodeId]) -> Value {
     Value::Array(ids.iter().map(|&id| Value::String(g.path(id))).collect())
 }
 
-/// { name, visibility, hideOnPlayback, displayType, color (null without one), order, members }.
+/// { name, visibility, hideOnPlayback, displayType, color (RGB, null without one), colorIndex, order, members }.
 pub fn info(g: &Graph, layer: NodeId) -> Value {
     let n = g.node(layer).unwrap();
-    let color = if n.bool(USE_COLOR) { json!(n.vec3(COLOR).to_array()) } else { Value::Null };
+    let color = layer_color(n).map_or(Value::Null, |c| json!(c));
     json!({
         "name": g.path(layer),
         "visibility": n.bool(VISIBILITY),
         "hideOnPlayback": n.bool(HIDE_ON_PLAYBACK),
         "displayType": DISPLAY_TYPE_NAMES[n.int(DISPLAY_TYPE).clamp(0, 2) as usize],
         "color": color,
+        "colorIndex": n.int(COLOR),
         "order": n.int(DISPLAY_ORDER),
         "members": names_of(g, &members(g, layer)),
     })
@@ -258,13 +262,10 @@ fn layer_attrs() -> Vec<AttrDef> {
                 "normal; template: grey wireframe, not pickable in the viewport; reference: drawn as usual, not pickable.",
             )
         },
-        attr("useColor", "uc", PlugType::Bool, PlugValue::Bool(false), stored, "Tint the objects' wireframe with color."),
         AttrDef {
-            child_names: ["colorR".into(), "colorG".into(), "colorB".into()],
-            child_short: ["cr".into(), "cg".into(), "cb".into()],
             min_value: Some(0.0),
-            max_value: Some(1.0),
-            ..attr("color", "c", PlugType::Vec3, PlugValue::Vec3(DVec3::splat(0.5)), stored, "Wireframe tint, linear RGB.")
+            max_value: Some(31.0),
+            ..attr("color", "c", PlugType::Int, PlugValue::Int(0), stored, "Palette index the objects draw in, 0 to 31; 0 is no colour.")
         },
         AttrDef {
             min_value: Some(0.0),
@@ -276,8 +277,30 @@ fn layer_attrs() -> Vec<AttrDef> {
             PlugType::Int,
             PlugValue::Int(0),
             flags::OUTPUT | flags::HIDDEN,
-            "Connected to each member's displayLayer.",
+            "All the layer's drawing settings as one plug: connected to each member's drawOverride.",
         ),
+        AttrDef {
+            enum_names: vec!["Full".into(), "Bounding Box".into()],
+            ..attr("levelOfDetail", "lod", PlugType::Enum, PlugValue::Int(0), stored, "Full, or drawn as a bounding box.")
+        },
+        attr("shading", "s", PlugType::Bool, PlugValue::Bool(true), stored, "Off draws a wireframe in shaded display."),
+        attr("texturing", "t", PlugType::Bool, PlugValue::Bool(true), stored, "Off leaves textures out in shaded display."),
+        attr("playback", "p", PlugType::Bool, PlugValue::Bool(true), stored, "Off leaves the objects out of the view during playback."),
+        attr("enabled", "e", PlugType::Bool, PlugValue::Bool(true), stored, "Off turns the effect of the other attributes off."),
+        attr("overrideRGBColors", "ovrgbf", PlugType::Bool, PlugValue::Bool(false), stored, "Take the colour from overrideColorRGB instead of the index."),
+        AttrDef {
+            child_names: ["overrideColorR".into(), "overrideColorG".into(), "overrideColorB".into()],
+            child_short: ["ovcr".into(), "ovcg".into(), "ovcb".into()],
+            min_value: Some(0.0),
+            max_value: Some(1.0),
+            ..attr("overrideColorRGB", "ovrgb", PlugType::Vec3, PlugValue::Vec3(DVec3::ZERO), stored | flags::COLOR, "The override colour, 0 to 1 per channel.")
+        },
+        AttrDef {
+            min_value: Some(0.0),
+            max_value: Some(1.0),
+            ..attr("overrideColorA", "ovca", PlugType::Float, PlugValue::Float(1.0), stored, "The override colour's alpha, if supported.")
+        },
+        attr("identification", "id", PlugType::Int, PlugValue::Int(0), stored, "Display layer identification number."),
     ]
 }
 
@@ -409,7 +432,7 @@ pub fn register(c: &mut Commands<Session>) {
         CommandDef::<Session>::new(
             "displayLayer",
             "Edit a display layer's switches (V, P, display type, colour, name); with no flags, query it. Returns its info: \
-             name, visibility, hideOnPlayback, displayType, color (null for none), order and members.",
+             name, visibility, hideOnPlayback, displayType, color (RGB, null for none), colorIndex, order and members.",
             |s, a| {
                 let name = first_positional(a, "displayLayer", "name the layer")?;
                 let id = layer_arg(&s.graph, &name, "displayLayer")?;
@@ -430,12 +453,17 @@ pub fn register(c: &mut Commands<Session>) {
                     set(g, DISPLAY_TYPE, PlugValue::Int(display_type_arg(&a.string("displayType", ""), "displayLayer")?))?;
                 }
                 if a.has("color") {
-                    let Some(c) = a.vec3("color") else { fail!("displayLayer: color takes [r, g, b]") };
-                    set(g, COLOR, PlugValue::Vec3(DVec3::from_array(c)))?;
-                    set(g, USE_COLOR, PlugValue::Bool(true))?;
+                    let i = a.int("color", 0);
+                    if !(0..=31).contains(&i) {
+                        fail!("displayLayer: color is a palette index, 0 to 31");
+                    }
+                    set(g, COLOR, PlugValue::Int(i))?;
+                    set(g, OVERRIDE_RGB_COLORS, PlugValue::Bool(false))?;
                 }
-                if a.has("useColor") {
-                    set(g, USE_COLOR, PlugValue::Bool(a.bool("useColor")))?;
+                if a.has("rgbColor") {
+                    let Some(c) = a.vec3("rgbColor") else { fail!("displayLayer: rgbColor takes [r, g, b]") };
+                    set(g, OVERRIDE_COLOR_RGB, PlugValue::Vec3(DVec3::from_array(c)))?;
+                    set(g, OVERRIDE_RGB_COLORS, PlugValue::Bool(true))?;
                 }
                 if a.has("name") {
                     g.rename(id, &a.string("name", "")).map_err(|e| CommandError::new(format!("displayLayer: {e}")))?;
@@ -447,8 +475,8 @@ pub fn register(c: &mut Commands<Session>) {
         .flag(flag("visibility", "v", T::Bool, Value::Null, "Show or hide its objects."))
         .flag(flag("hideOnPlayback", "hpb", T::Bool, Value::Null, "Hide its objects while the animation plays."))
         .flag(flag("displayType", "dt", T::String, Value::Null, "normal, template or reference.").choices(&DISPLAY_TYPE_NAMES))
-        .flag(flag("color", "c", T::Vec3, Value::Null, "Wireframe tint, linear RGB; turns the tint on."))
-        .flag(flag("useColor", "uc", T::Bool, Value::Null, "Turn the wireframe tint on or off."))
+        .flag(flag("color", "c", T::Int, Value::Null, "Palette index for its objects' wireframe, 0 to 31; 0 is none. Turns RGB off."))
+        .flag(flag("rgbColor", "rgb", T::Vec3, Value::Null, "An RGB wireframe colour; turns RGB on."))
         .flag(flag("name", "n", T::String, Value::Null, "Rename the layer; made unique.")),
     );
 

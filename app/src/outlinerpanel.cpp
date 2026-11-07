@@ -242,6 +242,17 @@ void Outliner::add(QTreeWidgetItem* parent, const QJsonObject& node) {
     if (cam_default) it->setForeground(0, QColor(150, 150, 150));
     if (!node["visible"].toBool()) it->setForeground(0, QColor(130, 130, 130));
     if (node["intermediate"].toBool()) it->setForeground(0, QColor(110, 110, 160));
+    // Templated objects dim, with what is under them; their own outliner colour is kept unless hidden.
+    if (node["display"].toInt() == 1) {
+        it->setForeground(0, QColor(140, 140, 140));
+        QFont font = it->font(0);
+        font.setItalic(true);
+        it->setFont(0, font);
+    }
+    if (node["outlinerColor"].isArray() && node["visible"].toBool()) {
+        QJsonArray c = node["outlinerColor"].toArray();
+        it->setForeground(0, QColor::fromRgbF(c.at(0).toDouble(), c.at(1).toDouble(), c.at(2).toDouble()));
+    }
     for (const QJsonValue& c : node["children"].toArray()) add(it, c.toObject());
     if (attrs_) {
         // Channels as children, Display > Attributes.

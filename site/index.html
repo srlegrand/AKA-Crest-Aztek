@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aztek</title>
+<meta name="description" content="Aztek: modelling, UVs, rigging and animation that behave like Maya. Free and open source under Apache 2.0, for Linux and Windows.">
+<meta property="og:title" content="Aztek">
+<meta property="og:description" content="Modelling, UVs, rigging and animation that behave like Maya. Apache 2.0, Linux and Windows.">
+<meta property="og:image" content="https://srlegrand.github.io/Aztek/img/social-preview.png">
+<link rel="icon" type="image/png" href="img/aztek-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <a class="brand" href="#"><img src="img/aztek-icon.png" alt="" width="28" height="28"><span>Aztek</span></a>
+  <nav>
+    <a href="#features">Features</a>
+    <a href="#download">Download</a>
+    <a href="#licence">Licence</a>
+    <a href="https://github.com/srlegrand/Aztek">GitHub</a>
+  </nav>
+</header>
+
+<section class="hero">
+  <img class="splash" src="img/splash.png" alt="Aztek splash screen" width="1200" height="700">
+  <div class="hero-text">
+    <h1>Modelling, UVs, rigging and animation that behave like Maya.</h1>
+    <p>Same commands, flags, hotkeys, menus and marking menus. MEL and Python scripts run, <code>.ma</code> files open and save,
+      and production rigs pose. Free and open source under the Apache 2.0 licence, for Linux and Windows.</p>
+    <div class="buttons">
+      <a class="btn primary" id="dl-main" href="https://github.com/srlegrand/Aztek/releases/tag/latest">Download</a>
+      <a class="btn" href="https://github.com/srlegrand/Aztek">Source on GitHub</a>
+    </div>
+    <p class="build-line" id="build-line"></p>
+  </div>
+</section>
+
+<div class="fret" aria-hidden="true"></div>
+
+<section class="showcase">
+  <figure>
+    <img src="img/production-rig.png" alt="A production character rig made in Maya 2020, opened in Aztek and posed" loading="lazy">
+    <figcaption>A production character rig made in Maya 2020, opened from its <code>.ma</code> file and posed: 414 joints,
+      37 skinClusters, 17 blendShapes, 82 IK handles, follicles, ribbons and wires. It opens in about 3 seconds and responds
+      in 13 to 44 ms per change.</figcaption>
+  </figure>
+</section>
+
+<section class="features" id="features">
+  <h2>What's in it</h2>
+
+  <article class="feature">
+    <div class="copy">
+      <h3>Polygon modelling</h3>
+      <p>Maya's polygon commands with construction history. Quad Draw, Multi-Cut, Insert and Offset Edge Loop, Target Weld,
+        Slide Edge, Crease, Create and Append Polygon; symmetry, soft selection, eighteen sculpting brushes.</p>
+    </div>
+    <img src="img/modelling.png" alt="Component editing with construction history and the move manipulator" loading="lazy">
+  </article>
+
+  <article class="feature">
+    <div class="copy">
+      <h3>Soft selection and Quad Draw</h3>
+      <p>B toggles soft selection, with the falloff shown on the vertices. Quad Draw retopologises on a live surface.</p>
+    </div>
+    <div class="pair">
+      <img src="img/soft-select.png" alt="Soft selection falloff on a plane" loading="lazy">
+      <img src="img/quad-draw.png" alt="Quad Draw on a live surface" loading="lazy">
+    </div>
+  </article>
+
+  <article class="feature">
+    <div class="copy">
+      <h3>NURBS</h3>
+      <p>Curves (CV and EP tools, rebuild, attach, detach, offset, fillets, projection, trims) and surfaces (primitives, loft,
+        revolve, extrude, boundary, birail, <code>nurbsToPoly</code>), with CVs, edit points and isoparms as components.</p>
+    </div>
+    <img src="img/nurbs.png" alt="NURBS surfaces and curves" loading="lazy">
+  </article>
+
+  <article class="feature">
+    <div class="copy">
+      <h3>UVs</h3>
+      <p>Planar, cylindrical, spherical and automatic projections, unfold, layout, cut and sew in the UV Editor, by UV, shell,
+        edge or face.</p>
+    </div>
+    <img src="img/uv-editor.png" alt="The UV Editor after automatic projection and layout" loading="lazy">
+  </article>
+
+  <article class="feature">
+    <div class="copy">
+      <h3>Materials and textures</h3>
+      <p>lambert, blinn, phong, phongE and surfaceShader with file textures and place2dTexture, assigned to objects or faces.
+        Textured mode (6) in the viewport and the Hypershade.</p>
+    </div>
+    <img src="img/materials.png" alt="Materials and file textures in the viewport" loading="lazy">
+  </article>
+
+  <article class="feature">
+    <div class="copy">
+      <h3>Rigging</h3>
+      <p>Joints (orient, mirror, insert, segment scale compensate), RP, SC and spline IK, every constraint, smooth skin with
+        weight painting, mirror and copy, dual quaternion; a HumanIK subset (skeleton, definition, control rig, retargeting).</p>
+    </div>
+    <img src="img/quadruped-rig.png" alt="A quadruped skeleton posed with the rotate tool" loading="lazy">
+  </article>
+
+  <article class="feature">
+    <div class="copy">
+      <h3>Skinning and deformers</h3>
+      <p>Paint Skin Weights with the influence list in Tool Settings. blendShape in full (Shape Editor, in-betweens, live
+        targets), lattice, wrap, wire, delta mush, softMod, clusters, nonlinears, sculpt, jiggle, shrinkWrap, proximityWrap,
+        curveWarp and more.</p>
+    </div>
+    <div class="pair">
+      <img src="img/rigging.png" alt="Joints, smooth skin and an RP IK handle" loading="lazy">
+      <img src="img/paint-weights.png" alt="Paint Skin Weights" loading="lazy">
+    </div>
+  </article>
+
+  <article class="feature">
+    <div class="copy">
+      <h3>Animation</h3>
+      <p>Keys with weighted tangents and infinities, Graph Editor, Dope Sheet, set driven keys, breakdowns, copy and paste
+        keys, baking, motion paths, animation layers, character sets and clips, playblast.</p>
+    </div>
+    <div class="pair">
+      <img src="img/graph-editor.png" alt="Graph Editor" loading="lazy">
+      <img src="img/dope-sheet.png" alt="Dope Sheet with a breakdown" loading="lazy">
+    </div>
+  </article>
+
+  <article class="feature">
+    <div class="copy">
+      <h3><code>.ma</code> files</h3>
+      <p>Read and written in Maya's layout: deformer chains, constraints, utility nodes, expressions, materials, NURBS,
+        drawing overrides and references with their edits; namespaces, instances, locked nodes, Z up.</p>
+    </div>
+    <img src="img/rig-file.png" alt="A character rig opened from a .ma file" loading="lazy">
+  </article>
+
+  <article class="feature">
+    <div class="copy">
+      <h3>Scripting</h3>
+      <p>MEL (procedures, arrays, control flow, backticks, expressions) and Python with <code>aztek.cmds</code>, a
+        <code>maya.cmds</code> shim and <code>maya.api.OpenMaya</code>. Python plug-ins with <code>MPxCommand</code> and
+        <code>MPxNode</code>; <code>scriptJob</code>, <code>scriptNode</code>, <code>evalDeferred</code>.</p>
+<pre><code>import maya.cmds as cmds
+cube = cmds.polyCube(w=2)[0]
+cmds.setKeyframe(cube, at='ty', t=1, v=0)
+cmds.setKeyframe(cube, at='ty', t=24, v=5)</code></pre>
+    </div>
+    <img src="img/scripting.gif" alt="A MEL script in the Script Editor building cubes with expressions, then playing them" loading="lazy">
+  </article>
+
+  <article class="feature">
+    <div class="copy">
+      <h3>Script-built interface</h3>
+      <p><code>window</code>, layouts, controls, menus and dialogs from MEL or Python become Qt widgets. Attribute-bound
+        controls, <code>AE&lt;type&gt;Template</code> procedures, <code>workspaceControl</code> docking, editors and panels
+        created by script.</p>
+    </div>
+    <img src="img/script-window.png" alt="A window built from MEL" loading="lazy">
+  </article>
+
+  <article class="feature">
+    <div class="copy">
+      <h3>The interface you know</h3>
+      <p>Menu sets, shelves, hotkeys, marking menus, the hotbox, channel box, outliner, Attribute Editor, Node Editor, Tool
+        Settings and panel layouts, where your hands expect them.</p>
+    </div>
+    <div class="pair">
+      <img src="img/marking-menu.png" alt="Marking menu" loading="lazy">
+      <img src="img/node-editor.png" alt="Node Editor" loading="lazy">
+    </div>
+  </article>
+</section>
+
+<div class="fret" aria-hidden="true"></div>
+
+<section class="download" id="download">
+  <h2>Download</h2>
+  <p>Built by GitHub Actions on every change to the main branch.</p>
+  <div class="dl-grid">
+    <a class="dl" id="dl-windows" href="https://github.com/srlegrand/Aztek/releases/download/latest/aztek-windows-x86_64.zip">
+      <span class="os">Windows</span><span class="file">aztek-windows-x86_64.zip</span>
+    </a>
+    <a class="dl" id="dl-linux" href="https://github.com/srlegrand/Aztek/releases/download/latest/aztek-linux-x86_64.tar.gz">
+      <span class="os">Linux</span><span class="file">aztek-linux-x86_64.tar.gz</span>
+    </a>
+    <a class="dl" href="https://github.com/srlegrand/Aztek">
+      <span class="os">Source</span><span class="file">github.com/srlegrand/Aztek</span>
+    </a>
+  </div>
+  <p class="small">Windows: unzip and run <code>aztek.exe</code>. Linux: built on Ubuntu 24.04, needs Qt 6, a Vulkan driver and Python 3.12
+    (<code>sudo apt install libqt6widgets6 libvulkan1 libpython3.12</code>). All builds:
+    <a href="https://github.com/srlegrand/Aztek/releases">Releases</a>.</p>
+
+  <h3>Build from source</h3>
+<pre><code>git clone https://github.com/srlegrand/Aztek.git
+cd Aztek
+./build.sh --deps --run      # Linux
+build.bat -Run               # Windows</code></pre>
+  <p class="small">Needs Rust, CMake, Ninja, Qt 6.4+, Python 3 and, on Windows, Visual Studio 2022 with the C++ workload.
+    Details in the <a href="https://github.com/srlegrand/Aztek#build">README</a>.</p>
+</section>
+
+<section class="licence" id="licence">
+  <h2>Licence</h2>
+  <p>Aztek is free and open source under the <a href="https://github.com/srlegrand/Aztek/blob/main/LICENSE">Apache License 2.0</a>.
+    Use it, change it and ship it, commercially or not, keeping the licence and copyright notices.</p>
+</section>
+
+<section class="docs-links">
+  <a href="https://github.com/srlegrand/Aztek/blob/main/docs/COMMANDS.md"><strong>Command reference</strong><span>Every command and flag</span></a>
+  <a href="https://github.com/srlegrand/Aztek/blob/main/PARITY.md"><strong>Parity</strong><span>What matches Maya and what doesn't yet</span></a>
+  <a href="https://github.com/srlegrand/Aztek/issues"><strong>Issues</strong><span>Report a difference or a bug</span></a>
+</section>
+
+<footer>
+  <img src="img/logo.png" alt="Aztek" width="160">
+  <p>Maya is a trademark of Autodesk, Inc. Aztek is an independent project, not affiliated with or endorsed by Autodesk.
+    It uses Maya's published behaviour as its reference and contains none of its code or artwork.</p>
+</footer>
+
+<script>
+(function () {
+  var isWin = /Windows/i.test(navigator.userAgent);
+  var isLinux = /Linux/i.test(navigator.userAgent) && !/Android/i.test(navigator.userAgent);
+  var main = document.getElementById('dl-main');
+  if (isWin) {
+    main.href = document.getElementById('dl-windows').href;
+    main.textContent = 'Download for Windows';
+    document.getElementById('dl-windows').classList.add('mine');
+  } else if (isLinux) {
+    main.href = document.getElementById('dl-linux').href;
+    main.textContent = 'Download for Linux';
+    document.getElementById('dl-linux').classList.add('mine');
+  }
+  fetch('https://api.github.com/repos/srlegrand/Aztek/releases/tags/latest')
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (rel) {
+      if (!rel || !rel.published_at) return;
+      var d = new Date(rel.published_at);
+      var dd = String(d.getUTCDate()).padStart(2, '0'), mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+      var sha = (rel.target_commitish || '').slice(0, 7);
+      document.getElementById('build-line').textContent =
+        'Latest build ' + dd + '/' + mm + '/' + d.getUTCFullYear() + (/^[0-9a-f]{7}$/.test(sha) ? ', commit ' + sha : '');
+    })
+    .catch(function () {});
+})();
+</script>
+</body>
+</html>

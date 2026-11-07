@@ -543,8 +543,8 @@ fn register_scene(c: &mut Commands<Session>) {
             if !a.bool("constructionHistory") {
                 for n in objects(s, a) {
                     if let Ok(Some(id)) = s.graph.find(&n) {
-                        if crate::cameras::is_default_camera(&s.graph, id) {
-                            fail!("delete: {n} is a default camera and can't be deleted");
+                        if crate::cameras::is_startup(&s.graph, id) {
+                            fail!("delete: {n} is a startup camera; camera -e -startupCamera false lets it go");
                         }
                     }
                 }
