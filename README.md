@@ -5,7 +5,12 @@
 A modelling, UV, rigging and animation application that behaves like Maya. Rust core (scene graph, commands,
 geometry, Vulkan viewport), Qt Widgets shell in C++, a MEL interpreter, and embedded Python with `aztek.cmds`, a
 `maya.cmds` shim and an OpenMaya API 2.0 subset. Reads and writes `.ma` files. [PARITY.md](PARITY.md) has the behaviour
-target and status, including where it differs from Maya; [docs/COMMANDS.md](docs/COMMANDS.md) lists every command.
+target and status, including where it differs from Maya; [docs/COMMANDS.md](docs/COMMANDS.md) lists all 962 commands.
+
+![A production rig from Maya 2020, opened from its .ma file](docs/production-rig.png)
+
+A production character rig made in Maya 2020, opened from its `.ma` file and posed: 414 joints, 37 skinClusters, 17
+blendShapes, 82 IK handles, follicles, ribbons and wires. It opens in about 3 seconds and responds in 13 to 44 ms per change.
 
 ## What's in it
 
@@ -20,8 +25,15 @@ target and status, including where it differs from Maya; [docs/COMMANDS.md](docs
   clusters, blend shapes; a HumanIK subset (skeleton, definition, control rig, retargeting).
 - **Animation:** keys with weighted tangents and infinities, Graph Editor, Dope Sheet, set driven keys, breakdowns,
   copy and paste keys, baking, motion paths, animation layers, character sets and clips.
+- **Deformers:** blendShape in full (Shape Editor, in-between and live targets), sculpt, jiggle, shrinkWrap, proximityWrap,
+  curveWarp, wrinkle, morph and more; deformer weights painted with the Paint Attribute tool or exported.
+- **Files:** `.ma` read and written in Maya's layout, deformer chains, constraints, utility nodes, expressions, materials,
+  NURBS and references with their edits included; namespaces, instances, locked nodes, Z up.
 - **Scripting:** MEL (procedures, arrays, control flow, backticks), Python, `maya.api.OpenMaya`, Python plug-ins with
-  `MPxCommand` and `MPxNode`.
+  `MPxCommand` and `MPxNode`; `scriptJob`, `scriptNode` and `evalDeferred`.
+- **Script-built interface:** `window`, layouts, controls, menus and dialogs from MEL or Python become Qt widgets;
+  attribute-bound controls, `AE<type>Template` procedures, `workspaceControl` docking, editors and panels created by script.
+- **Playblast** to images or, through ffmpeg, to a movie.
 - **Interface:** menu sets, shelves with an editor, hotkey editor, marking menus, hotbox, channel box, outliner, attribute
   editor, node editor, tool settings, panel layouts, workspaces.
 
