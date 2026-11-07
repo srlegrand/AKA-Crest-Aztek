@@ -327,7 +327,7 @@ const KINDS: &[(&str, &str)] = &[
     ("window", WINDOW),
     ("columnLayout", "adjustableColumn:adj:b columnAlign:cal:a columnAttach:cat:a2 columnOffset:co:a2 columnWidth:cw:a rowSpacing:rs:a"),
     ("rowLayout", "numberOfColumns:nc:a adjustableColumn:adj:a rowAttach:rat:a3 columnAlign:cal:a2 columnAttach:cat:a3 columnWidth:cw:a2 columnOffset:co:a2"),
-    ("rowColumnLayout", "numberOfColumns:nc:a numberOfRows:nr:a numberOfRowsColumns:nrc:a adjustableColumn:adj:a adjustableRow:ar:a columnAlign:cal:a2 columnAttach:cat:a3 columnOffset:co:a2 columnSpacing:cs:a2 columnWidth:cw:a2 rowAlign:ral:a2 rowAttach:rat:a3 rowHeight:rh:a2 rowOffset:ro:a3 rowSpacing:rs:a2"),
+    ("rowColumnLayout", "numberOfColumns:nc:a numberOfRows:nr:a numberOfRowsColumns:nrc:a adjustableColumn:adj:a adjustableRow:ar:a columnAlign:cal:a2 columnAttach:cat:a3 columnOffset:co:a3 columnSpacing:cs:a2 columnWidth:cw:a2 rowAlign:ral:a2 rowAttach:rat:a3 rowHeight:rh:a2 rowOffset:ro:a3 rowSpacing:rs:a2"),
     ("gridLayout", "numberOfColumns:nc:a numberOfRows:nr:a numberOfRowsColumns:nrc:a cellWidth:cw:a cellHeight:ch:a cellWidthHeight:cwh:a autoGrow:ag:b allowEmptyCells:aec:b columnsResizable:cr:b position:pos:a2 gridOrder:go:a"),
     ("flowLayout", "vertical:v:b wrap:wr:b columnSpacing:cs:a"),
     ("formLayout", "numberOfDivisions:nd:a attachForm:af:a3 attachControl:ac:a4 attachPosition:ap:a4 attachNone:an:a2 attachOppositeForm:aof:a3 attachOppositeControl:aoc:a4"),
@@ -451,7 +451,12 @@ fn apply(m: &mut Model, id: Id, flags: &Map<String, Value>) -> Result<Map<String
             continue;
         }
         if is_callback(key) {
-            let cb = callback_value(raw);
+            // -sourceType beside a callback says which language its string is.
+            let cb = match (flags.get("sourceType").and_then(Value::as_str), raw) {
+                (Some("python"), Value::String(s)) => json!({ "__pysrc__": s }),
+                (Some("mel"), Value::String(_)) => raw.clone(),
+                _ => callback_value(raw),
+            };
             if let Some(c) = m.controls.get_mut(&id) {
                 c.props.insert(key.clone(), cb);
             }
@@ -657,6 +662,8 @@ fn list_flag(m: &mut Model, id: Id, key: &str, raw: &Value, changed: &mut Map<St
     };
     let mut touched = true;
     match key {
+        // From the shell: what the user picked, as row numbers from 0.
+        "selected" => sel = vals.iter().map(|v| number(v) as i64).collect(),
         "append" => items.extend(vals.iter().map(text)),
         "appendPosition" => {
             for ch in vals.chunks(2) {
@@ -839,8 +846,8 @@ fn radio_exclusive(m: &mut Model, id: Id) {
 
 fn default_value(c: &Control, key: &str) -> Value {
     match (c.kind.as_str(), key) {
+        ("window" | "workspaceControl" | "dockControl" | "progressWindow", "visible") => json!(false),
         (_, "enable" | "visible" | "manage" | "editable" | "sizeable" | "minimizeBox" | "maximizeBox" | "titleBar" | "titleBarMenu" | "enableKeyboardFocus" | "enableButton") => json!(true),
-        ("window", "visible") => json!(false),
         ("floatSliderGrp" | "intSliderGrp" | "colorIndexSliderGrp", "minValue") => zero(&c.kind),
         ("floatSliderGrp" | "intSliderGrp", "maxValue") => ten(&c.kind),
         ("colorIndexSliderGrp", "maxValue") => json!(31),
@@ -1012,7 +1019,7 @@ fn wants_kind(cmd: &str, kind: &str) -> bool {
         "control" | "layout" => true,
         "progressBar" => kind == "progressBar",
         "menu" => matches!(kind, "menu" | "popupMenu" | "optionMenu" | "optionMenuGrp" | "menuBarLayout"),
-        c => c == kind || (c == "button" && kind == "button"),
+        c => c == kind,
     }
 }
 
@@ -1147,7 +1154,6 @@ fn create(cmd: &str, a: &Args) -> CmdResult {
         // The labels a control shows when it is given none, for the shell.
         props.entry("name".to_string()).or_insert(json!(name));
         let parent_path = parent.and_then(|p| m.get(p)).map(|p| p.path.clone());
-        let parent_kind = parent.and_then(|p| m.get(p)).map(|p| p.kind.clone());
         op(json!({"op": "create", "path": path, "kind": cmd, "parent": parent_path, "props": props}));
         // Where the next things go.
         match cat_of(cmd) {
@@ -1166,7 +1172,6 @@ fn create(cmd: &str, a: &Args) -> CmdResult {
             Cat::Collection => m.collection = Some(id),
             Cat::Control => {}
         }
-        let _ = parent_kind;
         if cmd == "window" {
             return Ok(json!(name));
         }
@@ -1190,6 +1195,16 @@ fn control_command(cmd: &'static str, a: &Args) -> CmdResult {
 
 /// Runs what a window's making asks for: the uiScript of a workspace control, inside it.
 fn after_create(cmd: &str, result: &CmdResult, a: &Args) {
+    if cmd == "dockControl" && result.is_ok() {
+        // Docks float here: what shows is the window it holds.
+        if let Some(content) = a.get("content").map(text) {
+            let path = with_model(|m| m.find(&content).and_then(|i| m.get(i)).map(|c| c.path.clone()));
+            if let Some(p) = path {
+                op(json!({"op": "show", "path": p}));
+            }
+        }
+        return;
+    }
     if cmd != "workspaceControl" || result.is_err() {
         return;
     }
@@ -1311,6 +1326,12 @@ fn delete_ui(a: &Args) -> CmdResult {
                 m.templates.remove(n);
             }
         });
+        return Ok(Value::Null);
+    }
+    if a.bool("toolContext") {
+        for n in &names {
+            crate::ctx_cmds::delete_context(n);
+        }
         return Ok(Value::Null);
     }
     if a.bool("panel") || a.bool("editor") {
@@ -1715,6 +1736,31 @@ pub fn register(s: &mut Session) {
         .flag(f("restoreMainWindowState", "rms", ArgType::Any))
         .flag(f("saveMainWindowState", "sms", ArgType::Any))
         .flag(f("enableAll", "ea", ArgType::Bool)),
+    );
+
+    s.register(
+        Cmd::new("workspaceControlState", "Saved state of workspace controls: none are kept here, so -ex is false and -remove does nothing.", |_s, a| {
+            if a.bool("exists") {
+                return Ok(json!(false));
+            }
+            Ok(Value::Null)
+        })
+        .positional("name")
+        .undoable(false)
+        .flag(f("query", "q", ArgType::Bool))
+        .flag(f("edit", "e", ArgType::Bool))
+        .flag(f("exists", "ex", ArgType::Bool))
+        .flag(f("remove", "r", ArgType::Bool))
+        .flag(f("defaultTopLeftCorner", "dtc", ArgType::Any).multi(2))
+        .flag(f("defaultWidthHeight", "dwh", ArgType::Any).multi(2))
+        .flag(f("heightProperty", "hp", ArgType::Any))
+        .flag(f("leftEdge", "le", ArgType::Any))
+        .flag(f("maximumWidthHeight", "mwh", ArgType::Any).multi(2))
+        .flag(f("minimumWidthHeight", "nwh", ArgType::Any).multi(2))
+        .flag(f("topEdge", "te", ArgType::Any))
+        .flag(f("topLeftCorner", "tlc", ArgType::Any).multi(2))
+        .flag(f("widthHeight", "wh", ArgType::Any).multi(2))
+        .flag(f("widthProperty", "wp", ArgType::Any)),
     );
 
     s.register(

@@ -19,9 +19,12 @@ impl NodeBehavior for ScriptNode {
 }
 
 pub fn register_types() {
-    if types::find(TYPE).is_some() {
-        return;
-    }
+    // Sessions may start on several threads at once.
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(register_type);
+}
+
+fn register_type() {
     let attr = |name: &str, short: &str, ty: PlugType, v: PlugValue| AttrDef { name: name.into(), short_name: short.into(), ty, default_value: v, flags: flags::INPUT | flags::STORABLE, ..Default::default() };
     types::register_type(NodeType {
         name: TYPE.into(),

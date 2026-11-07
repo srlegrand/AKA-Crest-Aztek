@@ -363,6 +363,10 @@ impl Gpu {
 
     /// A host-visible buffer holding data.
     pub fn buffer_with<T: bytemuck::Pod>(&self, usage: vk::BufferUsageFlags, data: &[T]) -> Buffer {
+        self.buffer_at(usage, data, MemoryLocation::CpuToGpu)
+    }
+
+    fn buffer_at<T: bytemuck::Pod>(&self, usage: vk::BufferUsageFlags, data: &[T], location: MemoryLocation) -> Buffer {
         let bytes: &[u8] = bytemuck::cast_slice(data);
         let size = (bytes.len() as u64).max(16);
         unsafe {
@@ -379,7 +383,7 @@ impl Gpu {
                 .allocate(&AllocationCreateDesc {
                     name: "buffer",
                     requirements: req,
-                    location: MemoryLocation::CpuToGpu,
+                    location,
                     linear: true,
                     allocation_scheme: AllocationScheme::GpuAllocatorManaged,
                 })
@@ -464,7 +468,8 @@ impl Gpu {
             d.queue_wait_idle(self.queue).map_err(|e| e.to_string())?;
             let (w, h) = (self.extent.width, self.extent.height);
             let size = (w * h * 4) as usize;
-            let buf = self.buffer_with(vk::BufferUsageFlags::TRANSFER_DST, &vec![0u8; size]);
+            // Memory the CPU reads quickly: an upload buffer can take seconds to read back.
+            let buf = self.buffer_at(vk::BufferUsageFlags::TRANSFER_DST, &vec![0u8; size], MemoryLocation::GpuToCpu);
             let cmd = d
                 .allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(self.pool).level(vk::CommandBufferLevel::PRIMARY).command_buffer_count(1))
                 .map_err(|e| e.to_string())?[0];

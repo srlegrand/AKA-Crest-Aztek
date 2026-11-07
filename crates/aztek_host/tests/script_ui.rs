@@ -30,6 +30,9 @@ fn names_and_paths_as_maya_returns_them() {
     assert_eq!(ok(&mut c, "rowLayout -nc 2;"), json!("window1|rowLayout1"));
     assert_eq!(ok(&mut c, "text;"), json!("window1|rowLayout1|text1"));
     assert_eq!(ok(&mut c, "objectTypeUI window1;"), json!("floatingWindow"));
+    assert_eq!(ok(&mut c, "window -q -vis window1;"), json!(false));
+    ok(&mut c, "showWindow window1;");
+    assert_eq!(ok(&mut c, "window -q -vis window1;"), json!(true));
     assert_eq!(ok(&mut c, "objectTypeUI \"window1|rowLayout1|text1\";"), json!("staticText"));
     // Two with one name in one parent is an error; in another parent it is fine.
     assert!(c.mel_checked("text text1;").is_err());
@@ -38,8 +41,6 @@ fn names_and_paths_as_maya_returns_them() {
     assert_eq!(ok(&mut c, "layout -q -ca window1;"), json!(["columnLayout1", "rowLayout1", "other"]));
     assert_eq!(ok(&mut c, "control -q -p \"window1|other\";"), json!("window1"));
     // No window: no controls.
-    let mut d = Core::new();
-    let _ = &mut d;
     ok(&mut c, "deleteUI -window window1;");
     assert_eq!(ok(&mut c, "window -q -ex window1;"), json!(false));
     assert!(c.mel_checked("button;").is_err());
@@ -221,6 +222,10 @@ fn menus_lists_and_radios() {
     assert_eq!(ok(&mut c, "textScrollList -q -sii l;"), json!([2]));
     ok(&mut c, "textScrollList -e -da -ra l;");
     assert_eq!(ok(&mut c, "textScrollList -q -ni l;"), json!(0));
+    // A click, as the shell reports it.
+    ok(&mut c, "textScrollList -e -a \"p\" -a \"q\" l;");
+    c.ui_event(&json!({"path": "w|columnLayout1|l", "set": {"selected": [1]}}));
+    assert_eq!(ok(&mut c, "textScrollList -q -si l;"), json!(["q"]));
 
     ok(&mut c, "radioCollection rc; radioButton -l \"A\" ra; radioButton -l \"B\" -sl rb;");
     assert_eq!(ok(&mut c, "radioCollection -q -sl rc;"), json!("rb"));
@@ -302,6 +307,14 @@ fn templates_and_small_commands() {
     ok(&mut c, "button b; setUITemplate -popTemplate; button c;");
     assert_eq!(ok(&mut c, "button -q -h b;"), json!(44));
     assert_eq!(ok(&mut c, "button -q -h c;"), json!(22));
+    // The language of a callback's string can be said.
+    ok(&mut c, "iconTextButton -stp \"python\" -c \"import maya.cmds; maya.cmds.polyCube(n='stpCube')\" stp;");
+    #[cfg(feature = "python")]
+    {
+        c.ui_event(&json!({"path": "w|columnLayout1|stp", "fire": ["command"], "args": [false]}));
+        assert_eq!(ok(&mut c, "objExists stpCube;"), json!(true));
+    }
+    assert_eq!(ok(&mut c, "workspaceControlState -ex anyName;"), json!(false));
     ok(&mut c, "button -ut tpl d;");
     assert_eq!(ok(&mut c, "button -q -h d;"), json!(44));
     assert_eq!(ok(&mut c, "waitCursor -st 1;"), json!(true));
@@ -484,6 +497,7 @@ fn panels_and_editors() {
     assert_eq!(ok(&mut c, "getPanel -to modelPanel1;"), json!("modelPanel"));
     assert_eq!(ok(&mut c, "getPanel -wl \"Top View\";"), json!("modelPanel1"));
     assert_eq!(ok(&mut c, "getPanel -vis;"), json!(["modelPanel4"]));
+    assert_eq!(ok(&mut c, "getPanel -con persp;"), json!("modelPanel4"));
     assert!(ok(&mut c, "getPanel -all;").as_array().unwrap().len() >= 4);
     assert_eq!(ok(&mut c, "modelPanel -q -cam modelPanel4;"), json!("persp"));
     assert_eq!(ok(&mut c, "modelPanel -q -cam modelPanel1;"), json!("top"));
@@ -606,6 +620,11 @@ fn camera_moves_work_on_the_camera_node() {
     assert!(tx(&mut c, "shot")[0] > 0.5);
     ok(&mut c, "viewSet -home persp;");
     assert!(near(tx(&mut c, "persp")[0], 28.0));
+    // Head on to selected faces: looking down their normal, at them.
+    ok(&mut c, "select fitMe.f[1]; viewHeadOn shot; select -cl;");
+    let t = tx(&mut c, "shot");
+    assert!(near(t[0], 0.0), "{t:?}");
+    assert!(near(ok(&mut c, "viewFit -an 0 -all shot; getAttr shot.rx;").as_f64().unwrap().abs() % 90.0, 0.0));
     // Clip planes.
     ok(&mut c, "viewClipPlane -ncp 0.5 -fcp 500 shot;");
     assert!(near(ok(&mut c, "viewClipPlane -q -ncp shot;").as_f64().unwrap(), 0.5));

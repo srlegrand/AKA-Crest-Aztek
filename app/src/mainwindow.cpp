@@ -4,6 +4,7 @@
 #include "icons.h"
 #include "markingmenu.h"
 #include "panels.h"
+#include "scriptui.h"
 #include "viewport.h"
 #include "widgets.h"
 #include "grapheditor.h"
@@ -80,6 +81,9 @@ MainWindow::MainWindow() {
     connect(panels_, &PanelLayout::rightClick, this, &MainWindow::marking_menu);
 
     build_runtime();
+    ScriptUi::get()->set_main(this, [this](const QString& panel) { return view_for_panel(panel); }, [this] {
+        for (const QJsonValue& r : query("uiRequests").toArray()) handle_ui_request(r.toString());
+    });
     load_hotkeys();
     build_status_line();
     addToolBarBreak();
@@ -925,6 +929,7 @@ void MainWindow::refresh_state() {
         QString n = r.toString();
         handle_ui_request(n);
     }
+    sync_panels();
     // A script may have started or stopped playback with the play command.
     bool script_plays = ask("play", QJsonObject{{"query", true}, {"queried", QJsonArray{"state"}}}).toBool();
     if (script_plays && !play_timer_->isActive())
@@ -974,6 +979,7 @@ void MainWindow::set_tool(const QString& tool) {
     tool_ = tool;
     if (tool_buttons_.contains(tool)) tool_buttons_[tool]->setChecked(true);
     for (ViewportWidget* v : panels_->views()) v->set("tool", "\"" + tool + "\"");
+    query("uiToolChanged", tool);
     if (tool_settings_) tool_settings_->set_tool(tool);
     static const QHash<QString, QString> tool_help{
         {"lasso", "Lasso Tool: drag round what to select. Shift toggles, Ctrl deselects, Ctrl+Shift adds."},

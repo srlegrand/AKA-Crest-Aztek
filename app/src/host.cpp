@@ -1,5 +1,6 @@
 #include "host.h"
 #include "aztek.h"
+#include "scriptui.h"
 
 #include <QJsonDocument>
 #include <cstdio>
@@ -78,11 +79,15 @@ Host::Host() {
 }
 
 void Host::poke() {
+    // A dialog's event loop on top of a suspended command: nothing new starts until it returns.
+    if (aztek_ui_in_hook()) return;
     // Panels refreshing may run commands that poke again: the outer call picks those up.
     static bool busy = false;
     if (busy) return;
     busy = true;
     struct Done { ~Done() { busy = false; } } done;
+    aztek_idle();
+    scriptui_sync();
     QJsonArray lines = parse(take(aztek_take_log())).toArray();
     static bool echo = qEnvironmentVariableIsSet("AZTEK_ECHO");
     if (echo)

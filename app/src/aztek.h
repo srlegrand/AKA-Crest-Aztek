@@ -22,6 +22,17 @@ char* aztek_file(const char* op, const char* path);
 void aztek_undo(void);
 void aztek_redo(void);
 
+// Script UI: operations for the shell to mirror (null when none), what the user did, and the hook for what must answer
+// at once. Dialogs run the event loop inside the hook, on top of a suspended command.
+char* aztek_ui_take_ops(void);
+void aztek_ui_event(const char* json);
+typedef void (*AztekUiHook)(const char* kind, const char* json);
+void aztek_ui_set_hook(AztekUiHook hook);
+void aztek_ui_answer(const char* json);
+void aztek_ui_progress_cancel(void);
+int aztek_ui_in_hook(void);
+void aztek_idle(void);
+
 enum { AZTEK_XCB = 1, AZTEK_XLIB = 2, AZTEK_WIN32 = 3, AZTEK_WAYLAND = 4 };
 
 int aztek_view_create(int platform, void* display, uint64_t window, void* extra, int width, int height, double dpr,

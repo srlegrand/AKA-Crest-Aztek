@@ -132,6 +132,17 @@ fn with_ctx<R>(f: impl FnOnce(&mut Contexts) -> R) -> R {
     })
 }
 
+pub fn delete_context(name: &str) {
+    with_ctx(|c| {
+        if !BUILT_IN.iter().any(|(n, _)| *n == name) {
+            c.all.remove(name);
+            if c.current == name {
+                c.current = "selectSuperContext".into();
+            }
+        }
+    });
+}
+
 pub fn current() -> String {
     with_ctx(|c| c.current.clone())
 }

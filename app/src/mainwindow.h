@@ -114,6 +114,10 @@ private:
     void save_user_hotkey(const QJsonObject& o);
     void show_hotkey_editor();
     void handle_ui_request(const QString& r);
+    // Model panels by Maya's names, and telling the core what they show.
+    ViewportWidget* view_for_panel(const QString& panel) const;
+    void sync_panels();
+    QString panels_synced_;
     // statusline.cpp.
     void input_entered(const QString& text);
     void sync_status_line();

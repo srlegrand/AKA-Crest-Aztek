@@ -227,6 +227,9 @@ fn get_panel(a: &Args) -> CmdResult {
         if a.bool("allConfigs") || a.has("configWithLabel") {
             return Ok(Value::Null);
         }
+        if a.has("atPosition") {
+            return Ok(json!(p.focus));
+        }
         if let Some(c) = a.get("containing").and_then(Value::as_str) {
             return Ok(json!(p.all.iter().find(|x| x.name == c || x.camera == c).map(|x| x.name.clone()).unwrap_or_default()));
         }
@@ -718,13 +721,13 @@ fn playblast(s: &mut Session, a: &Args) -> CmdResult {
 
 pub fn register(s: &mut Session) {
     let mut gp = Cmd::new("getPanel", "The panels: -wf in focus, -up under the pointer, -wl by label, -typ of a type, -to the type of one, -vis visible, -all.", |_s, a| get_panel(a)).undoable(false);
-    for (n, sh) in [("withLabel", "wl"), ("type", "typ"), ("typeOf", "to"), ("scriptType", "sty"), ("containing", "c"), ("configWithLabel", "cwl")] {
+    for (n, sh) in [("withLabel", "wl"), ("type", "typ"), ("typeOf", "to"), ("scriptType", "sty"), ("containing", "con"), ("configWithLabel", "cwl")] {
         gp = gp.flag(f(n, sh, ArgType::Any));
     }
-    for (n, sh) in [("withFocus", "wf"), ("underPointer", "up"), ("all", "all"), ("visiblePanels", "vis"), ("invisiblePanels", "inv"), ("allTypes", "at"), ("allScriptedTypes", "ast"), ("allPanels", "ap"), ("allConfigs", "ac")] {
+    for (n, sh) in [("withFocus", "wf"), ("underPointer", "up"), ("allPanels", "all"), ("visiblePanels", "vis"), ("invisiblePanels", "inv"), ("allTypes", "at"), ("allScriptedTypes", "ast"), ("allConfigs", "ac")] {
         gp = gp.flag(f(n, sh, ArgType::Bool));
     }
-    s.register(gp);
+    s.register(gp.flag(f("atPosition", "ap", ArgType::Any).multi(2)));
 
     let spec = "camera:cam:a modelEditor:me:b label:l:a parent:p:a control:ctl:b copy:cp:a createString:cs:b defineTemplate:dt:a docTag:dtg:a editString:es:b exists:ex:b init:in:b isUnique:iu:b menuBarVisible:mbv:b needsInit:ni:b popupMenuProcedure:pmp:a replacePanel:rp:a tearOff:to:b tearOffCopy:toc:a unParent:up:b useTemplate:ut:a barLayout:bl:b query:q:b edit:e:b queried::a";
     s.register(add_spec(Cmd::new("modelPanel", "A panel holding a view: -q -cam, -e -cam, -me its editor.", |_s, a| panel_common("modelPanel", a)).positional("name").undoable(false), spec));
@@ -874,7 +877,7 @@ pub fn register(s: &mut Session) {
         .positional("[camera]")
         .flag(f("allObjects", "all", ArgType::Bool))
         .flag(f("fitFactor", "f", ArgType::Float))
-        .flag(f("animate", "an", ArgType::Any))
+        .flag(f("animate", "an", ArgType::Bool))
         .flag(f("center", "c", ArgType::Bool))
         .flag(f("namespace", "ns", ArgType::Any))
         .flag(f("panel", "p", ArgType::Any)),
@@ -884,7 +887,7 @@ pub fn register(s: &mut Session) {
     for (n, sh) in [("persp", "p"), ("top", "t"), ("front", "f"), ("side", "s"), ("bottom", "bo"), ("back", "bk"), ("leftSide", "ls"), ("rightSide", "rs"), ("home", "h"), ("fit", "fit"), ("previousView", "pv"), ("nextView", "nv"), ("viewNegativeX", "vnx"), ("viewNegativeY", "vny"), ("viewNegativeZ", "vnz"), ("viewX", "vx"), ("viewY", "vy"), ("viewZ", "vz"), ("keepRenderSettings", "krs")] {
         vs = vs.flag(f(n, sh, ArgType::Bool));
     }
-    s.register(vs.flag(f("animate", "an", ArgType::Any)).flag(f("fitFactor", "ff", ArgType::Float)).flag(f("namespace", "ns", ArgType::Any)));
+    s.register(vs.flag(f("animate", "an", ArgType::Bool)).flag(f("fitFactor", "ff", ArgType::Float)).flag(f("namespace", "ns", ArgType::Any)));
 
     s.register(
         Cmd::new("viewLookAt", "Turn a camera to a point, or to the selection. The camera stays where it is.", |s, a| {
