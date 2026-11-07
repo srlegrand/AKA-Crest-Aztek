@@ -75,7 +75,13 @@ pub fn gather(g: &mut Graph) -> Vec<DrawItem> {
 }
 
 struct GpuMesh {
-    mesh_key: usize,
+    /// What's on the GPU. Held rather than known by its address: a new mesh can land at the address of a freed one, and
+    /// the view would keep drawing the old shape until something else changed it.
+    drawn: Option<Arc<Mesh>>,
+    /// Counts changes to the mesh, and to its topology, for the caches built from it.
+    mesh_gen: u64,
+    topology_gen: u64,
+    vertex_corner: Vec<Index>,
     smooth: i32,
     /// The subdivided mesh smooth preview draws.
     display: Option<Arc<Mesh>>,
@@ -606,7 +612,10 @@ impl Viewport {
         let mut transparent: Vec<Clear> = Vec::new();
         for it in items {
             let entry = self.meshes.entry(it.shape).or_insert_with(|| GpuMesh {
-                mesh_key: 0,
+                drawn: None,
+                mesh_gen: 0,
+                topology_gen: 0,
+                vertex_corner: Vec::new(),
                 smooth: 0,
                 display: None,
                 tris: None,
@@ -628,9 +637,28 @@ impl Viewport {
                 batches: Vec::new(),
                 batch_key: u64::MAX,
             });
-            let key = Arc::as_ptr(&it.mesh) as usize;
-            let mesh_changed = entry.mesh_key != key || entry.smooth != it.smooth;
-            if mesh_changed {
+            let same_mesh = entry.drawn.as_ref().is_some_and(|d| Arc::ptr_eq(d, &it.mesh));
+            let mesh_changed = !same_mesh || entry.smooth != it.smooth;
+            // A deformer's result: only the points moved, so only the vertices need to go up.
+            let only_points = mesh_changed
+                && it.smooth == 0
+                && entry.smooth == 0
+                && !entry.vertex_corner.is_empty()
+                && entry.tris.is_some()
+                && entry.drawn.as_ref().is_some_and(|d| d.only_points_differ(&it.mesh));
+            if only_points {
+                let opts = RenderMeshOptions { max_uv_sets: 1, ..Default::default() };
+                let (positions, normals) = aztek_geo::render_mesh::moved_vertices(&it.mesh, &entry.vertex_point, &entry.vertex_corner, &opts);
+                let verts: Vec<ShadedVertex> = positions.iter().zip(&normals).map(|(p, n)| ShadedVertex { pos: p.to_array(), nrm: n.to_array() }).collect();
+                if let Some((old, indices, count)) = entry.tris.take() {
+                    gpu.drop_buffer(old);
+                    entry.tris = Some((gpu.buffer_with(vk::BufferUsageFlags::VERTEX_BUFFER, &verts), indices, count));
+                }
+                entry.bvh = None;
+                entry.drawn = Some(it.mesh.clone());
+                entry.mesh_gen += 1;
+                entry.sel_key = u64::MAX;
+            } else if mesh_changed {
                 entry.smooth = it.smooth;
                 let mut sub_map = aztek_geo::ops::subdivide::SubdivideMap::default();
                 entry.display = (it.smooth > 0).then(|| {
@@ -667,8 +695,11 @@ impl Viewport {
                 entry.vertex_point = rm.vertex_point.clone();
                 entry.tri_faces = rm.triangle_faces.clone();
                 entry.tri_indices = rm.indices.clone();
+                entry.vertex_corner = rm.vertex_corner.clone();
                 entry.bvh = None;
-                entry.mesh_key = key;
+                entry.drawn = Some(it.mesh.clone());
+                entry.mesh_gen += 1;
+                entry.topology_gen += 1;
                 entry.sel_key = u64::MAX;
                 // Tint reuses the triangle vertex buffer; rebuilt with the selection key below.
             }
@@ -688,7 +719,7 @@ impl Viewport {
             let mut h = DefaultHasher::new();
             (mode as i32, selected, lead == Some(it.xf), self.wireframe, self.wire_on_shaded, comps, self.smooth_cage, entry.smooth, templated).hash(&mut h);
             (wire, child_lit, style.shaded).hash(&mut h);
-            (soft_on, soft.1.to_bits(), Arc::as_ptr(&it.mesh) as usize).hash(&mut h);
+            (soft_on, soft.1.to_bits(), entry.mesh_gen).hash(&mut h);
             let sel_key = h.finish();
             if sel_key != entry.sel_key {
                 entry.sel_key = sel_key;
@@ -784,7 +815,7 @@ impl Viewport {
             };
             let entry = self.meshes.get_mut(&it.shape).unwrap();
             let mut bh = DefaultHasher::new();
-            (key, entry.smooth).hash(&mut bh);
+            (entry.topology_gen, entry.smooth).hash(&mut bh);
             group_list.hash(&mut bh);
             let batch_key = bh.finish();
             if batch_key != entry.batch_key {
@@ -853,7 +884,7 @@ impl Viewport {
                 for x in &w {
                     x.to_bits().hash(&mut h);
                 }
-                (Arc::as_ptr(&it.mesh) as usize, slot_key, held).hash(&mut h);
+                (entry.mesh_gen, slot_key, held).hash(&mut h);
                 let wk = h.finish();
                 if wk != entry.weight_key || entry.weight_tris.is_none() {
                     entry.weight_key = wk;

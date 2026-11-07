@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use aztek_geo::bvh::MeshBvh;
+use rayon::prelude::*;
 use aztek_geo::Mesh;
 use aztek_ops::{fail, objects, ArgType, Args, CmdResult, CommandDef, Commands, FlagDef};
 use glam::{DMat3, DMat4, DQuat, DVec3};
@@ -117,7 +118,50 @@ fn set_bind(g: &mut Graph, sk: NodeId, b: SkinBind) -> CmdResult<()> {
     Ok(())
 }
 
-pub struct SkinNode;
+#[derive(Default)]
+pub struct SkinNode {
+    flat: Option<FlatBind>,
+}
+
+/// Points handed to one thread at a time: small enough to balance, large enough not to waste time handing them out.
+const POINTS_PER_TASK: usize = 1024;
+
+/// The bind as it's computed from: each point's influences side by side in memory, so a mesh of any size stays cheap. Kept
+/// while the bind it came from is the same one, which holds it so its address can't come round again.
+struct FlatBind {
+    source: crate::plug::DataPtr,
+    bind_pre: Vec<DMat4>,
+    geom: DMat4,
+    offsets: Vec<u32>,
+    influence: Vec<u32>,
+    weight: Vec<f64>,
+}
+
+impl FlatBind {
+    fn new(source: crate::plug::DataPtr) -> Option<FlatBind> {
+        let any = source.as_any();
+        let parsed;
+        let bind: &SkinBind = if let Some(b) = any.downcast_ref::<SkinBind>() {
+            b
+        } else {
+            // Scenes saved before the typed payload.
+            parsed = SkinBind::from_json(&any.downcast_ref::<JsonData>()?.0);
+            &parsed
+        };
+        let total: usize = bind.weights.iter().map(Vec::len).sum();
+        let (mut offsets, mut influence, mut weight) = (Vec::with_capacity(bind.weights.len() + 1), Vec::with_capacity(total), Vec::with_capacity(total));
+        offsets.push(0);
+        for w in &bind.weights {
+            for &(i, v) in w {
+                influence.push(i);
+                weight.push(v);
+            }
+            offsets.push(influence.len() as u32);
+        }
+        let (bind_pre, geom) = (bind.bind_pre.clone(), bind.geom);
+        Some(FlatBind { source, bind_pre, geom, offsets, influence, weight })
+    }
+}
 
 /// A rigid transform as a dual quaternion: (real, dual).
 fn dual_quat(m: &DMat4) -> (DQuat, DQuat) {
@@ -144,19 +188,29 @@ impl NodeBehavior for SkinNode {
             d.set_output(SK_OUT, PlugValue::Mesh(None));
             return;
         };
-        let Some(bind) = bind_from_value(d.value(SK_BIND)) else {
-            d.set_output(SK_OUT, PlugValue::Mesh(Some(input)));
-            return;
-        };
         // Move joints mode: the joints go where they like and the mesh stays.
         if d.bool(SK_MOVE) {
             d.set_output(SK_OUT, PlugValue::Mesh(Some(input)));
             return;
         }
+        let PlugValue::Data(Some(held)) = d.value(SK_BIND) else {
+            d.set_output(SK_OUT, PlugValue::Mesh(Some(input)));
+            return;
+        };
+        if !self.flat.as_ref().is_some_and(|f| Arc::ptr_eq(&f.source, held)) {
+            let source = held.clone();
+            self.flat = FlatBind::new(source);
+        }
+        let Some(flat) = self.flat.as_ref() else {
+            d.set_output(SK_OUT, PlugValue::Mesh(Some(input)));
+            return;
+        };
         let env = d.float(SK_ENVELOPE);
         let method = d.int(SK_METHOD);
         let blend = crate::deform::floats_of(d, SK_BLEND);
-        let mats: Vec<Option<DMat4>> = bind
+        let blend: &[f64] = blend.as_ref().map_or(&[], |b| b.0.as_slice());
+        // One per influence: where the bind pose goes now, from the point in world space; None for one that isn't connected.
+        let mats: Vec<Option<DMat4>> = flat
             .bind_pre
             .iter()
             .enumerate()
@@ -166,60 +220,69 @@ impl NodeBehavior for SkinNode {
             })
             .collect();
         let duals: Vec<Option<(DQuat, DQuat)>> = if method != 0 { mats.iter().map(|m| m.as_ref().map(dual_quat)).collect() } else { Vec::new() };
-        let gi = bind.geom.inverse();
-        let mut m: Mesh = (*input).clone();
-        for p in 0..m.point_capacity() {
-            if !m.point_valid(p) {
-                continue;
-            }
-            let Some(w) = bind.weights.get(p as usize) else { continue };
-            let wp = bind.geom.transform_point3(m.position(p));
-            let mut dq_pos = None;
-            if method != 0 {
-                let mut real = DQuat::from_xyzw(0.0, 0.0, 0.0, 0.0);
-                let mut dual = real;
-                let mut tw = 0.0;
-                let mut pivot: Option<DQuat> = None;
-                for &(i, wt) in w {
-                    let Some(Some((r, d))) = duals.get(i as usize) else { continue };
-                    let first = *pivot.get_or_insert(*r);
-                    let s = if first.dot(*r) < 0.0 { -wt } else { wt };
-                    real = real + *r * s;
-                    dual = dual + *d * s;
-                    tw += wt;
-                }
-                if tw <= 0.0 {
+        let (geom, gi) = (flat.geom, flat.geom.inverse());
+        let rest = input.positions();
+        let mut out = rest.to_vec();
+        let (offsets, influence, weight) = (&flat.offsets, &flat.influence, &flat.weight);
+        // Points in chunks across every core; each writes only its own.
+        out.par_chunks_mut(POINTS_PER_TASK).enumerate().for_each(|(chunk, pts)| {
+            for (k, pos) in pts.iter_mut().enumerate() {
+                let p = chunk * POINTS_PER_TASK + k;
+                if p + 1 >= offsets.len() || !input.point_valid(p as aztek_geo::Index) {
                     continue;
                 }
-                dq_pos = Some(dq_transform(real, dual, wp));
-            }
-            let mut linear_pos = None;
-            if method != 1 {
-                let mut acc = DVec3::ZERO;
-                let mut tw = 0.0;
-                for &(i, wt) in w {
-                    if let Some(Some(mm)) = mats.get(i as usize) {
-                        acc += mm.transform_point3(wp) * wt;
+                let (from, to) = (offsets[p] as usize, offsets[p + 1] as usize);
+                if from == to {
+                    continue;
+                }
+                let wp = geom.transform_point3(*pos);
+                let mut dq_pos = None;
+                if method != 0 {
+                    let mut real = DQuat::from_xyzw(0.0, 0.0, 0.0, 0.0);
+                    let mut dual = real;
+                    let mut tw = 0.0;
+                    let mut pivot: Option<DQuat> = None;
+                    for e in from..to {
+                        let Some(Some((r, q))) = duals.get(influence[e] as usize) else { continue };
+                        let wt = weight[e];
+                        let first = *pivot.get_or_insert(*r);
+                        let s = if first.dot(*r) < 0.0 { -wt } else { wt };
+                        real = real + *r * s;
+                        dual = dual + *q * s;
                         tw += wt;
                     }
+                    if tw <= 0.0 {
+                        continue;
+                    }
+                    dq_pos = Some(dq_transform(real, dual, wp));
                 }
-                if tw <= 0.0 {
-                    continue;
+                let mut linear_pos = None;
+                if method != 1 {
+                    let mut acc = DVec3::ZERO;
+                    let mut tw = 0.0;
+                    for e in from..to {
+                        if let Some(Some(mm)) = mats.get(influence[e] as usize) {
+                            acc += mm.transform_point3(wp) * weight[e];
+                            tw += weight[e];
+                        }
+                    }
+                    if tw <= 0.0 {
+                        continue;
+                    }
+                    linear_pos = Some(acc / tw);
                 }
-                linear_pos = Some(acc / tw);
+                // Weight blended: each point between the two by its blend weight, 0 linear and 1 dual quaternion.
+                let world_pos = match (linear_pos, dq_pos) {
+                    (Some(l), Some(q)) => l.lerp(q, blend.get(p).copied().unwrap_or(0.0)),
+                    (Some(l), None) => l,
+                    (None, Some(q)) => q,
+                    (None, None) => continue,
+                };
+                let skinned = gi.transform_point3(world_pos);
+                *pos += (skinned - *pos) * env;
             }
-            // Weight blended: each point between the two by its blend weight, 0 linear and 1 dual quaternion.
-            let world_pos = match (linear_pos, dq_pos) {
-                (Some(l), Some(q)) => l.lerp(q, blend.and_then(|b| b.0.get(p as usize)).copied().unwrap_or(0.0)),
-                (Some(l), None) => l,
-                (None, Some(q)) => q,
-                (None, None) => continue,
-            };
-            let skinned = gi.transform_point3(world_pos);
-            let rest = m.position(p);
-            m.set_position(p, rest + (skinned - rest) * env);
-        }
-        d.set_output(SK_OUT, PlugValue::Mesh(Some(Arc::new(m))));
+        });
+        d.set_output(SK_OUT, PlugValue::Mesh(Some(Arc::new(input.with_positions(out)))));
     }
     fn as_any(&self) -> &dyn Any {
         self
@@ -271,7 +334,7 @@ fn register_types() {
                 AttrDef { flags: flags::INPUT | flags::STORABLE, ..crate::attr_defs::bool_attr("moveJointsMode", false, "Joints move without moving the mesh.") },
                 int_attr("bindMethod", "bm", 0, "How the skin was bound: 0 closest distance, 1 closest in hierarchy, 2 heat map, 3 geodesic voxel."),
             ],
-            create: Some(Arc::new(|| Box::new(SkinNode))),
+            create: Some(Arc::new(|| Box::new(SkinNode::default()))),
             ..Default::default()
         })
         .expect(SKIN_TYPE);

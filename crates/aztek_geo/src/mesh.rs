@@ -196,32 +196,64 @@ fn bucket_by<T: Ord + Copy + Send + Default>(
 /// Removing elements only marks them deleted, so ids of everything else stay stable until `compact`.
 #[derive(Debug, Clone)]
 pub struct Mesh {
-    point_pos: Vec<DVec3>,
-    point_edge: Vec<Index>,
-    point_dead: Vec<u8>,
-    edges: Vec<Edge>,
-    corners: Vec<Corner>,
-    faces: Vec<Face>,
+    point_pos: Shared<Vec<DVec3>>,
+    point_edge: Shared<Vec<Index>>,
+    point_dead: Shared<Vec<u8>>,
+    edges: Shared<Vec<Edge>>,
+    corners: Shared<Vec<Corner>>,
+    faces: Shared<Vec<Face>>,
     num_points: Index,
     num_edges: Index,
     num_faces: Index,
     num_corners: Index,
     last_split_edge: Index,
     topology_id: u64,
-    attrs: [AttributeSet; 4],
-    material_names: Vec<String>,
-    color_set_info: ColorSetInfo,
+    attrs: Shared<[AttributeSet; 4]>,
+    material_names: Shared<Vec<String>>,
+    color_set_info: Shared<ColorSetInfo>,
+}
+
+/// Data a copy of a mesh shares until one of them writes to it. A deformer's result differs from its input only in where
+/// the points are, so copying a mesh costs next to nothing and each layer of a deformer stack doesn't copy the topology.
+#[derive(Debug, Default)]
+struct Shared<T>(std::sync::Arc<T>);
+
+impl<T> Clone for Shared<T> {
+    fn clone(&self) -> Self {
+        Shared(self.0.clone())
+    }
+}
+
+impl<T> std::ops::Deref for Shared<T> {
+    type Target = T;
+    #[inline]
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
+
+impl<T: Clone> std::ops::DerefMut for Shared<T> {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut T {
+        std::sync::Arc::make_mut(&mut self.0)
+    }
+}
+
+impl<T> From<T> for Shared<T> {
+    fn from(v: T) -> Self {
+        Shared(std::sync::Arc::new(v))
+    }
 }
 
 impl Default for Mesh {
     fn default() -> Self {
         Self {
-            point_pos: Vec::new(),
-            point_edge: Vec::new(),
-            point_dead: Vec::new(),
-            edges: Vec::new(),
-            corners: Vec::new(),
-            faces: Vec::new(),
+            point_pos: Default::default(),
+            point_edge: Default::default(),
+            point_dead: Default::default(),
+            edges: Default::default(),
+            corners: Default::default(),
+            faces: Default::default(),
             num_points: 0,
             num_edges: 0,
             num_faces: 0,
@@ -229,8 +261,8 @@ impl Default for Mesh {
             last_split_edge: INVALID,
             topology_id: new_topology_id(),
             attrs: Default::default(),
-            material_names: Vec::new(),
-            color_set_info: ColorSetInfo::default(),
+            material_names: Default::default(),
+            color_set_info: Default::default(),
         }
     }
 }
@@ -287,7 +319,7 @@ impl Mesh {
             + self.edges.capacity() * std::mem::size_of::<Edge>()
             + self.corners.capacity() * std::mem::size_of::<Corner>()
             + self.faces.capacity() * std::mem::size_of::<Face>();
-        for set in &self.attrs {
+        for set in self.attrs.iter() {
             for l in set.layers() {
                 n += l.len() * l.stride();
             }
@@ -327,6 +359,18 @@ impl Mesh {
     }
     pub fn positions_mut(&mut self) -> &mut [DVec3] {
         &mut self.point_pos
+    }
+    /// Whether the two differ at most in where their points are: same topology, and attributes that are the very same data.
+    pub fn only_points_differ(&self, other: &Mesh) -> bool {
+        self.topology_id == other.topology_id && std::sync::Arc::ptr_eq(&self.attrs.0, &other.attrs.0) && std::sync::Arc::ptr_eq(&self.corners.0, &other.corners.0)
+    }
+
+    /// This mesh with its points somewhere else, sharing everything else. `positions` holds one per point capacity.
+    pub fn with_positions(&self, positions: Vec<DVec3>) -> Mesh {
+        debug_assert_eq!(positions.len(), self.point_pos.len());
+        let mut m = self.clone();
+        m.point_pos = positions.into();
+        m
     }
     /// Any edge of the point's disk cycle, INVALID for a loose point.
     pub fn point_edge(&self, p: Index) -> Index {
@@ -1114,14 +1158,14 @@ impl Mesh {
         for (n, &o) in new_to_old.iter().enumerate() {
             old_to_new[o as usize] = n as Index;
         }
-        self.point_pos = new_to_old.iter().map(|&o| self.point_pos[o as usize]).collect();
-        self.point_edge = new_to_old.iter().map(|&o| self.point_edge[o as usize]).collect();
-        for e in &mut self.edges {
+        self.point_pos = new_to_old.iter().map(|&o| self.point_pos[o as usize]).collect::<Vec<_>>().into();
+        self.point_edge = new_to_old.iter().map(|&o| self.point_edge[o as usize]).collect::<Vec<_>>().into();
+        for e in self.edges.iter_mut() {
             if e.v[0] != INVALID {
                 e.v = [old_to_new[e.v[0] as usize], old_to_new[e.v[1] as usize]];
             }
         }
-        for c in &mut self.corners {
+        for c in self.corners.iter_mut() {
             if c.point != INVALID {
                 c.point = old_to_new[c.point as usize];
             }
@@ -1209,12 +1253,12 @@ impl Mesh {
             })
             .collect();
 
-        self.point_dead = vec![0; pos.len()];
-        self.point_pos = pos;
-        self.point_edge = p_edge;
-        self.edges = edges;
-        self.faces = faces;
-        self.corners = corners;
+        self.point_dead = (vec![0; pos.len()]).into();
+        self.point_pos = (pos).into();
+        self.point_edge = (p_edge).into();
+        self.edges = (edges).into();
+        self.faces = (faces).into();
+        self.corners = (corners).into();
         self.attrs[0].reorder(&p_old);
         self.attrs[1].reorder(&e_old);
         self.attrs[2].reorder(&f_old);
@@ -1598,11 +1642,11 @@ impl Mesh {
         let num_faces = exclusive_scan(&mut face_of);
         let num_corners = exclusive_scan(&mut corner_of);
 
-        m.point_pos = points.to_vec();
-        m.point_edge = vec![INVALID; points.len()];
-        m.point_dead = vec![0; points.len()];
-        m.faces = vec![Face { corner: 0, size: 0 }; num_faces as usize];
-        m.corners = vec![DEAD_CORNER; num_corners as usize];
+        m.point_pos = (points.to_vec()).into();
+        m.point_edge = (vec![INVALID; points.len()]).into();
+        m.point_dead = (vec![0; points.len()]).into();
+        m.faces = (vec![Face { corner: 0, size: 0 }; num_faces as usize]).into();
+        m.corners = (vec![DEAD_CORNER; num_corners as usize]).into();
         for f in 0..in_faces {
             if !valid[f] {
                 continue;
@@ -1667,7 +1711,7 @@ impl Mesh {
             }
         }
         let num_edges = exclusive_scan(&mut edge_of);
-        m.edges = vec![DEAD_EDGE; num_edges as usize];
+        m.edges = (vec![DEAD_EDGE; num_edges as usize]).into();
         for p in 0..num_points as usize {
             for (at, k) in groups(p) {
                 let c0 = corner_at(at);

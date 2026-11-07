@@ -330,3 +330,41 @@ pub fn build_render_mesh(mesh: &Mesh, opts: &RenderMeshOptions) -> RenderMesh {
     }
     out
 }
+
+/// New positions and normals for a mesh whose points moved, by the vertex to point and corner maps of an earlier
+/// `build_render_mesh`: the topology, triangles and UVs are all as they were. Much cheaper than building again.
+pub fn moved_vertices(mesh: &Mesh, vertex_point: &[Index], vertex_corner: &[Index], opts: &RenderMeshOptions) -> (Vec<Vec3>, Vec<Vec3>) {
+    let stored: &[[f32; 3]] = mesh.corner_attrs().get::<[f32; 3]>(names::NORMAL);
+    let computed: Vec<Vec3> = if stored.len() == mesh.corner_capacity() as usize { Vec::new() } else { corner_normals(mesh, &opts.normals) };
+    let points = mesh.positions();
+    let positions: Vec<Vec3> = vertex_point.par_iter().map(|&p| points[p as usize].as_vec3()).collect();
+    let normals: Vec<Vec3> = vertex_corner
+        .par_iter()
+        .map(|&c| if computed.is_empty() { Vec3::from_array(stored[c as usize]) } else { computed[c as usize] })
+        .collect();
+    (positions, normals)
+}
+
+#[cfg(test)]
+mod moved_tests {
+    use super::*;
+    use glam::DVec3;
+
+    /// What the fast path gives is what building again gives.
+    #[test]
+    fn moved_vertices_match_a_full_build() {
+        let pts = [DVec3::new(0., 0., 0.), DVec3::new(1., 0., 0.), DVec3::new(1., 1., 0.), DVec3::new(0., 1., 0.), DVec3::new(0.5, 0.5, 1.)];
+        let m = Mesh::from_polygons(&pts, &[4, 3, 3, 3, 3], &[0, 3, 2, 1, 0, 1, 4, 1, 2, 4, 2, 3, 4, 3, 0, 4]);
+        let opts = RenderMeshOptions { max_uv_sets: 1, ..Default::default() };
+        let first = build_render_mesh(&m, &opts);
+        let moved = m.with_positions(m.positions().iter().map(|p| DVec3::new(p.x * 2.0, p.y + 1.0, p.z * p.z + p.x)).collect());
+        assert!(m.only_points_differ(&moved));
+        let again = build_render_mesh(&moved, &opts);
+        let (positions, normals) = moved_vertices(&moved, &first.vertex_point, &first.vertex_corner, &opts);
+        assert_eq!(again.positions.len(), positions.len());
+        for v in 0..positions.len() {
+            assert!((positions[v] - again.positions[v]).length() < 1e-6, "{v}");
+            assert!((normals[v] - again.normals[v]).length() < 1e-6, "{v}");
+        }
+    }
+}
