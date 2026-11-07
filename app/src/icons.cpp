@@ -8,6 +8,8 @@
 
 namespace az {
 
+bool draw_more(const QString& name, QPainter& p);
+
 namespace {
 
 const QColor kInk(215, 215, 215);
@@ -469,6 +471,8 @@ QPixmap draw(const QString& name, int size) {
         p.drawEllipse(QRectF(4, 10, 24, 12));
         p.setBrush(kInk);
         p.drawEllipse(QPointF(16, 16), 3.5, 3.5);
+    } else if (draw_more(name, p)) {
+        // Drawn in icons_more.cpp.
     } else {
         // Fallback: the name's initials in a box.
         p.setBrush(QColor(80, 80, 80));

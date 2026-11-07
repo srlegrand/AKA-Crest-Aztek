@@ -59,6 +59,8 @@ pub struct Session {
     pub option_vars: BTreeMap<String, Value>,
     /// snapMode's switches.
     pub snap_modes: BTreeMap<String, bool>,
+    /// polyOptions' display settings, polySelectConstraint's state and polyClipboard's contents.
+    pub poly_state: crate::mesh_edit::maya_poly::PolyState,
     /// The sculpting tools' settings.
     pub sculpt_ctx: crate::sculpt::SculptCtx,
     /// The scene's file, what `file -q -sn` returns. None while untitled.
@@ -92,6 +94,7 @@ impl Session {
             live_surface: Vec::new(),
             option_vars: BTreeMap::new(),
             snap_modes: BTreeMap::new(),
+            poly_state: Default::default(),
             sculpt_ctx: Default::default(),
             scene_path: None,
             scene_type: None,
@@ -121,6 +124,7 @@ impl Session {
         crate::skin::register(&mut s.commands);
         crate::deform::register(&mut s.commands);
         crate::curves::register(&mut s.commands);
+        crate::hik::register(&mut s.commands);
         crate::surfaces::register(&mut s.commands);
         crate::sculpt::register(&mut s.commands);
         crate::cameras::register(&mut s.commands);
@@ -132,6 +136,8 @@ impl Session {
         crate::deform_cmds::register(&mut s.commands);
         crate::maya_cmds::register(&mut s.commands);
         crate::maya_core::register(&mut s.commands);
+        // After the modules above: these replace or extend commands they registered.
+        crate::mesh_edit::maya_poly::register(&mut s.commands);
         crate::ma_file::register(&mut s.commands);
         crate::expression::register(&mut s.commands);
         crate::maya_attrs::register(&mut s.commands);
@@ -161,6 +167,7 @@ impl Session {
             key_clipboard: Default::default(),
             key_selection: Vec::new(),
             live_surface: Vec::new(),
+            poly_state: Default::default(),
             sculpt_ctx: Default::default(),
             scene_path: Default::default(),
             scene_type: Default::default(),

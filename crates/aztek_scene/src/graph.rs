@@ -1724,7 +1724,7 @@ impl Graph {
             attr_name.truncate(open.unwrap());
         }
         for (i, a) in n.ty().attrs.iter().enumerate() {
-            if a.name == attr_name || a.short_name == attr_name {
+            if a.name == attr_name || a.short_name == attr_name || a.aliases.iter().any(|x| *x == attr_name) {
                 // Maya writes one-element outputs as arrays: worldMatrix[0], worldSpace[0].
                 if element > 0 && !a.is_array() {
                     return Err(GraphError::invalid(format!(

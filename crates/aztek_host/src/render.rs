@@ -41,19 +41,26 @@ layout(location = 0) in vec3 a_pos;
 layout(location = 1) in vec3 a_nrm;
 layout(push_constant) uniform PC { mat4 mvp; vec4 n0; vec4 n1; vec4 n2; vec4 color; } pc;
 layout(location = 0) out vec3 v_nrm;
+layout(location = 1) out vec3 v_rot;
 void main() {
     gl_Position = pc.mvp * vec4(a_pos, 1.0);
     gl_Position.z *= 1.0 + pc.n0.w;
     v_nrm = vec3(dot(pc.n0.xyz, a_nrm), dot(pc.n1.xyz, a_nrm), dot(pc.n2.xyz, a_nrm));
+    v_rot = vec3(dot(pc.n0.xyz, a_pos), dot(pc.n1.xyz, a_pos), dot(pc.n2.xyz, a_pos));
 }
 "#;
 
 const SHADED_FS: &str = r#"#version 450
 layout(location = 0) in vec3 v_nrm;
+layout(location = 1) in vec3 v_rot;
 layout(push_constant) uniform PC { mat4 mvp; vec4 n0; vec4 n1; vec4 n2; vec4 color; } pc;
 layout(location = 0) out vec4 out_color;
 void main() {
     vec3 n = normalize(v_nrm);
+    // Flat shading: n2.w set, the facet's own normal.
+    if (pc.n2.w > 0.5) {
+        n = normalize(cross(dFdx(v_rot), dFdy(v_rot)));
+    }
     // A key from above and left of the camera plus a weaker fill, both sides lit.
     vec3 k = normalize(vec3(-0.45, 0.6, 0.65));
     vec3 f = normalize(vec3(0.6, -0.2, 0.75));
@@ -106,6 +113,10 @@ pub enum Kind {
     /// Lines over everything: manipulators.
     LinesOnTop,
     Points,
+    /// Points over everything: X-Ray Active Components.
+    PointsOnTop,
+    /// Shaded with the back faces left out: Backface Culling.
+    ShadedCull,
     /// Triangles with a colour per vertex, unlit: weight painting's feedback.
     ColorTris,
 }
@@ -134,8 +145,8 @@ impl Renderer {
             let lfs = module(LINE_FS, naga::ShaderStage::Fragment);
             let feats = gpu.shared.features;
             let mut pipelines = Vec::new();
-            for kind in [Kind::Shaded, Kind::Tint, Kind::Lines, Kind::LinesOnTop, Kind::Points, Kind::ColorTris] {
-                let shaded = matches!(kind, Kind::Shaded | Kind::Tint);
+            for kind in [Kind::Shaded, Kind::Tint, Kind::Lines, Kind::LinesOnTop, Kind::Points, Kind::PointsOnTop, Kind::ShadedCull, Kind::ColorTris] {
+                let shaded = matches!(kind, Kind::Shaded | Kind::Tint | Kind::ShadedCull);
                 let (vs, fs) = if shaded { (svs, sfs) } else { (lvs, lfs) };
                 let stages = [
                     vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::VERTEX).module(vs).name(c"main"),
@@ -161,22 +172,22 @@ impl Renderer {
                 let binding = [vk::VertexInputBindingDescription::default().stride(stride).input_rate(vk::VertexInputRate::VERTEX)];
                 let vin = vk::PipelineVertexInputStateCreateInfo::default().vertex_binding_descriptions(&binding).vertex_attribute_descriptions(&attrs);
                 let topo = match kind {
-                    Kind::Shaded | Kind::Tint | Kind::ColorTris => vk::PrimitiveTopology::TRIANGLE_LIST,
+                    Kind::Shaded | Kind::Tint | Kind::ShadedCull | Kind::ColorTris => vk::PrimitiveTopology::TRIANGLE_LIST,
                     Kind::Lines | Kind::LinesOnTop => vk::PrimitiveTopology::LINE_LIST,
-                    Kind::Points => vk::PrimitiveTopology::POINT_LIST,
+                    Kind::Points | Kind::PointsOnTop => vk::PrimitiveTopology::POINT_LIST,
                 };
                 let ia = vk::PipelineInputAssemblyStateCreateInfo::default().topology(topo);
                 let vp = vk::PipelineViewportStateCreateInfo::default().viewport_count(1).scissor_count(1);
                 let rs = vk::PipelineRasterizationStateCreateInfo::default()
                     .polygon_mode(vk::PolygonMode::FILL)
-                    .cull_mode(vk::CullModeFlags::NONE)
-                    .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
+                    .cull_mode(if kind == Kind::ShadedCull { vk::CullModeFlags::BACK } else { vk::CullModeFlags::NONE })
+                    .front_face(vk::FrontFace::CLOCKWISE)
                     .line_width(1.0);
                 let ms = vk::PipelineMultisampleStateCreateInfo::default().rasterization_samples(vk::SampleCountFlags::TYPE_1);
-                let on_top = kind == Kind::LinesOnTop;
+                let on_top = matches!(kind, Kind::LinesOnTop | Kind::PointsOnTop);
                 let ds = vk::PipelineDepthStencilStateCreateInfo::default()
                     .depth_test_enable(!on_top)
-                    .depth_write_enable(matches!(kind, Kind::Shaded | Kind::Lines | Kind::ColorTris))
+                    .depth_write_enable(matches!(kind, Kind::Shaded | Kind::ShadedCull | Kind::Lines | Kind::ColorTris))
                     .depth_compare_op(vk::CompareOp::GREATER_OR_EQUAL);
                 let blend = [vk::PipelineColorBlendAttachmentState::default()
                     .blend_enable(true)

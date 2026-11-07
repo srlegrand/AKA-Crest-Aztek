@@ -971,11 +971,11 @@ const ANGLE_CHANNELS: &[&str] = &["rotate", "rotateAxis", "jointOrient"];
 
 /// Creator nodes: (type, [(Maya short name, Aztek attribute)]).
 const CREATORS: &[(&str, &[(&str, &str)])] = &[
-    ("polyCube", &[("w", "width"), ("h", "height"), ("d", "depth"), ("sw", "subdivisionsX"), ("sh", "subdivisionsY"), ("sd", "subdivisionsZ")]),
+    ("polyCube", &[("w", "width"), ("h", "height"), ("d", "depth"), ("sw", "subdivisionsWidth"), ("sh", "subdivisionsHeight"), ("sd", "subdivisionsDepth")]),
     ("polySphere", &[("r", "radius"), ("sa", "subdivisionsAxis"), ("sh", "subdivisionsHeight")]),
     ("polyCylinder", &[("r", "radius"), ("h", "height"), ("sa", "subdivisionsAxis"), ("sh", "subdivisionsHeight"), ("sc", "subdivisionsCaps")]),
     ("polyCone", &[("r", "radius"), ("h", "height"), ("sa", "subdivisionsAxis"), ("sh", "subdivisionsHeight"), ("sc", "subdivisionsCap")]),
-    ("polyPlane", &[("w", "width"), ("h", "depth"), ("sw", "subdivisionsX"), ("sh", "subdivisionsZ")]),
+    ("polyPlane", &[("w", "width"), ("h", "height"), ("sw", "subdivisionsWidth"), ("sh", "subdivisionsHeight")]),
     ("polyTorus", &[("r", "radius"), ("sr", "sectionRadius"), ("sa", "subdivisionsAxis"), ("sh", "subdivisionsHeight")]),
 ];
 
@@ -1356,7 +1356,7 @@ impl Build<'_> {
             return false;
         }
         match n.ty.as_str() {
-            "transform" | "joint" | "locator" | "nurbsCurve" | "camera" => true,
+            "transform" | "joint" | "locator" | "nurbsCurve" | "nurbsSurface" | "camera" => true,
             "mesh" => !n.truth(&["io", "intermediateObject"]).unwrap_or(false),
             _ => false,
         }
@@ -1607,6 +1607,43 @@ impl Build<'_> {
         };
         let at = crate::curves::CurveShape::CACHED;
         let _ = self.s.graph.set_value(PlugRef::new(shape, at as i32), PlugValue::Data(Some(Arc::new(crate::curves::CurveData(c)))));
+    }
+
+    /// A surface from `.cc`. History with no stored surface is a warning: Maya always writes one for a shape it can't rebuild.
+    fn build_surface(&mut self, i: usize) {
+        use aztek_geo::nurbs::{Form, NurbsSurface};
+        let Some(shape) = self.id(i) else { return };
+        let n = &self.doc.nodes[i];
+        let mut made = None;
+        if let Some(cc) = n.set_of(&["cc", "cached"]) {
+            let v: Vec<f64> = cc.values.iter().filter_map(|t| if let Tok::Num(x) = t { Some(*x) } else { None }).collect();
+            // du dv fu fv [rational, a word] nku ku... nkv kv... ncv cvs...
+            if v.len() > 5 {
+                let nku = v[4] as usize;
+                let kv_at = 5 + nku;
+                if v.len() > kv_at {
+                    let nkv = v[kv_at] as usize;
+                    let cv_at = kv_at + 1 + nkv;
+                    if v.len() > cv_at {
+                        let (du, dv) = (v[0] as usize, v[1] as usize);
+                        let (nu, nv) = (nku + 1 - du, nkv + 1 - dv);
+                        let count = v[cv_at] as usize;
+                        let stride = if count > 0 && v.len() >= cv_at + 1 + count * 3 { 3 } else { 0 };
+                        if stride == 3 && count == nu * nv {
+                            // U is the outer loop in the file, as in NurbsSurface.
+                            let cvs: Vec<DVec3> = v[cv_at + 1..cv_at + 1 + count * 3].chunks(3).map(|c| DVec3::new(c[0], c[1], c[2])).collect();
+                            made = Some(NurbsSurface { degree_u: du, degree_v: dv, form_u: Form::from_index(v[2] as i64), form_v: Form::from_index(v[3] as i64), nu, nv, cvs, knots_u: v[5..kv_at].to_vec(), knots_v: v[kv_at + 1..cv_at].to_vec() });
+                        }
+                    }
+                }
+            }
+        }
+        let Some(c) = made else {
+            self.warnings.push(format!("{}: no stored surface", n.name));
+            return;
+        };
+        let at = crate::surfaces::SurfaceShape::CACHED;
+        let _ = self.s.graph.set_value(PlugRef::new(shape, at as i32), PlugValue::Data(Some(Arc::new(crate::surfaces::SurfaceData(c)))));
     }
 
     fn build_camera(&mut self, i: usize) {
@@ -2299,6 +2336,9 @@ fn build(s: &mut Session, doc: &Doc, import: bool) -> Vec<String> {
         if doc.nodes[i].ty == "mesh" && b.ids[i].is_some() {
             b.build_mesh(i);
         }
+        if doc.nodes[i].ty == "nurbsSurface" && b.ids[i].is_some() {
+            b.build_surface(i);
+        }
         if doc.nodes[i].ty == "nurbsCurve" && b.ids[i].is_some() {
             b.build_curve(i);
         }
@@ -2759,7 +2799,7 @@ impl Writer<'_> {
             return false;
         }
         let t = n.ty();
-        if t.is_a("mesh") || t.is_a("nurbsCurve") {
+        if t.is_a("mesh") || t.is_a("nurbsCurve") || t.is_a("nurbsSurface") {
             return !n.bool(DagNode::INTERMEDIATE_OBJECT);
         }
         // The default cameras are the application's own; every scene has them.
@@ -2783,6 +2823,9 @@ impl Writer<'_> {
             }
             if ty == "nurbsCurve" {
                 self.write_nurbs_curve(id);
+            }
+            if ty == "nurbsSurface" {
+                self.write_nurbs_surface(id);
             }
             if ty == "camera" {
                 self.write_camera(id);
@@ -2810,6 +2853,25 @@ impl Writer<'_> {
         let _ = writeln!(self.out, "\t\t{}", c.cvs.len());
         for p in &c.cvs {
             let _ = writeln!(self.out, "\t\t{} {} {}", fmt_num(p.x), fmt_num(p.y), fmt_num(p.z));
+        }
+        let _ = writeln!(self.out, "\t\t;");
+    }
+
+    /// The surface as `.cc`: degrees, forms, rational, each knot vector, then CVs with U the outer loop.
+    fn write_nurbs_surface(&mut self, shape: NodeId) {
+        let Some(c) = crate::surfaces::local_surface(&mut self.s.graph, shape) else { return };
+        let _ = writeln!(self.out, "\tsetAttr \".cc\" -type \"nurbsSurface\" ");
+        let _ = writeln!(self.out, "\t\t{} {} {} {} no ", c.degree_u, c.degree_v, c.form_u.index(), c.form_v.index());
+        for k in [&c.knots_u, &c.knots_v] {
+            let t: Vec<String> = k.iter().map(|x| fmt_num(*x)).collect();
+            let _ = writeln!(self.out, "\t\t{} {}", k.len(), t.join(" "));
+        }
+        let _ = writeln!(self.out, "\t\t{}", c.nu * c.nv);
+        for u in 0..c.nu {
+            for v in 0..c.nv {
+                let p = c.cv(u, v);
+                let _ = writeln!(self.out, "\t\t{} {} {}", fmt_num(p.x), fmt_num(p.y), fmt_num(p.z));
+            }
         }
         let _ = writeln!(self.out, "\t\t;");
     }
@@ -3588,6 +3650,9 @@ pub fn write_text(s: &mut Session, file_name: &str, only: Option<&[NodeId]>) -> 
 /// Nodes whose result the mesh holds once baked: anything that outputs a mesh.
 fn n_is_baked(t: &NodeType) -> bool {
     // Curve history bakes into the curve's .cc as mesh history does into .vt; the info nodes are written below.
+    if t.name.starts_with("makeNurb") || matches!(t.name.as_str(), "loft" | "revolve" | "extrude" | "boundary" | "rebuildSurface" | "reverseSurface" | "insertKnotSurface" | "offsetSurface" | "closeSurface" | "squareSrf" | "planarTrim" | "boundaryBase") {
+        return true;
+    }
     const CURVE_HISTORY: &[&str] = &["makeNurbCircle", "makeNurbsSquare", "rebuildCurve", "reverseCurve", "closeCurve", "smoothCurve", "fitBspline", "extendCurve", "offsetCurve", "insertKnotCurve"];
     CURVE_HISTORY.contains(&t.name.as_str()) || t.name == "camera" || t.attrs.iter().any(|a| a.ty == PlugType::Mesh && a.has(flags::OUTPUT))
 }

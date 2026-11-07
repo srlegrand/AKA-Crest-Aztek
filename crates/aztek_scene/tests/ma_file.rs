@@ -592,7 +592,7 @@ connectAttr "nobody.x" "keep.tx";
     let mut s = Session::new();
     let w = read_text(&mut s, text, false);
     assert!(w.iter().any(|x| x.contains("reference skipped") && x.contains("rig.ma")), "{w:?}");
-    assert!(w.iter().any(|x| x.contains("nurbsSurface")), "{w:?}");
+    assert!(w.iter().any(|x| x.contains("surfaceShape1: no stored surface")), "{w:?}");
     assert!(w.iter().any(|x| x.contains("blendShape not represented: blendShape1, blendShape2")), "{w:?}");
     assert!(s.graph.find("group1|keep").unwrap().is_some());
     // A camera of the scene's own comes through.
@@ -1037,4 +1037,24 @@ createNode nurbsCurve -n "nurbsCircleShape1" -p "nurbsCircle1";
     assert_eq!(s.run("getAttr", json!({"args": ["nurbsCircle1.spans"]})).unwrap().as_f64().unwrap(), 8.0);
     let len = s.run("arclen", json!({"args": ["nurbsCircle1"]})).unwrap().as_f64().unwrap();
     assert!((len - std::f64::consts::TAU).abs() < 0.1, "{len}");
+}
+
+#[test]
+fn surfaces_round_trip() {
+    let mut s = Session::new();
+    s.run("sphere", json!({"radius": 2.0, "name": "ball"})).unwrap();
+    s.run("nurbsPlane", json!({"width": 4.0, "name": "sheet"})).unwrap();
+    let (text, _) = write_text(&mut s, "t.ma", None);
+    assert!(text.contains("createNode nurbsSurface -n \"ballShape\" -p \"ball\";"), "{text}");
+    assert!(text.contains("-type \"nurbsSurface\""));
+    let mut t = Session::new();
+    read_text(&mut t, &text, false);
+    for attr in ["ball.spansU", "ball.spansV", "ball.degreeU", "ball.formV", "sheet.spansU"] {
+        assert_eq!(t.run("getAttr", json!({"args": [attr]})).unwrap(), s.run("getAttr", json!({"args": [attr]})).unwrap(), "{attr}");
+    }
+    let a = s.run("xform", json!({"args": ["ball.cv[2][3]"], "query": true, "worldSpace": true, "translation": true})).unwrap();
+    let b = t.run("xform", json!({"args": ["ball.cv[2][3]"], "query": true, "worldSpace": true, "translation": true})).unwrap();
+    for k in 0..3 {
+        assert!((a[k].as_f64().unwrap() - b[k].as_f64().unwrap()).abs() < 1e-9, "{a} {b}");
+    }
 }

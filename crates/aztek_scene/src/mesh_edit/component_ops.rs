@@ -192,22 +192,6 @@ fn all_faces(m: &Mesh) -> Ids {
     (0..m.face_capacity()).filter(|&f| m.face_valid(f)).collect()
 }
 
-fn extrude_face_op(a: &Args, m: &mut Mesh, sel: &Ids, sym: Option<&SymmetryMap>) -> CmdResult<EditResult> {
-    let o = ExtrudeOptions {
-        offset: a.float("thickness", 0.0),
-        individual: a.bool("individual"),
-        symmetry: sym,
-        inset: a.float("offset", 0.0),
-        keep_back: a.bool("keepBack"),
-    };
-    Ok(faces(extrude_faces(m, sel, &o).faces))
-}
-
-fn extrude_edge_op(a: &Args, m: &mut Mesh, sel: &Ids, sym: Option<&SymmetryMap>) -> CmdResult<EditResult> {
-    let o = EdgeExtrudeOptions { thickness: a.float("thickness", 0.0), offset: a.float("offset", 0.0), symmetry: sym };
-    Ok(edges(extrude_edges(m, sel, &o).edges))
-}
-
 fn inset_op(a: &Args, m: &mut Mesh, sel: &Ids, sym: Option<&SymmetryMap>) -> CmdResult<EditResult> {
     let o = InsetOptions {
         thickness: a.float("thickness", 5.0),
@@ -219,33 +203,6 @@ fn inset_op(a: &Args, m: &mut Mesh, sel: &Ids, sym: Option<&SymmetryMap>) -> Cmd
     Ok(faces(inset_faces(m, sel, &o).faces))
 }
 
-
-fn del_vertex_op(_a: &Args, m: &mut Mesh, sel: &Ids, sym: Option<&SymmetryMap>) -> CmdResult<EditResult> {
-    delete_points(m, sel, sym);
-    Ok(EditResult::default())
-}
-
-fn del_edge_op(_a: &Args, m: &mut Mesh, sel: &Ids, sym: Option<&SymmetryMap>) -> CmdResult<EditResult> {
-    delete_edges(m, sel, sym);
-    Ok(EditResult::default())
-}
-
-fn del_facet_op(_a: &Args, m: &mut Mesh, sel: &Ids, sym: Option<&SymmetryMap>) -> CmdResult<EditResult> {
-    delete_faces(m, sel, sym);
-    Ok(EditResult::default())
-}
-
-fn split_ring_op(a: &Args, m: &mut Mesh, sel: &Ids, sym: Option<&SymmetryMap>) -> CmdResult<EditResult> {
-    let Some(&first) = sel.first() else { return Ok(edges(Vec::new())) };
-    let o = EdgeLoopOptions { fraction: a.float("fraction", 0.5), count: a.int("count", 1).max(1) as i32, spacing: a.float("spacing", 1.0) };
-    let Some(sym) = sym else { return Ok(edges(insert_edge_loop(m, first, &o))) };
-    // One plan for every loop and its images, so a ring that is its own image gets each mirrored spot once.
-    let mut plan = KnifePlan::default();
-    for t in edge_loop_fractions(&o) {
-        plan.segments.extend(knife_loop_plan(m, first, t, Some(sym)).segments);
-    }
-    Ok(edges(knife_apply(m, &plan)))
-}
 
 fn split_rings_with(a: &Args, m: &mut Mesh, picked: &Ids, sym: Option<&SymmetryMap>, kind: K) -> CmdResult<EditResult> {
     let count = a.int("count", 1).max(1) as i32;
@@ -293,10 +250,6 @@ fn merge_with(a: &Args, m: &mut Mesh, sel: &Ids, sym: Option<&SymmetryMap>, pair
     Ok(points(merge_by_distance(m, sel, &o)))
 }
 
-fn merge_op(a: &Args, m: &mut Mesh, sel: &Ids, sym: Option<&SymmetryMap>) -> CmdResult<EditResult> {
-    merge_with(a, m, sel, sym, true)
-}
-
 fn merge_all_op(a: &Args, m: &mut Mesh, sel: &Ids, sym: Option<&SymmetryMap>) -> CmdResult<EditResult> {
     merge_with(a, m, sel, sym, false)
 }
@@ -320,22 +273,12 @@ fn dissolve_edge_op(_a: &Args, m: &mut Mesh, sel: &Ids, sym: Option<&SymmetryMap
     Ok(faces(dissolve_edges(m, &all, true)))
 }
 
-fn poke_op(_a: &Args, m: &mut Mesh, sel: &Ids, sym: Option<&SymmetryMap>) -> CmdResult<EditResult> {
-    Ok(faces(poke_faces(m, &with_mirror(m, sym, sel, K::Face))))
-}
-
 fn spin_op(_a: &Args, m: &mut Mesh, sel: &Ids, sym: Option<&SymmetryMap>) -> CmdResult<EditResult> {
     Ok(edges(spin_edges(m, &with_mirror(m, sym, sel, K::Edge))))
 }
 
 fn fill_hole_op(_a: &Args, m: &mut Mesh, sel: &Ids, _sym: Option<&SymmetryMap>) -> CmdResult<EditResult> {
     Ok(faces(fill_holes(m, sel)))
-}
-
-fn flip_op(_a: &Args, m: &mut Mesh, sel: &Ids, sym: Option<&SymmetryMap>) -> CmdResult<EditResult> {
-    let all = if sel.is_empty() { all_faces(m) } else { sel.clone() };
-    flip_normals(m, &with_mirror(m, sym, &all, K::Face));
-    Ok(if sel.is_empty() { EditResult::default() } else { faces(sel.clone()) })
 }
 
 fn conform_op(_a: &Args, m: &mut Mesh, sel: &Ids, _sym: Option<&SymmetryMap>) -> CmdResult<EditResult> {
@@ -371,10 +314,6 @@ fn bevel_with(a: &Args, m: &mut Mesh, picked: &Ids, sym: Option<&SymmetryMap>, f
     let mut r = faces(bevel_edges(m, &sel, &o));
     r.info = json!(applied.get());
     Ok(r)
-}
-
-fn bevel_edge_op(a: &Args, m: &mut Mesh, sel: &Ids, sym: Option<&SymmetryMap>) -> CmdResult<EditResult> {
-    bevel_with(a, m, sel, sym, false)
 }
 
 fn bevel_face_op(a: &Args, m: &mut Mesh, sel: &Ids, sym: Option<&SymmetryMap>) -> CmdResult<EditResult> {
@@ -413,15 +352,6 @@ fn register_history_ops() {
         register_op(HistoryOp { node_type, command: "polyGridFill", label: "Grid Fill", kind, run, skip_flags: &[], doc: "Rebuilds patches as a quad grid." });
     }
     register_op(HistoryOp {
-        node_type: "polyBevel3",
-        command: "polyBevel",
-        label: "Bevel",
-        kind: K::Edge,
-        run: bevel_edge_op,
-        skip_flags: &[],
-        doc: "Bevels edges of its input mesh.",
-    });
-    register_op(HistoryOp {
         node_type: "polyBevelFace",
         command: "polyBevel",
         label: "Bevel",
@@ -457,43 +387,18 @@ fn register_history_ops() {
         skip_flags: &[],
         doc,
     };
-    register_op(op("polyDelVertex", "deleteComponents", "Delete Components", K::Vertex, del_vertex_op, "Deletes vertices of its input mesh."));
-    register_op(op("polyDelEdge", "deleteComponents", "Delete Components", K::Edge, del_edge_op, "Deletes edges of its input mesh."));
-    register_op(op("polyDelFacet", "deleteComponents", "Delete Components", K::Face, del_facet_op, "Deletes faces of its input mesh."));
-    register_op(op("polySplitRing", "polyInsertLoop", "Insert Edge Loop", K::Edge, split_ring_op, "Inserts edge loops across a ring."));
     register_op(op("polySplitRingsFace", "polySplitRings", "Split Rings", K::Face, split_rings_face_op, "Splits the rings across faces."));
     register_op(op("polySplitRingsEdge", "polySplitRings", "Split Rings", K::Edge, split_rings_edge_op, "Splits the rings through edges."));
     register_op(op("polyOffsetLoop", "polyOffsetLoop", "Offset Edge Loop", K::Edge, offset_loop_op, "Inserts loops either side of edges."));
-    register_op(op("polyMergeVert", "polyMerge", "Merge", K::Vertex, merge_op, "Welds vertices within a distance."));
     register_op(op("polyMergeVertAll", "polyMerge", "Merge", K::Vertex, merge_all_op, "Welds vertices within a distance."));
     register_op(op("polyMergeCenter", "polyMergeCenter", "Merge to Center", K::Vertex, merge_center_op, "Welds vertices at their centre."));
     register_op(op("polyCollapseEdge", "polyCollapse", "Collapse", K::Edge, collapse_op, "Collapses edges to their centres."));
     register_op(op("polyDissolveVertex", "polyDissolve", "Dissolve", K::Vertex, dissolve_vertex_op, "Dissolves vertices."));
     register_op(op("polyDissolveEdge", "polyDissolve", "Dissolve", K::Edge, dissolve_edge_op, "Dissolves edges."));
-    register_op(op("polyPoke", "polyPoke", "Poke", K::Face, poke_op, "Fans faces into triangles round their centres."));
     register_op(op("polySpinEdge", "polySpinEdge", "Spin Edge", K::Edge, spin_op, "Spins edges within their faces."));
     register_op(op("polyCloseBorder", "polyFillHole", "Fill Hole", K::Edge, fill_hole_op, "Caps holes."));
-    register_op(op("polyNormal", "polyFlip", "Flip Normals", K::Face, flip_op, "Reverses face winding."));
     register_op(op("polyConform", "polyConform", "Conform", K::Face, conform_op, "Makes face winding consistent."));
     register_op(op("polyTriangulate", "polyTriangulate", "Triangulate", K::Face, triangulate_op, "Triangulates faces."));
-    register_op(HistoryOp {
-        node_type: "polyExtrudeFace",
-        command: "polyExtrude",
-        label: "Extrude",
-        kind: K::Face,
-        run: extrude_face_op,
-        skip_flags: &["duplicate", "keepSides"],
-        doc: "Extrudes faces of its input mesh.",
-    });
-    register_op(HistoryOp {
-        node_type: "polyExtrudeEdge",
-        command: "polyExtrude",
-        label: "Extrude",
-        kind: K::Edge,
-        run: extrude_edge_op,
-        skip_flags: &["duplicate", "keepSides", "individual", "keepBack"],
-        doc: "Extrudes edges of its input mesh into strips of faces.",
-    });
     register_op(HistoryOp {
         node_type: "polyInset",
         command: "polyInset",
@@ -560,7 +465,9 @@ pub fn register(c: &mut Commands<Session>) {
             let offset = a.float("offset", 2.0);
             // Faces bevel the border of each selected region, not the edges between selected faces (Maya).
             let from_faces = components::mode(&s.graph) == K::Face;
-            let (out, infos) = edit_selected_op_info(s, if from_faces { "polyBevelFace" } else { "polyBevel3" }, a, false, None)?;
+            let mut a2 = a.clone();
+            a2.flags.insert("chamfer".into(), json!(false));
+            let (out, infos) = edit_selected_op_info(s, if from_faces { "polyBevelFace" } else { "polyBevel3" }, &a2, false, None)?;
             let used = infos.iter().filter_map(|i| i.as_f64()).fold(offset, f64::min);
             if a.bool("clamp") && used < offset - 1e-9 {
                 crate::last_op::limit_flag(s, "offset", json!((used * 1000.0).floor() / 1000.0));
@@ -580,7 +487,9 @@ pub fn register(c: &mut Commands<Session>) {
             K::Edge => "polyDelEdge",
             _ => "polyDelFacet",
         };
-        edit_selected_op(s, ty, _a, false, None)
+        let mut a2 = _a.clone();
+        a2.flags.insert("withFaces".into(), json!(true));
+        edit_selected_op(s, ty, &a2, false, None)
     }));
 
     c.register(
@@ -650,7 +559,9 @@ pub fn register(c: &mut Commands<Session>) {
              Exactly two selected vertices weld whatever the distance.",
             |s, a| {
                 let pair = components::mode(&s.graph) == K::Vertex;
-                edit_selected_op(s, if pair { "polyMergeVert" } else { "polyMergeVertAll" }, a, true, None)
+                let mut a2 = a.clone();
+                a2.flags.insert("alwaysMergeTwoVertices".into(), json!(true));
+                edit_selected_op(s, if pair { "polyMergeVert" } else { "polyMergeVertAll" }, &a2, true, None)
             },
         )
         .flag(flag("distance", T::Float, json!(0.01), "Weld distance, cm.").min(0.0))

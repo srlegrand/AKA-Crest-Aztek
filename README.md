@@ -1,10 +1,28 @@
 <p align="center"><img src="docs/logo.png" alt="Aztek" width="420"></p>
 
-[![Build](https://github.com/srlegrand/AKA-Crest-Aztek/actions/workflows/build.yml/badge.svg)](https://github.com/srlegrand/AKA-Crest-Aztek/actions/workflows/build.yml)
+[![Build](https://github.com/srlegrand/Aztek/actions/workflows/build.yml/badge.svg)](https://github.com/srlegrand/Aztek/actions/workflows/build.yml)
 
 A modelling, UV, rigging and animation application that behaves like Maya. Rust core (scene graph, commands,
-geometry, Vulkan viewport), Qt Widgets shell in C++, embedded Python with `aztek.cmds` and a `maya.cmds` shim.
-PARITY.md has the behaviour target and status.
+geometry, Vulkan viewport), Qt Widgets shell in C++, a MEL interpreter, and embedded Python with `aztek.cmds`, a
+`maya.cmds` shim and an OpenMaya API 2.0 subset. Reads and writes `.ma` files. [PARITY.md](PARITY.md) has the behaviour
+target and status, including where it differs from Maya; [docs/COMMANDS.md](docs/COMMANDS.md) lists every command.
+
+## What's in it
+
+- **Polygon modelling:** Maya's polygon commands with construction history; Quad Draw, Multi-Cut, Insert and Offset Edge
+  Loop, Target Weld, Slide Edge, Crease, Create and Append Polygon; symmetry, soft selection; eighteen sculpting brushes.
+- **NURBS:** curves (CV and EP tools, rebuild, attach, detach, offset) and surfaces (primitives, loft, revolve, extrude,
+  boundary, birail, `nurbsToPoly`), with CVs as components.
+- **UVs:** projections, unfold, layout, cut and sew, UV Editor.
+- **Rigging:** joints (orient, mirror, insert, segment scale compensate), RP, SC and spline IK, every constraint, smooth
+  skin with weight painting, mirror and copy, dual quaternion; lattice, wrap, wire, delta mush, softMod, nonlinears,
+  clusters, blend shapes; a HumanIK subset (skeleton, definition, control rig, retargeting).
+- **Animation:** keys with weighted tangents and infinities, Graph Editor, Dope Sheet, set driven keys, breakdowns,
+  copy and paste keys, baking, motion paths, animation layers, character sets and clips.
+- **Scripting:** MEL (procedures, arrays, control flow, backticks), Python, `maya.api.OpenMaya`, Python plug-ins with
+  `MPxCommand` and `MPxNode`.
+- **Interface:** menu sets, shelves with an editor, hotkey editor, marking menus, hotbox, channel box, outliner, attribute
+  editor, node editor, tool settings, panel layouts, workspaces.
 
 ![Aztek](docs/screenshot.png)
 
@@ -38,6 +56,26 @@ Joints, smooth skin and an RP IK handle:
 
 ![Rigging](docs/rigging.png)
 
+Paint Skin Weights, with the influence list and brush settings in Tool Settings:
+
+![Paint weights](docs/paint-weights.png)
+
+NURBS surfaces and curves, with a drawing override on the control:
+
+![NURBS](docs/nurbs.png)
+
+Quad Draw on a live surface:
+
+![Quad Draw](docs/quad-draw.png)
+
+Dope Sheet, with a breakdown in green:
+
+![Dope Sheet](docs/dope-sheet.png)
+
+Node Editor:
+
+![Node Editor](docs/node-editor.png)
+
 ## Build
 
 Linux:
@@ -63,7 +101,7 @@ Python.
 
 Options:
 
-    aztek [scene.aztek] [--script file.mel|file.py] [--screenshot out.png]
+    aztek [scene.aztek|scene.ma] [--script file.mel|file.py] [--screenshot out.png]
 
 On KDE Plasma, Alt + drag moves windows by default: set System Settings > Window Management > Window Behavior >
 Window Actions > Modifier key to Meta, as for Maya.
@@ -95,7 +133,9 @@ Window Actions > Modifier key to Meta, as for Maya.
 | Alt+. and Alt+, | Next and previous frame |
 | Alt+V, Esc | Play / stop |
 | Ctrl+A | Attribute Editor |
-| Enter | Joint tool: end the chain |
+| Enter | Joint tool: end the chain. Curve, Multi-Cut and polygon tools: finish |
+| B drag | Paint and sculpting tools: size the brush |
+| Ctrl+Shift+T | Tool Settings (also: double-click a tool) |
 
 In the channel box, click channel names to pick them (Ctrl and Shift add); middle-drag in a view then changes them
 (Ctrl fine, Shift coarse). Right-click for keys, locks and connections.
@@ -103,7 +143,9 @@ In the channel box, click channel names to pick them (Ctrl and Shift add); middl
 ## Editors
 
 - Outliner, Channel Box / Layer Editor, Attribute Editor (docked), Script Editor with MEL and Python tabs.
-- Graph Editor (Windows > Animation Editors): curves of the selection, keys picked and dragged, tangents.
+- Graph Editor and Dope Sheet (Windows > Animation Editors): curves and keys of the selection.
+- Node Editor (Windows > General Editors): graph the selection, wire attributes, Tab creates a node.
+- Hotkeys and shelves are editable; the Hotkey Editor is under Windows > Settings/Preferences.
 - UV Editor (Windows > Modeling Editors, or UV > UV Editor): UVs by UV, shell, edge or face; move, rotate and scale;
   projections, unfold, layout, cut, sew, normalize, flip.
 
@@ -118,4 +160,12 @@ The command line and the Script Editor take MEL (`polyCube -w 2 -sx 3; select -r
     cmds.setKeyframe(cube, at='ty', t=24, v=5)
     cmds.polyCube(cube, q=True, w=True)
 
-`aztek.cmds` is the module of record; `maya.cmds` and `maya.mel` map onto it.
+`aztek.cmds` is the module of record; `maya.cmds`, `maya.mel` and `maya.api.OpenMaya` map onto it. Python plug-ins load
+with `loadPlugin`. C++ plug-ins can't load.
+
+## Maya compatibility
+
+The target is that Maya's scripts, habits and `.ma` files carry over. It has been developed without a copy of Maya to
+compare against, so behaviour comes from the published reference: expect differences in details, and see PARITY.md for
+the known ones. `.mb` files, references and C++ plug-ins are not supported. Rendering, dynamics and Bifrost are out of
+scope.

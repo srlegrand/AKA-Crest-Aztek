@@ -1106,6 +1106,29 @@ impl Mesh {
         *self = Mesh::default();
     }
 
+    /// Gives the points new ids: new_to_old[n] is the point that becomes n. It must name every point, on a mesh with
+    /// no dead points. Faces, edges and corners keep their ids.
+    pub fn reorder_points(&mut self, new_to_old: &[Index]) {
+        self.touch_topology();
+        let mut old_to_new = vec![INVALID; self.point_capacity() as usize];
+        for (n, &o) in new_to_old.iter().enumerate() {
+            old_to_new[o as usize] = n as Index;
+        }
+        self.point_pos = new_to_old.iter().map(|&o| self.point_pos[o as usize]).collect();
+        self.point_edge = new_to_old.iter().map(|&o| self.point_edge[o as usize]).collect();
+        for e in &mut self.edges {
+            if e.v[0] != INVALID {
+                e.v = [old_to_new[e.v[0] as usize], old_to_new[e.v[1] as usize]];
+            }
+        }
+        for c in &mut self.corners {
+            if c.point != INVALID {
+                c.point = old_to_new[c.point as usize];
+            }
+        }
+        self.attrs[0].reorder(new_to_old);
+    }
+
     /// Drops deleted elements and makes face corners contiguous.
     pub fn compact(&mut self, remap: Option<&mut MeshRemap>) {
         self.touch_topology();

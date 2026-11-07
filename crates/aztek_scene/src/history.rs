@@ -237,8 +237,51 @@ impl NodeBehavior for HistoryNode {
     }
 }
 
+/// Command flags that say how the command runs rather than what the edit does: never attributes.
+const NOT_ATTRS: [&str; 7] = ["constructionHistory", "name", "query", "edit", "queried", "object", "createHistory"];
+/// Values the command works out for its node (a curve's samples, the object's matrix): stored but not shown.
+const HIDDEN_ATTRS: [&str; 3] = ["worldInverse", "curvePoints", "vertices"];
+/// Vector flags whose X, Y and Z flags are the vector's parts: the node has one attribute with three children.
+const VECTOR_PARTS: [(&str, &str); 11] = [
+    ("translate", "translate"),
+    ("rotate", "rotate"),
+    ("scale", "scale"),
+    ("localTranslate", "localTranslate"),
+    ("localRotate", "localRotate"),
+    ("localScale", "localScale"),
+    ("localDirection", "localDirection"),
+    ("pivot", "pivot"),
+    ("gravity", "gravity"),
+    ("magnet", "magn"),
+    ("direction", "direction"),
+];
+
+/// Folds -ltx/-lty/-ltz style flags into their vector flag, so one attribute holds them.
+pub fn fold_vectors(a: &Args) -> Args {
+    let mut out = a.clone();
+    for (vector, part) in VECTOR_PARTS {
+        let parts: Vec<Option<f64>> = ["X", "Y", "Z"].iter().map(|c| out.flags.remove(&format!("{part}{c}")).and_then(|v| v.as_f64())).collect();
+        if parts.iter().all(Option::is_none) {
+            continue;
+        }
+        let was = out.vec3(vector).unwrap_or(if vector.ends_with("cale") { [1.0; 3] } else { [0.0; 3] });
+        let now: Vec<f64> = (0..3).map(|i| parts[i].unwrap_or(was[i])).collect();
+        out.flags.insert(vector.to_string(), json!(now));
+    }
+    out
+}
+
+fn is_vector_part(all: &[aztek_ops::FlagDef], f: &aztek_ops::FlagDef) -> bool {
+    VECTOR_PARTS.iter().any(|(vector, part)| {
+        ["X", "Y", "Z"].iter().any(|c| f.name == format!("{part}{c}")) && all.iter().any(|x| x.name == *vector && x.ty == ArgType::Vec3)
+    })
+}
+
 fn attr_for(f: &aztek_ops::FlagDef) -> Option<AttrDef> {
-    let fl = flags::INPUT | flags::STORABLE;
+    let mut fl = flags::INPUT | flags::STORABLE;
+    if HIDDEN_ATTRS.contains(&f.name.as_str()) {
+        fl |= flags::HIDDEN;
+    }
     let a = match f.ty {
         ArgType::Bool => AttrDef {
             name: f.name.clone(),
@@ -246,12 +289,14 @@ fn attr_for(f: &aztek_ops::FlagDef) -> Option<AttrDef> {
             default_value: PlugValue::Bool(f.default_value.as_bool().unwrap_or(false)),
             flags: fl,
             doc: f.doc.clone(),
+            short_name: f.short_name.clone(),
             ..Default::default()
         },
         ArgType::Int => AttrDef {
             name: f.name.clone(),
             ty: PlugType::Int,
             default_value: PlugValue::Int(f.default_value.as_i64().unwrap_or(0)),
+            short_name: f.short_name.clone(),
             flags: fl | flags::KEYABLE,
             doc: f.doc.clone(),
             min_value: f.min,
@@ -262,6 +307,7 @@ fn attr_for(f: &aztek_ops::FlagDef) -> Option<AttrDef> {
             name: f.name.clone(),
             ty: PlugType::Float,
             default_value: PlugValue::Float(f.default_value.as_f64().unwrap_or(0.0)),
+            short_name: f.short_name.clone(),
             flags: fl | flags::KEYABLE,
             doc: f.doc.clone(),
             min_value: f.min,
@@ -272,6 +318,7 @@ fn attr_for(f: &aztek_ops::FlagDef) -> Option<AttrDef> {
             name: f.name.clone(),
             ty: PlugType::String,
             default_value: PlugValue::String(f.default_value.as_str().unwrap_or("").to_string()),
+            short_name: f.short_name.clone(),
             flags: fl,
             doc: f.doc.clone(),
             ..Default::default()
@@ -284,6 +331,7 @@ fn attr_for(f: &aztek_ops::FlagDef) -> Option<AttrDef> {
             name: f.name.clone(),
             ty: PlugType::String,
             default_value: PlugValue::String(if f.default_value.is_null() { String::new() } else { f.default_value.to_string() }),
+            short_name: f.short_name.clone(),
             flags: fl,
             doc: f.doc.clone(),
             nice_name: "json".into(),
@@ -298,11 +346,16 @@ pub fn register_op(op: HistoryOp) {
     OPS.write().unwrap().insert(op.node_type.to_string(), Arc::new(op));
 }
 
-/// Node types for every registered op, attributes taken from their commands' flags.
-pub fn register_types(c: &Commands<Session>) {
-    // Sessions can start on several threads at once.
-    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+// Sessions can start on several threads at once.
+static TYPE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// The node type every history node derives from, for modules making their own kinds of history node.
+pub fn ensure_base_type() {
+    let _guard = TYPE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    ensure_base_locked();
+}
+
+fn ensure_base_locked() {
     register_tweak_type();
     if types::find(BASE_TYPE).is_none() {
         let base = NodeType {
@@ -341,6 +394,12 @@ pub fn register_types(c: &Commands<Session>) {
         };
         types::register_type(base).expect(BASE_TYPE);
     }
+}
+
+/// Node types for every registered op, attributes taken from their commands' flags.
+pub fn register_types(c: &Commands<Session>) {
+    let _guard = TYPE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    ensure_base_locked();
     let base = types::find(BASE_TYPE).unwrap();
     for op in OPS.read().unwrap().values() {
         if types::find(op.node_type).is_some() {
@@ -350,7 +409,12 @@ pub fn register_types(c: &Commands<Session>) {
             log::warn!("history op {}: no command {}", op.node_type, op.command);
             continue;
         };
-        let own: Vec<AttrDef> = cmd.flags.iter().filter(|f| !op.skip_flags.contains(&f.name.as_str())).filter_map(attr_for).collect();
+        let own: Vec<AttrDef> = cmd
+            .flags
+            .iter()
+            .filter(|f| !op.skip_flags.contains(&f.name.as_str()) && !NOT_ATTRS.contains(&f.name.as_str()) && !is_vector_part(&cmd.flags, f))
+            .filter_map(attr_for)
+            .collect();
         let op2 = op.clone();
         let t = NodeType {
             name: op.node_type.into(),

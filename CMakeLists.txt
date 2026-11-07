@@ -57,6 +57,18 @@ add_executable(aztek WIN32
   app/src/toolsettings.cpp
   app/src/dopesheet.cpp
   app/src/nodeeditor.cpp
+  app/src/runtime.cpp
+  app/src/statusline.cpp
+  app/src/hotbox.cpp
+  app/src/shelves.cpp
+  app/src/panelmenus.cpp
+  app/src/appmenus.cpp
+  app/src/prefswindow.cpp
+  app/src/editors.cpp
+  app/src/attreditor.cpp
+  app/src/scripteditor.cpp
+  app/src/outlinerpanel.cpp
+  app/src/icons_more.cpp
   app/src/resources.qrc
   $<$<PLATFORM_ID:Windows>:app/icons/aztek.rc>)
 add_dependencies(aztek aztek_host_build)

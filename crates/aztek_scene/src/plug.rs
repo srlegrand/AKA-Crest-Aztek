@@ -278,6 +278,8 @@ pub struct AttrDef {
     pub file_default: Option<PlugValue>,
     /// An older name scene files may store this attr under. On an array, `#` stands for the element number.
     pub file_alias: String,
+    /// Other names getAttr, setAttr and commands reach this attr by (polyCube's subdivisionsX is subdivisionsWidth).
+    pub aliases: Vec<String>,
     pub nice_name: String,
     pub min_value: Option<f64>,
     pub max_value: Option<f64>,
@@ -303,6 +305,7 @@ impl Default for AttrDef {
             doc: String::new(),
             file_default: None,
             file_alias: String::new(),
+            aliases: Vec::new(),
             nice_name: String::new(),
             min_value: None,
             max_value: None,
