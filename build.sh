@@ -26,7 +26,7 @@ if [ "$DEPS" = 1 ]; then
   elif command -v pacman >/dev/null; then
     sudo pacman -S --needed base-devel cmake ninja qt6-base vulkan-icd-loader python
   else
-    echo "Install by hand: a C++17 compiler, CMake 3.21+, Ninja, Qt 6.4+ (base, dev), Vulkan loader, Python 3 dev files."
+    echo "Install by hand: a C++17 compiler, CMake 3.21+, Ninja, Qt 6.2+ (base, dev), Vulkan loader, Python 3 dev files."
   fi
 fi
 

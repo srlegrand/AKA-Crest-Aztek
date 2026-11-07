@@ -39,20 +39,34 @@ if (-not $Qt -or -not (Test-Path "$Qt\lib\cmake\Qt6")) {
 }
 Write-Host "Qt: $Qt"
 
-cmake -B $dir -G Ninja "-DCMAKE_BUILD_TYPE=$type" "-DCMAKE_PREFIX_PATH=$Qt"
+# The Python on PATH: what the exe links must be the one copied below, not another CMake finds in the registry.
+$py = (Get-Command python -ErrorAction SilentlyContinue).Source
+$pyArg = if ($py) { "-DPython3_EXECUTABLE=$py" } else { "-DAZTEK_PYTHON=OFF" }
+cmake -B $dir -G Ninja "-DCMAKE_BUILD_TYPE=$type" "-DCMAKE_PREFIX_PATH=$Qt" $pyArg
 if ($LASTEXITCODE) { throw "configure failed" }
 cmake --build $dir
 if ($LASTEXITCODE) { throw "build failed" }
 
-# A runnable folder: the exe, Qt's DLLs and plugins, and Python's DLL.
+# A runnable folder that needs nothing else installed: the exe, Qt's DLLs and plugins, the VC runtime, Python's DLL and
+# standard library (Python finds Lib\os.py beside the exe), and the example scenes.
 $dist = "$dir\dist"
 New-Item -ItemType Directory -Force $dist | Out-Null
 Copy-Item "$dir\aztek.exe" $dist -Force
-& "$Qt\bin\windeployqt.exe" --no-translations "$dist\aztek.exe" | Out-Null
-$py = (Get-Command python -ErrorAction SilentlyContinue).Source
-if ($py) {
-    Get-ChildItem (Split-Path $py) -Filter "python3*.dll" | Copy-Item -Destination $dist -Force
+& "$Qt\bin\windeployqt.exe" --no-translations --no-compiler-runtime "$dist\aztek.exe" | Out-Null
+if ($LASTEXITCODE) { throw "windeployqt failed" }
+if ($env:VCToolsRedistDir) {
+    Get-ChildItem "$env:VCToolsRedistDir\x64\Microsoft.VC*.CRT\*.dll" | Copy-Item -Destination $dist -Force
 }
+if ($py) {
+    $home_ = Split-Path $py
+    Get-ChildItem $home_ -Filter "python3*.dll" | Copy-Item -Destination $dist -Force
+    robocopy "$home_\Lib" "$dist\Lib" /E /NFL /NDL /NJH /NJS /NP /XD __pycache__ site-packages test tests idlelib tkinter turtledemo ensurepip | Out-Null
+    if ($LASTEXITCODE -ge 8) { throw "copying Python's Lib failed" }
+    robocopy "$home_\DLLs" "$dist\DLLs" /E /NFL /NDL /NJH /NJS /NP /XD __pycache__ /XF tcl*.dll tk*.dll _tkinter.pyd | Out-Null
+    if ($LASTEXITCODE -ge 8) { throw "copying Python's DLLs failed" }
+    $global:LASTEXITCODE = 0
+}
+if (Test-Path examples) { Copy-Item examples "$dist\examples" -Recurse -Force }
 Write-Host "Built $dist\aztek.exe"
 
 if ($Run) { & "$dist\aztek.exe" }

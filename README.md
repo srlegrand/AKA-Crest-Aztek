@@ -106,6 +106,20 @@ Node Editor:
 
 ![Node Editor](docs/node-editor.png)
 
+## Install
+
+Packages are on the [releases page](https://github.com/srlegrand/AKA-Crest-Aztek/releases): `latest` follows main.
+
+| System | Package | Install |
+| --- | --- | --- |
+| Rocky Linux 8 | `aztek-<version>-1.el8.x86_64.rpm` | `sudo dnf install ./aztek-*.el8.x86_64.rpm` (Qt is bundled) |
+| Rocky Linux 9 | `aztek-<version>-1.el9.x86_64.rpm` | `sudo dnf install epel-release`, then `sudo dnf install ./aztek-*.el9.x86_64.rpm` |
+| Ubuntu 22.04, 24.04 | `aztek_<version>-1_ubuntu22.04_amd64.deb`, `..._ubuntu24.04_...` | `sudo apt install ./aztek_*.deb` |
+| Windows 10 and 11 | `aztek-<version>-setup-x64.exe`, or the zip | Run it. It isn't signed, so SmartScreen asks first |
+
+The viewport needs a Vulkan driver: NVIDIA's own driver has one, and Mesa's `mesa-vulkan-drivers` covers AMD and Intel.
+[docs/PACKAGING.md](docs/PACKAGING.md) has the details, and how the packages are built.
+
 ## Build
 
 Linux:
@@ -123,7 +137,8 @@ Windows, from PowerShell or a command prompt:
 Needs Visual Studio 2022 (or its Build Tools) with "Desktop development with C++", Rust from
 [rustup](https://rustup.rs), CMake, Qt 6.4+ for MSVC from the [Qt online installer](https://www.qt.io/download-qt-installer-oss),
 and Python 3 from [python.org](https://www.python.org/downloads/). The script finds Visual Studio and the newest Qt
-under `C:\Qt` (or takes `-Qt C:\Qt\6.8.0\msvc2022_64`), builds, and copies Qt's DLLs next to `build\aztek.exe`.
+under `C:\Qt` (or takes `-Qt C:\Qt\6.8.0\msvc2022_64`), builds, and makes a folder that runs by itself in `build\dist`:
+Qt's DLLs, the VC runtime and Python's standard library beside `aztek.exe`.
 
 By hand, on either: `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build`. The first build
 compiles the Rust core (a few minutes); later builds only rebuild what changed. `-DAZTEK_PYTHON=OFF` builds without
