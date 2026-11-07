@@ -3,6 +3,7 @@
 
 pub mod anim;
 pub mod anim_edit;
+pub mod anim_extra;
 pub mod anim_filter;
 pub mod anim_keys;
 pub mod anim_layers;

@@ -163,6 +163,7 @@ impl Session {
         crate::nurbs_ops::register(&mut s.commands);
         crate::rig_extra::register(&mut s.commands);
         crate::general_cmds::register(&mut s.commands);
+        crate::anim_extra::register(&mut s.commands);
         // Last: history node types take their attributes from the commands registered above.
         crate::history::register(&mut s.commands);
         crate::instancing::install(&mut s.graph);
