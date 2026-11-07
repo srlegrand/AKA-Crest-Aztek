@@ -25,6 +25,8 @@ use crate::skin::{asked, modes, PaintCtx, PaintOp, Stamp};
 pub struct AttrCtx {
     pub paint: PaintCtx,
     pub attr: String,
+    /// Names made by artAttrCtx, for setToolTo. They share these settings.
+    pub tools: Vec<String>,
 }
 
 /// Where a deformer keeps some per-point values.
@@ -378,7 +380,14 @@ pub(crate) fn register(c: &mut Commands<Session>) {
                         flood(s, m)?;
                     }
                 }
-                Ok(Value::Null)
+                if a.bool("edit") {
+                    return Ok(Value::Null);
+                }
+                let name = a.pos_str(0).unwrap_or("artAttrCtx1").to_string();
+                if !s.attr_ctx.tools.contains(&name) {
+                    s.attr_ctx.tools.push(name.clone());
+                }
+                Ok(json!(name))
             },
         )
         .positional("the tool's name")

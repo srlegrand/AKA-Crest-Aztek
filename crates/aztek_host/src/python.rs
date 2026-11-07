@@ -459,6 +459,43 @@ pub(crate) fn eval_from_mel(core: &mut Core, src: &str) -> Result<Value, String>
     serde_json::from_str(&r?).map_err(|e| e.to_string())
 }
 
+/// Calls a function of __main__ with `core` as the commands' core, the way MEL's python() does.
+fn call_main(core: &mut Core, func: &str, args: impl for<'py> pyo3::call::PyCallArgs<'py>) -> Result<(), String> {
+    let saved = NESTED.with(|c| c.replace(core as *mut Core));
+    let r = ensure().and_then(|()| {
+        Python::attach(|py| -> PyResult<()> {
+            py.import("__main__")?.getattr(func)?.call1(args)?;
+            Ok(())
+        })
+        .map_err(|e| e.to_string())
+    });
+    NESTED.with(|c| c.set(saved));
+    r
+}
+
+/// Runs a Python callable kept for a control or job, with what Maya would pass it.
+pub(crate) fn fire_callback(core: &mut Core, id: i64, args: &[Value]) -> Result<(), String> {
+    call_main(core, "_aztek_fire", (id, Value::Array(args.to_vec()).to_string()))
+}
+
+/// Runs Python source given as a callback. Exceptions are reported in the history, as for a callable.
+pub(crate) fn fire_source(core: &mut Core, src: &str) -> Result<(), String> {
+    call_main(core, "_aztek_fire_source", (src,))
+}
+
+/// While a dialog's event loop runs on top of a suspended command, a nested core may hold the session. Lends it to `h`
+/// for the call. The nested core's frame is suspended under this one and does nothing until the hook returns.
+pub(crate) fn with_lent_session<R>(h: &mut Core, f: impl FnOnce(&mut Core) -> R) -> R {
+    let p = NESTED.with(Cell::get);
+    if p.is_null() || std::ptr::eq(p, h) {
+        return f(h);
+    }
+    std::mem::swap(&mut h.s, unsafe { &mut (*p).s });
+    let r = f(h);
+    std::mem::swap(&mut h.s, unsafe { &mut (*p).s });
+    r
+}
+
 /// Runs Python source in __main__. A lone expression's value is printed as Maya does: # Result: ... #
 /// Must not be called from inside a host borrow: the commands it runs borrow the host themselves.
 pub fn run(src: &str) {

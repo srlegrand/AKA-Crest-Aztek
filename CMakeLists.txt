@@ -70,6 +70,7 @@ add_executable(aztek WIN32
   app/src/scripteditor.cpp
   app/src/outlinerpanel.cpp
   app/src/icons_more.cpp
+  app/src/scriptui.cpp
   app/src/resources.qrc
   $<$<PLATFORM_ID:Windows>:app/icons/aztek.rc>)
 add_dependencies(aztek aztek_host_build)

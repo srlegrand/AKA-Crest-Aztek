@@ -75,6 +75,13 @@ pub struct MelState {
     pub(super) rng: u64,
 }
 
+impl MelState {
+    /// A global variable the application provides, such as $gMainWindow.
+    pub fn set_global_string(&mut self, name: &str, value: &str) {
+        self.globals.insert(name.to_string(), Value::Str(value.to_string()));
+    }
+}
+
 impl Default for MelState {
     fn default() -> Self {
         MelState {
@@ -105,6 +112,24 @@ pub fn run(core: &mut Core, src: &str) -> Result<J, String> {
     }
     core.version += 1;
     r
+}
+
+/// A callback's run: no echo and no result lines, its print output kept. The error comes back to the caller.
+pub fn run_callback(core: &mut Core, src: &str) -> Result<(), String> {
+    core.mel_state.running += 1;
+    let mut it = Interp { core };
+    let r = it.run_quiet(src, None);
+    it.flush_print();
+    core.mel_state.running -= 1;
+    if core.mel_state.running == 0 {
+        for d in std::mem::take(&mut core.mel_state.deferred) {
+            let _ = run_echoed(core, &d);
+        }
+    }
+    match r {
+        Ok(_) | Err(Flow::Return(_) | Flow::Break | Flow::Continue) => Ok(()),
+        Err(Flow::Error(m)) => Err(m),
+    }
 }
 
 fn run_echoed(core: &mut Core, src: &str) -> Result<J, String> {

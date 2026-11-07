@@ -141,6 +141,11 @@ fn query_takes_value(cmd: &str, flag: &str) -> bool {
     )
 }
 
+/// Commands whose -e means something other than edit: scriptJob's event, timer's end.
+pub fn e_is_own_flag(cmd: &str) -> bool {
+    matches!(cmd, "scriptJob" | "timer")
+}
+
 /// A Maya command spelled as one of ours: the command it runs, and its flags (long or short) as ours.
 pub struct Alias {
     pub maya: &'static str,
@@ -280,7 +285,8 @@ pub fn build(cmds: &Commands<Session>, typed: &str, toks: &[Tok]) -> Result<(Str
     let own_query = def.flags.iter().any(|d| d.name == "query");
     let q_pos = toks.iter().position(|t| matches!(flag_of(t), Some("q" | "query")));
     let query = q_pos.is_some();
-    let edit = toks.iter().any(|t| matches!(flag_of(t), Some("e" | "edit")));
+    let e_own = e_is_own_flag(&name);
+    let edit = !e_own && toks.iter().any(|t| matches!(flag_of(t), Some("e" | "edit")));
     let mut asked = Vec::new();
     let mut i = 0;
     while i < toks.len() {
@@ -290,7 +296,7 @@ pub fn build(cmds: &Commands<Session>, typed: &str, toks: &[Tok]) -> Result<(Str
             i += 1;
             continue;
         };
-        if matches!(typed_flag, "q" | "query" | "e" | "edit") {
+        if matches!(typed_flag, "q" | "query" | "e" | "edit") && !(e_own && typed_flag == "e") {
             i += 1;
             continue;
         }

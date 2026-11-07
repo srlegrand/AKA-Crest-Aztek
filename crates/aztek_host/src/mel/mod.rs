@@ -10,5 +10,5 @@ mod pattern;
 mod value;
 
 pub use call::*;
-pub use interp::{run, MelState};
+pub use interp::{run, run_callback, MelState};
 pub use value::{fmt_float, Value as MelValue};

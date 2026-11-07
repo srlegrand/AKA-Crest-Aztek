@@ -61,13 +61,21 @@ pub struct Core {
     preview: Vec<u64>,
     /// MEL's globals, procedures and top-level variables.
     pub mel_state: mel::MelState,
+    /// An idle step is running: what it runs doesn't start another.
+    in_idle: bool,
 }
 
 impl Core {
     pub fn new() -> Core {
-        let mut c = Core { s: Session::new(), log: Vec::new(), log_read: 0, version: 1, preview: Vec::new(), mel_state: Default::default() };
+        let mut c = Core { s: Session::new(), log: Vec::new(), log_read: 0, version: 1, preview: Vec::new(), mel_state: Default::default(), in_idle: false };
         register_ui_commands(&mut c.s);
         crate::ui_cmds::register(&mut c.s);
+        crate::scriptui::register(&mut c.s);
+        crate::script_jobs::register(&mut c.s);
+        crate::ctx_cmds::register(&mut c.s);
+        crate::panel_cmds::register(&mut c.s);
+        c.mel_state.set_global_string("gMainWindow", crate::scriptui::MAIN_WINDOW);
+        c.mel_state.set_global_string("gMainProgressBar", crate::scriptui::MAIN_PROGRESS);
         c.ensure_defaults();
         #[cfg(feature = "python")]
         crate::python::register_commands(&mut c.s);
@@ -77,7 +85,7 @@ impl Core {
     /// A core around a session moved here while Python is called back from inside a command: no UI commands of its own.
     #[cfg(feature = "python")]
     pub(crate) fn nested(s: Session) -> Core {
-        Core { s, log: Vec::new(), log_read: 0, version: 1, preview: Vec::new(), mel_state: Default::default() }
+        Core { s, log: Vec::new(), log_read: 0, version: 1, preview: Vec::new(), mel_state: Default::default(), in_idle: false }
     }
 
     /// A new scene has the default cameras and sets, as Maya's does. Cheap when they're there.
@@ -88,7 +96,111 @@ impl Core {
     }
 
     pub fn push(&mut self, text: impl Into<String>, kind: LineKind) {
-        self.log.push(LogLine { text: text.into(), kind });
+        let text = text.into();
+        if kind == LineKind::Error {
+            let bare = text.trim_start_matches("// Error: ").trim_start_matches("# Error: ").trim_end_matches(" //").trim_end_matches(" #");
+            crate::script_jobs::set_last_error(bare);
+        }
+        self.log.push(LogLine { text, kind });
+    }
+
+    /// Before a command: a scene about to be replaced runs its closing scripts.
+    fn before_command(&mut self, name: &str, call: &Value) {
+        if crate::script_jobs::replaces_scene(name, call) {
+            crate::script_jobs::note_event("PreFileNewOrOpened");
+            let scripts = crate::script_jobs::scene_scripts(&mut self.s, &[1, 2], false);
+            self.run_callbacks(scripts);
+        }
+    }
+
+    /// After a command: what it did that jobs can't see in the scene, and the scripts it asked to run when free.
+    fn after_command(&mut self, name: &str, call: &Value, ok: bool) {
+        for w in crate::script_jobs::take_warnings() {
+            self.push(format!("// Warning: {w} //"), LineKind::Warning);
+        }
+        if ok && crate::script_jobs::note_command(name, call) {
+            self.run_open_scripts();
+        }
+        for (cb, args) in crate::scriptui::take_immediate() {
+            self.run_callback(&cb, &args);
+        }
+        if crate::script_jobs::take_flush() {
+            self.idle();
+        }
+    }
+
+    fn run_open_scripts(&mut self) {
+        let scripts = crate::script_jobs::scene_scripts(&mut self.s, &[1, 2], true);
+        self.run_callbacks(scripts);
+        crate::script_jobs::watch_time_scripts(&mut self.s);
+    }
+
+    fn run_callbacks(&mut self, scripts: Vec<Value>) {
+        for s in scripts {
+            self.run_callback(&s, &[]);
+        }
+    }
+
+    /// Runs a callback as one undo step: a string is MEL, otherwise Python. Errors go to the history.
+    pub fn run_callback(&mut self, cb: &Value, args: &[Value]) {
+        use aztek_ops::CommandHost;
+        let saved = crate::scriptui::set_from_python(false);
+        self.s.open_undo_chunk("script");
+        let substituted = |src: &str| {
+            let mut out = src.to_string();
+            for (i, a) in args.iter().enumerate() {
+                let t = match a {
+                    Value::String(s) => s.clone(),
+                    Value::Bool(b) => (*b as i32).to_string(),
+                    o => o.to_string(),
+                };
+                out = out.replace(&format!("#{}", i + 1), &t).replace(&format!("%{}", i + 1), &t);
+            }
+            out
+        };
+        let r = match cb {
+            Value::String(src) => mel::run_callback(self, &substituted(src)),
+            Value::Object(o) => {
+                if let Some(id) = o.get("__pycb__").and_then(Value::as_i64) {
+                    python_callback(self, id, args)
+                } else if let Some(src) = o.get("__pysrc__").and_then(Value::as_str) {
+                    python_source(self, &substituted(src))
+                } else {
+                    Ok(())
+                }
+            }
+            _ => Ok(()),
+        };
+        self.s.close_undo_chunk();
+        crate::scriptui::set_from_python(saved);
+        self.drain_captured();
+        self.version += 1;
+        if let Err(m) = r {
+            self.push(format!("// Error: {m} //"), LineKind::Error);
+        }
+    }
+
+    /// What the user did in a script window; see `scriptui::shell_event`.
+    pub fn ui_event(&mut self, ev: &Value) {
+        let due = crate::scriptui::shell_event(ev);
+        for (cb, args) in due {
+            self.run_callback(&cb, &args);
+        }
+    }
+
+    /// One idle step: script jobs whose watch fired, then deferred scripts. The shell calls this on its poll; a headless
+    /// caller calls it when it wants them run.
+    pub fn idle(&mut self) {
+        if self.in_idle || crate::scriptui::in_hook() {
+            return;
+        }
+        self.in_idle = true;
+        let scripts = crate::script_jobs::scan(&mut self.s);
+        let deferred = crate::script_jobs::take_deferred();
+        self.drain_captured();
+        self.run_callbacks(scripts);
+        self.run_callbacks(deferred);
+        self.in_idle = false;
     }
 
     fn drain_captured(&mut self) {
@@ -123,10 +235,12 @@ impl Core {
 
     pub fn exec_quiet(&mut self, name: &str, call: Value, src: CallSource) -> Result<Value, String> {
         let (name, call) = pivot_move(name, call);
+        self.before_command(&name, &call);
         let r = execute(&mut self.s, &name, &call, src);
         self.ensure_defaults();
         self.version += 1;
         self.drain_captured();
+        self.after_command(&name, &call, r.is_ok());
         match r {
             Ok(v) => {
                 if let Some(t) = mel::result(&v) {
@@ -194,9 +308,11 @@ impl Core {
 
     fn exec_plain(&mut self, name: &str, call: Value) -> Result<Value, String> {
         let (name, call) = pivot_move(name, call);
+        self.before_command(&name, &call);
         let r = execute(&mut self.s, &name, &call, CallSource::Script);
         self.version += 1;
         self.drain_captured();
+        self.after_command(&name, &call, r.is_ok());
         r.map_err(|e| e.to_string())
     }
 
@@ -244,8 +360,10 @@ impl Core {
     pub fn exec_silent(&mut self, name: &str, call: Value) -> Result<Value, String> {
         let before = self.s.graph.undo_stack().newest_id();
         let (name, call) = pivot_move(name, call);
+        self.before_command(&name, &call);
         let r = execute(&mut self.s, &name, &call, CallSource::Script);
         self.ensure_defaults();
+        self.after_command(&name, &call, r.is_ok());
         let after = self.s.graph.undo_stack().newest_id();
         if after != before {
             self.preview.push(after);
@@ -259,7 +377,15 @@ impl Core {
     }
 
     /// aztek.cmds.<name>(*args, **kwargs): Maya's spellings, short flags, query and edit modes.
-    pub fn py_call(&mut self, typed: &str, args: Vec<Value>, mut kwargs: Map<String, Value>) -> Result<Value, String> {
+    pub fn py_call(&mut self, typed: &str, args: Vec<Value>, kwargs: Map<String, Value>) -> Result<Value, String> {
+        // Callback strings given from Python are Python.
+        let saved = crate::scriptui::set_from_python(true);
+        let r = self.py_call_inner(typed, args, kwargs);
+        crate::scriptui::set_from_python(saved);
+        r
+    }
+
+    fn py_call_inner(&mut self, typed: &str, args: Vec<Value>, mut kwargs: Map<String, Value>) -> Result<Value, String> {
         // optionVar(q='name'): the query flag carrying what is queried.
         let mut args = args;
         for k in ["q", "query"] {
@@ -276,7 +402,8 @@ impl Core {
         };
         let on = |v: &Value| v.as_bool().unwrap_or(v.as_i64().is_some_and(|i| i != 0));
         let query = kwargs.get("q").or(kwargs.get("query")).is_some_and(on);
-        let edit = kwargs.get("e").or(kwargs.get("edit")).is_some_and(on);
+        let e_own = mel::e_is_own_flag(&name);
+        let edit = !e_own && kwargs.get("e").or(kwargs.get("edit")).is_some_and(on);
         // Commands with their own query mode take q=True and the flags asked about.
         let own_query = def_flags.iter().any(|(n, _, _)| n == "query");
         if own_query && (query || edit) {
@@ -316,7 +443,7 @@ impl Core {
         let mut flags = Map::new();
         let mut relative = false;
         for (k, v) in &kwargs {
-            if matches!(k.as_str(), "q" | "query" | "e" | "edit") {
+            if matches!(k.as_str(), "q" | "query" | "e" | "edit") && !(e_own && k == "e") {
                 continue;
             }
             let mut key = k.as_str();
@@ -406,11 +533,13 @@ impl Core {
         aztek_scene::ma_file::save_scene(&mut self.s, path, aztek_scene::ma_file::Format::of_path(path))?;
         self.drain_captured();
         self.version += 1;
+        crate::script_jobs::note_event("SceneSaved");
         self.push(format!("// Saved {path} //"), LineKind::Info);
         Ok(())
     }
 
     pub fn open(&mut self, path: &str) -> Result<(), String> {
+        self.before_command("newScene", &json!({}));
         let warnings = aztek_scene::ma_file::open_scene(&mut self.s, path)?;
         // Files older than the default cameras, and .ma files, which leave them out, get them now.
         aztek_scene::cameras::make_defaults(&mut self.s.graph);
@@ -423,6 +552,8 @@ impl Core {
         }
         self.version += 1;
         self.push(format!("// Opened {path} //"), LineKind::Info);
+        crate::script_jobs::note_command("file", &json!({"open": true}));
+        self.run_open_scripts();
         Ok(())
     }
 
@@ -440,6 +571,26 @@ pub(crate) fn python_from_mel(core: &mut Core, src: &str) -> Result<Value, Strin
 
 #[cfg(not(feature = "python"))]
 pub(crate) fn python_from_mel(_core: &mut Core, _src: &str) -> Result<Value, String> {
+    Err("python: this build has no Python.".into())
+}
+
+#[cfg(feature = "python")]
+fn python_callback(core: &mut Core, id: i64, args: &[Value]) -> Result<(), String> {
+    crate::python::fire_callback(core, id, args)
+}
+
+#[cfg(not(feature = "python"))]
+fn python_callback(_core: &mut Core, _id: i64, _args: &[Value]) -> Result<(), String> {
+    Err("python: this build has no Python.".into())
+}
+
+#[cfg(feature = "python")]
+fn python_source(core: &mut Core, src: &str) -> Result<(), String> {
+    crate::python::fire_source(core, src)
+}
+
+#[cfg(not(feature = "python"))]
+fn python_source(_core: &mut Core, _src: &str) -> Result<(), String> {
     Err("python: this build has no Python.".into())
 }
 
@@ -513,7 +664,7 @@ fn register_ui_commands(s: &mut Session) {
         let n = name.to_string();
         s.register(
             aztek_ops::CommandDef::<Session>::new(name, doc, move |_s, _a| {
-                UI_REQUESTS.with(|q| q.borrow_mut().push(n.clone()));
+                push_ui_request(n.clone());
                 Ok(Value::Null)
             })
             .undoable(false),

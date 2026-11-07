@@ -294,3 +294,22 @@ curve Edit Point and Curve Point modes, UV and Vertex Face component modes in th
 history nodes (T shows their numbers in the view instead), per-object display toggles are not saved with the scene,
 Outliner reorder between siblings, linear units and Z up. Roll stays in the view, not the
 camera node.
+
+Scripts that build their own interface, as of 07/11/2026. The ELF commands (`window`, the layouts, the controls and
+their groups, menus, `textScrollList`, dialogs, `progressWindow`, `workspaceControl`, `uiTemplate`) create, edit and
+query against a model in the core (`aztek_host/src/scriptui.rs`), so they work without an interface; `app/src/scriptui.cpp`
+mirrors it in Qt. Names and `|` paths as Maya returns them, `setParent` with `..`, `$gMainWindow` and `$gMainProgressBar`.
+Callbacks in MEL (`#1` and `%1` take the value) or Python: callables get what Maya passes, strings from Python are
+Python, one undo step each. `scriptJob` (events, conditions, attributes, nodes, controls; fired at idle by comparing
+state), `scriptNode` (saved in both file formats, run on open and close), `evalDeferred`, `executeDeferred`, `timer`,
+`stackTrace`, `getLastError`, and `warning`, `error`, `print`, `whatIs` in `cmds`. `getPanel`, `modelPanel` (also inside a
+script's layout), `modelEditor`, `panel`, `scriptedPanel`, `lookThru`, `viewFit`, `viewSet`, `viewLookAt`, `viewCamera`,
+`viewPlace`, `viewHeadOn`, `viewClipPlane`, `dolly`, `orbit`, `roll`, `track`, `listCameras`, `playblast` (image sequences
+through the view). Tool contexts: `setToolTo`, `currentCtx`, `resetTool`, `ctxEditMode`, `contextInfo`, the manip contexts
+and about thirty Ctx commands.
+
+Not yet in these: `attrControlGrp` and the other attribute-bound controls, docking (`workspaceControl` and `dockControl`
+float), real option boxes on menu items (a separate item), `paneLayout -ps`, drag and drop callbacks, playblast to a
+movie, `manipMoveContext -ah` reaching the manipulator. Contexts with no tool in the views yet warn once and stay on
+Select: IK handle, spline IK, curve sketch, poly cut, select edit, skin bind, soft mod, the key tools. Events with no
+source in the core (`linearUnitChanged` and the like) are accepted and never fire.

@@ -5,6 +5,7 @@
 #include "host.h"
 #include "markingmenu.h"
 #include "panels.h"
+#include "scriptui.h"
 #include "shelves.h"
 #include "toolsettings.h"
 #include "viewport.h"
@@ -601,6 +602,45 @@ void MainWindow::show_hotkey_editor() {
     d->show();
 }
 
+// The four views' panel names, as Maya has them: top, side, front, persp. views() runs top, persp, front, side.
+ViewportWidget* MainWindow::view_for_panel(const QString& panel) const {
+    if (ViewportWidget* v = ScriptUi::get()->embedded_view(panel)) return v;
+    static const QStringList names{"modelPanel1", "modelPanel4", "modelPanel3", "modelPanel2"};
+    int i = names.indexOf(panel);
+    QList<ViewportWidget*> views = panels_->views();
+    return i >= 0 && i < views.size() ? views[i] : nullptr;
+}
+
+// What the views show now, for getPanel and modelEditor -q. Only when something changed.
+void MainWindow::sync_panels() {
+    static const QStringList names{"modelPanel1", "modelPanel4", "modelPanel3", "modelPanel2"};
+    QList<ViewportWidget*> views = panels_->views();
+    QJsonArray list;
+    QString focus = names[1], pointer;
+    ViewportWidget* act = active_view();
+    for (int i = 0; i < views.size() && i < names.size(); ++i) {
+        ViewportWidget* v = views[i];
+        if (v == act) focus = names[i];
+        QJsonObject o{{"name", names[i]}, {"visible", v->isVisible()}};
+        QString cam = v->get("camera");
+        // A view not drawn yet has nothing to say.
+        if (!cam.isEmpty()) {
+            o.insert("camera", parse(cam));
+            o.insert("disp", parse(v->get("disp")));
+            o.insert("wireframe", parse(v->get("wireframe")));
+            o.insert("wireOnShaded", parse(v->get("wireOnShaded")));
+            o.insert("grid", parse(v->get("grid")));
+        }
+        list.append(o);
+    }
+    pointer = focus;
+    QString text = QString::fromUtf8(QJsonDocument(QJsonObject{{"focus", focus}, {"underPointer", pointer}, {"panels", list}}).toJson(QJsonDocument::Compact));
+    if (text != panels_synced_) {
+        panels_synced_ = text;
+        query("panelSync", text);
+    }
+}
+
 // A MEL `hotkey` command, and everything else scripts ask the shell for.
 void MainWindow::handle_ui_request(const QString& r) {
     int bar = r.indexOf('|');
@@ -609,6 +649,24 @@ void MainWindow::handle_ui_request(const QString& r) {
         mel(payload);
     } else if (name == "py") {
         python(payload);
+    } else if (name == "setTool") {
+        set_tool(payload);
+    } else if (name == "panelSet") {
+        QJsonObject o = parse(payload).toObject();
+        if (ViewportWidget* v = view_for_panel(o["panel"].toString())) {
+            QByteArray text = QJsonDocument(QJsonArray{o.value("value")}).toJson(QJsonDocument::Compact);
+            v->set(o["key"].toString(), QString::fromUtf8(text.mid(1, text.size() - 2)));
+        }
+    } else if (name == "panelFocus") {
+        if (ViewportWidget* v = view_for_panel(payload)) emit v->activated(v);
+    } else if (name == "panelFocusUndo" || name == "panelFocusRedo") {
+        if (ViewportWidget* v = active_view()) v->set(name == "panelFocusUndo" ? "viewUndo" : "viewRedo", "true");
+    } else if (name == "viewAll") {
+        QJsonObject o = parse(payload).toObject();
+        QByteArray text = QJsonDocument(QJsonArray{o.value("value")}).toJson(QJsonDocument::Compact);
+        for (ViewportWidget* v : panels_->views()) v->set(o["key"].toString(), QString::fromUtf8(text.mid(1, text.size() - 2)));
+    } else if (name == "inViewMessage") {
+        ScriptUi::get()->show_in_view_message(parse(payload).toObject());
     } else if (name == "lookThru") {
         if (ViewportWidget* v = active_view()) v->set("camera", "\"" + payload + "\"");
     } else if (name == "polyOptions") {
