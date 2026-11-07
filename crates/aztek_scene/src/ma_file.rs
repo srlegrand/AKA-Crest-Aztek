@@ -14,6 +14,7 @@
 //! units (radians on angle curves); tangent codes in .kit and .kot are the file's own (see `tangent_code`).
 
 mod deformers;
+mod nurbs;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
@@ -1008,9 +1009,9 @@ const XFORM_CHANNELS: &[&str] = &[
 ];
 
 /// Rigging and animation nodes that are all attributes and connections.
-const PLAIN_NODES: &[&str] = &["container", "controller", "timeWarp", "hierarchyTreeNode", "curveFromMeshEdge", "characterMap", "keyingGroup"];
+const PLAIN_NODES: &[&str] = &["makeNurbCircle", "makeNurbPlane", "transformGeometry", "pointOnCurveInfo", "curveInfo", "nearestPointOnCurve", "container", "controller", "timeWarp", "hierarchyTreeNode", "curveFromMeshEdge", "characterMap", "keyingGroup"];
 /// The same under a transform.
-const PLAIN_SHAPES: &[&str] = &["distanceDimShape", "paramDimension", "annotationShape", "dropoffLocator", "lattice", "baseLattice", "softModHandle"];
+const PLAIN_SHAPES: &[&str] = &["follicle", "distanceDimShape", "paramDimension", "annotationShape", "dropoffLocator", "lattice", "baseLattice", "softModHandle"];
 
 /// Nodes written and read attribute by attribute, with their connections: utility nodes and expressions.
 fn is_plain_node(ty: &str) -> bool {
@@ -1646,6 +1647,9 @@ impl Build<'_> {
     fn build_curve(&mut self, i: usize) {
         use aztek_geo::nurbs::{self, Form, NurbsCurve};
         let Some(shape) = self.id(i) else { return };
+        if self.chain_nurbs(i, crate::curves::CurveShape::LOCAL, crate::curves::CurveShape::CREATE) {
+            return;
+        }
         let doc = self.doc;
         let n = &doc.nodes[i];
         let mut curve = None;
@@ -1677,7 +1681,8 @@ impl Build<'_> {
         if curve.is_none() {
             if let Some(c) = doc.input(i, &["cr", "create"]) {
                 let g = &doc.nodes[c.src];
-                if g.ty == "makeNurbCircle" {
+                // One in the scene by now feeds the shape itself.
+                if g.ty == "makeNurbCircle" && self.id(c.src).is_none() {
                     let nr = g.vec3(&["nr", "normal"]).unwrap_or(DVec3::Z);
                     let cen = g.vec3(&["c", "center"]).unwrap_or(DVec3::ZERO);
                     let fp = g.vec3(&["fp", "firstPoint"]).unwrap_or(DVec3::X);
@@ -1690,7 +1695,10 @@ impl Build<'_> {
             }
         }
         let Some(c) = curve else {
-            self.warnings.push(format!("{}: no stored curve", n.name));
+            // History that is in the scene gives the curve by connection.
+            if !doc.input(i, &["cr", "create"]).is_some_and(|c| self.id(c.src).is_some()) {
+                self.warnings.push(format!("{}: no stored curve", n.name));
+            }
             return;
         };
         let at = crate::curves::CurveShape::CACHED;
@@ -1701,6 +1709,9 @@ impl Build<'_> {
     fn build_surface(&mut self, i: usize) {
         use aztek_geo::nurbs::{Form, NurbsSurface};
         let Some(shape) = self.id(i) else { return };
+        if self.chain_nurbs(i, crate::surfaces::SurfaceShape::LOCAL, crate::surfaces::SurfaceShape::CREATE) {
+            return;
+        }
         let n = &self.doc.nodes[i];
         let mut made = None;
         if let Some(cc) = n.set_of(&["cc", "cached"]) {
@@ -1728,7 +1739,9 @@ impl Build<'_> {
             }
         }
         let Some(c) = made else {
-            self.warnings.push(format!("{}: no stored surface", n.name));
+            if !self.doc.input(i, &["cr", "create"]).is_some_and(|c| self.id(c.src).is_some()) {
+                self.warnings.push(format!("{}: no stored surface", n.name));
+            }
             return;
         };
         let at = crate::surfaces::SurfaceShape::CACHED;
@@ -1939,7 +1952,7 @@ impl Build<'_> {
         let start = src_of(&["hsj", "startJoint"]);
         let effector = src_of(&["hee", "endEffector"]);
         let solver_ty = src_of(&["hsv", "ikSolver"]).map_or("ikRPsolver", |s| doc.nodes[s].ty.as_str());
-        if !matches!(solver_ty, "ikRPsolver" | "ikSCsolver") {
+        if !matches!(solver_ty, "ikRPsolver" | "ikSCsolver" | "ikSplineSolver") {
             self.warnings.push(format!("{}: {solver_ty} is not represented; handle skipped", n.name));
             return;
         }

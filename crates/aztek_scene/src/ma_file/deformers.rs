@@ -106,6 +106,22 @@ pub(super) fn apply_vertex_tweaks(doc: &Doc, m: &mut Mesh, tweak: usize) {
     }
 }
 
+/// A tweak node's stored moves for one geometry, by point.
+pub(super) fn tweak_moves(doc: &Doc, tweak: usize, geometry: i64) -> Vec<(i64, DVec3)> {
+    let mut out = Vec::new();
+    for s in &doc.nodes[tweak].sets {
+        let Some(path) = matches_path(s, &[&["vl", "vlist"], &["vt", "vertex"]]).or_else(|| matches_path(s, &[&["pl", "plist"], &["cp", "controlPoints"]])) else { continue };
+        if path[0].range.map_or(0, |r| r.0) != geometry {
+            continue;
+        }
+        let start = path[1].range.map_or(0, |r| r.0);
+        for (k, c) in s.values.chunks_exact(3).enumerate() {
+            out.push((start + k as i64, tok_vec3(c)));
+        }
+    }
+    out
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Reading
 
@@ -407,6 +423,7 @@ impl Build<'_> {
                     let key = i * 100_000 + iti;
                     let is_this = self.deformers.iter().any(|d| d.id == id && d.geometry == g);
                     if is_this {
+                        let from = self.target_source(src, from.clone());
                         self.connect_quietly(&from, &format!("{path}.inputGeomTarget[{key}]"));
                         let xf = crate::dag::transform_of(&self.s.graph, src);
                         let m = self.s.graph.path(xf);

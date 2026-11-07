@@ -761,7 +761,11 @@ pub(crate) fn sync_handle(g: &mut Graph, handle: NodeId, after: bool) -> bool {
         valid &= g.parent(w[1]) == w[0];
     }
     let end_t = g.node(end).unwrap().data().vec3(Transform::TRANSLATE);
-    let chain = json!({"valid": valid, "joints": joints.iter().map(|&j| joint_json(g, j)).collect::<Vec<_>>(), "end": vec3_json(end_t)});
+    let mut chain = json!({"valid": valid, "joints": joints.iter().map(|&j| joint_json(g, j)).collect::<Vec<_>>(), "end": vec3_json(end_t)});
+    // Set once by the command; everything else here follows the joints.
+    if let Some(r) = json_of(g.node(solver).unwrap().data(), IK_CHAIN).get("rootOnCurve").cloned() {
+        chain["rootOnCurve"] = r;
+    }
     if json_of(g.node(solver).unwrap().data(), IK_CHAIN) != chain {
         g.set_derived(&plug(solver, IK_CHAIN), &PlugValue::Data(Some(Arc::new(JsonData(chain)))));
         changed = true;

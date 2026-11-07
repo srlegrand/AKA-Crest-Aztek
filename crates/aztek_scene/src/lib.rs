@@ -63,6 +63,7 @@ pub mod naming;
 pub mod node_bounds;
 pub mod nurbs_components;
 pub mod nurbs_ops;
+pub mod nurbs_nodes;
 pub mod object_ops;
 pub mod object_sets;
 pub mod references;

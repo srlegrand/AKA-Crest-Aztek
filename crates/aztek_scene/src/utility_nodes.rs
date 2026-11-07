@@ -495,7 +495,7 @@ fn table() -> Vec<Spec> {
                 set(d, "distance", x.distance(y));
             }),
         Spec("angleBetween", "utility/general", "The rotation from vector1 to vector2: axis, angle in degrees, and as Euler angles.",
-            vec![vin("vector1", "v1", [1.0, 0.0, 0.0]), vin("vector2", "v2", [1.0, 0.0, 0.0]), vout("axis", "a"), fout("angle", "ang"), vout("euler", "eu")],
+            vec![vin("vector1", "v1", [1.0, 0.0, 0.0]), vin("vector2", "v2", [1.0, 0.0, 0.0]), vout("axis", "ax"), fout("angle", "a"), vout("euler", "eu")],
             |d| {
                 let (x, y) = (v(d, "vector1").normalize_or_zero(), v(d, "vector2").normalize_or_zero());
                 let angle = x.angle_between(y);

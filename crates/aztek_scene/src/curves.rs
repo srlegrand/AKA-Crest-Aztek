@@ -105,6 +105,7 @@ impl CurveShape {
     pub const DISP_HULL: usize = Shape::COUNT + 11;
     pub const DISP_EP: usize = Shape::COUNT + 12;
     pub const LINE_WIDTH: usize = Shape::COUNT + 13;
+    pub const CONTROL_POINTS: usize = Shape::COUNT + 14;
 }
 
 impl NodeBehavior for CurveShape {
@@ -132,6 +133,17 @@ impl NodeBehavior for CurveShape {
                         c.cvs[lap + i] = c.cvs[i % lap];
                     }
                 }
+            }
+        }
+        for (i, v) in d.elements(Self::CONTROL_POINTS) {
+            if let (Some(p), PlugValue::Vec3(x)) = (c.cvs.get_mut(*i as usize), v) {
+                *p = *x;
+            }
+        }
+        if c.form == Form::Periodic && !d.elements(Self::CONTROL_POINTS).is_empty() {
+            let lap = c.spans();
+            for i in 0..c.degree {
+                c.cvs[lap + i] = c.cvs[i % lap];
             }
         }
         let world = d.matrix(DagNode::WORLD_MATRIX);
@@ -677,7 +689,7 @@ pub fn register_types() {
             own_attrs: vec![
                 curve_attr("create", "cr", flags::INPUT | flags::HIDDEN, "From history."),
                 curve_attr("cached", "cc", stored | flags::HIDDEN, "The curve itself, when no history feeds it."),
-                curve_attr("controlPoints", "cp", stored | flags::HIDDEN, "CV offsets on top of history."),
+                curve_attr("cvTweaks", "cvtw", stored | flags::HIDDEN, "CV offsets on top of history."),
                 curve_attr("local", "l", flags::OUTPUT | flags::HIDDEN, "The curve in object space."),
                 curve_attr("worldSpace", "ws", flags::OUTPUT | flags::HIDDEN, "The curve in world space."),
                 int_out("degree", "d", "The degree."),
@@ -689,6 +701,7 @@ pub fn register_types() {
                 store_bool("dispHull", false, "Show the hull."),
                 store_bool("dispEP", false, "Show edit points."),
                 AttrDef { flags: stored, ..f_in("lineWidth", "lw", -1.0, "Line width; -1 uses the default.") },
+                crate::attr_defs::vec3_attr("controlPoints", "cp", DVec3::ZERO, flags::INPUT | flags::HIDDEN | flags::ARRAY, "A CV's place in object space, when something drives it."),
             ],
             create: Some(Arc::new(|| Box::new(CurveShape))),
             ..Default::default()

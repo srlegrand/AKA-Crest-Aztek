@@ -76,6 +76,14 @@ const WORLD_UP_VECTOR: usize = 22;
 const WORLD_UP_TYPE: usize = 23;
 const WORLD_UP_MATRIX: usize = 24;
 const T_CURVE: usize = 25;
+const T_PIVOT: usize = 26;
+
+/// A target's world matrix with its origin moved to its rotate pivot, which is where Maya constrains to.
+fn at_pivot(m: DMat4, rp: DVec3) -> DMat4 {
+    let mut out = m;
+    out.w_axis = m.transform_point3(rp).extend(1.0);
+    out
+}
 
 const WORLD_UP_NAMES: [&str; 5] = ["scene", "object", "objectrotation", "vector", "none"];
 
@@ -121,7 +129,7 @@ fn targets_in(d: &NodeData) -> Vec<Weighted> {
         .iter()
         .map(|(i, v)| Weighted {
             index: *i,
-            matrix: v.as_matrix(),
+            matrix: at_pivot(v.as_matrix(), d.element(T_PIVOT, *i).map_or(DVec3::ZERO, |p| p.as_vec3())),
             weight: suffix_attr(d.ty(), 'W', *i).map(|a| d.float(a)).unwrap_or(1.0),
         })
         .collect()
@@ -475,6 +483,7 @@ pub(crate) fn register_types() {
                     doc: "Tangent constraint: each target's curve, world space.".into(),
                     ..Default::default()
                 },
+                array_vec("target.targetRotatePivot", "trp", "Each target's rotate pivot: the place on it that constrains."),
             ],
             create: Some(Arc::new(move || Box::new(ConstraintNode { kind: k }))),
             ..Default::default()
@@ -650,6 +659,10 @@ fn add_target(g: &mut Graph, c: NodeId, kind: usize, target: NodeId, component: 
     let index = g.elements(&plug(c, T_MATRIX)).iter().map(|e| e.element).max().map(|m| m + 1).unwrap_or(0);
     let xf = crate::dag::transform_of(g, target);
     g.connect(&plug(xf, Transform::WORLD_MATRIX), &PlugRef::element(c, T_MATRIX as i32, index), false)?;
+    // Geometry targets are read through their full matrix.
+    if !matches!(kind, GEOMETRY | NORMAL | POINT_ON_POLY) {
+        g.connect(&plug(xf, Transform::ROTATE_PIVOT), &PlugRef::element(c, T_PIVOT as i32, index), false)?;
+    }
     if matches!(kind, GEOMETRY | NORMAL | POINT_ON_POLY) {
         let Some(shape) = crate::components::as_mesh(g, target) else { fail!("{}: {} has no geometry", CONSTRAINT_TYPES[kind], g.path(target)) };
         g.connect(&plug(shape, crate::mesh_nodes::MeshNode::OUT_MESH), &PlugRef::element(c, T_GEOMETRY as i32, index), false)?;
@@ -683,6 +696,7 @@ fn remove_target(g: &mut Graph, c: NodeId, index: i32) -> CmdResult<()> {
     g.disconnect(&PlugRef::element(c, T_MATRIX as i32, index));
     g.disconnect(&PlugRef::element(c, T_GEOMETRY as i32, index));
     g.disconnect(&PlugRef::element(c, T_CURVE as i32, index));
+    g.disconnect(&PlugRef::element(c, T_PIVOT as i32, index));
     for attr in [T_OFFSET_T, T_OFFSET_R] {
         let e = PlugRef::element(c, attr as i32, index);
         if g.node(c).unwrap().element(attr, index).is_some() {
@@ -736,7 +750,8 @@ fn maintain_offset(g: &mut Graph, c: NodeId, kind: usize, driven: NodeId, only: 
     for &(i, t) in &targets {
         let xf = crate::dag::transform_of(g, t);
         let w = suffix_attr(&ty, 'W', i).map(|a| g.node(c).unwrap().data().float(a)).unwrap_or(1.0);
-        items.push((i, world(g, xf), w));
+        let rp = g.node(xf).map_or(DVec3::ZERO, |n| n.data().vec3(Transform::ROTATE_PIVOT));
+        items.push((i, at_pivot(world(g, xf), rp), w));
     }
     let total: f64 = items.iter().map(|x| x.2).sum::<f64>();
     let share = |w: f64| if total > 1e-12 { w / total } else { 1.0 / items.len().max(1) as f64 };
