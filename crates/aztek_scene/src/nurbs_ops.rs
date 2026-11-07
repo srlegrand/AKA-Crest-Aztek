@@ -407,6 +407,141 @@ fn tangent_blend(a: &NurbsCurve, ta: &[DVec3], b: &NurbsCurve, tb: &[DVec3], dep
     Some(s)
 }
 
+/// The direction a surface leaves its edge at a place along it.
+fn out_of_edge(s: &NurbsSurface, dir: i64, value: f64, along: f64) -> DVec3 {
+    let ((ulo, uhi), (vlo, vhi)) = (s.domain_u(), s.domain_v());
+    let (u, v) = if dir == 0 { (value, along) } else { (along, value) };
+    let (du, dv, _) = s.eval_ders(u, v);
+    let (t0, lo, hi) = if dir == 0 { (du, ulo, uhi) } else { (dv, vlo, vhi) };
+    if (value - lo).abs() < (hi - value).abs() {
+        -t0
+    } else {
+        t0
+    }
+}
+
+fn along_domain(s: &NurbsSurface, dir: i64) -> (f64, f64) {
+    if dir == 0 {
+        s.domain_v()
+    } else {
+        s.domain_u()
+    }
+}
+
+/// One side of a blend: its curve, and the surface and edge it leaves when it is an edge.
+struct BlendRail {
+    curve: NurbsCurve,
+    edge: Option<(NurbsSurface, i64, f64)>,
+    start: f64,
+    end: f64,
+    anchor: f64,
+}
+
+impl BlendRail {
+    fn fraction(&self, t: f64) -> f64 {
+        let x = self.start + (self.end - self.start) * t + self.anchor;
+        if self.curve.form == Form::Open {
+            x.clamp(0.0, 1.0)
+        } else {
+            x.rem_euclid(1.0)
+        }
+    }
+    fn at(&self, t: f64) -> DVec3 {
+        let (lo, hi) = self.curve.domain();
+        self.curve.eval(lo + (hi - lo) * self.fraction(t))
+    }
+    /// The way the blend leaves this rail, or None for a bare curve.
+    fn leaving(&self, t: f64) -> Option<DVec3> {
+        let (s, dir, value) = self.edge.as_ref()?;
+        let (lo, hi) = along_domain(s, *dir);
+        Some(out_of_edge(s, *dir, *value, lo + (hi - lo) * self.fraction(t)).normalize_or_zero())
+    }
+}
+
+/// ffBlendSrf: cubics between two rails, each leaving along its surface when it is an edge, straight across when a curve.
+fn blend_rails(d: &NodeData) -> Option<NurbsSurface> {
+    let side = |cin: usize, rail: usize, dir: usize, par: usize, start: usize, end: usize, anchor: usize| -> Option<BlendRail> {
+        let (curve, edge) = match srf(d, rail) {
+            Some(s) => {
+                let (di, value) = (d.int(dir), d.float(par));
+                let iso = if di == 0 { s.iso_u(value) } else { s.iso_v(value) };
+                (iso, Some((s, di, value)))
+            }
+            None => (crv(d, cin)?, None),
+        };
+        Some(BlendRail { curve, edge, start: d.float(start), end: d.float(end), anchor: d.float(anchor) })
+    };
+    let left = side(IN, P + 1, P + 3, P + 4, P + 7, P + 8, P + 11)?;
+    let mut right = side(P, P + 2, P + 5, P + 6, P + 9, P + 10, P + 12)?;
+    const N: usize = 32;
+    if d.bool(P + 13) && left.curve.form != Form::Open && right.curve.form != Form::Open {
+        // Both closed: start the right where the two line up best.
+        let cost = |r: &BlendRail| (0..=N).map(|k| left.at(k as f64 / N as f64).distance(r.at(k as f64 / N as f64))).sum::<f64>();
+        let mut best = (f64::MAX, 0.0);
+        for k in 0..64 {
+            right.anchor = k as f64 / 64.0;
+            let c = cost(&right);
+            if c < best.0 {
+                best = (c, right.anchor);
+            }
+        }
+        right.anchor = best.1;
+    }
+    let auto = d.bool(P + 14);
+    let sign = |flip: usize, rev: usize| {
+        let mut x = 1.0;
+        if d.bool(flip) {
+            x = -x;
+        }
+        if !auto && d.bool(rev) {
+            x = -x;
+        }
+        x
+    };
+    let (left_sign, right_sign) = (sign(P + 15, P + 17), sign(P + 16, P + 18));
+    let mut cols = Vec::with_capacity(N + 1);
+    for k in 0..=N {
+        let t = k as f64 / N as f64;
+        let (p, q) = (left.at(t), right.at(t));
+        let across = (q - p).normalize_or_zero();
+        let out = left.leaving(t).unwrap_or(across) * left_sign;
+        let back = right.leaving(t).unwrap_or(-across) * right_sign;
+        let reach = p.distance(q) / 3.0;
+        cols.push(NurbsCurve::open(3, vec![p, p + out * reach, q + back * reach, q]));
+    }
+    Some(NurbsSurface::from_columns(&cols, 1, Form::Open, nurbs::open_knots(N + 1, 1)))
+}
+
+/// A constant radius fillet along where two surface edges meet. Each section is worked out as if the surfaces were flat at
+/// that place, which is exact for planes and close when they curve gently.
+fn round_fillet(a: &NurbsSurface, da: i64, pa: f64, b: &NurbsSurface, db: i64, pb: f64, radius: f64) -> Option<NurbsSurface> {
+    const N: usize = 16;
+    let (iso_a, iso_b) = (if da == 0 { a.iso_u(pa) } else { a.iso_v(pa) }, if db == 0 { b.iso_u(pb) } else { b.iso_v(pb) });
+    let (lo, hi) = iso_a.domain();
+    let (along_a, along_b) = (along_domain(a, da), along_domain(b, db));
+    let (blo, bhi) = iso_b.domain();
+    let mut sections = Vec::with_capacity(N + 1);
+    for k in 0..=N {
+        let u = lo + (hi - lo) * k as f64 / N as f64;
+        let p = iso_a.eval(u);
+        let w = iso_b.closest_param(p);
+        let at_a = along_a.0 + (along_a.1 - along_a.0) * (u - lo) / (hi - lo).max(1e-12);
+        let at_b = along_b.0 + (along_b.1 - along_b.0) * (w - blo) / (bhi - blo).max(1e-12);
+        // Into each surface from the edge.
+        let ua = -out_of_edge(a, da, pa, at_a).normalize_or_zero();
+        let ub = -out_of_edge(b, db, pb, at_b).normalize_or_zero();
+        let half = ua.angle_between(ub) * 0.5;
+        if half < 1e-3 || half > std::f64::consts::FRAC_PI_2 - 1e-3 {
+            return None;
+        }
+        let mid = (ua + ub).normalize_or_zero();
+        let from_edge = radius / half.tan();
+        let centre = p + mid * (radius / half.sin());
+        sections.push(three_point_arc(p + ua * from_edge, centre - mid * radius, p + ub * from_edge, 3, 4)?);
+    }
+    loft_of(&sections)
+}
+
 /// The boundary of a surface an isoparm flag names: (curve, tangents across, pointing into the gap).
 fn across_tangents(s: &NurbsSurface, dir: i64, value: f64, samples: usize) -> (NurbsCurve, Vec<DVec3>) {
     let iso = if dir == 0 { s.iso_u(value) } else { s.iso_v(value) };
@@ -579,6 +714,60 @@ fn register_types() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
         let reg = surfaces::register_one;
+        reg(node_type(
+            "ffBlendSrf",
+            "A surface between two rails: curves, or edges it leaves along their surfaces.",
+            vec![
+                cin("leftCurve", "lc"),
+                sout("outputSurface", "os"),
+                cin("rightCurve", "rc"),
+                sin("leftRail", "lr"),
+                sin("rightRail", "rr"),
+                int_in("leftDirection", "ld", 0, "0 U, 1 V: which way the left edge's isoparm runs."),
+                f_in("leftParameter", "lp", 0.0, "The left edge's parameter."),
+                int_in("rightDirection", "rd", 0, "0 U, 1 V: which way the right edge's isoparm runs."),
+                f_in("rightParameter", "rp", 0.0, "The right edge's parameter."),
+                f_in("leftStart", "ls", 0.0, "Where the blend starts on the left, 0 to 1."),
+                f_in("leftEnd", "le", 1.0, "Where the blend ends on the left, 0 to 1."),
+                f_in("rightStart", "rs", 0.0, "Where the blend starts on the right, 0 to 1."),
+                f_in("rightEnd", "re", 1.0, "Where the blend ends on the right, 0 to 1."),
+                f_in("leftAnchor", "la", 0.0, "On a closed left rail: where it starts."),
+                f_in("rightAnchor", "ra", 0.0, "On a closed right rail: where it starts."),
+                bin("autoAnchor", "aa", true),
+                bin("autoNormal", "an", true),
+                bin("flipLeftNormal", "fln", false),
+                bin("flipRightNormal", "frn", false),
+                bin("reverseLeft", "rvl", false),
+                bin("reverseRight", "rvr", false),
+                bin("multipleKnots", "mk", true),
+                f_in("positionTolerance", "pt", 0.1, "Held: the blend meets its rails exactly."),
+                f_in("tangentTolerance", "tt", 0.1, "Held: no fitting to a tolerance is done."),
+            ],
+            |d| put_surface(d, OUT, blend_rails(d)),
+        ));
+        reg(node_type(
+            "roundConstantRadius",
+            "A constant radius fillet where two surface edges meet.",
+            vec![
+                sin("inputSurface", "is"),
+                sout("filletSurface", "fs"),
+                sin("inputSurfaceB", "isb"),
+                int_in("direction1", "d1", 0, "0 U, 1 V."),
+                f_in("parameter1", "p1", 0.0, "The first edge."),
+                int_in("direction2", "d2", 0, "0 U, 1 V."),
+                f_in("parameter2", "p2", 0.0, "The second edge."),
+                f_in("radius", "r", 1.0, "The radius."),
+                f_in("tolerance", "tol", 0.01, "Held: sections are worked out directly."),
+            ],
+            |d| {
+                let (Some(a), Some(b)) = (srf(d, IN), srf(d, P)) else {
+                    d.set_output(OUT, PlugValue::Data(None));
+                    return;
+                };
+                let out = round_fillet(&a, d.int(P + 1), d.float(P + 2), &b, d.int(P + 3), d.float(P + 4), d.float(P + 5));
+                put_surface(d, OUT, out);
+            },
+        ));
         reg(node_type(
             "filletCurve",
             "A round or free-form fillet between two curves.",
@@ -1563,7 +1752,126 @@ fn nurbs_boolean(s: &mut Session, a: &Args) -> CmdResult {
     r
 }
 
+/// blend2's rail: a curve, or surface.u[x] or surface.v[x].
+fn connect_rail(g: &mut Graph, n: NodeId, name: &str, curve_at: usize, rail_at: usize, dir_attr: &str, par_attr: &str) -> CmdResult<()> {
+    if let Some((sh, dir, value)) = surfaces::parse_isoparm(g, name) {
+        connect_world_surface(g, sh, n, rail_at)?;
+        set_i(g, n, dir_attr, dir)?;
+        set_f(g, n, par_attr, value)?;
+        return Ok(());
+    }
+    let sh = surfaces::curve_shape(g, name, "blend2")?;
+    connect_world_curve(g, sh, n, curve_at)
+}
+
+fn blend2(s: &mut Session, a: &Args) -> CmdResult {
+    let names = objects(s, a);
+    if a.int("crvsInFirstRail", 1) != 1 || names.len() != 2 {
+        fail!("blend2: give two rails, one curve or edge each; rails of several curves are not supported");
+    }
+    let g = &mut s.graph;
+    g.open_chunk("Blend");
+    let r = (|| -> CmdResult {
+        let n = new_node(g, "ffBlendSrf", "ffBlendSrf1")?;
+        connect_rail(g, n, &names[0], IN, P + 1, "leftDirection", "leftParameter")?;
+        connect_rail(g, n, &names[1], P, P + 2, "rightDirection", "rightParameter")?;
+        for name in ["leftStart", "leftEnd", "rightStart", "rightEnd", "leftAnchor", "rightAnchor", "positionTolerance", "tangentTolerance"] {
+            if let Some(v) = a.get(name).and_then(Value::as_f64) {
+                set_f(g, n, name, v)?;
+            }
+        }
+        for name in ["autoAnchor", "autoNormal", "flipLeftNormal", "flipRightNormal", "reverseLeft", "reverseRight", "multipleKnots"] {
+            if a.has(name) {
+                set_b(g, n, name, a.bool(name))?;
+            }
+        }
+        surface_from(g, a, n, plug(n, OUT), "blend2Surface1")
+    })();
+    g.close_chunk();
+    r
+}
+
+fn round_constant_radius(s: &mut Session, a: &Args) -> CmdResult {
+    for flag in ["append", "sidea", "sideb", "side"] {
+        if a.has(flag) && a.get(flag).is_some_and(|v| v.as_bool() != Some(false)) {
+            fail!("roundConstantRadius: -{flag} is not supported: no compound edges, and each call makes its own nodes");
+        }
+    }
+    let names = a.named();
+    if names.len() < 2 || names.len() % 2 != 0 {
+        fail!("roundConstantRadius: give edges in pairs: surface.u[x] surface.v[y]");
+    }
+    let radii: Vec<f64> = match a.get("radiuss") {
+        Some(Value::Array(l)) => l.iter().filter_map(Value::as_f64).collect(),
+        Some(v) => v.as_f64().into_iter().collect(),
+        None => Vec::new(),
+    };
+    let g = &mut s.graph;
+    g.open_chunk("Round");
+    let r = (|| -> CmdResult {
+        let (mut surfaces_made, mut nodes) = (Vec::new(), Vec::new());
+        for (k, pair) in names.chunks(2).enumerate() {
+            let (e1, e2) = (edge_arg(g, &pair[0], "roundConstantRadius")?, edge_arg(g, &pair[1], "roundConstantRadius")?);
+            let (Some((d1, p1)), Some((d2, p2))) = (e1.1, e2.1) else { fail!("roundConstantRadius: name edges: surface.u[x] or surface.v[x]") };
+            let n = new_node(g, "roundConstantRadius", "roundConstantRadius1")?;
+            connect_world_surface(g, e1.0, n, IN)?;
+            connect_world_surface(g, e2.0, n, P)?;
+            set_i(g, n, "direction1", d1)?;
+            set_f(g, n, "parameter1", p1)?;
+            set_i(g, n, "direction2", d2)?;
+            set_f(g, n, "parameter2", p2)?;
+            let radius = radii.get(k).or(radii.first()).copied().unwrap_or(1.0);
+            set_f(g, n, "radius", radius)?;
+            let made = surface_from(g, a, n, plug(n, OUT), "roundedEdge1")?;
+            let list = made.as_array().cloned().unwrap_or_default();
+            surfaces_made.extend(list.first().cloned());
+            nodes.extend(list.get(1).cloned());
+        }
+        surfaces_made.extend(nodes);
+        Ok(Value::Array(surfaces_made))
+    })();
+    g.close_chunk();
+    r
+}
+
 pub fn register(c: &mut Commands<Session>) {
+    c.register(
+        make_flags(Cmd::new(
+            "blend2",
+            "A surface between two rails, curves or surface edges (surface.u[x]): -ls, -le, -rs, -re the ranges, -la, -ra on closed rails, -aa lines closed rails up, -fln, -frn flip the tangents off an edge, -rvl, -rvr with -an false. Returns [surface, node]. Less than Maya: one curve per rail, so -cfr must be 1; the result meets its rails exactly and -pt, -tt and -mk are only held.",
+            blend2,
+        ))
+        .positional("two rails (the selection when none)")
+        .flag(f("autoAnchor", "aa", B, "On closed rails, line them up."))
+        .flag(f("autoNormal", "an", B, "Take the directions from the geometry."))
+        .flag(f("crvsInFirstRail", "cfr", I, "Curves in the first rail: only 1 here."))
+        .flag(f("flipLeftNormal", "fln", B, "Flip the tangent off the left."))
+        .flag(f("flipRightNormal", "frn", B, "Flip the tangent off the right."))
+        .flag(f("leftAnchor", "la", Fl, "Where a closed left rail starts."))
+        .flag(f("leftEnd", "le", Fl, "Where it ends on the left (1)."))
+        .flag(f("leftStart", "ls", Fl, "Where it starts on the left."))
+        .flag(f("multipleKnots", "mk", B, "Held."))
+        .flag(f("positionTolerance", "pt", Fl, "Held."))
+        .flag(f("reverseLeft", "rvl", B, "With -an false: reverse off the left."))
+        .flag(f("reverseRight", "rvr", B, "With -an false: reverse off the right."))
+        .flag(f("rightAnchor", "ra", Fl, "Where a closed right rail starts."))
+        .flag(f("rightEnd", "re", Fl, "Where it ends on the right (1)."))
+        .flag(f("rightStart", "rs", Fl, "Where it starts on the right."))
+        .flag(f("tangentTolerance", "tt", Fl, "Held.")),
+    );
+    c.register(
+        make_flags(Cmd::new(
+            "roundConstantRadius",
+            "Constant radius fillets where surface edges meet: edges in pairs, surface.u[x] surface.v[y], -rad the radius (one for all, or one per pair; 1 by default). Returns the fillets, then the nodes. Less than Maya: it makes the fillets but does not trim the surfaces or build corners, and -a, -sa, -sb and -s (compound edges) fail.",
+            round_constant_radius,
+        ))
+        .positional("edges in pairs")
+        .flag(f("append", "a", B, "Not supported: fails."))
+        .flag(f("radiuss", "rad", ArgType::Any, "The radius, one or one per pair.").multi(1))
+        .flag(f("side", "s", ArgType::Any, "Not supported: fails."))
+        .flag(f("sidea", "sa", I, "Not supported: fails."))
+        .flag(f("sideb", "sb", I, "Not supported: fails.")),
+    );
     register_types();
     let sec = |c: Cmd, name: &'static str, short: &'static str, doc: &'static str| c.flag(f(name, short, Fl, doc));
 

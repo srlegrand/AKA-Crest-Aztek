@@ -180,7 +180,7 @@ fn on_anchors(s: &mut Session, cmd: &str, edit: impl Fn(&mut Vec<DVec3>, usize))
         }
         let path = g.path(shape);
         let points: Vec<[f64; 3]> = cvs.iter().map(|p| p.to_array()).collect();
-        s.run("setCurvePoints", json!({"args": [path], "point": points}))?;
+        s.run("setCurvePoints", json!({"args": [path], "points": points}))?;
     }
     Ok(json!(count))
 }

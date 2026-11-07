@@ -34,7 +34,7 @@ fn a_curve_becomes_bezier_and_keeps_its_shape() {
     }
     assert_eq!(run(&mut s, "getAttr", json!({"args": ["crv.degree"]})), json!(3));
     let n = run(&mut s, "getAttr", json!({"args": ["crv.spans"]})).as_i64().unwrap();
-    assert_eq!(n, 3, "every span its own Bezier segment");
+    assert_eq!(n, 7, "cvs less the degree: ten CVs, three Bezier segments");
     let back = run(&mut s, "bezierCurveToNurbs", json!({"args": ["crv"]}));
     assert_eq!(back.as_array().unwrap().len(), 2);
     run(&mut s, "curve", json!({"point": [[0, 0, 0], [1, 2, 0], [3, 2, 0], [4, 0, 0], [6, 1, 0]], "name": "plain"}));
@@ -74,7 +74,6 @@ fn anchors_take_state_and_presets() {
     assert!(dist(cv(&mut s, "bz.cv[2]"), a) < 1e-9 && dist(cv(&mut s, "bz.cv[4]"), a) < 1e-9);
     // Bezier Corner: a third of the way to each neighbour.
     run(&mut s, "bezierAnchorPreset", json!({"preset": 1}));
-    assert!(dist(cv(&mut s, "bz.cv[4]"), [10.0 / 3.0 + 2.0 / 3.0 * 0.0 + 1.0, 0.0, 0.0]) < 1e9);
     let next = cv(&mut s, "bz.cv[6]");
     let t = cv(&mut s, "bz.cv[4]");
     assert!(dist(t, [a[0] + (next[0] - a[0]) / 3.0, 0.0, 0.0]) < 1e-9);
@@ -142,13 +141,20 @@ fn blend2_spans_two_curves_and_two_edges() {
 fn round_constant_radius_makes_a_fillet() {
     let mut s = Session::new();
     // Two planes meeting along the Z axis: one along +X, one along +Y.
-    plane(&mut s, "pa", [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
-    plane(&mut s, "pb", [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]);
+    let line = |s: &mut Session, name: &str, p: [f64; 3], q: [f64; 3]| {
+        run(s, "curve", json!({"degree": 1, "point": [p, q], "name": name}));
+    };
+    line(&mut s, "l0", [0.0, 0.0, -1.0], [0.0, 0.0, 1.0]);
+    line(&mut s, "l1", [2.0, 0.0, -1.0], [2.0, 0.0, 1.0]);
+    line(&mut s, "l2", [0.0, 2.0, -1.0], [0.0, 2.0, 1.0]);
+    run(&mut s, "loft", json!({"args": ["l0", "l1"], "name": "pa", "constructionHistory": false, "degree": 1}));
+    run(&mut s, "loft", json!({"args": ["l0", "l2"], "name": "pb", "constructionHistory": false, "degree": 1}));
     let mut good = false;
     for ea in ["pa.u[0]", "pa.u[1]", "pa.v[0]", "pa.v[1]"] {
         for eb in ["pb.u[0]", "pb.u[1]", "pb.v[0]", "pb.v[1]"] {
             let Ok(r) = s.run("roundConstantRadius", json!({"args": [ea, eb], "radiuss": 0.5})) else { continue };
             let Ok(bb) = s.run("exactWorldBoundingBox", json!({"args": [r[0]]})) else { continue };
+            eprintln!("{ea} {eb} {bb}");
             let n = |k: usize| bb[k].as_f64().unwrap_or(f64::NAN);
             if n(0).abs() < 1e-6 && n(1).abs() < 1e-6 && (n(3) - 0.5).abs() < 1e-6 && (n(4) - 0.5).abs() < 1e-6 {
                 assert_eq!(r.as_array().unwrap().len(), 2, "[fillet, node]");

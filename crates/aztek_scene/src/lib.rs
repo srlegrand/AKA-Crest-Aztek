@@ -58,6 +58,7 @@ pub mod mesh_data;
 pub mod mesh_edit;
 pub mod mesh_files;
 pub mod mesh_nodes;
+pub mod model_extra;
 pub mod modifiers;
 pub mod motion_path;
 pub mod naming;
