@@ -612,6 +612,41 @@ pub fn register(c: &mut Commands<Session>) {
     use aztek_ops::{objects, CommandDef, FlagDef};
     c.register(
         CommandDef::<Session>::new(
+            "bakePartialHistory",
+            "Delete by Type > Non-Deformer History: bakes what feeds the first deformer and keeps the deformers. A mesh with no deformers loses its history.",
+            |s, a| {
+                let g = &mut s.graph;
+                let named: Vec<NodeId> = match a.get("args").and_then(Value::as_array) {
+                    Some(l) if !l.is_empty() => l.iter().filter_map(|v| v.as_str()).filter_map(|n| g.find(n).ok().flatten()).collect(),
+                    _ => g.selection().to_vec(),
+                };
+                g.open_chunk("Bake Partial History");
+                let mut r = Ok(());
+                for id in named {
+                    let shapes = if g.node(id).is_some_and(|n| n.ty().is_a("transform")) { crate::dag::shapes(g, id, false) } else { vec![id] };
+                    for sh in shapes {
+                        if !g.node(sh).is_some_and(|n| n.ty().is_a("mesh")) {
+                            continue;
+                        }
+                        // A deformed mesh's history runs through its original: bake that.
+                        let original = history_of(g, sh).into_iter().find(|&h| g.node(h).is_some_and(|n| n.ty().is_a("mesh") && n.bool(DagNode::INTERMEDIATE_OBJECT)));
+                        if let Err(e) = delete_history(g, original.unwrap_or(sh)) {
+                            r = Err(e);
+                        }
+                    }
+                }
+                g.close_chunk();
+                r?;
+                Ok(Value::Null)
+            },
+        )
+        .positional("objects")
+        .flag(FlagDef::new("prePostDeformers", "ppt", ArgType::Bool, Value::Null, "Before and after the deformers."))
+        .flag(FlagDef::new("preDeformers", "pre", ArgType::Bool, Value::Null, "Before the deformers."))
+        .flag(FlagDef::new("query", "q", ArgType::Bool, Value::Null, "Query.")),
+    );
+    c.register(
+        CommandDef::<Session>::new(
             "constructionHistory",
             "Turn construction history on or off for later poly edits, or query it. Returns whether it is on.",
             |s, a| {

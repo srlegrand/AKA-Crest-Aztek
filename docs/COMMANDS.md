@@ -3,7 +3,7 @@
 Generated from the command registry by `cargo run -p aztek_host --example gen_commands`; do not edit by hand.
 Commands take Maya's flags, long or short, in MEL and in Python (`aztek.cmds` or `maya.cmds`).
 
-964 commands.
+966 commands.
 
 ## AppendToPolygonTool
 
@@ -1773,6 +1773,18 @@ Arguments: character
 Bake meshes to their current result, deleting the generator and modifiers feeding them. Curves likewise keep what their history makes and lose the history; other objects are skipped.
 
 Arguments: objects
+
+## bakePartialHistory
+
+Delete by Type > Non-Deformer History: bakes what feeds the first deformer and keeps the deformers. A mesh with no deformers loses its history.
+
+Arguments: objects
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `prePostDeformers` | `ppt` | Before and after the deformers. |
+| `preDeformers` | `pre` | Before the deformers. |
+| `query` | `q` | Query. |
 
 ## bakePivot
 
@@ -5027,7 +5039,29 @@ Arguments: the file
 | `unloadReference` | `ur` | Unload a reference, by its reference node (or the path argument). |
 | `removeReference` | `rr` | Remove the reference named by the path argument. |
 | `referenceNode` | `rfn` | The reference node's name, or with -q ask for it. |
-| `deferReference` | `dr` | Add the reference unloaded. |
+| `deferReference` | `dr` | Add the reference unloaded. Query: whether it is. |
+| `importReference` | `ir` | Make the reference's contents part of the scene. |
+| `cleanReference` | `cr` | Remove the edits of an unloaded reference, or -editCommand's kind. |
+| `editCommand` | `ec` | With -cleanReference, which edits. |
+| `flushReference` | `fr` | Unload, keeping the reference nodes. |
+| `loadReferencePreview` | `lrp` | Loads the reference; there's no partial load here. |
+| `loadReferenceDepth` | `lrd` | Accepted for scripts: all, none, topOnly, asPrefs. |
+| `groupReference` | `gr` | Group the reference's top nodes under one transform. |
+| `groupName` | `gn` | The group's name. |
+| `groupLocator` | `gl` | Make the group a locator. |
+| `sharedNodes` | `shd` | Accepted for scripts: nothing's shared yet. |
+| `sharedReferenceFile` | `srf` | Accepted for scripts: nothing's shared yet. |
+| `mergeNamespacesOnClash` | `mnc` | Use the namespace even if it's there already. |
+| `renamingPrefix` | `rpr` | A prefix instead of a namespace. Query: what it is. |
+| `lockReference` | `lck` | Lock the reference's nodes and attributes. |
+| `usingNamespaces` | `uns` | Query: whether it uses a namespace. |
+| `unresolvedName` | `un` | Query: the path as written. |
+| `withoutCopyNumber` | `wcn` | Query: the path without its {n}. |
+| `expandName` | `exn` | Query: the file's path. |
+| `swapNamespace` | `sns` | Accepted for scripts. |
+| `edit` | `e` | Edit mode: -namespace renames a reference's. |
+| `saveReferencesUnloaded` | `sru` | Accepted for scripts. |
+| `exportUnloadedReferences` | `eur` | Accepted for scripts. |
 | `referenceDepthInfo` | `rdi` | Accepted for Maya scripts. |
 | `prompt` | `pmt` | Accepted for Maya scripts. |
 | `ignoreVersion` | `iv` | Accepted for Maya scripts. |
@@ -5037,7 +5071,7 @@ Arguments: the file
 | `constraints` | `con` | Accepted for Maya scripts. |
 | `expressions` | `exp` | Accepted for Maya scripts. |
 | `shader` | `sh` | Accepted for Maya scripts. |
-| `returnNewNodes` | `rnn` | Accepted for Maya scripts. |
+| `returnNewNodes` | `rnn` | With a reference, return the new nodes. |
 | `namespace` | `ns` | The namespace a reference goes under. |
 
 ## fileDialog
@@ -6205,6 +6239,10 @@ Arguments: objects
 ## growSelection
 
 Grow the component selection by one ring of neighbours: points to the points of their faces, edges and faces to those sharing a point with the selection.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `alongLoop` |  | Selected edges reach one further along their loops. |
 
 ## hardenPointCurve
 
@@ -8325,6 +8363,7 @@ Arguments: names or patterns
 | `type` | `typ` | Only nodes of this type or derived; a list of types too. |
 | `exactType` | `et` | Only nodes of exactly this type. |
 | `dag` | `dag` | Only DAG nodes. |
+| `referencedNodes` | `rn` | Only nodes from references. |
 | `dagObjects` | `do` | DAG nodes and everything below them. |
 | `shapes` | `s` | Only shapes. |
 | `transforms` | `tr` | Only transforms. |
@@ -8440,36 +8479,49 @@ Arguments: [name]
 
 | Flag | Short | Description |
 | --- | --- | --- |
-| `mode` | `m` |  |
-| `snap` | `s` |  |
-| `snapValue` | `sv` |  |
-| `snapRelative` | `sr` |  |
-| `snapComponentsRelative` | `scr` |  |
 | `activeHandle` | `ah` |  |
-| `position` | `p` |  |
-| `orientAxes` | `oa` |  |
-| `orientObject` | `oo` |  |
-| `orientJoint` | `oj` |  |
-| `orientJointEnabled` | `oje` |  |
-| `orientTowards` | `ot` |  |
-| `interactiveUpdate` | `iu` |  |
+| `alignAlong` | `aa` |  |
+| `bakePivotOri` | `bpo` |  |
+| `constrainAlongNormal` | `xn` |  |
+| `currentActiveHandle` | `cah` |  |
 | `editPivotMode` | `epm` |  |
 | `editPivotPosition` | `epp` |  |
-| `xformConstraint` | `xc` |  |
-| `xformConstraintAlongNormal` | `xcn` |  |
-| `preventNegativeScale` | `pns` |  |
-| `reflection` | `rfl` |  |
-| `reflectionAboutAxis` | `rab` |  |
-| `reflectionAboutBBox` | `rbb` |  |
-| `reflectionAboutOrigin` | `rao` |  |
-| `reflectionAboutX` | `rax` |  |
-| `reflectionAboutY` | `ray` |  |
-| `reflectionAboutZ` | `raz` |  |
-| `tweakMode` | `twk` |  |
-| `translate` | `tr` |  |
 | `lastMode` | `lm` |  |
-| `alignAlong` | `aa` |  |
-| `pinFaces` | `pf` |  |
+| `manipVisible` | `vis` |  |
+| `mode` | `m` |  |
+| `orientAxes` | `oa` |  |
+| `orientObject` | `oo` |  |
+| `orientTowards` | `ot` |  |
+| `pinPivot` | `pin` |  |
+| `pivotOriHandle` | `poh` |  |
+| `position` | `p` |  |
+| `postCommand` | `psc` |  |
+| `postDragCommand` | `pod` |  |
+| `preCommand` | `prc` |  |
+| `preDragCommand` | `prd` |  |
+| `preserveChildPosition` | `pcp` |  |
+| `preserveUV` | `puv` |  |
+| `reflection` | `rfl` |  |
+| `reflectionAbout` | `rab` |  |
+| `reflectionAxis` | `rfa` |  |
+| `reflectionTolerance` | `rft` |  |
+| `resetPivotMode` | `rpm` |  |
+| `snap` | `s` |  |
+| `snapPivotOri` | `spo` |  |
+| `snapPivotPos` | `spp` |  |
+| `snapRelative` | `sr` |  |
+| `snapValue` | `sv` |  |
+| `tweakMode` | `twk` |  |
+| `xformConstraint` | `xc` |  |
+| `activeHandleNormal` | `ahn` |  |
+| `interactiveUpdate` | `iu` |  |
+| `orientJoint` | `oj` |  |
+| `orientJointEnabled` | `oje` |  |
+| `secondaryAxisOrient` | `sao` |  |
+| `snapComponentsRelative` | `scr` |  |
+| `snapLiveFaceCenter` | `slf` |  |
+| `snapLivePoint` | `slp` |  |
+| `translate` | `tr` |  |
 | `image1` | `i1` |  |
 | `image2` | `i2` |  |
 | `image3` | `i3` |  |
@@ -8536,29 +8588,46 @@ Arguments: [name]
 
 | Flag | Short | Description |
 | --- | --- | --- |
-| `mode` | `m` |  |
-| `snap` | `s` |  |
-| `snapValue` | `sv` |  |
-| `snapRelative` | `sr` |  |
 | `activeHandle` | `ah` |  |
-| `position` | `p` |  |
-| `rotate` | `ro` |  |
-| `objectSpace` | `os` |  |
-| `orientAxes` | `oa` |  |
-| `orientObject` | `oo` |  |
-| `orientJoint` | `oj` |  |
-| `orientJointEnabled` | `oje` |  |
-| `tweakMode` | `twk` |  |
-| `interactiveUpdate` | `iu` |  |
+| `alignAlong` | `aa` |  |
+| `bakePivotOri` | `bpo` |  |
+| `constrainAlongNormal` | `xn` |  |
+| `currentActiveHandle` | `cah` |  |
 | `editPivotMode` | `epm` |  |
 | `editPivotPosition` | `epp` |  |
-| `xformConstraint` | `xc` |  |
-| `modifyTranslation` | `mt` |  |
-| `preserveUV` | `puv` |  |
 | `lastMode` | `lm` |  |
+| `manipVisible` | `vis` |  |
+| `mode` | `m` |  |
+| `orientAxes` | `oa` |  |
+| `orientObject` | `oo` |  |
+| `orientTowards` | `ot` |  |
+| `pinPivot` | `pin` |  |
+| `pivotOriHandle` | `poh` |  |
+| `position` | `p` |  |
+| `postCommand` | `psc` |  |
+| `postDragCommand` | `pod` |  |
+| `preCommand` | `prc` |  |
+| `preDragCommand` | `prd` |  |
+| `preserveChildPosition` | `pcp` |  |
+| `preserveUV` | `puv` |  |
 | `reflection` | `rfl` |  |
+| `reflectionAbout` | `rab` |  |
+| `reflectionAxis` | `rfa` |  |
+| `reflectionTolerance` | `rft` |  |
+| `resetPivotMode` | `rpm` |  |
+| `snap` | `s` |  |
+| `snapPivotOri` | `spo` |  |
+| `snapPivotPos` | `spp` |  |
+| `snapRelative` | `sr` |  |
+| `snapValue` | `sv` |  |
+| `tweakMode` | `twk` |  |
+| `xformConstraint` | `xc` |  |
 | `centerTrackball` | `ctb` |  |
-| `alignAlong` | `aa` |  |
+| `modifyTranslation` | `mt` |  |
+| `rotate` | `ro` |  |
+| `useCenterPivot` | `ucp` |  |
+| `useManipPivot` | `ump` |  |
+| `useObjectPivot` | `uop` |  |
 | `image1` | `i1` |  |
 | `image2` | `i2` |  |
 | `image3` | `i3` |  |
@@ -8578,29 +8647,44 @@ Arguments: [name]
 
 | Flag | Short | Description |
 | --- | --- | --- |
-| `mode` | `m` |  |
-| `snap` | `s` |  |
-| `snapValue` | `sv` |  |
-| `snapRelative` | `sr` |  |
 | `activeHandle` | `ah` |  |
-| `position` | `p` |  |
-| `scale` | `sc` |  |
-| `orientAxes` | `oa` |  |
-| `orientObject` | `oo` |  |
-| `orientJoint` | `oj` |  |
-| `orientJointEnabled` | `oje` |  |
-| `tweakMode` | `twk` |  |
-| `interactiveUpdate` | `iu` |  |
+| `alignAlong` | `aa` |  |
+| `bakePivotOri` | `bpo` |  |
+| `constrainAlongNormal` | `xn` |  |
+| `currentActiveHandle` | `cah` |  |
 | `editPivotMode` | `epm` |  |
 | `editPivotPosition` | `epp` |  |
-| `xformConstraint` | `xc` |  |
+| `lastMode` | `lm` |  |
+| `manipVisible` | `vis` |  |
+| `mode` | `m` |  |
+| `orientAxes` | `oa` |  |
+| `orientObject` | `oo` |  |
+| `orientTowards` | `ot` |  |
+| `pinPivot` | `pin` |  |
+| `pivotOriHandle` | `poh` |  |
+| `position` | `p` |  |
+| `postCommand` | `psc` |  |
+| `postDragCommand` | `pod` |  |
+| `preCommand` | `prc` |  |
+| `preDragCommand` | `prd` |  |
+| `preserveChildPosition` | `pcp` |  |
 | `preserveUV` | `puv` |  |
+| `reflection` | `rfl` |  |
+| `reflectionAbout` | `rab` |  |
+| `reflectionAxis` | `rfa` |  |
+| `reflectionTolerance` | `rft` |  |
+| `resetPivotMode` | `rpm` |  |
+| `snap` | `s` |  |
+| `snapPivotOri` | `spo` |  |
+| `snapPivotPos` | `spp` |  |
+| `snapRelative` | `sr` |  |
+| `snapValue` | `sv` |  |
+| `tweakMode` | `twk` |  |
+| `xformConstraint` | `xc` |  |
 | `preventNegativeScale` | `pns` |  |
+| `scale` | `sc` |  |
 | `useManipPivot` | `ump` |  |
 | `useObjectPivot` | `uop` |  |
-| `lastMode` | `lm` |  |
-| `reflection` | `rfl` |  |
-| `alignAlong` | `aa` |  |
 | `image1` | `i1` |  |
 | `image2` | `i2` |  |
 | `image3` | `i3` |  |
@@ -10888,7 +10972,11 @@ Bevel the selected edges (vertex or face selections convert to their edges).
 
 | Flag | Short | Description |
 | --- | --- | --- |
-| `offset` |  | Width, cm. |
+| `offset` | `o` | Width, cm. |
+| `fraction` | `f` | Width as a fraction, with offsetAsFraction. |
+| `offsetAsFraction` | `oaf` | Width by fraction rather than distance. |
+| `depth` | `dp` | How far the bevel rounds out; held for the node. |
+| `chamfer` | `c` | Flat across rather than round. |
 | `segments` |  | Segments across the bevel. |
 | `profile` |  | 0.5 round, 0.25 straight, toward 1 square. |
 | `clamp` |  | Keep widths from overlapping. |
@@ -10909,6 +10997,7 @@ Arguments: components or meshes (the selection when none)
 | `chamfer` | `c` | See the command reference. |
 | `depth` | `d` | See the command reference. |
 | `fillNgons` | `fn` | See the command reference. |
+| `fraction` | `f` | See the command reference. |
 | `mergeVertexTolerance` | `mvt` | See the command reference. |
 | `mergeVertices` | `mv` | See the command reference. |
 | `miterAlong` | `mia` | See the command reference. |
@@ -12078,6 +12167,11 @@ Extrude the selected faces along their normals, or in edge mode grow a strip of 
 | Flag | Short | Description |
 | --- | --- | --- |
 | `thickness` |  | Distance along the normals, cm. |
+| `keepFacesTogether` | `kft` | Faces that touch extrude as one. |
+| `divisions` | `d` | Segments along the extrusion. |
+| `smoothingAngle` | `sma` | New edges sharper than this are hard. |
+| `taper` | `tp` | Scale at the far end. |
+| `twist` | `twt` | Turn at the far end, degrees. |
 | `offset` |  | Faces: inward distance of the extruded border, cm; negative grows them. Edges: outward distance from their faces, cm. |
 | `individual` |  | Each face separately. |
 | `keepBack` |  | Faces: where the extruded faces only border open edges, as a whole open shell, keep a copy facing back at the base. |
@@ -13858,6 +13952,7 @@ Arguments: components or meshes (the selection when none)
 | `chamfer` | `c` | See the command reference. |
 | `depth` | `d` | See the command reference. |
 | `fillNgons` | `fn` | See the command reference. |
+| `fraction` | `f` | See the command reference. |
 | `mergeVertexTolerance` | `mvt` | See the command reference. |
 | `mergeVertices` | `mv` | See the command reference. |
 | `miterAlong` | `mia` | See the command reference. |
@@ -13993,7 +14088,11 @@ Push the selected components (whole meshes in object mode) onto a sphere fitted 
 
 ## polySpinEdge
 
-Turn each selected edge one step within its two faces.
+Turn each selected edge one step within its two faces: -of 1 forward, -of -1 backward.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `offset` | `of` | 1 forward, -1 backward. |
 
 ## polySplit
 
@@ -15137,9 +15236,25 @@ Arguments: file
 | `unloadReference` | `ur` | Unload this one. |
 | `removeReference` | `rr` | Remove this one. |
 
+## referenceEdit
+
+Change a reference's kept edits: -r removes them (unloaded), -cet retargets them, -afe tries the failed ones again.
+
+Arguments: reference node, node or plug
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `removeEdits` | `r` | Remove the edits on this target, from an unloaded reference. |
+| `changeEditTarget` | `cet` | Point edits on one target at another: old, new. |
+| `applyFailedEdits` | `afe` | Try the edits that failed again. |
+| `editCommand` | `ec` | Only edits of these commands. |
+| `failedEdits` | `fld` | Act on failed edits; the default. |
+| `successfulEdits` | `scs` | Act on successful edits. |
+| `onReferenceNode` | `orn` | Only edits stored on this reference node. |
+
 ## referenceQuery
 
-Ask about references, given a node, a reference node or a file: -inr isNodeReferenced, -f the file, -n nodes, -ns namespace, -rfn reference node, -il loaded.
+Ask about references, given a node, a reference node or a file: -inr isNodeReferenced, -f the file, -n nodes, -ns namespace, -rfn reference node, -il loaded, -es its edits.
 
 Arguments: node, reference node or file
 
@@ -15148,17 +15263,30 @@ Arguments: node, reference node or file
 | `isNodeReferenced` | `inr` | Whether the node comes from a reference. |
 | `filename` | `f` | The file. |
 | `nodes` | `n` | The nodes it brought in. |
-| `namespace` | `ns` | Its namespace. |
+| `namespace` | `ns` | Its namespace, from the root. |
+| `parentNamespace` | `pns` | The namespace above its own. |
 | `referenceNode` | `rfn` | Its reference node. |
 | `isLoaded` | `il` | Whether it's loaded. |
-| `shortName` | `shn` | The file's name without its folder, or the namespace without its colon. |
+| `isExportEdits` | `iee` | Whether it's an edits file. None are made here. |
+| `isPreviewOnly` | `ipo` | Whether it's only a preview. None are here. |
+| `shortName` | `shn` | The file's name without its folder, or the namespace's last part. |
 | `withoutCopyNumber` | `wcn` | The file without its {n}. |
+| `unresolvedName` | `un` | The file as written. |
 | `dagPath` | `dp` | Full paths from -n. |
-| `parent` | `p` | The reference above it: none, since references are flat here. |
-| `topReference` | `tr` | The top reference: itself, since references are flat here. |
-| `editStrings` | `es` | Its edits, as text. |
-| `editNodes` | `en` | Its edits, as text. |
-| `editAttrs` | `ea` | Its edits, as text. |
+| `parent` | `p` | With -rfn or -f, the reference above it. |
+| `child` | `ch` | With -rfn or -f, those directly below it. |
+| `topReference` | `tr` | With -rfn or -f, the top one above it. |
+| `editStrings` | `es` | Its edits, as commands. |
+| `editNodes` | `en` | The nodes its edits touch. |
+| `editAttrs` | `ea` | The attributes its edits touch. |
+| `editCommand` | `ec` | Only edits of these commands. |
+| `failedEdits` | `fld` | Include edits that failed on the last load. |
+| `successfulEdits` | `scs` | Include edits that worked; the default. |
+| `onReferenceNode` | `orn` | Only edits stored on this reference node. |
+| `liveEdits` | `le` | Accepted for scripts. |
+| `showDagPath` | `sdp` | Accepted for scripts; edits show full paths. |
+| `showFullPath` | `sfp` | Accepted for scripts; edits show full paths. |
+| `showNamespace` | `sns` | Accepted for scripts; edits show namespaces. |
 
 ## refresh
 
@@ -17231,6 +17359,10 @@ Arguments: [window]
 
 Shrink the component selection by dropping what lies on its border.
 
+| Flag | Short | Description |
+| --- | --- | --- |
+| `alongLoop` |  | Open ends draw in by one along their loops. |
+
 ## shrinkWrap
 
 Shrink Wrap: moves points onto a target mesh, named by -t or last. Returns [shrinkWrap1].
@@ -17577,7 +17709,8 @@ Soft selection (B): -sse 1 turns it on, -ssd sets the falloff radius. -q -sse / 
 | --- | --- | --- |
 | `softSelectEnabled` | `sse` | 1 on, 0 off. |
 | `softSelectDistance` | `ssd` | Falloff radius, world units. |
-| `softSelectFalloff` | `ssf` | Accepted for Maya scripts (0 volume, 1 surface). |
+| `softSelectFalloff` | `ssf` | 0 volume, 1 surface, 2 global, 3 object. |
+| `edit` | `e` | Edit mode. |
 | `query` | `q` | Query mode. |
 
 ## softSelectCurve

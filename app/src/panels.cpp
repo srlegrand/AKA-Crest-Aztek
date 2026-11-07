@@ -161,7 +161,13 @@ protected:
             g_channel_sel = {a};
             g_input_plugs.clear();
         }
-        if (property("inputPlug").isValid()) g_input_plugs[a] = property("inputPlug").toString();
+        if (property("inputPlug").isValid()) {
+            g_input_plugs[a] = property("inputPlug").toString();
+            // The channel's handle lights up, and a middle drag takes it.
+            QString plug = property("inputPlug").toString();
+            query("uiShowManip", plug.section('.', 0, -2));
+            query("uiShowManipAttr", plug.section('.', -1));
+        }
         else g_input_plugs.remove(a);
         restyle_channel_labels();
     }
@@ -344,6 +350,8 @@ void ChannelBox::refresh() {
             b->setObjectName("channelNodeButton");
             b->setFlat(true);
             connect(b, &QPushButton::clicked, this, [this, p] {
+                // The Show Manipulator tool shows the node picked here.
+                query("uiShowManip", p);
                 if (open_inputs_.contains(p))
                     open_inputs_.remove(p);
                 else

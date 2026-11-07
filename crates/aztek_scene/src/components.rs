@@ -777,6 +777,51 @@ fn op_arg(a: &Args, fallback: Op) -> Op {
     }
 }
 
+/// The edge continuing an edge's loop through one of its points: at a point of four edges, the one sharing no face with it.
+fn loop_next(m: &Mesh, e: Index, p: Index) -> Option<Index> {
+    let mut around = Vec::new();
+    m.for_each_point_edge(p, |x| around.push(x));
+    if around.len() != 4 {
+        return None;
+    }
+    let mut faces = Vec::new();
+    m.for_each_edge_corner(e, |c| faces.push(m.corner_face(c)));
+    around.into_iter().find(|&x| {
+        if x == e {
+            return false;
+        }
+        let mut shared = false;
+        m.for_each_edge_corner(x, |c| shared |= faces.contains(&m.corner_face(c)));
+        !shared
+    })
+}
+
+/// Grow or Shrink Along Loop: selected edges reach one edge further along their loops, or their open ends draw in by one.
+fn along_loop(g: &mut Graph, grow: bool) {
+    g.open_chunk(if grow { "Grow Selection" } else { "Shrink Selection" });
+    for (node, ids) in selected_all(g, ComponentMode::Edge).clone() {
+        let Some(m) = mesh_of(g, node) else { continue };
+        let set: std::collections::BTreeSet<Index> = ids.iter().copied().collect();
+        let mut out = Vec::new();
+        for &e in &ids {
+            let mut open_end = false;
+            for side in 0..2 {
+                let next = loop_next(&m, e, m.edge_point(e, side));
+                match next {
+                    Some(n) if set.contains(&n) => {}
+                    Some(n) if grow => out.push(n),
+                    _ => open_end = true,
+                }
+            }
+            if !grow && open_end {
+                out.push(e);
+            }
+        }
+        select(g, node, ComponentMode::Edge, &out, if grow { Op::Add } else { Op::Remove });
+    }
+    g.close_chunk();
+}
+
 pub fn register(c: &mut Commands<Session>) {
     c.register(
         Cmd::new("selectMode", "Switch between object, vertex, edge and face selection. With no argument, returns the current mode.", |s, a| {
@@ -955,10 +1000,14 @@ pub fn register(c: &mut Commands<Session>) {
         "growSelection",
         "Grow the component selection by one ring of neighbours: points to the points of their faces, edges and faces to \
          those sharing a point with the selection.",
-        |s, _| {
+        |s, a| {
             let g = &mut s.graph;
             let k = mode(g);
             if k == ComponentMode::Object {
+                return Ok(Value::Null);
+            }
+            if a.bool("alongLoop") && k == ComponentMode::Edge {
+                along_loop(g, true);
                 return Ok(Value::Null);
             }
             g.open_chunk("Grow Selection");
@@ -989,7 +1038,8 @@ pub fn register(c: &mut Commands<Session>) {
             g.close_chunk();
             Ok(Value::Null)
         },
-    ));
+    ).flag(flag("alongLoop", T::Bool, json!(false), "Selected edges reach one further along their loops."))
+    );
 
     c.register(
         Cmd::new(
@@ -1040,10 +1090,14 @@ pub fn register(c: &mut Commands<Session>) {
         .flag(flag("ring", T::Bool, json!(false), "Select rings instead of loops. Faces have no ring and take their loops.")),
     );
 
-    c.register(Cmd::new("shrinkSelection", "Shrink the component selection by dropping what lies on its border.", |s, _| {
+    c.register(Cmd::new("shrinkSelection", "Shrink the component selection by dropping what lies on its border.", |s, a| {
         let g = &mut s.graph;
         let k = mode(g);
         if k == ComponentMode::Object {
+            return Ok(Value::Null);
+        }
+        if a.bool("alongLoop") && k == ComponentMode::Edge {
+            along_loop(g, false);
             return Ok(Value::Null);
         }
         g.open_chunk("Shrink Selection");
@@ -1103,7 +1157,7 @@ pub fn register(c: &mut Commands<Session>) {
         }
         g.close_chunk();
         Ok(Value::Null)
-    }));
+    }).flag(flag("alongLoop", T::Bool, json!(false), "Open ends draw in by one along their loops.")));
 
     c.register(Cmd::new(
         "selectBorder",

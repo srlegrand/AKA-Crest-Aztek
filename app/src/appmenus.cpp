@@ -267,7 +267,10 @@ QMenu* MainWindow::edit_menu() {
         if (recents->isEmpty()) recents->addAction("(none)")->setEnabled(false);
     });
     m->addSeparator();
-    todo(m, "Cut");
+    m->addAction("Cut\tCtrl+X", [this] {
+        clipboard_ = selection_names();
+        exec("delete");
+    });
     m->addAction("Copy\tCtrl+C", [this] { clipboard_ = selection_names(); });
     m->addAction("Paste\tCtrl+V", [this] {
         QJsonArray a;
@@ -443,6 +446,10 @@ QMenu* MainWindow::select_menu() {
     cmd(conv, "To Vertices", "convertSelection", args(QJsonArray{"vertex"}), "Ctrl+F9");
     cmd(conv, "To Edges", "convertSelection", args(QJsonArray{"edge"}), "Ctrl+F10");
     cmd(conv, "To Faces", "convertSelection", args(QJsonArray{"face"}), "Ctrl+F11");
+    conv->addSeparator();
+    cmd(conv, "To Edge Loop", "selectLoop");
+    cmd(conv, "To Edge Ring", "selectLoop", QJsonObject{{"ring", true}});
+    cmd(conv, "To Shell Border", "selectBorder");
     return m;
 }
 
@@ -455,6 +462,10 @@ QMenu* MainWindow::modify_menu() {
     xf->addAction("Move Tool\tW", [this] { set_tool("move"); });
     xf->addAction("Rotate Tool\tE", [this] { set_tool("rotate"); });
     xf->addAction("Scale Tool\tR", [this] { set_tool("scale"); });
+    xf->addAction("Move Normal Tool", [this] {
+        set_tool("move");
+        exec_quiet("manipMoveContext", QJsonObject{{"edit", true}, {"args", QJsonArray{"Move"}}, {"mode", 3}});
+    });
     xf->addAction("Show Manipulator Tool\tT", [] { mel("ShowManipulators;"); });
     cmd(m, "Freeze Transformations", "freezeTransforms", {}, QString(), true);
     cmd(m, "Reset Transformations", "resetTransforms", {}, QString(), true);
@@ -464,7 +475,12 @@ QMenu* MainWindow::modify_menu() {
     cmd(pivot, "Bake Pivot", "bakePivot");
     cmd(pivot, "Reset Pivot", "resetPivot");
     cmd(pivot, "Zero Pivot", "zeroPivot");
-    cmd(m, "Match Pivots", "matchPivot");
+    QMenu* match = m->addMenu("Match Transformations");
+    cmd(match, "Match Translation", "matchTransform", QJsonObject{{"position", true}});
+    cmd(match, "Match Rotation", "matchTransform", QJsonObject{{"rotation", true}});
+    cmd(match, "Match Scaling", "matchTransform", QJsonObject{{"scale", true}});
+    cmd(match, "Match All Transforms", "matchTransform");
+    cmd(match, "Match Pivots", "matchPivot");
     QMenu* snap = m->addMenu("Snap Align");
     snap->addAction("Align Objects...", [this] { show_named_window("alignObjects"); });
     snap->addAction("Point to Point", [] {
@@ -560,16 +576,42 @@ QMenu* MainWindow::display_menu() {
     m->addSeparator();
     QMenu* hide = m->addMenu("Hide");
     cmd(hide, "Hide Selection", "hide", {}, "Ctrl+H");
+    hide->addAction("Hide Unselected Objects\tAlt+H", [] {
+        // Top level objects other than what is selected and its parents.
+        QJsonArray sel = state()["selection"].toArray();
+        QJsonArray hidden;
+        for (const QJsonValue& o : mel("ls -assemblies;").toArray()) {
+            QString name = o.toString();
+            bool keep = false;
+            for (const QJsonValue& s : sel) {
+                QString path = s.toString().section('.', 0, 0);
+                if (path == name || path.startsWith("|" + name) || path.startsWith(name + "|")) keep = true;
+            }
+            if (!keep && !QStringList{"persp", "top", "front", "side"}.contains(name)) hidden.append(name);
+        }
+        if (!hidden.isEmpty()) exec("hide", QJsonObject{{"args", hidden}});
+    });
     QMenu* show = m->addMenu("Show");
     cmd(show, "Show Selection", "show");
+    cmd(show, "All", "showHidden", QJsonObject{{"all", true}});
     cmd(show, "Show Last Hidden", "showLastHidden", {}, "Ctrl+Shift+H");
     cmd(m, "Toggle Show/Hide", "toggleVisibility", {}, "H");
     m->addSeparator();
     QMenu* obj = m->addMenu("Object Display");
     cmd(obj, "Template", "toggle", QJsonObject{{"template", true}, {"state", true}});
     cmd(obj, "Untemplate", "toggle", QJsonObject{{"template", true}, {"state", false}});
-    cmd(obj, "Bounding Box", "toggle", QJsonObject{{"boundingBox", true}, {"state", true}});
-    cmd(obj, "No Bounding Box", "toggle", QJsonObject{{"boundingBox", true}, {"state", false}});
+    // A node's drawing override shows it as its box.
+    auto box = [](bool on) {
+        return [on] {
+            for (const QJsonValue& s : state()["selection"].toArray()) {
+                QString o = s.toString().section('.', 0, 0);
+                exec("setAttr", QJsonObject{{"args", QJsonArray{o + ".overrideEnabled", on}}});
+                exec("setAttr", QJsonObject{{"args", QJsonArray{o + ".overrideLevelOfDetail", on ? 1 : 0}}});
+            }
+        };
+    };
+    obj->addAction("Bounding Box", box(true));
+    obj->addAction("No Bounding Box", box(false));
     m->addAction("Wireframe Color...", this, [this] { show_wireframe_color_window(this); });
     QMenu* xf = m->addMenu("Transform Display");
     cmd(xf, "Local Rotation Axes", "toggle", QJsonObject{{"localAxis", true}});
@@ -824,9 +866,9 @@ void MainWindow::nudge(int dx, int dy) {
 }
 
 void MainWindow::show_history_manips() {
-    // The newest history node's attributes in the view, to pull by number; its channels are in INPUTS too.
-    in_view_->show_last();
-    help_line_->setText(in_view_->isVisible() ? "Show Manipulator Tool: change the history node's attributes in the view." : "Show Manipulator Tool: this object has no history node.");
+    // The node's handles in the view, and its numbers in the in-view editor.
+    set_tool("showManip");
+    help_line_->setText("Show Manipulator Tool: drag a handle to change the node's attribute.");
 }
 
 void MainWindow::add_to_shelf(QAction* a) {
@@ -892,9 +934,16 @@ void MainWindow::view_scrub(QObject* o, QEvent* e) {
 
 void MainWindow::tool_marking_menu(QPoint global, const QString& hold) {
     QList<MarkItem> items;
-    auto axis = [this](const QString& mode) {
-        return [this, mode] {
-            for (ViewportWidget* v : panels_->views()) v->set("axisOrientation", "\"" + mode + "\"");
+    QString kind = hold == "rotate" ? "manipRotateContext" : hold == "scale" ? "manipScaleContext" : "manipMoveContext";
+    QString ctx = hold == "rotate" ? "Rotate" : hold == "scale" ? "Scale" : "Move";
+    auto mode = [kind, ctx](int m) {
+        return [kind, ctx, m] { exec_quiet(kind, QJsonObject{{"edit", true}, {"args", QJsonArray{ctx}}, {"mode", m}}); };
+    };
+    auto flip = [kind, ctx](const char* flag) {
+        QString f = flag;
+        return [kind, ctx, f] {
+            bool on = ask(kind, QJsonObject{{"query", true}, {"queried", QJsonArray{f}}, {"args", QJsonArray{ctx}}}).toBool();
+            exec_quiet(kind, QJsonObject{{"edit", true}, {"args", QJsonArray{ctx}}, {f, !on}});
         };
     };
     auto soft = [](bool on) { return [on] { exec("softSelect", QJsonObject{{"softSelectEnabled", on ? 1 : 0}}); }; };
@@ -908,15 +957,16 @@ void MainWindow::tool_marking_menu(QPoint global, const QString& hold) {
         items = {{"Select Tool", 0, [this] { set_tool("select"); }}, {"Lasso Tool", 2, [this] { set_tool("lasso"); }}, {"Paint Selection Tool", 6, [this] { set_tool("paintSelect"); }},
                  {"Soft Select", 4, soft(true)}, {"Soft Select Off", -1, soft(false)}, {"Tool Settings...", -1, [this] { show_tool_settings(); }}};
     } else if (hold == "move") {
-        items = {{"World", 0, axis("world")}, {"Object", 2, axis("object")}, {"Component", 4, axis("component")}, {"Parent", 6, axis("parent")}, {"Normal", 1, axis("normal")},
-                 {"Soft Select", 3, soft(true)}, {"Soft Select Off", 5, soft(false)},
+        items = {{"World", 0, mode(2)}, {"Object", 2, mode(0)}, {"Component", 4, mode(10)}, {"Parent", 6, mode(1)}, {"Normal", 1, mode(3)},
+                 {"Soft Select", 3, soft(true)}, {"Soft Select Off", 5, soft(false)}, {"Custom", 7, mode(6)},
+                 {"Along Rotation Axis", -1, mode(4)}, {"Along Live Object Axis", -1, mode(5)}, {"Tweak Mode", -1, flip("tweakMode")}, {"Preserve Children", -1, flip("preserveChildPosition")},
                  {"Step Snap Off", -1, step("stepMove", 0)}, {"Step Snap 1", -1, step("stepMove", 1)}, {"Tool Settings...", -1, [this] { show_tool_settings(); }}};
     } else if (hold == "rotate") {
-        items = {{"World", 0, axis("world")}, {"Object", 2, axis("object")}, {"Component", 4, axis("component")}, {"Parent", 6, axis("parent")},
-                 {"Step Snap Off", 3, step("stepRotate", 0)}, {"Step Snap 15", 5, step("stepRotate", 15)}, {"Tool Settings...", -1, [this] { show_tool_settings(); }}};
+        items = {{"World", 0, mode(1)}, {"Object", 2, mode(0)}, {"Component", 4, mode(10)}, {"Gimbal", 6, mode(2)}, {"Custom", 7, mode(3)},
+                 {"Step Snap Off", 3, step("stepRotate", 0)}, {"Step Snap 15", 5, step("stepRotate", 15)}, {"Preserve Children", -1, flip("preserveChildPosition")}, {"Tool Settings...", -1, [this] { show_tool_settings(); }}};
     } else if (hold == "scale") {
-        items = {{"World", 0, axis("world")}, {"Object", 2, axis("object")}, {"Component", 4, axis("component")}, {"Normal", 6, axis("normal")},
-                 {"Soft Select", 3, soft(true)}, {"Soft Select Off", 5, soft(false)}, {"Tool Settings...", -1, [this] { show_tool_settings(); }}};
+        items = {{"World", 0, mode(2)}, {"Object", 2, mode(0)}, {"Component", 4, mode(10)}, {"Normal", 6, mode(3)}, {"Parent", 1, mode(1)}, {"Custom", 7, mode(6)},
+                 {"Soft Select", 3, soft(true)}, {"Soft Select Off", 5, soft(false)}, {"Preserve Children", -1, flip("preserveChildPosition")}, {"Tool Settings...", -1, [this] { show_tool_settings(); }}};
     }
     if (!items.isEmpty()) MarkingMenu::show_at(global, items);
 }

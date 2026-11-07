@@ -180,7 +180,7 @@ const NL_LOW: usize = BASE_COUNT + 3;
 const NL_HIGH: usize = BASE_COUNT + 4;
 const NL_D: usize = BASE_COUNT + 5;
 
-fn nonlinear(kind: usize, a: f64, b: f64, c: f64, d: f64, lo: f64, hi: f64, p: DVec3) -> DVec3 {
+fn nonlinear(kind: usize, a: f64, b: f64, c: f64, d: f64, e: f64, lo: f64, hi: f64, p: DVec3) -> DVec3 {
     let span = (hi - lo).max(1e-9);
     match kind {
         0 => {
@@ -215,11 +215,11 @@ fn nonlinear(kind: usize, a: f64, b: f64, c: f64, d: f64, lo: f64, hi: f64, p: D
             DVec3::new(p.x * bulge, y, p.z * bulge)
         }
         3 => {
-            // flare: X scale from a to b, Z scale from c to d... here a/b are X start/end, c the curve.
+            // flare: X scale from a to b, Z scale from d to e, c the curve.
             let t = ((p.y - lo) / span).clamp(0.0, 1.0);
             let curve = c * (std::f64::consts::PI * t).sin();
             let sx = a + (b - a) * t + curve;
-            let sz = d + (b - a) * t + curve;
+            let sz = d + (e - d) * t + curve;
             DVec3::new(p.x * sx, p.y, p.z * sz)
         }
         4 => {
@@ -253,8 +253,10 @@ impl NodeBehavior for NonLinear {
         let handle = d.matrix(HANDLE);
         let (a, b, c, dd, lo, hi) = (d.float(NL_A), d.float(NL_B), d.float(NL_C), d.float(NL_D), d.float(NL_LOW), d.float(NL_HIGH));
         let kind = self.kind;
+        // Only flare has a seventh setting, endFlareZ.
+        let ee = if kind == 3 { d.float(NL_D + 1) } else { 0.0 };
         let mut m = (*input).clone();
-        through_handle(&mut m, &geom, &handle, d.float(ENVELOPE), floats_of(d, WEIGHTS), |p| nonlinear(kind, a, b, c, dd, lo, hi, p));
+        through_handle(&mut m, &geom, &handle, d.float(ENVELOPE), floats_of(d, WEIGHTS), |p| nonlinear(kind, a, b, c, dd, ee, lo, hi, p));
         d.set_output(OUT, PlugValue::Mesh(Some(Arc::new(m))));
     }
     fn as_any(&self) -> &dyn Any {
@@ -370,7 +372,7 @@ pub fn register_types() {
             ("wave", [("amplitude", "amp", 0.0), ("wavelength", "wav", 1.0), ("offset", "off", 0.0), ("minRadius", "mnr", 0.0), ("maxRadius", "mxr", 1.0), ("unusedD", "ud", 0.0)]),
         ];
         for (k, (name, attrs)) in specs.iter().enumerate() {
-            let own: Vec<AttrDef> = attrs
+            let mut own: Vec<AttrDef> = attrs
                 .iter()
                 .map(|(n, s, def)| {
                     let mut a = float_attr_short(n, s, *def, "", None, None);
@@ -381,6 +383,9 @@ pub fn register_types() {
                     a
                 })
                 .collect();
+            if *name == "flare" {
+                own.push(float_attr_short("endFlareZ", "efz", 1.0, "", None, None));
+            }
             types::register_type(NodeType {
                 name: name.to_string(),
                 base: Some(nl.clone()),
@@ -682,8 +687,13 @@ fn driver_roots(g: &Graph, n: NodeId) -> Vec<NodeId> {
     out
 }
 
+/// The first handle or lattice driving a deformer.
+pub fn driver_of(g: &Graph, n: NodeId) -> Option<NodeId> {
+    driver_roots(g, n).into_iter().next()
+}
+
 /// The deformers a handle or lattice drives.
-pub(crate) fn driven_deformers(g: &Graph, root: NodeId) -> Vec<NodeId> {
+pub fn driven_deformers(g: &Graph, root: NodeId) -> Vec<NodeId> {
     let mut sources = g.descendants(root);
     sources.push(root);
     let mut out = Vec::new();

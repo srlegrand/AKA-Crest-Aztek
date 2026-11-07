@@ -211,6 +211,7 @@ impl View {
         let gathered = gather(&mut core.s.graph);
         let items = self.vp.filter_items(&core.s.graph, gathered);
         self.vp.show_grid = self.show_grid;
+        self.vp.node_lines = if self.vp.tool == Tool::ShowManip { crate::node_manip::draw_lines(core, &self.vp, self.dpr) } else { Vec::new() };
         self.vp.draw(&mut self.gpu, &self.r, &mut core.s, &items, self.dpr);
         for w in crate::textures::with_cache(&self.gpu, |c| c.take_warnings()) {
             core.push(format!("// Warning: {w} //"), crate::core::LineKind::Warning);
@@ -557,6 +558,20 @@ impl View {
                 seg(a, b, [230, 230, 230, 255]);
             }
         }
+        // The Normal orientation names its handles.
+        if self.vp.axis_mode == "normal" && self.vp.tool == Tool::Move {
+            if let Some(pv) = self.vp.manip_pivot(&mut core.s, items) {
+                let len = self.vp.handle_len(pv, s);
+                let screen = self.vp.screen();
+                for (i, label) in ["U", "V", "N"].into_iter().enumerate() {
+                    if let Some(at) = screen.project(pv + self.vp.frame.col(i) * len * 1.1) {
+                        for (a, b) in font::strokes(label, at, size) {
+                            seg(a, b, [255, 255, 255, 255]);
+                        }
+                    }
+                }
+            }
+        }
         // What the drag has done so far, by the cursor.
         if let Some((at, t)) = &readout {
             for (a, b) in font::strokes(t, *at + DVec2::new(14.0 * s, -10.0 * s), size) {
@@ -588,7 +603,7 @@ impl View {
             return None;
         }
         let (_, call) = self.last_drag.as_ref()?;
-        let by = call.get("by")?.as_array()?;
+        let by = call.get("by").or_else(|| call.get("uvn"))?.as_array()?;
         let t: Vec<String> = by.iter().filter_map(Value::as_f64).map(|x| format!("{x:.3}")).collect();
         Some((self.vp.screen().project(d.pivot)?, t.join(" ")))
     }
@@ -724,6 +739,11 @@ impl View {
         if !alt && self.hud_mouse(core, kind, button, px) {
             return true;
         }
+        if !alt && self.nav.is_none() && self.vp.tool == Tool::ShowManip {
+            if let Some(r) = crate::node_manip::mouse(core, &self.vp, kind, button, px, buttons, self.dpr) {
+                return r;
+            }
+        }
         if !alt && self.nav.is_none() && (kind != 1 || buttons == 0 || buttons & 1 != 0 || buttons & 2 != 0) {
             if let Some(r) = self.tool_mouse(core, kind, button, px, mods, &items) {
                 return r;
@@ -776,7 +796,7 @@ impl View {
                             self.bezier_preview();
                             return true;
                         }
-                        Tool::CreateCube | Tool::CreatePlane => {
+                        Tool::CreateCube | Tool::CreatePlane | Tool::CreateRound => {
                             let at = self.vp.place_point(px);
                             match self.prim {
                                 // The height's click finishes the cube.
@@ -886,7 +906,18 @@ impl View {
                 }
                 self.vp.update_frame(&mut core.s);
                 let pivot = self.vp.manip_pivot(&mut core.s, &items);
-                let hit = pivot.and_then(|pv| self.vp.manip_hit(pv, px, self.dpr));
+                let mut pivot = pivot;
+                let mut hit = pivot.and_then(|pv| self.vp.manip_hit(pv, px, self.dpr));
+                // Tweak Mode: a press off the handles on something takes it, and the drag moves it.
+                if button == 1 && hit.is_none() && self.vp.tweak && self.vp.tool == Tool::Move && mods & (SHIFT | CTRL) == 0 {
+                    let picked = self.vp.pick(&core.s, &items, px);
+                    if !picked.is_empty() {
+                        select_picked(core, picked, 0);
+                        self.vp.update_frame(&mut core.s);
+                        pivot = self.vp.manip_pivot(&mut core.s, &items);
+                        hit = pivot.map(|_| Handle::Center);
+                    }
+                }
                 // Ctrl-click on a handle sets the constraint rather than dragging.
                 if button == 1 && mods & CTRL != 0 && mods & SHIFT == 0 {
                     if let Some(h) = hit {
@@ -934,7 +965,8 @@ impl View {
                         .filter(|it| crate::viewport::type_category(&core.s.graph, it.node) == "curve")
                         .flat_map(|it| it.segs)
                         .collect();
-                    self.vp.drag = Some(Drag { handle: h, start: px, pivot: pv, applied: false, components: comps, targets, snap_points, snap_curves });
+                    let choose_axis = button == 2 && mods & SHIFT != 0 && hit.is_none();
+                    self.vp.drag = Some(Drag { handle: h, start: px, pivot: pv, applied: false, components: comps, choose_axis, targets, snap_points, snap_curves });
                     self.drag_lines = 0;
                     return true;
                 }
@@ -1135,6 +1167,15 @@ impl View {
                         .collect();
                     self.vp.live_hit = self.vp.raycast(&live, px).map(|h| h.2);
                 }
+                if let Some(d) = self.vp.drag.as_mut().filter(|d| d.choose_axis) {
+                    if (px - d.start).length() < 4.0 * self.dpr {
+                        return false;
+                    }
+                    d.choose_axis = false;
+                    let (pivot, delta) = (d.pivot, px - d.start);
+                    let h = self.vp.axis_along(pivot, delta);
+                    self.vp.drag.as_mut().unwrap().handle = h;
+                }
                 if let Some(d) = &self.vp.drag {
                     if px == d.start {
                         return false;
@@ -1208,7 +1249,8 @@ impl View {
                 if let Some(mut p) = self.prim.filter(|p| p.stage == 1) {
                     p.press_y = px.y;
                     let dragged = (p.b - p.a).length() > 1e-6;
-                    if self.vp.tool == Tool::CreateCube && dragged {
+                    let tall = matches!(self.vp.round_kind.as_str(), "polyCylinder" | "polyCone");
+                    if (self.vp.tool == Tool::CreateCube || (self.vp.tool == Tool::CreateRound && tall)) && dragged {
                         p.stage = 2;
                         self.prim = Some(p);
                     } else {
@@ -1385,6 +1427,20 @@ impl View {
         let (c, size) = prim_box(&p);
         // A click with no drag: the unit size, where it was clicked.
         let (w, d) = if size.x < 1e-6 || size.z < 1e-6 { (1.0, 1.0) } else { (size.x, size.z) };
+        if self.vp.tool == Tool::CreateRound {
+            let kind = self.vp.round_kind.clone();
+            let radius = if w == 1.0 && d == 1.0 && size.x < 1e-6 { 1.0 } else { (w.max(d) * 0.5).max(1e-3) };
+            let call = match kind.as_str() {
+                "polyCylinder" | "polyCone" => json!({"radius": radius, "height": if p.height.abs() < 1e-6 { radius * 2.0 } else { p.height.abs() }}),
+                "polyTorus" => json!({"radius": radius, "sectionRadius": radius * 0.25}),
+                _ => json!({"radius": radius}),
+            };
+            if core.exec(&kind, call).is_ok() {
+                let y = if p.height.abs() > 1e-6 { c.y + p.height * 0.5 } else { c.y };
+                let _ = core.exec("move", json!({"to": [c.x, y, c.z]}));
+            }
+            return;
+        }
         let cube = self.vp.tool == Tool::CreateCube;
         let height = if p.height.abs() < 1e-6 { w.min(d) } else { p.height.abs() };
         let made = if cube { core.exec("polyCube", json!({"width": w, "height": height, "depth": d})) } else { core.exec("polyPlane", json!({"width": w, "height": d})) };
@@ -1483,6 +1539,7 @@ impl View {
                 self.vp.select_brush = None;
                 self.pick_hist.clear();
                 self.vp.tool = match v.as_str().unwrap_or("") {
+                    "showManip" => Tool::ShowManip,
                     "lasso" => Tool::Lasso,
                     "paintSelect" => Tool::PaintSelect,
                     "shortestPath" => Tool::ShortestPath,
@@ -1522,6 +1579,10 @@ impl View {
                     "mergeFacet" => Tool::MergeFacet,
                     "createCube" => Tool::CreateCube,
                     "createPlane" => Tool::CreatePlane,
+                    "createSphere" | "createCylinder" | "createCone" | "createTorus" => {
+                        self.vp.round_kind = format!("poly{}", &v.as_str().unwrap_or("")[6..]);
+                        Tool::CreateRound
+                    }
                     "snapTogether" => Tool::SnapTogether,
                     _ => Tool::Select,
                 }
@@ -1642,6 +1703,14 @@ impl View {
             "stepMove" => self.vp.step_move = v.as_f64().unwrap_or(0.0),
             "stepRotate" => self.vp.step_rotate = v.as_f64().unwrap_or(0.0),
             "stepScale" => self.vp.step_scale = v.as_f64().unwrap_or(0.0),
+            "snapRelative" => self.vp.snap_relative = v.as_bool().unwrap_or(true),
+            "tweakMode" => self.vp.tweak = v.as_bool().unwrap_or(false),
+            "preserveChildren" => self.vp.preserve_children = v.as_bool().unwrap_or(false),
+            "preventNegativeScale" => self.vp.prevent_negative = v.as_bool().unwrap_or(true),
+            "customAxis" => {
+                let e = |i: usize| v.get(i).and_then(Value::as_f64).unwrap_or(0.0);
+                self.vp.custom_frame = crate::axis_orient::frame_from_radians([e(0), e(1), e(2)]);
+            }
             "discreteHold" => self.vp.discrete_hold = v.as_bool().unwrap_or(false),
             "tabHeld" => self.tab_held = v.as_bool().unwrap_or(false),
             "gridSpacing" => {

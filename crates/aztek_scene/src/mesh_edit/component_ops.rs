@@ -273,8 +273,25 @@ fn dissolve_edge_op(_a: &Args, m: &mut Mesh, sel: &Ids, sym: Option<&SymmetryMap
     Ok(faces(dissolve_edges(m, &all, true)))
 }
 
-fn spin_op(_a: &Args, m: &mut Mesh, sel: &Ids, sym: Option<&SymmetryMap>) -> CmdResult<EditResult> {
-    Ok(edges(spin_edges(m, &with_mirror(m, sym, sel, K::Edge))))
+fn spin_op(a: &Args, m: &mut Mesh, sel: &Ids, sym: Option<&SymmetryMap>) -> CmdResult<EditResult> {
+    let ids = with_mirror(m, sym, sel, K::Edge);
+    if a.int("offset", 1) >= 0 {
+        return Ok(edges(spin_edges(m, &ids)));
+    }
+    // Backward: round the polygon the two faces make, all but one of the way.
+    let mut out = Vec::new();
+    for e in ids {
+        let mut sides = 0;
+        m.for_each_edge_corner(e, |c| sides += m.face_points(m.corner_face(c)).len());
+        let around = sides.saturating_sub(2);
+        let period = if around % 2 == 0 { around / 2 } else { around };
+        let mut at = vec![e];
+        for _ in 1..period.max(2) {
+            at = spin_edges(m, &at);
+        }
+        out.extend(at);
+    }
+    Ok(edges(out))
 }
 
 fn fill_hole_op(_a: &Args, m: &mut Mesh, sel: &Ids, _sym: Option<&SymmetryMap>) -> CmdResult<EditResult> {
@@ -430,6 +447,11 @@ pub fn register(c: &mut Commands<Session>) {
             },
         )
         .flag(flag("thickness", T::Float, json!(0.0), "Distance along the normals, cm."))
+        .flag(FlagDef::new("keepFacesTogether", "kft", T::Bool, Value::Null, "Faces that touch extrude as one."))
+        .flag(FlagDef::new("divisions", "d", T::Int, Value::Null, "Segments along the extrusion."))
+        .flag(FlagDef::new("smoothingAngle", "sma", T::Float, Value::Null, "New edges sharper than this are hard."))
+        .flag(FlagDef::new("taper", "tp", T::Float, Value::Null, "Scale at the far end."))
+        .flag(FlagDef::new("twist", "twt", T::Float, Value::Null, "Turn at the far end, degrees."))
         .flag(flag(
             "offset",
             T::Float,
@@ -466,7 +488,17 @@ pub fn register(c: &mut Commands<Session>) {
             // Faces bevel the border of each selected region, not the edges between selected faces (Maya).
             let from_faces = components::mode(&s.graph) == K::Face;
             let mut a2 = a.clone();
-            a2.flags.insert("chamfer".into(), json!(false));
+            if a.get("chamfer").is_none() {
+                a2.flags.insert("chamfer".into(), json!(false));
+            }
+            if from_faces && a.get("offset").is_none() {
+                a2.flags.insert("offset".into(), json!(2.0));
+            }
+            // Named with no width, edges bevel by Maya's default: half way to the shortest edge's middle.
+            if !from_faces && a.get("offset").is_none() && a.get("offsetAsFraction").is_none() {
+                a2.flags.insert("offsetAsFraction".into(), json!(true));
+                a2.flags.insert("fraction".into(), json!(0.5));
+            }
             let (out, infos) = edit_selected_op_info(s, if from_faces { "polyBevelFace" } else { "polyBevel3" }, &a2, false, None)?;
             let used = infos.iter().filter_map(|i| i.as_f64()).fold(offset, f64::min);
             if a.bool("clamp") && used < offset - 1e-9 {
@@ -474,7 +506,11 @@ pub fn register(c: &mut Commands<Session>) {
             }
             Ok(out)
         })
-        .flag(flag("offset", T::Float, json!(2.0), "Width, cm.").min(0.0))
+        .flag(FlagDef::new("offset", "o", T::Float, Value::Null, "Width, cm.").min(0.0))
+        .flag(FlagDef::new("fraction", "f", T::Float, Value::Null, "Width as a fraction, with offsetAsFraction."))
+        .flag(FlagDef::new("offsetAsFraction", "oaf", T::Bool, Value::Null, "Width by fraction rather than distance."))
+        .flag(FlagDef::new("depth", "dp", T::Float, Value::Null, "How far the bevel rounds out; held for the node."))
+        .flag(FlagDef::new("chamfer", "c", T::Bool, Value::Null, "Flat across rather than round."))
         .flag(flag("segments", T::Int, json!(1), "Segments across the bevel.").min(1.0).max(64.0))
         .flag(flag("profile", T::Float, json!(0.5), "0.5 round, 0.25 straight, toward 1 square.").min(0.0).max(1.0))
         .flag(flag("clamp", T::Bool, json!(true), "Keep widths from overlapping."))
@@ -602,9 +638,9 @@ pub fn register(c: &mut Commands<Session>) {
         edit_selected_op(s, "polyPoke", _a, false, None)
     }));
 
-    c.register(Cmd::new("polySpinEdge", "Turn each selected edge one step within its two faces.", |s, _a| {
+    c.register(Cmd::new("polySpinEdge", "Turn each selected edge one step within its two faces: -of 1 forward, -of -1 backward.", |s, _a| {
         edit_selected_op(s, "polySpinEdge", _a, false, None)
-    }));
+    }).flag(FlagDef::new("offset", "of", T::Int, json!(1), "1 forward, -1 backward.")));
 
     c.register(Cmd::new("polyFillHole", "Cap the holes bordered by the selected edges (every hole when nothing is selected).", |s, _a| {
         edit_selected_op(s, "polyCloseBorder", _a, true, None)

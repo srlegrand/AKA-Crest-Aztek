@@ -327,8 +327,8 @@ source. File, Edit, Modify and Display menus; Preferences saved and `optionVar`;
 looping in real time.
 
 Not yet in the interface: Topology symmetry (World X, Y, Z act in object space: `setSymmetry` has no world mode), Cut,
-curve Edit Point and Curve Point modes, UV and Vertex Face component modes in the marking menu, manipulator handles for
-history nodes (T shows their numbers in the view instead), per-object display toggles are not saved with the scene,
+curve Edit Point and Curve Point modes, UV and Vertex Face component modes in the marking menu,
+per-object display toggles are not saved with the scene,
 Outliner reorder between siblings, linear units and Z up. Roll stays in the view, not the
 camera node.
 
@@ -666,3 +666,35 @@ Shallower than it could be:
 ### References (07/11/2026)
 
 `references.rs` rewritten against Maya-written scenes (`tests/data/maya_refs`), whose world matrices match Maya's recorded values. Load state from `-rdi`, nesting, Maya's `.ed` edits and placeholders, failed edits kept, `referenceEdit`, `file -ir -cr -gr -lck -rpr -mnc`, `ls -rn`, Reference Editor, File > Create Reference. Three production rigs referenced twice save and reopen with no joint difference (`examples/ref_rig.rs`). Shallower: `.mb` files can't be read; `-shd` and `exportEdits` not done; painted skin weights and mesh tweaks on a referenced mesh aren't kept as edits; a few IK solver values show as edits; a second reference of a large rig loads slower than the first.
+
+## Show Manipulator, tool options and menus (07/11/2026)
+
+None of this has been compared with a running Maya. Handle layouts, in-view rows, option box labels and defaults are from memory unless said otherwise.
+
+Show Manipulator (T, `showManipCtx`, `crates/aztek_host/src/node_manip.rs`). Handles write the node's own attributes. A drag previews silently and runs one `setAttr` on release, so the history shows one line and undo takes one step. Worked out with no GPU, so `tests/node_manips.rs` drives real presses, moves and releases. A poly edit run from a menu or hotkey brings its handles up straight away; the same command from a script does not.
+
+- Extrude, Chip Off, Duplicate, polyMoveFace, polyMoveEdge, polyMoveVertex: `localTranslate`, `localRotate`, `localScale` arrows, rings and boxes in the node's own axes, with a box that swaps to world `translate`, `rotate`, `scale`.
+- polyExtrudeVertex `length`, polyPoke `localTranslate`, polyMirror `mirrorPosition` with its plane, polyWedgeFace `wedgeAngle`.
+- polyCube, polySphere, polyCylinder, polyCone, polyTorus, polyPlane: size handles.
+- polyPlanarProj, polyCylProj, polySphProj: now hold `projectionCenter`, `rotate`, `projectionWidth`, `projectionHeight`, `imageCenter`, `imageScale`, `projectionHorizontalSweep`. The stored UVs stand until an attribute changes, then the node reprojects from them.
+- bend, flare (with its missing `endFlareZ`), sine, squash, twist, wave on their own attributes; softMod `falloffCenter` and `falloffRadius` with its circle; sculpt; ikHandle `poleVector` and `twist`; camera `centerOfInterest`. Any other object gets translate arrows, which covers cluster handles and lattices.
+- Picking a node or channel under INPUTS shows that node's handles; a highlighted channel lights its handle and a middle drag anywhere takes it.
+
+In-view editor: rows named per node type (Thickness, Offset, Divisions, Keep Faces Together and so on), the labels drag as virtual sliders, the fields take typing, and they follow the handles. It no longer opens for every `poly` line a script prints. `polyBevel3 -fraction` is new, and a bare Bevel now goes by fraction 0.5.
+
+Tool options. `manipMoveContext`, `manipRotateContext` and `manipScaleContext` take the flags and short names of the 2024 command reference. The modes are the reference's: move and scale 0 object, 1 parent, 2 world, 3 normal, 4 rotation axis, 5 live object, 6 custom, 10 component; rotate 0 object, 1 world, 2 gimbal, 3 custom, 10 component. Each tool keeps its own. Done: Move Normal (each point on its own U, V, N, labelled in the view; Modify > Transformation Tools > Move Normal Tool), custom axes (Set to Point, Edge, Face, Reset, `-oa`, `-oo`, `-aa`), relative and absolute step snap, J stepping with no step set, Shift+middle drag taking the axis it runs along, Tweak Mode, Preserve Children, Prevent Negative Scale, soft select's four falloff modes kept with `softSelect -e -ssf`. Tool Settings has foldable sections with a falloff curve editor and presets, saved between sessions. The W, E and R marking menus set the contexts, so the page and scripts agree.
+
+Menus. Option boxes for constraints, Bind Skin, IK, the deformers, Extrude, Bevel, curves, surfaces and keys are laid out by command in `option_boxes.rs`, and a test checks every row is a flag of its command. An option box now keeps what its item passes, such as a projection's type. Added: Edit Mesh and UV sections with titles, Transform, Spin Edge Forward and Backward, Reorder Vertices, Project Curve on Mesh, Difference (B - A), Contour Stretch, Auto Seams, Merge UVs, Delete UVs, Optimize, Straighten, Mirror Deformer Weights, Export and Import Weights, Match Transformations, Hide Unselected Objects, Show All, Scale and Snap Keys, Bezier and arc tools, more primitives, Interactive Creation (dragging cube, plane, sphere, cylinder, cone, torus). Repaired: Cut, Non-Deformer History (`bakePartialHistory`), Grow and Shrink Along Loop, Bounding Box display.
+
+Held only, read by nothing yet: Preserve UVs, Keep Spacing, Pin Component Pivot, Snap Pivot Position and Orientation, Use Manipulator Pivot, the Constraint row, Preserve Seam.
+
+Not done, the ones a user would notice first:
+
+- UV, Vertex Face, Multi component modes in the view and marking menu: disabled entries, as `ComponentMode` has no such modes.
+- Soft select Global and Object are kept but act as Volume. World symmetry still mirrors in object space.
+- Gimbal rotate draws world axes, and rotate and scale step snap are always relative. Universal Manipulator is missing.
+- Extract makes a new object with no history node, so it has no handles. Bevel and Bridge have numbers but no handles in the view, from memory as Maya does. Wire dropoff locators, jiggle, wrap, blendShape and delta mush have Envelope only. Lattice has translate arrows on the whole lattice. motionPath markers, pointConstraint and the light cones have nothing.
+- The extrude handles do not follow `offset`, `localRotate` or several separate regions: one set sits at the middle of them.
+- Option boxes with no layout of their own still list flags, and some are empty: NURBS primitives, Curves such as Detach, several Surfaces, Unfold and Layout. Tools have no option boxes. Boxes for Mesh Reduce and Combine are raw flags.
+- Missing menu items, by use: Joint Labelling, Rivet, UV Pin, Proximity Pin, Copy and Paste Vertex Weights, Mirror Skin Weights as an option box, Interactive Bind Skin, UV Set Editor, Split UVs, 3D Cut and Sew UV Tool, Smooth Proxy, Unsmooth, Slice, Hole Punch, Cut Out, the Deform > Edit submenus other than Lattice, Prune Membership, Display Intermediate Objects, Relationship Editors, Hold Current Keys, IK/FK Keys, the Audio and Cache menus, a top level Visualize.
+- `polyBevel3`'s node is `polyBevel31`, as an existing test pins it; from memory Maya calls it `polyBevel1`. Not confirmed.

@@ -37,6 +37,11 @@ private:
     void refresh_sculpt();
     void refresh_paint();
     void refresh_transform();
+    QString ctx_kind() const;
+    QString ctx_name() const;
+    void ctx_set(const QString& flag, const QJsonValue& v);
+    QJsonValue ctx_get(const QString& flag) const;
+    void restore_options();
     void paint_set(const QString& flag, const QJsonValue& v);
     QDoubleSpinBox* slider_row(QFormLayout* form, const QString& label, double lo, double hi, double step, std::function<void(double)> on);
 
@@ -78,9 +83,27 @@ private:
     QDoubleSpinBox* soft_radius_ = nullptr;
     QComboBox* soft_mode_ = nullptr;
     QComboBox* axis_ = nullptr;
+    QString axis_tool_;
+    QWidget* transform_section_ = nullptr;
+    QWidget* custom_row_ = nullptr;
+    QComboBox* step_mode_ = nullptr;
+    QDoubleSpinBox* step_size_ = nullptr;
+    QCheckBox* preserve_children_ = nullptr;
+    QCheckBox* preserve_uvs_ = nullptr;
+    QCheckBox* keep_spacing_ = nullptr;
+    QCheckBox* negative_ = nullptr;
+    QCheckBox* use_manip_pivot_ = nullptr;
+    QComboBox* constraint_ = nullptr;
+    QComboBox* sym_mode_ = nullptr;
+    QComboBox* sym_axis_ = nullptr;
+    QDoubleSpinBox* sym_tol_ = nullptr;
+    QCheckBox* sym_seam_ = nullptr;
+    QWidget* falloff_curve_ = nullptr;
+    QList<QPair<QCheckBox*, QString>> checks_;
     bool loading_ = false;
 signals:
     void axisOrientation(const QString& mode);
+    void pivotMode(bool on);
     void curveDegree(int degree);
     // Step snap: key is stepMove, stepRotate or stepScale; 0 is off.
     void stepSnap(const QString& key, double value);

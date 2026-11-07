@@ -44,7 +44,7 @@ pub fn table(command: &str) -> &'static [Row] {
         ],
         "polyBevel3" => &[
             ("angleTolerance", "at", 'f'), ("autoFit", "af", 'b'), ("chamfer", "c", 'b'), ("depth", "d", 'f'),
-            ("fillNgons", "fn", 'b'), ("mergeVertexTolerance", "mvt", 'f'), ("mergeVertices", "mv", 'b'),
+            ("fillNgons", "fn", 'b'), ("fraction", "f", 'f'), ("mergeVertexTolerance", "mvt", 'f'), ("mergeVertices", "mv", 'b'),
             ("miterAlong", "mia", 'i'), ("mitering", "m", 'i'), ("miteringAngle", "ma", 'f'), ("offset", "o", 'f'),
             ("offsetAsFraction", "oaf", 'b'), ("roundness", "r", 'f'), ("segments", "sg", 'i'),
             ("smoothingAngle", "sa", 'f'), ("uvAssignment", "ua", 'i'), ("worldSpace", "ws", 'b'),

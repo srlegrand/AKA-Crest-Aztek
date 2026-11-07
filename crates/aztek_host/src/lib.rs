@@ -1,13 +1,16 @@
 //! The host library the Qt shell links: a C interface over the session, script history, scene snapshots and the
 //! Vulkan model panels. Strings are UTF-8; strings returned are freed with aztek_free. Main thread only.
 
-mod camera;
+pub mod axis_orient;
+pub mod camera;
 mod core;
 pub mod ctx_cmds;
 pub mod feedback;
 use aztek_geo::stroke_font as font;
 mod gpu;
 pub mod mel;
+pub mod node_manip;
+pub mod option_boxes;
 pub mod panel_cmds;
 #[cfg(feature = "python")]
 mod python;
@@ -155,7 +158,10 @@ pub extern "C" fn aztek_exec(name: *const c_char, call: *const c_char) -> *mut c
     let call: Value = serde_json::from_str(&cstr(call)).unwrap_or(json!({}));
     with(|h| {
         out_json(match h.core.exec(&name, call) {
-            Ok(v) => json!({ "ok": v }),
+            Ok(v) => {
+                node_manip::after_action(&mut h.core, &v);
+                json!({ "ok": v })
+            }
             Err(e) => json!({ "error": e }),
         })
     })
@@ -270,6 +276,18 @@ pub extern "C" fn aztek_query(what: *const c_char, arg: *const c_char) -> *mut c
             "aeTemplate" => script_objects::ae_template(c, &arg),
             "panelSync" => {
                 panel_cmds::shell_sync(&serde_json::from_str(&arg).unwrap_or(json!({})));
+                Value::Null
+            }
+            "uiCustomAxis" => axis_orient::from_selection(&mut c.s, &arg).map_or(Value::Null, |e| json!(e)),
+            "optionBox" => json!(option_boxes::rows(&arg)),
+            "nodeManip" => node_manip::fields_json(c),
+            "uiShowManip" => {
+                node_manip::show_node(c, &arg);
+                Value::Null
+            }
+            "uiShowManipAttr" => {
+                c.node_manip.active_attr = if arg.is_empty() { None } else { Some(arg.clone()) };
+                c.version += 1;
                 Value::Null
             }
             "uiToolChanged" => {

@@ -55,6 +55,8 @@ blendShapes, 82 IK handles, follicles, ribbons and wires. It opens in about 3 se
 - **Playblast** to images or, through ffmpeg, to a movie.
 - **Interface:** menu sets, shelves with an editor, hotkey editor, marking menus, hotbox, channel box, outliner, attribute
   editor, node editor, tool settings, panel layouts, workspaces.
+- **Manipulators** on history and deformer nodes (T), with in-view numbers: extrude, projections, primitives, nonlinears, soft
+  modification and more. Move along normals, custom axes, step snap, tweak mode.
 
 ![Aztek](docs/screenshot.png)
 

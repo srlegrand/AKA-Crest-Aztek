@@ -1,6 +1,11 @@
 #include "editors.h"
 #include "shapeeditor.h"
 #include "host.h"
+extern "C" {
+#include "aztek.h"
+}
+#include <algorithm>
+#include <cmath>
 #include "icons.h"
 #include "nodeeditor.h"
 #include "viewport.h"
@@ -24,6 +29,7 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSettings>
+#include <QSignalBlocker>
 #include <QSlider>
 #include <QTableWidget>
 #include <QTabWidget>
@@ -818,7 +824,127 @@ InViewEditor::InViewEditor(QWidget* parent) : QFrame(parent) {
     hide();
 }
 
+namespace {
+// A row's label: drag it sideways to change the number. Previews are silent, the release runs one setAttr.
+class DragLabel : public QLabel {
+public:
+    DragLabel(const QString& text, QString plug, double lo, double hi, bool is_int, QDoubleSpinBox* spin, QWidget* parent)
+        : QLabel(text, parent), plug_(std::move(plug)), lo_(lo), hi_(hi), is_int_(is_int), spin_(spin) {
+        setCursor(Qt::SizeHorCursor);
+    }
+protected:
+    void mousePressEvent(QMouseEvent* e) override {
+        from_ = e->globalPosition().x();
+        start_ = spin_->value();
+        dragged_ = false;
+    }
+    void mouseMoveEvent(QMouseEvent* e) override {
+        if (!(e->buttons() & Qt::LeftButton)) return;
+        double dx = e->globalPosition().x() - from_;
+        double v = std::clamp(start_ + dx * (hi_ - lo_) / (is_int_ ? 200.0 : 1000.0), lo_, hi_);
+        if (is_int_) v = std::round(v);
+        QSignalBlocker block(spin_);
+        spin_->setValue(v);
+        if (dragged_) aztek_retract();
+        exec_quiet("setAttr", QJsonObject{{"args", QJsonArray{plug_, is_int_ ? QJsonValue(qint64(v)) : QJsonValue(v)}}});
+        dragged_ = true;
+    }
+    void mouseReleaseEvent(QMouseEvent*) override {
+        if (!dragged_) return;
+        aztek_retract();
+        double v = spin_->value();
+        exec("setAttr", QJsonObject{{"args", QJsonArray{plug_, is_int_ ? QJsonValue(qint64(v)) : QJsonValue(v)}}});
+        dragged_ = false;
+    }
+private:
+    QString plug_;
+    double lo_, hi_, from_ = 0, start_ = 0;
+    bool is_int_, dragged_ = false;
+    QDoubleSpinBox* spin_;
+};
+} // namespace
+
+// The rows the node's table names. False when it names none.
+void InViewEditor::update_values() {
+    if (!isVisible()) return;
+    QJsonObject info = query("nodeManip").toObject();
+    if (info["node"].toString() != shown_node_) {
+        if (!shown_node_.isEmpty() && !info["fields"].toArray().isEmpty()) show_fields();
+        return;
+    }
+    for (const QJsonValue& fv : info["fields"].toArray()) {
+        QJsonObject f = fv.toObject();
+        QString plug = f["plug"].toString();
+        if (auto* s = spins_.value(plug)) {
+            if (s->hasFocus() || std::abs(s->value() - f["value"].toDouble()) < 1e-9) continue;
+            QSignalBlocker block(s);
+            s->setValue(f["value"].toDouble());
+        } else if (auto* b = boxes_.value(plug)) {
+            QSignalBlocker block(b);
+            b->setChecked(f["value"].toDouble() != 0);
+        }
+    }
+}
+
+bool InViewEditor::show_fields() {
+    QJsonObject info = query("nodeManip").toObject();
+    QJsonArray fields = info["fields"].toArray();
+    if (fields.isEmpty()) return false;
+    shown_node_ = info["node"].toString();
+    spins_.clear();
+    boxes_.clear();
+    delete rows_;
+    rows_ = new QWidget(this);
+    auto* form = new QFormLayout(rows_);
+    form->setContentsMargins(0, 0, 0, 0);
+    form->setVerticalSpacing(2);
+    auto* title = new QLabel("<b>" + info["node"].toString() + "</b>", rows_);
+    auto* close = new QPushButton("x", rows_);
+    close->setFixedSize(18, 18);
+    connect(close, &QPushButton::clicked, this, &QWidget::hide);
+    auto* head = new QHBoxLayout();
+    head->addWidget(title, 1);
+    head->addWidget(close);
+    form->addRow(head);
+    for (const QJsonValue& fv : fields) {
+        QJsonObject f = fv.toObject();
+        QString plug = f["plug"].toString(), kind = f["kind"].toString();
+        if (kind == "b") {
+            auto* box = new QCheckBox(f["label"].toString(), rows_);
+            box->setChecked(f["value"].toDouble() != 0);
+            connect(box, &QCheckBox::toggled, box, [plug](bool on) { exec("setAttr", QJsonObject{{"args", QJsonArray{plug, on ? 1 : 0}}}); });
+            boxes_[plug] = box;
+            form->addRow(box);
+            continue;
+        }
+        bool is_int = kind == "i";
+        double lo = f["min"].toDouble(), hi = f["max"].toDouble();
+        auto* e = new QDoubleSpinBox(rows_);
+        // The range is for dragging; typed numbers can go past it.
+        e->setRange(-1e6, 1e6);
+        e->setDecimals(is_int ? 0 : 3);
+        e->setSingleStep(is_int ? 1 : 0.1);
+        e->setValue(f["value"].toDouble());
+        e->setKeyboardTracking(false);
+        connect(e, &QDoubleSpinBox::valueChanged, e, [plug, is_int](double v) {
+            exec("setAttr", QJsonObject{{"args", QJsonArray{plug, is_int ? QJsonValue(qint64(v)) : QJsonValue(v)}}});
+        });
+        spins_[plug] = e;
+        form->addRow(new DragLabel(f["label"].toString(), plug, lo, hi, is_int, e, rows_), e);
+    }
+    body_->addWidget(rows_);
+    // A new child counts as hidden until shown, and a layout leaves hidden widgets out of its size.
+    rows_->show();
+    adjustSize();
+    move(12, 40);
+    show();
+    raise();
+    return true;
+}
+
 void InViewEditor::show_last() {
+    if (show_fields()) return;
+    shown_node_.clear();
     QJsonArray inputs = query("channelBox").toObject()["inputs"].toArray();
     if (inputs.isEmpty()) {
         hide();
@@ -859,6 +985,8 @@ void InViewEditor::show_last() {
         form->addRow(c["nice"].toString(), e);
     }
     body_->addWidget(rows_);
+    // A new child counts as hidden until shown, and a layout leaves hidden widgets out of its size.
+    rows_->show();
     adjustSize();
     QWidget* p = parentWidget();
     move(p->width() - width() - 12, 40);

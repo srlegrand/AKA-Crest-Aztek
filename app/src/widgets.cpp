@@ -118,8 +118,9 @@ QJsonObject OptionsDialog::saved(const QString& command) {
     return call;
 }
 
-void OptionsDialog::open(const QString& command, const QString& title) {
+void OptionsDialog::open(const QString& command, const QString& title, const QJsonObject& fixed) {
     auto* d = new OptionsDialog(command, title);
+    d->fixed_ = fixed;
     d->setAttribute(Qt::WA_DeleteOnClose);
     d->show();
 }
@@ -135,7 +136,88 @@ OptionsDialog::OptionsDialog(const QString& command, const QString& title) : QDi
     lay->addWidget(doc);
     auto* form = new QFormLayout();
     form->setLabelAlignment(Qt::AlignRight);
-    for (const QJsonValue& fv : def["flags"].toArray()) {
+    // A command with a layout of its own has Maya's rows; others list their flags.
+    QJsonArray layout = query("optionBox", command).toArray();
+    if (!layout.isEmpty()) doc->hide();
+    for (const QJsonValue& rv : layout) {
+        QJsonObject r = rv.toObject();
+        QString name = r["flag"].toString(), kind = r["kind"].toString();
+        QJsonValue dflt = saved_call.contains(name) ? saved_call[name] : r["default"];
+        QWidget* w = nullptr;
+        if (kind == "bool") {
+            auto* cb = new QCheckBox(this);
+            cb->setChecked(dflt.toBool());
+            readers_.append([cb, name](QJsonObject& o) { o[name] = cb->isChecked(); });
+            w = cb;
+        } else if (kind == "float" || kind == "int") {
+            auto* sb = new QDoubleSpinBox(this);
+            sb->setRange(-1e9, 1e9);
+            sb->setDecimals(kind == "int" ? 0 : 4);
+            sb->setValue(dflt.toDouble());
+            bool as_int = kind == "int";
+            readers_.append([sb, name, as_int](QJsonObject& o) { o[name] = as_int ? QJsonValue(qint64(sb->value())) : QJsonValue(sb->value()); });
+            w = sb;
+        } else if (kind == "string") {
+            auto* e = new QLineEdit(dflt.toString(), this);
+            readers_.append([e, name](QJsonObject& o) {
+                if (!e->text().isEmpty()) o[name] = e->text();
+            });
+            w = e;
+        } else if (kind == "enum") {
+            auto* c = new QComboBox(this);
+            for (const QJsonValue& cv : r["choices"].toArray()) {
+                QJsonArray pair = cv.toArray();
+                c->addItem(pair[0].toString(), pair[1].toVariant());
+                if (pair[1] == dflt) c->setCurrentIndex(c->count() - 1);
+            }
+            readers_.append([c, name](QJsonObject& o) { o[name] = QJsonValue::fromVariant(c->currentData()); });
+            w = c;
+        } else if (kind == "vec3") {
+            auto* row = new QWidget(this);
+            auto* h = new QHBoxLayout(row);
+            h->setContentsMargins(0, 0, 0, 0);
+            QList<QDoubleSpinBox*> sbs;
+            for (int k = 0; k < 3; ++k) {
+                auto* sb = new QDoubleSpinBox(row);
+                sb->setRange(-1e9, 1e9);
+                sb->setDecimals(4);
+                sb->setValue(dflt.toArray()[k].toDouble());
+                h->addWidget(sb);
+                sbs << sb;
+            }
+            readers_.append([sbs, name](QJsonObject& o) { o[name] = QJsonArray{sbs[0]->value(), sbs[1]->value(), sbs[2]->value()}; });
+            w = row;
+        } else if (kind == "axes") {
+            // All, X, Y, Z: the axes left out are what the flag skips.
+            auto* row = new QWidget(this);
+            auto* h = new QHBoxLayout(row);
+            h->setContentsMargins(0, 0, 0, 0);
+            QJsonArray skipped = dflt.toArray();
+            auto* all = new QCheckBox("All", row);
+            all->setChecked(skipped.isEmpty());
+            h->addWidget(all);
+            QList<QCheckBox*> axes;
+            for (const char* a : {"X", "Y", "Z"}) {
+                auto* cb = new QCheckBox(a, row);
+                cb->setChecked(!skipped.contains(QString(a).toLower()));
+                cb->setEnabled(!all->isChecked());
+                connect(all, &QCheckBox::toggled, cb, [cb](bool on) { cb->setEnabled(!on); });
+                h->addWidget(cb);
+                axes << cb;
+            }
+            h->addStretch(1);
+            readers_.append([all, axes, name](QJsonObject& o) {
+                if (all->isChecked()) return;
+                QJsonArray out;
+                for (int k = 0; k < 3; ++k)
+                    if (!axes[k]->isChecked()) out.append(QString("xyz").mid(k, 1));
+                if (!out.isEmpty()) o[name] = out;
+            });
+            w = row;
+        }
+        if (w) form->addRow(r["label"].toString() + ":", w);
+    }
+    if (layout.isEmpty()) for (const QJsonValue& fv : def["flags"].toArray()) {
         QJsonObject f = fv.toObject();
         QString name = f["name"].toString();
         if (name == "args" || name == "constructionHistory" || name == "name") continue;
@@ -203,6 +285,8 @@ OptionsDialog::OptionsDialog(const QString& command, const QString& title) : QDi
     auto run = [this] {
         QJsonObject call = collect();
         store(call);
+        for (auto it = fixed_.begin(); it != fixed_.end(); ++it)
+            if (!call.contains(it.key())) call[it.key()] = it.value();
         az::exec(command_, call);
     };
     connect(apply_close, &QPushButton::clicked, this, [this, run] {

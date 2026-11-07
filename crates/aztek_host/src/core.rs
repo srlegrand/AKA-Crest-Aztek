@@ -63,11 +63,13 @@ pub struct Core {
     pub mel_state: mel::MelState,
     /// An idle step is running: what it runs doesn't start another.
     in_idle: bool,
+    /// The Show Manipulator tool's node and drag.
+    pub node_manip: crate::node_manip::State,
 }
 
 impl Core {
     pub fn new() -> Core {
-        let mut c = Core { s: Session::new(), log: Vec::new(), log_read: 0, version: 1, preview: Vec::new(), mel_state: Default::default(), in_idle: false };
+        let mut c = Core { s: Session::new(), log: Vec::new(), log_read: 0, version: 1, preview: Vec::new(), mel_state: Default::default(), in_idle: false, node_manip: Default::default() };
         register_ui_commands(&mut c.s);
         crate::ui_cmds::register(&mut c.s);
         crate::scriptui::register(&mut c.s);
@@ -87,7 +89,7 @@ impl Core {
     /// A core around a session moved here while Python is called back from inside a command: no UI commands of its own.
     #[cfg(feature = "python")]
     pub(crate) fn nested(s: Session) -> Core {
-        Core { s, log: Vec::new(), log_read: 0, version: 1, preview: Vec::new(), mel_state: Default::default(), in_idle: false }
+        Core { s, log: Vec::new(), log_read: 0, version: 1, preview: Vec::new(), mel_state: Default::default(), in_idle: false, node_manip: Default::default() }
     }
 
     /// A new scene has the default cameras and sets, as Maya's does. Cheap when they're there.

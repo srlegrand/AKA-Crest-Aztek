@@ -122,7 +122,8 @@ fn tool_of(kind: &str) -> Option<&'static str> {
         "curveBezierCtx" => "curveBezier",
         "twoPointArcCtx" => "arcTwo",
         "threePointArcCtx" => "arcThree",
-        "polySelectCtx" | "polySuperCtx" | "showManipCtx" | "scriptCtx" | "userCtx" => "select",
+        "showManipCtx" => "showManip",
+        "polySelectCtx" | "polySuperCtx" | "scriptCtx" | "userCtx" => "select",
         "polyCreaseCtx" => "crease",
         "polyMergeEdgeCtx" => "mergeEdge",
         "polyMergeFacetCtx" => "mergeFacet",
@@ -221,6 +222,14 @@ pub fn shell_tool_changed(tool: &str) {
             c.current = context_of_tool(tool).to_string();
         }
     });
+    let (kind, mode) = match tool {
+        "move" => ("manipMoveContext", "Move"),
+        "rotate" => ("manipRotateContext", "Rotate"),
+        "scale" => ("manipScaleContext", "Scale"),
+        _ => return,
+    };
+    let m = with_ctx(|c| c.all.get(mode).and_then(|x| x.props.get("mode")).and_then(Value::as_i64)).unwrap_or(default_prop(kind, "mode").as_i64().unwrap_or(2));
+    view_all("axisOrientation", json!(axis_name(kind, m)));
 }
 
 fn add_ctx_flags(c: Cmd, spec: &str) -> Cmd {
@@ -235,9 +244,9 @@ const CTX_FLAGS: &str = "image1:i1:a image2:i2:a image3:i3:a title:t:a exists:ex
 
 /// Flags beyond the ones every context has.
 const TYPES: &[(&str, &str)] = &[
-    ("manipMoveContext", "mode:m:a snap:s:b snapValue:sv:a snapRelative:sr:b snapComponentsRelative:scr:b activeHandle:ah:a position:p:b orientAxes:oa:a orientObject:oo:a orientJoint:oj:a orientJointEnabled:oje:b orientTowards:ot:a interactiveUpdate:iu:b editPivotMode:epm:b editPivotPosition:epp:b xformConstraint:xc:a xformConstraintAlongNormal:xcn:a preventNegativeScale:pns:b reflection:rfl:b reflectionAboutAxis:rab:b reflectionAboutBBox:rbb:b reflectionAboutOrigin:rao:b reflectionAboutX:rax:b reflectionAboutY:ray:b reflectionAboutZ:raz:b tweakMode:twk:b translate:tr:a lastMode:lm:b alignAlong:aa:a pinFaces:pf:b"),
-    ("manipRotateContext", "mode:m:a snap:s:b snapValue:sv:a snapRelative:sr:b activeHandle:ah:a position:p:b rotate:ro:a objectSpace:os:b orientAxes:oa:a orientObject:oo:a orientJoint:oj:a orientJointEnabled:oje:b tweakMode:twk:b interactiveUpdate:iu:b editPivotMode:epm:b editPivotPosition:epp:b xformConstraint:xc:a modifyTranslation:mt:b preserveUV:puv:b lastMode:lm:b reflection:rfl:b centerTrackball:ctb:b alignAlong:aa:a"),
-    ("manipScaleContext", "mode:m:a snap:s:b snapValue:sv:a snapRelative:sr:b activeHandle:ah:a position:p:b scale:sc:a orientAxes:oa:a orientObject:oo:a orientJoint:oj:a orientJointEnabled:oje:b tweakMode:twk:b interactiveUpdate:iu:b editPivotMode:epm:b editPivotPosition:epp:b xformConstraint:xc:a preserveUV:puv:b preventNegativeScale:pns:b useManipPivot:ump:b useObjectPivot:uop:b lastMode:lm:b reflection:rfl:b alignAlong:aa:a"),
+    ("manipMoveContext", "activeHandle:ah:a alignAlong:aa:a bakePivotOri:bpo:b constrainAlongNormal:xn:b currentActiveHandle:cah:a editPivotMode:epm:b editPivotPosition:epp:b lastMode:lm:a manipVisible:vis:b mode:m:a orientAxes:oa:a orientObject:oo:a orientTowards:ot:a pinPivot:pin:b pivotOriHandle:poh:b position:p:b postCommand:psc:a postDragCommand:pod:a preCommand:prc:a preDragCommand:prd:a preserveChildPosition:pcp:b preserveUV:puv:b reflection:rfl:b reflectionAbout:rab:a reflectionAxis:rfa:a reflectionTolerance:rft:a resetPivotMode:rpm:a snap:s:b snapPivotOri:spo:b snapPivotPos:spp:b snapRelative:sr:b snapValue:sv:a tweakMode:twk:b xformConstraint:xc:a activeHandleNormal:ahn:a interactiveUpdate:iu:b orientJoint:oj:a orientJointEnabled:oje:b secondaryAxisOrient:sao:a snapComponentsRelative:scr:b snapLiveFaceCenter:slf:b snapLivePoint:slp:b translate:tr:a"),
+    ("manipRotateContext", "activeHandle:ah:a alignAlong:aa:a bakePivotOri:bpo:b constrainAlongNormal:xn:b currentActiveHandle:cah:a editPivotMode:epm:b editPivotPosition:epp:b lastMode:lm:a manipVisible:vis:b mode:m:a orientAxes:oa:a orientObject:oo:a orientTowards:ot:a pinPivot:pin:b pivotOriHandle:poh:b position:p:b postCommand:psc:a postDragCommand:pod:a preCommand:prc:a preDragCommand:prd:a preserveChildPosition:pcp:b preserveUV:puv:b reflection:rfl:b reflectionAbout:rab:a reflectionAxis:rfa:a reflectionTolerance:rft:a resetPivotMode:rpm:a snap:s:b snapPivotOri:spo:b snapPivotPos:spp:b snapRelative:sr:b snapValue:sv:a tweakMode:twk:b xformConstraint:xc:a centerTrackball:ctb:b modifyTranslation:mt:b rotate:ro:a useCenterPivot:ucp:b useManipPivot:ump:b useObjectPivot:uop:b"),
+    ("manipScaleContext", "activeHandle:ah:a alignAlong:aa:a bakePivotOri:bpo:b constrainAlongNormal:xn:b currentActiveHandle:cah:a editPivotMode:epm:b editPivotPosition:epp:b lastMode:lm:a manipVisible:vis:b mode:m:a orientAxes:oa:a orientObject:oo:a orientTowards:ot:a pinPivot:pin:b pivotOriHandle:poh:b position:p:b postCommand:psc:a postDragCommand:pod:a preCommand:prc:a preDragCommand:prd:a preserveChildPosition:pcp:b preserveUV:puv:b reflection:rfl:b reflectionAbout:rab:a reflectionAxis:rfa:a reflectionTolerance:rft:a resetPivotMode:rpm:a snap:s:b snapPivotOri:spo:b snapPivotPos:spp:b snapRelative:sr:b snapValue:sv:a tweakMode:twk:b xformConstraint:xc:a preventNegativeScale:pns:b scale:sc:a useManipPivot:ump:b useObjectPivot:uop:b"),
     ("jointCtx", "autoJointOrient:ajo:a jointAutoLimits:jal:b jointOrientationPlane:jop:a secondaryAxisOrient:sao:a orientJoint:oj:a scaleJointOrient:sjo:b scaleOrientation:so:b scaleCompensate:sc:b degreeOfFreedomJ:dfj:a largeBoneRadius:lbr:a largeJointRadius:ljr:a smallBoneRadius:sbr:a smallJointRadius:sjr:a variableBoneSize:vbs:b createIKHandle:ikh:b ikSolverType:ikt:a poleVectorType:pvt:a snapHandleH:shh:b symmetry:sym:b symmetryAxis:sa:a"),
     ("ikHandleCtx", "autoPriorityH:apH:b createCurve:ccv:b createRootAxis:cra:b forceSolverH:fsH:b ikFKSwitching:ikf:b numSpans:ns:a parentCurve:pcv:b poWeightH:pwH:a priorityH:pH:a rootOnCurve:roc:b rootTwistMode:rtm:b simplifyCurve:scv:b snapCurve:snc:b snapHandleH:snH:b solverTypeH:stH:a stickyH:sH:a twistType:tws:a weightH:wH:a"),
     ("ikSplineHandleCtx", "autoPriorityH:apH:b createCurve:ccv:b createRootAxis:cra:b forceSolverH:fsH:b numSpans:ns:a parentCurve:pcv:b poWeightH:pwH:a priorityH:pH:a rootOnCurve:roc:b rootTwistMode:rtm:b simplifyCurve:scv:b snapCurve:snc:b snapHandleH:snH:b solverTypeH:stH:a stickyH:sH:a twistType:tws:a weightH:wH:a"),
@@ -340,12 +349,14 @@ fn asked(a: &Args) -> Option<String> {
 }
 
 /// `manipMoveContext -m`: Maya's numbers to the axis names the views use.
-fn axis_name(kind: &str, mode: i64) -> &'static str {
+pub fn axis_name(kind: &str, mode: i64) -> &'static str {
     if kind == "manipRotateContext" {
         return match mode {
             0 => "object",
             1 => "world",
             2 => "gimbal",
+            3 => "custom",
+            10 => "component",
             _ => "object",
         };
     }
@@ -353,7 +364,11 @@ fn axis_name(kind: &str, mode: i64) -> &'static str {
         0 => "object",
         1 => "parent",
         2 => "world",
-        3 | 9 => "normal",
+        3 => "normal",
+        4 => "rotationAxis",
+        5 => "liveObject",
+        6 => "custom",
+        10 => "component",
         _ => "object",
     }
 }
@@ -398,6 +413,23 @@ fn apply_to_views(s: &mut Session, kind: &str, flags: &Map<String, Value>) {
     }
     if let Some(m) = flags.get("mode").and_then(Value::as_i64) {
         view_all("axisOrientation", json!(axis_name(kind, m)));
+    }
+    let on_off = |key: &str| flags.get(key).map(|v| v.as_bool().unwrap_or(v.as_i64().is_some_and(|i| i != 0)));
+    if let Some(v) = on_off("snapRelative") {
+        view_all("snapRelative", json!(v));
+    }
+    if let Some(v) = on_off("tweakMode") {
+        view_all("tweakMode", json!(v));
+    }
+    if let Some(v) = on_off("preserveChildPosition") {
+        view_all("preserveChildren", json!(v));
+    }
+    if let Some(v) = on_off("preventNegativeScale") {
+        view_all("preventNegativeScale", json!(v));
+    }
+    // The custom axes, however they are given.
+    if let Some(e) = crate::axis_orient::from_flags(s, flags) {
+        view_all("customAxis", json!(e));
     }
     let step = match kind {
         "manipMoveContext" => "stepMove",
