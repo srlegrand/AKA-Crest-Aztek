@@ -350,8 +350,8 @@ impl UndoAction<Graph> for DeleteAction {
 
 /// Everything the evaluation of one level reads, borrowed from the graph while that level's nodes are out of it.
 struct EvalView<'a> {
-    nodes: &'a HashMap<NodeId, Box<Node>>,
-    rel: &'a HashMap<NodeId, Relations>,
+    nodes: &'a IdMap<Box<Node>>,
+    rel: &'a IdMap<Relations>,
     inputs: &'a BTreeMap<PlugRef, PlugRef>,
     held: &'a BTreeSet<PlugRef>,
     display_turns: &'a HashMap<NodeId, DMat4>,
@@ -416,7 +416,7 @@ fn pivot_plugs(p: &PlugRef) -> [PlugRef; 2] {
 }
 
 /// The nodes a read of `p` has to wait for: p's own node for an output, whatever drives p for a plain input.
-fn read_after(nodes: &HashMap<NodeId, Box<Node>>, rel: &HashMap<NodeId, Relations>, inputs: &BTreeMap<PlugRef, PlugRef>, p: &PlugRef, out: &mut Vec<NodeId>, depth: u32) {
+fn read_after(nodes: &IdMap<Box<Node>>, rel: &IdMap<Relations>, inputs: &BTreeMap<PlugRef, PlugRef>, p: &PlugRef, out: &mut Vec<NodeId>, depth: u32) {
     let Some(n) = nodes.get(&p.node) else { return };
     if from_parent(n, p.attr) {
         if let Some(r) = rel.get(&p.node).filter(|r| r.parent != NO_NODE) {
@@ -454,7 +454,7 @@ fn stored_plug(n: &Node, p: &PlugRef) -> PlugValue {
 }
 
 /// A plain input's value as its node would pull it, following what drives it. Its drivers have already computed.
-fn resolve_input(nodes: &HashMap<NodeId, Box<Node>>, rel: &HashMap<NodeId, Relations>, inputs: &BTreeMap<PlugRef, PlugRef>, held: &BTreeSet<PlugRef>, p: &PlugRef, depth: u32) -> PlugValue {
+fn resolve_input(nodes: &IdMap<Box<Node>>, rel: &IdMap<Relations>, inputs: &BTreeMap<PlugRef, PlugRef>, held: &BTreeSet<PlugRef>, p: &PlugRef, depth: u32) -> PlugValue {
     let Some(n) = nodes.get(&p.node) else { return PlugValue::Float(0.0) };
     if from_parent(n, p.attr) {
         let parent = rel.get(&p.node).map_or(NO_NODE, |r| r.parent);
@@ -763,10 +763,13 @@ pub struct Graph {
     pub(crate) evaluation_suspended: bool,
     /// The evaluation pass rig nodes were last brought in step with the scene at (see rig.rs).
     pub(crate) rig_synced_pass: u64,
-    nodes: HashMap<NodeId, Box<Node>>,
+    nodes: IdMap<Box<Node>>,
+    /// Moves whenever connections, parents or nodes change, which is what an evaluation order rests on.
+    wiring: u64,
+    plan: EvalPlan,
     /// Short name -> nodes.
     names: HashMap<String, Vec<NodeId>>,
-    rel: HashMap<NodeId, Relations>,
+    rel: IdMap<Relations>,
     roots: Vec<NodeId>,
     /// dst -> src
     inputs: BTreeMap<PlugRef, PlugRef>,
@@ -836,14 +839,56 @@ impl Default for Graph {
     }
 }
 
+/// An evaluation order, good while nothing's rewired and the same nodes are dirty.
+#[derive(Default)]
+struct EvalPlan {
+    wiring: u64,
+    dirty: Vec<NodeId>,
+    levels: Vec<Vec<NodeId>>,
+    late: Vec<PlugRef>,
+}
+
+/// A quick hash for node ids: they're small numbers from the graph itself, so nobody's choosing them to collide.
+#[derive(Default, Clone, Copy)]
+pub struct IdHasher(u64);
+
+impl std::hash::Hasher for IdHasher {
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        for b in bytes {
+            self.write_u64(*b as u64);
+        }
+    }
+    #[inline]
+    fn write_u32(&mut self, v: u32) {
+        self.write_u64(v as u64);
+    }
+    #[inline]
+    fn write_u64(&mut self, v: u64) {
+        self.0 = (self.0.rotate_left(5) ^ v).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+    #[inline]
+    fn write_usize(&mut self, v: usize) {
+        self.write_u64(v as u64);
+    }
+}
+
+type IdMap<V> = HashMap<NodeId, V, std::hash::BuildHasherDefault<IdHasher>>;
+
 impl Graph {
     pub fn new() -> Self {
         Self {
             rig_synced_pass: u64::MAX,
             evaluation_suspended: false,
-            nodes: HashMap::new(),
+            nodes: Default::default(),
+            wiring: 0,
+            plan: Default::default(),
             names: HashMap::new(),
-            rel: HashMap::new(),
+            rel: Default::default(),
             roots: Vec::new(),
             inputs: BTreeMap::new(),
             outgoing_dst: HashMap::new(),
@@ -1048,6 +1093,7 @@ impl Graph {
         self.names.clear();
         self.rel.clear();
         self.roots.clear();
+        self.wiring += 1;
         self.inputs.clear();
         self.outgoing_dst.clear();
         self.selection.clear();
@@ -1206,11 +1252,13 @@ impl Graph {
         n.dirty = true;
         self.any_dirty = true;
         self.nodes.insert(id, n);
+        self.wiring += 1;
         self.components.node_created(id);
         self.changed(Change::Created, id, None);
     }
 
     fn detach(&mut self, id: NodeId) -> Option<(Box<Node>, usize)> {
+        self.wiring += 1;
         let n = self.nodes.remove(&id)?;
         self.restructured();
         self.erase_name(&n.name.clone(), id);
@@ -1692,6 +1740,7 @@ impl Graph {
     }
 
     fn reparent_raw(&mut self, child: NodeId, new_parent: NodeId, index: usize) {
+        self.wiring += 1;
         let old_parent = self.parent(child);
         self.siblings_mut(old_parent).retain(|&x| x != child);
         self.rel.entry(child).or_default().parent = new_parent;
@@ -2502,6 +2551,7 @@ impl Graph {
             self.element_slot(dst);
         }
         self.held.remove(dst);
+        self.wiring += 1;
         self.inputs.insert(*dst, *src);
         self.outgoing_dst.entry(src.node).or_default().push(*dst);
         self.mark_dirty(dst.node);
@@ -2509,6 +2559,7 @@ impl Graph {
     }
 
     fn disconnect_raw(&mut self, dst: &PlugRef) {
+        self.wiring += 1;
         let Some(src) = self.inputs.remove(dst) else {
             return;
         };
@@ -2834,6 +2885,7 @@ impl Graph {
             }
             p
         };
+        self.wiring += 1;
         self.inputs = std::mem::take(&mut self.inputs)
             .into_iter()
             .map(|(d, s)| (moved(d), moved(s)))
@@ -3407,6 +3459,63 @@ impl Graph {
         call(self, true);
     }
 
+    /// The dirty nodes in levels that can each compute at once, and the inputs that only need passing on after.
+    fn make_plan(&self, dirty: Vec<NodeId>) -> EvalPlan {
+        let mut pending: HashMap<NodeId, i32> = dirty.iter().map(|&id| (id, 0)).collect();
+        let mut downstream: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
+        let mut add_edge = |up: NodeId, down: NodeId, pending: &mut HashMap<NodeId, i32>| {
+            if up == down || !pending.contains_key(&up) {
+                return;
+            }
+            downstream.entry(up).or_default().push(down);
+            *pending.get_mut(&down).unwrap() += 1;
+        };
+        for &id in &dirty {
+            let p = self.parent(id);
+            if p != NO_NODE && !self.nodes.get(&id).is_some_and(|n| n.data.ty.free_of_parent) {
+                add_edge(p, id, &mut pending);
+            }
+        }
+        let mut reads = Vec::new();
+        let mut late = Vec::new();
+        for (dst, src) in &self.inputs {
+            if pending.contains_key(&dst.node) {
+                if self.nodes.get(&dst.node).is_some_and(|n| computes_nothing(&n.data.ty, dst.attr)) {
+                    late.push(*dst);
+                    continue;
+                }
+                reads.clear();
+                read_after(&self.nodes, &self.rel, &self.inputs, src, &mut reads, 0);
+                for &up in &reads {
+                    add_edge(up, dst.node, &mut pending);
+                }
+            }
+        }
+
+        let mut level: Vec<NodeId> = dirty
+            .iter()
+            .copied()
+            .filter(|id| pending[id] == 0)
+            .collect();
+        let mut levels = Vec::new();
+        while !level.is_empty() {
+            let mut next = Vec::new();
+            for id in &level {
+                if let Some(ds) = downstream.get(id) {
+                    for d in ds {
+                        let c = pending.get_mut(d).unwrap();
+                        *c -= 1;
+                        if *c == 0 {
+                            next.push(*d);
+                        }
+                    }
+                }
+            }
+            levels.push(std::mem::replace(&mut level, next));
+        }
+        EvalPlan { wiring: self.wiring, dirty, levels, late }
+    }
+
     fn evaluate_dirty(&mut self, only: Option<&[NodeId]>) {
         if !self.any_dirty {
             return;
@@ -3447,46 +3556,15 @@ impl Graph {
             }
         }
         dirty.sort_unstable();
-        let mut pending: HashMap<NodeId, i32> = dirty.iter().map(|&id| (id, 0)).collect();
-        let mut downstream: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
-        let mut add_edge = |up: NodeId, down: NodeId, pending: &mut HashMap<NodeId, i32>| {
-            if up == down || !pending.contains_key(&up) {
-                return;
-            }
-            downstream.entry(up).or_default().push(down);
-            *pending.get_mut(&down).unwrap() += 1;
-        };
-        for &id in &dirty {
-            let p = self.parent(id);
-            if p != NO_NODE && !self.nodes.get(&id).is_some_and(|n| n.data.ty.free_of_parent) {
-                add_edge(p, id, &mut pending);
-            }
+        // The order only depends on what's dirty and how things are wired, which a drag or playback repeats every frame.
+        let mut plan = std::mem::take(&mut self.plan);
+        if plan.wiring != self.wiring || plan.dirty != dirty || plan.levels.is_empty() {
+            plan = self.make_plan(dirty);
         }
-        let mut reads = Vec::new();
-        let mut late = Vec::new();
-        for (dst, src) in &self.inputs {
-            if pending.contains_key(&dst.node) {
-                if self.nodes.get(&dst.node).is_some_and(|n| computes_nothing(&n.data.ty, dst.attr)) {
-                    late.push(*dst);
-                    continue;
-                }
-                reads.clear();
-                read_after(&self.nodes, &self.rel, &self.inputs, src, &mut reads, 0);
-                for &up in &reads {
-                    add_edge(up, dst.node, &mut pending);
-                }
-            }
-        }
-
-        let mut level: Vec<NodeId> = dirty
-            .iter()
-            .copied()
-            .filter(|id| pending[id] == 0)
-            .collect();
-        while !level.is_empty() {
+        for level in &plan.levels {
             // Plain inputs read from other nodes, while those are all still in the map.
             let mut passed = HashMap::new();
-            for id in &level {
+            for id in level {
                 for (_, src) in inputs_of(&self.inputs, *id) {
                     let pass = self.nodes.get(&src.node).is_some_and(|n| from_parent(n, src.attr) || from_pivots(n, src.attr) || passes_through(&n.data.ty.attrs[src.attr as usize]));
                     if pass && !passed.contains_key(src) {
@@ -3524,21 +3602,8 @@ impl Graph {
             for n in owned {
                 self.nodes.insert(n.id, n);
             }
-            let mut next = Vec::new();
-            for id in &level {
-                if let Some(ds) = downstream.get(id) {
-                    for d in ds {
-                        let c = pending.get_mut(d).unwrap();
-                        *c -= 1;
-                        if *c == 0 {
-                            next.push(*d);
-                        }
-                    }
-                }
-            }
-            level = next;
         }
-        for dst in late {
+        for &dst in &plan.late {
             if self.held.contains(&dst) {
                 continue;
             }
@@ -3562,6 +3627,7 @@ impl Graph {
                 slot.assign_scalar(s);
             }
         }
+        self.plan = plan;
     }
 
     // ---------------------------------------------------------------------------------------------------------------
