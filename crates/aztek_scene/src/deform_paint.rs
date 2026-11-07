@@ -34,6 +34,8 @@ pub enum Slot {
     Weights,
     /// A blend shape target's weights.
     Target(i32),
+    /// A skinCluster's blendWeights, for skinningMethod 2.
+    SkinBlend,
 }
 
 /// Whether a deformer type has weights to paint.
@@ -93,8 +95,10 @@ pub fn read(g: &Graph, n: NodeId, slot: Slot, capacity: usize) -> Vec<f64> {
     let stored = match slot {
         Slot::Weights => g.node(n).and_then(|x| floats_of(x.data(), WEIGHTS)).map(|w| w.0.clone()),
         Slot::Target(i) => blend_of(g, n).targets.into_iter().find(|t| t.index == i).and_then(|t| t.weights),
+        Slot::SkinBlend => g.node(n).and_then(|x| floats_of(x.data(), crate::skin::SK_BLEND)).map(|w| w.0.clone()),
     };
-    let mut w = stored.unwrap_or_else(|| vec![1.0; capacity]);
+    let unset = if slot == Slot::SkinBlend { 0.0 } else { 1.0 };
+    let mut w = stored.unwrap_or_else(|| vec![unset; capacity]);
     w.resize(capacity, 0.0);
     w
 }
@@ -103,6 +107,7 @@ pub fn read(g: &Graph, n: NodeId, slot: Slot, capacity: usize) -> Vec<f64> {
 pub fn write(g: &mut Graph, n: NodeId, slot: Slot, w: Vec<f64>) -> CmdResult<()> {
     match slot {
         Slot::Weights => set_floats(g, n, WEIGHTS, w),
+        Slot::SkinBlend => set_floats(g, n, crate::skin::SK_BLEND, w),
         Slot::Target(i) => {
             let mut b = blend_of(g, n);
             let Some(t) = b.targets.iter_mut().find(|t| t.index == i) else { fail!("no target {i} on {}", g.path(n)) };
@@ -225,6 +230,10 @@ fn weights_path(g: &Graph, path: &str) -> Option<(NodeId, Slot, Option<String>)>
     let (node, rest) = path.split_once('.')?;
     let id = g.find(node).ok().flatten()?;
     let ty = g.node(id)?;
+    if ty.ty().name == crate::skin::SKIN_TYPE {
+        let range = if rest == "blendWeights" || rest == "bw" { None } else { Some(index_in(rest, "blendWeights").or_else(|| index_in(rest, "bw"))?) };
+        return Some((id, Slot::SkinBlend, range));
+    }
     if !deform::is_deformer(ty.ty().name.as_str()) {
         return None;
     }
@@ -236,19 +245,16 @@ fn weights_path(g: &Graph, path: &str) -> Option<(NodeId, Slot, Option<String>)>
         }
         index_in(text, name).map(Some)
     };
+    // Long and short names, as Maya takes either.
+    let elem = |text: &str, long: &str, brief: &str| index_in(text, long).or_else(|| index_in(text, brief));
+    let tail = |text: &str, long: &str, brief: &str| range_of(text, long).or_else(|| range_of(text, brief));
     match parts[..] {
-        [wl, w] if wl.starts_with("weightList") => {
-            let n = pick(&index_in(wl, "weightList")?)?;
-            Some((n, Slot::Weights, range_of(w, "weights")?))
-        }
-        [it, bw] if it.starts_with("inputTarget") => {
-            let n = pick(&index_in(it, "inputTarget")?)?;
-            Some((n, Slot::Weights, range_of(bw, "baseWeights")?))
-        }
-        [it, tg, tw] if it.starts_with("inputTarget") => {
-            let n = pick(&index_in(it, "inputTarget")?)?;
-            let t: i32 = index_in(tg, "inputTargetGroup")?.parse().ok()?;
-            Some((n, Slot::Target(t), range_of(tw, "targetWeights")?))
+        [wl, w] if wl.starts_with("weightList") || wl.starts_with("wl[") => Some((pick(&elem(wl, "weightList", "wl")?)?, Slot::Weights, tail(w, "weights", "w")?)),
+        [it, bw] if it.starts_with("inputTarget") || it.starts_with("it[") => Some((pick(&elem(it, "inputTarget", "it")?)?, Slot::Weights, tail(bw, "baseWeights", "bw")?)),
+        [it, tg, tw] if it.starts_with("inputTarget") || it.starts_with("it[") => {
+            let n = pick(&elem(it, "inputTarget", "it")?)?;
+            let t: i32 = elem(tg, "inputTargetGroup", "itg")?.parse().ok()?;
+            Some((n, Slot::Target(t), tail(tw, "targetWeights", "tw")?))
         }
         _ => None,
     }
@@ -306,7 +312,7 @@ fn set_brush(ctx: &mut PaintCtx, a: &Args, cmd: &str) -> CmdResult<()> {
     Ok(())
 }
 
-pub(crate) fn select_attr(s: &mut Session, attr: &str) -> CmdResult<()> {
+pub fn select_attr(s: &mut Session, attr: &str) -> CmdResult<()> {
     let mut parts = attr.split('.');
     let (Some(_), Some(node), Some(_)) = (parts.next(), parts.next(), parts.next()) else { fail!("artAttrCtx: {attr} is not nodeType.node.attribute") };
     if s.graph.find(node)?.is_none() {

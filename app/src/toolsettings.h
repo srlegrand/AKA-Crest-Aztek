@@ -29,6 +29,11 @@ private:
     QWidget* build_joint_page();
     QWidget* build_curve_page();
     QWidget* build_sculpt_page();
+    QWidget* build_attr_page();
+    QWidget* build_member_page();
+    void refresh_attr();
+    void refresh_member();
+    void attr_set(const QString& flag, const QJsonValue& v);
     void refresh_sculpt();
     void refresh_paint();
     void refresh_transform();
@@ -43,6 +48,16 @@ private:
     QWidget* joint_page_ = nullptr;
     QWidget* curve_page_ = nullptr;
     QWidget* sculpt_page_ = nullptr;
+    QWidget* attr_page_ = nullptr;
+    QWidget* member_page_ = nullptr;
+    QComboBox* attr_list_ = nullptr;
+    QButtonGroup* attr_op_ = nullptr;
+    QComboBox* attr_stamp_ = nullptr;
+    QDoubleSpinBox* attr_value_ = nullptr;
+    QDoubleSpinBox* attr_opacity_ = nullptr;
+    QDoubleSpinBox* attr_radius_ = nullptr;
+    QCheckBox* attr_feedback_ = nullptr;
+    QComboBox* member_list_ = nullptr;
     QComboBox* sculpt_tool_ = nullptr;
     QDoubleSpinBox* sculpt_size_ = nullptr;
     QDoubleSpinBox* sculpt_strength_ = nullptr;

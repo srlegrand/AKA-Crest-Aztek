@@ -63,14 +63,14 @@ fn is_shape(g: &Graph, id: NodeId) -> bool {
     g.node(id).is_some_and(|n| n.ty().is_a("shape"))
 }
 
-fn outliner_node(g: &Graph, id: NodeId, shapes: bool, sel: &[NodeId]) -> Option<Value> {
+fn outliner_node(g: &Graph, id: NodeId, shapes: bool, show_intermediate: bool, sel: &[NodeId]) -> Option<Value> {
     let n = g.node(id)?;
     let shape = n.ty().is_a("shape");
     let intermediate = shape && n.bool(DagNode::INTERMEDIATE_OBJECT);
-    if shape && !shapes {
+    if (shape && !shapes) || (intermediate && !show_intermediate) {
         return None;
     }
-    let kids: Vec<Value> = g.children(id).iter().filter_map(|&c| outliner_node(g, c, shapes, sel)).collect();
+    let kids: Vec<Value> = g.children(id).iter().filter_map(|&c| outliner_node(g, c, shapes, show_intermediate, sel)).collect();
     // What the icon shows: a transform over a mesh is a mesh to the user.
     let icon = if n.ty().is_a("joint") {
         "joint".into()
@@ -99,13 +99,17 @@ fn outliner_node(g: &Graph, id: NodeId, shapes: bool, sel: &[NodeId]) -> Option<
     }))
 }
 
-pub fn outliner(core: &Core, shapes: bool) -> Value {
+/// `arg` holds the words shapes and intermediate. Deformers' sets and original shapes show only with intermediate, as
+/// Maya's Display > Intermediate Objects does.
+pub fn outliner(core: &Core, arg: &str) -> Value {
+    let show_intermediate = arg.contains("intermediate");
+    let shapes = arg.contains("shapes") || show_intermediate;
     let g = &core.s.graph;
     let sel = g.selection().to_vec();
     let mut out = Vec::new();
     for &r in g.roots() {
         if g.node(r).is_some_and(|n| n.ty().dag) {
-            if let Some(v) = outliner_node(g, r, shapes, &sel) {
+            if let Some(v) = outliner_node(g, r, shapes, show_intermediate, &sel) {
                 out.push(v);
             }
         }
@@ -113,7 +117,7 @@ pub fn outliner(core: &Core, shapes: bool) -> Value {
     // Sets and layers at the end, as Maya lists its default sets.
     for id in g.nodes() {
         let Some(n) = g.node(id) else { continue };
-        if n.ty().is_a("objectSet") {
+        if n.ty().is_a("objectSet") && (show_intermediate || aztek_scene::deform_sets::deformer_of_set(g, id).is_none()) {
             out.push(json!({"name": n.name(), "path": g.path(id), "type": n.ty().name, "icon": "set", "selected": sel.contains(&id), "visible": true, "intermediate": false, "children": []}));
         }
     }
@@ -215,6 +219,23 @@ fn channels(g: &Graph, id: NodeId, all_inputs: bool) -> Vec<Value> {
     let mut out = Vec::new();
     for (i, a) in ty.attrs.iter().enumerate() {
         if a.flags & (flags::HIDDEN | flags::OUTPUT) != 0 {
+            continue;
+        }
+        // A multi with aliases shows each element under its alias: a blend shape's target weights.
+        if a.is_array() {
+            for e in g.elements(&PlugRef::new(id, i as i32)) {
+                let Some(alias) = g.alias_of(&e) else { continue };
+                out.push(json!({
+                    "attr": alias,
+                    "plug": format!("{path}.{alias}"),
+                    "nice": alias,
+                    "type": "float",
+                    "value": n.data().element(i, e.element).map_or(0.0, |v| v.as_float()),
+                    "enum": [],
+                    "connected": g.source(&e).is_some(),
+                    "state": channel_state(g, &e),
+                }));
+            }
             continue;
         }
         // Keyable as this node has it: setAttr -k hides and shows channels.

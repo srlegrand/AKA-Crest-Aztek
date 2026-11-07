@@ -27,6 +27,18 @@ struct PaintStroke {
     last: Option<DVec3>,
 }
 
+/// One stroke of the paint attribute brush: a deformer's values as they build up, undoing as one.
+struct AttrStroke {
+    node: aztek_scene::plug::NodeId,
+    slot: aztek_scene::deform_paint::Slot,
+    weights: Vec<f64>,
+    mask: Option<Vec<bool>>,
+    applied: bool,
+    invert: bool,
+    smooth: bool,
+    last: Option<DVec3>,
+}
+
 /// One stroke of a sculpting brush: the points as they build up, undoing as one.
 struct SculptStroke {
     shape: aztek_scene::plug::NodeId,
@@ -58,6 +70,8 @@ pub struct View {
     sculpt: Option<SculptStroke>,
     /// A paint stroke in progress.
     stroke: Option<PaintStroke>,
+    /// A paint attribute stroke in progress.
+    attr_stroke: Option<AttrStroke>,
     /// B held with the paint tool: a drag sizes the brush.
     pub brush_adjust: bool,
     brush_drag: Option<(DVec2, f64)>,
@@ -89,6 +103,7 @@ impl View {
             ts: Default::default(),
             sculpt: None,
             stroke: None,
+            attr_stroke: None,
             brush_adjust: false,
             brush_drag: None,
             drag_lines: 0,
@@ -304,6 +319,25 @@ impl View {
                     }
                     return true;
                 }
+                if self.vp.tool == Tool::PaintAttr && button == 1 {
+                    if self.brush_adjust {
+                        self.brush_drag = Some((px, core.s.attr_ctx.paint.radius));
+                        return true;
+                    }
+                    if let Some((i, wp, n)) = self.vp.brush_hit(&core.s, &items, px) {
+                        if let Some((node, slot)) = aztek_scene::deform_paint::current(&core.s, items[i].shape) {
+                            let size = items[i].mesh.point_capacity() as usize;
+                            let weights = aztek_scene::deform_paint::read(&core.s.graph, node, slot, size);
+                            let mask = aztek_scene::deform_paint::mask(&core.s.graph, node, size);
+                            self.attr_stroke = Some(AttrStroke { node, slot, weights, mask, applied: false, invert: mods & CTRL != 0, smooth: mods & SHIFT != 0, last: None });
+                            self.attr_dab(core, &items, i, wp, n);
+                            self.vp.brush = Some((wp, n));
+                        }
+                        return true;
+                    }
+                    self.marquee = Some(px);
+                    return false;
+                }
                 if self.vp.tool == Tool::PaintSkin && button == 1 {
                     if self.brush_adjust {
                         self.brush_drag = Some((px, core.s.paint_ctx.radius));
@@ -390,6 +424,9 @@ impl View {
                     if self.vp.tool == Tool::Sculpt {
                         core.s.sculpt_ctx.size = next;
                         core.version += 1;
+                    } else if self.vp.tool == Tool::PaintAttr {
+                        core.s.attr_ctx.paint.radius = next;
+                        core.version += 1;
                     } else {
                         let _ = core.exec_silent("artAttrSkinPaintCtx", json!({"edit": true, "radius": next}));
                     }
@@ -426,7 +463,14 @@ impl View {
                     }
                     return true;
                 }
-                if self.vp.tool == Tool::PaintSkin && buttons == 0 {
+                if self.attr_stroke.is_some() {
+                    if let Some((i, wp, n)) = self.vp.brush_hit(&core.s, &items, px) {
+                        self.attr_dab(core, &items, i, wp, n);
+                        self.vp.brush = Some((wp, n));
+                    }
+                    return true;
+                }
+                if matches!(self.vp.tool, Tool::PaintSkin | Tool::PaintAttr) && buttons == 0 {
                     let was = self.vp.brush.is_some();
                     self.vp.brush = self.vp.brush_hit(&core.s, &items, px).map(|x| (x.1, x.2));
                     return was || self.vp.brush.is_some();
@@ -483,6 +527,10 @@ impl View {
                     return true;
                 }
                 if self.sculpt.take().is_some() {
+                    core.version += 1;
+                    return true;
+                }
+                if self.attr_stroke.take().is_some() {
                     core.version += 1;
                     return true;
                 }
@@ -550,6 +598,28 @@ impl View {
         core.version += 1;
     }
 
+    /// A dab of the paint attribute brush, as paint_dab does for skin weights.
+    fn attr_dab(&mut self, core: &mut Core, items: &[crate::viewport::DrawItem], i: usize, wp: DVec3, n: DVec3) {
+        let Some(st) = self.attr_stroke.as_mut() else { return };
+        let ctx = core.s.attr_ctx.paint.clone();
+        let dabs: Vec<DVec3> = match st.last {
+            Some(l) => {
+                let steps = (((wp - l).length() / (ctx.radius * 0.25).max(1e-6)).ceil() as usize).clamp(1, 32);
+                (1..=steps).map(|k| l.lerp(wp, k as f64 / steps as f64)).collect()
+            }
+            None => vec![wp],
+        };
+        for at in dabs {
+            aztek_scene::deform_paint::stamp(&mut st.weights, st.mask.as_deref(), &items[i].mesh, &items[i].world, at, Some(n), &ctx, st.invert, st.smooth);
+        }
+        st.last = Some(wp);
+        if st.applied {
+            core.s.undo();
+        }
+        st.applied = aztek_scene::deform_paint::write(&mut core.s.graph, st.node, st.slot, st.weights.clone()).is_ok();
+        core.version += 1;
+    }
+
     /// A dab of the brush, replacing the stroke's previous undo entry so the whole stroke undoes in one step.
     fn paint_dab(&mut self, core: &mut Core, items: &[crate::viewport::DrawItem], i: usize, wp: DVec3, n: DVec3) {
         let Some(st) = self.stroke.as_mut() else { return };
@@ -590,6 +660,7 @@ impl View {
                     "scale" => Tool::Scale,
                     "joint" => Tool::Joint,
                     "paintSkin" => Tool::PaintSkin,
+                    "paintAttr" => Tool::PaintAttr,
                     "sculpt" => Tool::Sculpt,
                     "insertJoint" => Tool::InsertJoint,
                     "curveCv" => Tool::CurveCv,

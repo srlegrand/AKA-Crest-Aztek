@@ -102,6 +102,8 @@ pub enum Tool {
     Joint,
     /// Paint skin weights: the brush on the selected skinned meshes.
     PaintSkin,
+    /// Paint a deformer's per-point values: the brush on the selected deformed meshes.
+    PaintAttr,
     /// CV Curve Tool: clicks place CVs; Enter makes the curve.
     CurveCv,
     /// EP Curve Tool: clicks place edit points; Enter makes the curve.
@@ -451,45 +453,57 @@ impl Viewport {
             let mvp = vp * it.world;
             // Paint skin weights: the painted influence's weight in grey, white for 1, as Maya's colour feedback.
             let mut painted = false;
-            if self.tool == Tool::PaintSkin && selected && s.paint_ctx.color_feedback && !self.wireframe && entry.display.is_none() {
-                if let Some(sk) = aztek_scene::skin::skin_of(g, it.shape) {
-                    if let (Some(bind), Some(inf)) = (aztek_scene::skin::bind_of(g, sk), aztek_scene::skin::paint_influence(s, sk)) {
-                        let w = aztek_scene::skin::point_weights(&bind, inf);
-                        let mut h = DefaultHasher::new();
-                        for x in &w {
-                            x.to_bits().hash(&mut h);
-                        }
-                        (Arc::as_ptr(&it.mesh) as usize, inf).hash(&mut h);
-                        let wk = h.finish();
-                        if wk != entry.weight_key || entry.weight_tris.is_none() {
-                            entry.weight_key = wk;
-                            if let Some((a, b, _)) = entry.weight_tris.take() {
-                                gpu.drop_buffer(a);
-                                gpu.drop_buffer(b);
-                            }
-                            let verts: Vec<LineVertex> = entry
-                                .vertex_point
-                                .iter()
-                                .map(|&pt| {
-                                    let x = w.get(pt as usize).copied().unwrap_or(0.0).clamp(0.0, 1.0) as f32;
-                                    LineVertex { pos: it.mesh.position(pt).as_vec3().to_array(), color: [x, x, x, 1.0] }
-                                })
-                                .collect();
-                            if !verts.is_empty() && !entry.tri_indices.is_empty() {
-                                entry.weight_tris = Some((
-                                    gpu.buffer_with(vk::BufferUsageFlags::VERTEX_BUFFER, &verts),
-                                    gpu.buffer_with(vk::BufferUsageFlags::INDEX_BUFFER, &entry.tri_indices),
-                                    entry.tri_indices.len() as u32,
-                                ));
-                            }
-                        }
-                        if let Some((vb, ib, n)) = &entry.weight_tris {
-                            r.bind(gpu, Kind::ColorTris);
-                            r.push(gpu, &push(mvp, it.world, view, [1.0; 4], 0.0, 1.0));
-                            r.draw(gpu, vb, Some((ib, *n)), 0);
-                            painted = true;
-                        }
+            // The values in grey, white for 1, as Maya's colour feedback; a held influence reads blue.
+            let feedback: Option<(Vec<f64>, u64, bool)> = if !selected || self.wireframe || entry.display.is_some() {
+                None
+            } else if self.tool == Tool::PaintSkin && s.paint_ctx.color_feedback {
+                aztek_scene::skin::skin_of(g, it.shape).and_then(|sk| {
+                    let (bind, inf) = (aztek_scene::skin::bind_of(g, sk)?, aztek_scene::skin::paint_influence(s, sk)?);
+                    Some((aztek_scene::skin::point_weights(&bind, inf), inf as u64, bind.locks.get(inf as usize).copied().unwrap_or(false)))
+                })
+            } else if self.tool == Tool::PaintAttr && s.attr_ctx.paint.color_feedback {
+                aztek_scene::deform_paint::current(s, it.shape).map(|(node, slot)| {
+                    let mut k = DefaultHasher::new();
+                    (node, slot).hash(&mut k);
+                    (aztek_scene::deform_paint::read(g, node, slot, it.mesh.point_capacity() as usize), k.finish(), false)
+                })
+            } else {
+                None
+            };
+            if let Some((w, slot_key, held)) = feedback {
+                let mut h = DefaultHasher::new();
+                for x in &w {
+                    x.to_bits().hash(&mut h);
+                }
+                (Arc::as_ptr(&it.mesh) as usize, slot_key, held).hash(&mut h);
+                let wk = h.finish();
+                if wk != entry.weight_key || entry.weight_tris.is_none() {
+                    entry.weight_key = wk;
+                    if let Some((a, b, _)) = entry.weight_tris.take() {
+                        gpu.drop_buffer(a);
+                        gpu.drop_buffer(b);
                     }
+                    let verts: Vec<LineVertex> = entry
+                        .vertex_point
+                        .iter()
+                        .map(|&pt| {
+                            let x = w.get(pt as usize).copied().unwrap_or(0.0).clamp(0.0, 1.0) as f32;
+                            LineVertex { pos: it.mesh.position(pt).as_vec3().to_array(), color: if held { [x * 0.55, x * 0.7, 0.35 + x * 0.65, 1.0] } else { [x, x, x, 1.0] } }
+                        })
+                        .collect();
+                    if !verts.is_empty() && !entry.tri_indices.is_empty() {
+                        entry.weight_tris = Some((
+                            gpu.buffer_with(vk::BufferUsageFlags::VERTEX_BUFFER, &verts),
+                            gpu.buffer_with(vk::BufferUsageFlags::INDEX_BUFFER, &entry.tri_indices),
+                            entry.tri_indices.len() as u32,
+                        ));
+                    }
+                }
+                if let Some((vb, ib, n)) = &entry.weight_tris {
+                    r.bind(gpu, Kind::ColorTris);
+                    r.push(gpu, &push(mvp, it.world, view, [1.0; 4], 0.0, 1.0));
+                    r.draw(gpu, vb, Some((ib, *n)), 0);
+                    painted = true;
                 }
             }
             // Quad Draw's mesh sits on the live surface, chords and all, so it's pulled forward to stay in sight.
@@ -591,6 +605,7 @@ impl Viewport {
         let Some((c, n)) = self.brush else { return };
         let radius = match self.tool {
             Tool::PaintSkin => s.paint_ctx.radius,
+            Tool::PaintAttr => s.attr_ctx.paint.radius,
             Tool::Sculpt => s.sculpt_ctx.size,
             _ => return,
         };
@@ -620,7 +635,7 @@ impl Viewport {
         let g = &s.graph;
         let sel = g.selection();
         let any = self.tool == Tool::Sculpt;
-        let picked: Vec<usize> = (0..items.len()).filter(|&i| (sel.contains(&items[i].xf) || sel.contains(&items[i].shape)) && (any || aztek_scene::skin::skin_of(g, items[i].shape).is_some())).collect();
+        let picked: Vec<usize> = (0..items.len()).filter(|&i| (sel.contains(&items[i].xf) || sel.contains(&items[i].shape)) && (any || if self.tool == Tool::PaintAttr { aztek_scene::deform_paint::current(s, items[i].shape).is_some() } else { aztek_scene::skin::skin_of(g, items[i].shape).is_some() })).collect();
         let list: Vec<DrawItem> = picked
             .iter()
             .map(|&i| DrawItem { shape: items[i].shape, xf: items[i].xf, world: items[i].world, mesh: items[i].mesh.clone(), smooth: 0 })

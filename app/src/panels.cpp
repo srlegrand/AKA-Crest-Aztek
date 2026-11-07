@@ -148,6 +148,12 @@ Outliner::Outliner(QWidget* parent) : Panel(parent) {
         shapes_ = on;
         refresh();
     });
+    QAction* intermediates = menu->addAction("Intermediate Objects");
+    intermediates->setCheckable(true);
+    connect(intermediates, &QAction::toggled, this, [this](bool on) {
+        intermediates_ = on;
+        refresh();
+    });
     display->setMenu(menu);
     top->addWidget(display);
     filter_ = new QLineEdit(this);
@@ -217,7 +223,7 @@ void Outliner::refresh() {
     updating_ = true;
     int scroll = tree_->verticalScrollBar()->value();
     tree_->clear();
-    for (const QJsonValue& n : query("outliner", shapes_ ? "shapes" : "").toArray()) add(nullptr, n.toObject());
+    for (const QJsonValue& n : query("outliner", intermediates_ ? "shapes intermediate" : shapes_ ? "shapes" : "").toArray()) add(nullptr, n.toObject());
     tree_->verticalScrollBar()->setValue(scroll);
     updating_ = false;
 }

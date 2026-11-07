@@ -187,6 +187,12 @@ fn copy_node(
                 let root = instancing::root(g, s);
                 instancing::copy_history(g, root, c, &mut own)?;
             }
+            // As Maya copies a deformed mesh: what it looks like now, with no deformers.
+            Mode::Copy if crate::deform_sets::is_deformed(g, s) => {
+                g.evaluate();
+                let v = g.value(&PlugRef::new(s, crate::mesh_nodes::MeshNode::OUT_MESH as i32))?;
+                g.set_value(PlugRef::new(c, crate::mesh_nodes::MeshNode::IN_MESH as i32), v)?;
+            }
             Mode::Copy => instancing::copy_history(g, s, c, copies)?,
         }
     } else if ty.is_a("mesh") {
@@ -195,6 +201,10 @@ fn copy_node(
         copy_evaluated_inputs(g, s, c)?;
     }
     for child in g.children(s).to_vec() {
+        // A deformed mesh's original stays behind: the copy has no deformers for it to feed.
+        if crate::deform_sets::is_original(g, child) {
+            continue;
+        }
         copy_node(g, child, c, false, mode, name, copies, record)?;
     }
     Ok(c)

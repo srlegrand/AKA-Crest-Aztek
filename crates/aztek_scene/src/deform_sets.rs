@@ -23,6 +23,16 @@ fn is_intermediate(g: &Graph, id: NodeId) -> bool {
     g.node(id).is_some_and(|n| n.ty().is_a("mesh") && n.bool(DagNode::INTERMEDIATE_OBJECT))
 }
 
+/// Whether a mesh has deformers or a skin in its history.
+pub fn is_deformed(g: &Graph, mesh: NodeId) -> bool {
+    crate::history::history_of(g, mesh).into_iter().any(|h| g.node(h).is_some_and(|n| crate::rig::is_rig_chain_node(n.ty().name.as_str())))
+}
+
+/// Whether a node is an intermediate shape feeding a deformer or a skin.
+pub fn is_original(g: &Graph, id: NodeId) -> bool {
+    is_intermediate(g, id) && g.destinations(&plug(id, MeshNode::OUT_MESH)).iter().any(|d| g.node(d.node).is_some_and(|n| crate::rig::is_rig_chain_node(n.ty().name.as_str())))
+}
+
 /// The intermediate shape feeding this mesh's deformers, if it has one.
 pub fn orig_of(g: &Graph, mesh: NodeId) -> Option<NodeId> {
     crate::history::history_of(g, mesh).into_iter().find(|&h| is_intermediate(g, h))
@@ -32,8 +42,7 @@ pub fn orig_of(g: &Graph, mesh: NodeId) -> Option<NodeId> {
 /// already has an intermediate shape holding its points, which takes the name; other meshes get one under their transform,
 /// after the visible shape, between what made the mesh and the deformer.
 pub(crate) fn orig_source(g: &mut Graph, mesh: NodeId, src: PlugRef) -> CmdResult<PlugRef> {
-    let deformed = crate::history::history_of(g, mesh).into_iter().any(|h| g.node(h).is_some_and(|n| crate::rig::is_rig_chain_node(n.ty().name.as_str())));
-    if deformed {
+    if is_deformed(g, mesh) {
         return Ok(src);
     }
     let wanted = format!("{}Orig", g.node(mesh).map(|n| n.name().to_string()).unwrap_or_default());

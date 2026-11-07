@@ -466,6 +466,10 @@ pub const UI_COMMANDS: &[(&str, &str)] = &[
     ("EPCurveTool", "The EP curve tool: click to place edit points, Enter to finish."),
     ("ArtPaintSkinWeightsTool", "The paint skin weights tool."),
     ("ArtPaintSkinWeightsToolOptions", "The paint skin weights tool and its settings."),
+    ("ArtPaintAttrTool", "The paint attribute tool, on deformers' weights."),
+    ("ArtPaintAttrToolOptions", "The paint attribute tool and its settings."),
+    ("EditMembershipTool", "The edit membership tool: which points a deformer holds."),
+    ("ShapeEditor", "The Shape Editor: blend shapes and their targets."),
     ("ToolSettingsWindow", "Show the Tool Settings."),
     ("SelectTool", "The select tool."),
     ("MoveTool", "The move tool."),
@@ -476,6 +480,21 @@ pub const UI_COMMANDS: &[(&str, &str)] = &[
 ];
 
 fn register_ui_commands(s: &mut Session) {
+    s.register(
+        aztek_ops::CommandDef::<Session>::new(
+            "artSetToolAndSelectAttr",
+            "Picks the paint attribute tool and what it paints: artSetToolAndSelectAttr artAttrCtx cluster.cluster1.weights.",
+            |s, a| {
+                let names = a.named();
+                let Some(attr) = names.last().filter(|_| names.len() >= 2) else { aztek_ops::fail!("artSetToolAndSelectAttr: give the tool and nodeType.node.attribute") };
+                aztek_scene::deform_paint::select_attr(s, attr)?;
+                UI_REQUESTS.lock().unwrap().push("ArtPaintAttrTool".to_string());
+                Ok(Value::Null)
+            },
+        )
+        .positional("the tool, then nodeType.node.attribute")
+        .undoable(false),
+    );
     for (name, doc) in UI_COMMANDS {
         let n = name.to_string();
         s.register(

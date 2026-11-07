@@ -171,7 +171,6 @@ fn targets_are_live_until_deleted_then_baked() {
     assert_eq!(get(&mut s, "blendShape1.pCube2"), 1.0);
     round_trip(&mut s);
     assert!(near(point(&mut s, "pCube1.vtx[0]"), [v0[0] + 3.0, v0[1], v0[2]]));
-    s.graph.clear();
 }
 
 #[test]
@@ -209,7 +208,6 @@ fn base_and_target_weights_scale_per_point() {
     assert!(near(point(&mut s, "pCube1.vtx[0]"), [v0[0] + 0.25, v0[1], v0[2]]));
     round_trip(&mut s);
     assert!(near(point(&mut s, "pCube1.vtx[0]"), [v0[0] + 0.25, v0[1], v0[2]]));
-    s.undo();
 }
 
 #[test]
@@ -802,6 +800,10 @@ fn blend_weights_read_and_write_as_a_plug() {
     let mut s = Session::new();
     skinned(&mut s);
     run(&mut s, "skinPercent", json!({"args": ["skinCluster1", "pCube1.vtx[1]"], "dqBlendWeight": 0.25}));
+    assert_eq!(get(&mut s, "skinCluster1.blendWeights[1]"), 0.25);
+    assert_eq!(get(&mut s, "skinCluster1.bw[0]"), 0.0);
+    set(&mut s, "skinCluster1.blendWeights[2]", 0.5);
+    assert_eq!(get(&mut s, "skinCluster1.blendWeights[2]"), 0.5);
     round_trip(&mut s);
     let bw = aztek_scene::skin::skin_named(&s.graph, "skinCluster1").unwrap();
     let data = s.graph.node(bw).unwrap().data();

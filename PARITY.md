@@ -163,7 +163,26 @@ volume or surface, `falloffCurve` ramp), `deltaMush`, `tension`, `wrap` (with `d
 closes the chain and takes its handle or lattice. Differences: a deformer on several meshes is one chain node per mesh with the
 first node's settings connected in, so `ls` shows ffd1 and ffd2 where Maya has one node. `wire` follows the driver's points as a
 polyline, so a NURBS curve follows its control points until a sampler is added; the base wire is data on the node, with no
-`curve1BaseWire` shape. Deformer sets are not made; `percent` holds membership as weights.
+`curve1BaseWire` shape.
+
+Deform and skin weights, as of 06/11/2026. `blendShape`: `.weight[i]` with target aliases (`aliasAttr`, `listAttr -m`), `-t`, `-w`,
+`-ib`, `-ibt`, `-tc`, `-o`, `-par`, `-foc`, `-e -rm -t`, `-rtd`, `-q -w -wc -t -g -en -o -tc`, live targets baked on delete, per-point
+base and target weights (`.inputTarget[0].baseWeights[v]`, `.inputTargetGroup[t].targetWeights[v]`), `sculptTarget`, `invertShape`,
+Shape Editor. `sculpt`, `jiggle` (stepped a frame at a time, seen frames kept), `shrinkWrap`, `morph`, `wrinkle`, `proximityWrap`,
+`solidify`, `pointOnCurveDeformer` (`deformer -type pointOnCurve`), `textureDeformer` (procedural value plus `.texture`), `curveWarp`.
+`artAttrCtx`, `artSetToolAndSelectAttr`, the Paint Attribute tool with its Tool Settings page and Deform > Paint Weights. Skin:
+`-bm 2` real heat diffusion with `-hmf`, `-sm 2` with `.blendWeights` and `skinPercent -dqb`, `deformerWeights` (XML, JSON; index,
+nearest, barycentric, bilinear, over), `weightHammerVerts`, `copySkinWeights -uv`, `transferBetweenInfluences`, `-ai -ug`,
+`substituteGeometry`, `-mjm`, `removeUnusedInfluences`, `-nw 2`, Hold shown in the paint tool. `pCubeShape1Orig` as a real
+intermediate shape (`listHistory -pdo`, `deformableShape`, Outliner Display > Intermediate Objects), `cluster1Set` as real membership
+(`sets`, `deformer -e -g`, Edit Membership Tool).
+
+Differences and gaps: `blendShape` origin defaults to local, where the documentation says world and the option box sends local.
+`-par` makes no parallelBlender node: the blendShape sits last, measured from the original, which adds the same way. wrinkle is one
+node with a handle, not a cluster over wires, and creases by normal. solidify fits the whole mesh, so several shells count as one.
+shrinkWrap's `.projection` enum order is from memory and needs checking against Maya. `copySkinWeights -uv` reads the one UV set.
+`transferBetweenInfluences`, `attrPaintStamp` and `pointOnCurveDeformer` are Aztek's own names. A skinCluster has no set, so
+membership doesn't limit a skin. `.ma` doesn't carry the new deformers. Not done: `poseInterpolator`.
 
 Files, as of 06/11/2026: `.ma` read and write (`ma_file.rs`) and the `file` command (`-new`, `-open`, `-save`, `-rename`,
 `-import`, `-exportAll`, `-exportSelected`, `-type`, `-q -sn -ex -type`). Reads transforms, joints, locators, meshes

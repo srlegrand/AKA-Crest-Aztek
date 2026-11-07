@@ -40,6 +40,7 @@ private:
     void selection_changed();
     QTreeWidget* tree_;
     bool shapes_ = false;
+    bool intermediates_ = false;
     bool updating_ = false;
     QSet<QString> expanded_;
     QLineEdit* filter_;

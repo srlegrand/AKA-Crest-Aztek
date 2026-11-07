@@ -27,7 +27,8 @@ use glam::DVec2;
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 use serde_json::{json, Value};
 
-pub use crate::core::Core;
+pub use crate::core::{take_ui_requests, Core};
+pub use crate::query::outliner;
 use crate::gpu::{Gpu, Shared};
 use crate::view::View;
 
@@ -168,7 +169,7 @@ pub extern "C" fn aztek_query(what: *const c_char, arg: *const c_char) -> *mut c
         let c = &mut h.core;
         c.s.graph.evaluate();
         out_json(match what.as_str() {
-            "outliner" => query::outliner(c, arg == "shapes"),
+            "outliner" => query::outliner(c, &arg),
             "channelBox" => query::channel_box(c),
             "animCurves" => query::anim_curves(c, &arg),
             "nodeGraph" => query::node_graph(c, &arg),

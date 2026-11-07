@@ -11,6 +11,7 @@
 #include "toolsettings.h"
 #include "dopesheet.h"
 #include "nodeeditor.h"
+#include "shapeeditor.h"
 
 #include <QAction>
 #include <cstdio>
@@ -331,6 +332,7 @@ QMenu* MainWindow::windows_menu() {
     ge->addAction("Script Editor", this, &MainWindow::show_script_editor);
     ge->addAction("Node Editor", this, &MainWindow::show_node_editor);
     auto* anim_ed = m->addMenu("Animation Editors");
+    anim_ed->addAction("Shape Editor", [this] { show_shape_editor(); });
     anim_ed->addAction("Graph Editor", this, &MainWindow::show_graph_editor);
     anim_ed->addAction("Dope Sheet", this, &MainWindow::show_dope_sheet);
     auto* model_ed = m->addMenu("Modeling Editors");
@@ -543,6 +545,35 @@ QMenu* MainWindow::deform_menu() {
     cmd(m, "Soft Modification", "softMod", {}, QString(), true);
     cmd(m, "Delta Mush", "deltaMush", {}, QString(), true);
     cmd(m, "Tension", "tension", {}, QString(), true);
+    cmd(m, "Sculpt", "sculpt", {}, QString(), true);
+    cmd(m, "Jiggle", "jiggle", {}, QString(), true);
+    cmd(m, "Shrink Wrap", "shrinkWrap", {}, QString(), true);
+    cmd(m, "Morph", "morph", {}, QString(), true);
+    cmd(m, "Wrinkle", "wrinkle", {}, QString(), true);
+    cmd(m, "Proximity Wrap", "proximityWrap", {}, QString(), true);
+    cmd(m, "Solidify", "solidify", {}, QString(), true);
+    cmd(m, "Point on Curve", "pointOnCurveDeformer", {}, QString(), true);
+    cmd(m, "Texture", "textureDeformer", {}, QString(), true);
+    cmd(m, "Curve Warp", "curveWarp", {}, QString(), true);
+    m->addSeparator();
+    auto* paint = m->addMenu("Paint Weights");
+    for (auto [label, type] : {std::pair{"Blend Shape", "blendShape"}, {"Cluster", "cluster"}, {"Delta Mush", "deltaMush"}, {"Jiggle", "jiggle"}, {"Lattice", "ffd"}, {"Nonlinear", "nonLinear"}, {"Soft Modification", "softMod"}, {"Tension", "tension"}, {"Wire", "wire"}, {"Wrap", "wrap"}}) {
+        QString ty = type;
+        paint->addAction(label, [this, ty] {
+            QString found;
+            for (const QJsonValue& v : ask("artAttrCtx", QJsonObject{{"query", true}, {"queried", QJsonArray{"paintableAttrs"}}}).toArray()) {
+                QString a = v.toString();
+                bool match = ty == "nonLinear" ? QStringList{"bend", "flare", "sine", "squash", "twist", "wave"}.contains(a.section('.', 0, 0)) : a.section('.', 0, 0) == ty;
+                if (match) { found = a; break; }
+            }
+            if (found.isEmpty()) { log("// Warning: select a mesh with that deformer //", 4); return; }
+            exec_quiet("artAttrCtx", QJsonObject{{"edit", true}, {"attrSelected", found}});
+            set_tool("paintAttr");
+            show_tool_settings();
+        });
+    }
+    m->addAction("Edit Membership Tool", [this] { set_tool("editMembership"); show_tool_settings(); });
+    m->addAction("Shape Editor", [this] { show_shape_editor(); });
     return m;
 }
 
@@ -579,6 +610,9 @@ QMenu* MainWindow::skin_menu() {
     cmd(m, "Go to Bind Pose", "dagPose", QJsonObject{{"restore", true}, {"global", true}, {"bindPose", true}});
     m->addSeparator();
     m->addAction("Paint Skin Weights", [this] { set_tool("paintSkin"); show_tool_settings(); });
+    cmd(m, "Hammer Skin Weights", "weightHammerVerts", {});
+    cmd(m, "Remove Unused Influences", "removeUnusedInfluences", {});
+    cmd(m, "Substitute Geometry", "substituteGeometry", {});
     // Mirror and copy work on the selection: one skinned mesh mirrors onto itself, two copy from the first to the second.
     QMenu* mirror = m->addMenu("Mirror Skin Weights");
     for (auto [label, plane, inv] : {std::tuple{"Across YZ, +X to -X", "YZ", false}, {"Across YZ, -X to +X", "YZ", true}, {"Across XZ, +Y to -Y", "XZ", false}, {"Across XY, +Z to -Z", "XY", false}}) {
@@ -1212,6 +1246,10 @@ void MainWindow::refresh_state() {
         if (n == "GraphEditor") show_graph_editor();
         else if (n == "DopeSheetEditor") show_dope_sheet();
         else if (n == "NodeEditorWindow") show_node_editor();
+        else if (n == "ShapeEditor") show_shape_editor();
+        else if (n == "ArtPaintAttrTool") set_tool("paintAttr");
+        else if (n == "ArtPaintAttrToolOptions") { set_tool("paintAttr"); show_tool_settings(); }
+        else if (n == "EditMembershipTool") { set_tool("editMembership"); show_tool_settings(); }
         else if (n == "SetDrivenKeyOptions") show_set_driven_key();
         else if (n == "ScriptEditor") show_script_editor();
         else if (n == "OutlinerWindow") { outliner_dock_->show(); outliner_dock_->raise(); }
@@ -1311,6 +1349,10 @@ void MainWindow::set_tool(const QString& tool) {
         help_line_->setText(tool_help[tool]);
     else if (tool == "curveCv" || tool == "curveEp")
         help_line_->setText("Curve Tool: click to place points, Backspace takes the last back, Enter makes the curve. Hold X to snap to the grid.");
+    else if (tool == "paintAttr")
+        help_line_->setText("Paint Attribute Tool: drag to paint, Ctrl paints the inverse, Shift smooths, B-drag sizes the brush.");
+    else if (tool == "editMembership")
+        help_line_->setText("Edit Membership Tool: pick a deformer in the Tool Settings, select components, then add them or take them out.");
     else if (tool == "paintSkin")
         help_line_->setText("Paint Skin Weights Tool: drag to paint, Ctrl paints the inverse, Shift smooths, B-drag sizes the brush.");
     else if (tool == "joint")
@@ -1397,6 +1439,18 @@ void MainWindow::show_node_editor() {
     node_window_->raise();
     node_window_->activateWindow();
     if (auto* ed = node_window_->findChild<NodeEditor*>()) ed->graph_selection(1);
+}
+
+void MainWindow::show_shape_editor() {
+    if (!shape_window_) {
+        shape_window_ = new ShapeEditor(this);
+        shape_window_->setWindowFlag(Qt::Window);
+        shape_window_->setWindowTitle("Shape Editor");
+        shape_window_->resize(560, 480);
+    }
+    shape_window_->show();
+    shape_window_->raise();
+    shape_window_->activateWindow();
 }
 
 void MainWindow::show_dope_sheet() {
@@ -1631,7 +1685,7 @@ bool MainWindow::hotkey(QKeyEvent* k, bool press) {
         for (ViewportWidget* v : panels_->views()) v->set("toolTab", press ? "true" : "false");
         return true;
     }
-    if (key == Qt::Key_B && (tool_ == "paintSkin" || tool_ == "sculpt") && !ctrl && !alt && !shift) {
+    if (key == Qt::Key_B && (tool_ == "paintSkin" || tool_ == "paintAttr" || tool_ == "sculpt") && !ctrl && !alt && !shift) {
         for (ViewportWidget* v : panels_->views()) v->set("brushAdjust", press ? "true" : "false");
         return true;
     }
