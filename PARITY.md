@@ -427,7 +427,7 @@ Maya stored, meshes against their originals. `rig_diff.rs` compares two files un
 from small `.ma` files written by hand.
 
 Works on that rig: opens in about 3 seconds with nothing dropped but render settings and polyBridgeEdge history (its meshes hold their
-geometry); every stored channel comes out as saved, to within 0.2 degrees on the eyelid joints; body, arm IK and FK, legs, spine, head, jaw, lips,
+geometry); every stored translate comes out as saved, and every stored rotate except on 63 eyelid joints, which are up to 0.51 degrees off (cause not found); body, arm IK and FK, legs, spine, head, jaw, lips,
 cheeks, brows and blink all reach the final meshes; 13 to 44 ms per change; saving and reopening gives the same result under every pose
 tried, to the last digit.
 
