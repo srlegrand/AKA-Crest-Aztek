@@ -133,10 +133,9 @@ impl NodeBehavior for TransformGeometry {
     }
 }
 
-/// Point and frame on a surface or mesh. The frame's axes are the surface normal and the tangents along U and V.
+/// Point and tangents along U and V on a surface or mesh.
 struct Frame {
     point: DVec3,
-    normal: DVec3,
     du: DVec3,
     dv: DVec3,
 }
@@ -221,7 +220,7 @@ impl Follicle {
         let (t1, t2) = (uv(1) - uv(0), uv(2) - uv(0));
         let det = t1.perp_dot(t2);
         let (du, dv) = if det.abs() > 1e-14 { ((e1 * t2.y - e2 * t1.y) / det, (e2 * t1.x - e1 * t2.x) / det) } else { (e1, e2) };
-        Some(Frame { point, normal: e1.cross(e2), du, dv })
+        Some(Frame { point, du, dv })
     }
 }
 
@@ -234,7 +233,7 @@ impl NodeBehavior for Follicle {
             let (vlo, vhi) = s.domain_v();
             let (uu, vv) = (ulo + u.clamp(0.0, 1.0) * (uhi - ulo), vlo + v.clamp(0.0, 1.0) * (vhi - vlo));
             let (point, du, dv) = s.eval_ders(uu, vv);
-            Some(Frame { point, normal: du.cross(dv), du, dv })
+            Some(Frame { point, du, dv })
         } else if let Some(m) = d.mesh(Self::IN_MESH).cloned() {
             self.on_mesh(&m, u, v)
         } else {
@@ -243,11 +242,11 @@ impl NodeBehavior for Follicle {
         let Some(f) = frame else { return };
         let w = d.matrix(Self::IN_WORLD);
         let t = w.transform_point3(f.point);
-        let x = w.transform_vector3(f.normal).normalize_or_zero();
-        let mut y = w.transform_vector3(f.du);
-        y = (y - x * y.dot(x)).normalize_or_zero();
-        let z = x.cross(y);
-        let _ = f.dv;
+        // X along U, Y along V, Z the normal.
+        let x = w.transform_vector3(f.du).normalize_or_zero();
+        let along_v = w.transform_vector3(f.dv);
+        let z = x.cross(along_v).normalize_or_zero();
+        let y = z.cross(x);
         let rot = DMat3::from_cols(x, y, z);
         d.set_output(Self::OUT_T, PlugValue::Vec3(t));
         d.set_output(Self::OUT_R, PlugValue::Vec3(matrix_to_euler(&rot, RotateOrder::Xyz)));

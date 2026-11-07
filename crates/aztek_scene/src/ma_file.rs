@@ -1994,6 +1994,12 @@ impl Build<'_> {
                     let _ = self.s.graph.set_parent(h, parent, false, usize::MAX);
                 }
                 self.apply_channels(i);
+                // The rest reference: the constraint's rest value when one drives it, else the stored vector.
+                let driven_by = doc.input(i, &["pvx", "poleVectorX", "pv", "poleVector"]).map(|c| &doc.nodes[c.src]);
+                let rest = driven_by.and_then(|c| c.vec3(&["rst", "restTranslate"])).or_else(|| n.vec3(&["pv", "poleVector"]));
+                if let Some(p) = rest {
+                    crate::ik::set_rest_pole(&mut self.s.graph, h, p);
+                }
             }
             Err(e) => self.warnings.push(format!("{}: {e}", n.name)),
         }
@@ -2017,6 +2023,8 @@ impl Build<'_> {
             .iter()
             .find(|c| c.src == i && matches!(plain_attr(&c.src_attr).as_str(), "ctx" | "cty" | "ctz" | "ct" | "crx" | "cry" | "crz" | "cr" | "csx" | "csy" | "csz" | "cs"))
             .map(|c| c.dst)
+            // A constraint blended with animation goes through a pairBlend; what it drives is what that drives.
+            .map(|d| if doc.nodes[d].ty == "pairBlend" { doc.conns.iter().find(|c| c.src == d && matches!(plain_attr(&c.src_attr).as_str(), "ot" | "otx" | "oty" | "otz" | "or" | "orx" | "ory" | "orz")).map_or(d, |c| c.dst) } else { d })
             .or_else(|| doc.input(i, &["cpim"]).map(|c| c.src))
             .or(n.parent);
         let Some(driven_id) = driven.and_then(|d| self.id(d)) else {
@@ -2276,6 +2284,46 @@ impl Build<'_> {
         }
     }
 
+    /// Connections with a constraint at one end, which `channel_connections` could not make because the constraints come later:
+    /// what drives a target's weight, usually a set driven key for a space switch, and a constraint feeding a pairBlend.
+    fn constraint_connections(&mut self) {
+        let doc = self.doc;
+        let is_constraint = |i: usize| rig::CONSTRAINT_TYPES.contains(&doc.nodes[i].ty.as_str());
+        let mut blends: Vec<usize> = Vec::new();
+        for c in &doc.conns {
+            if is_constraint(c.dst) && matches!(plain_attr(&c.dst_attr).as_str(), "wum" | "worldUpMatrix") {
+                let (Some(src), Some(dst)) = (self.id(c.src), self.id(c.dst)) else { continue };
+                self.plain_connection(c, c.src, &c.src_attr, src, dst);
+            } else if is_constraint(c.dst) && c.src != c.dst {
+                let Some(e) = plain_attr(&c.dst_attr).strip_prefix('w').and_then(|x| x.parse::<usize>().ok()) else { continue };
+                let (sn, sa) = self.real_source(c);
+                let (Some(src), Some(dst)) = (self.id(sn), self.id(c.dst)) else { continue };
+                let t = self.s.graph.node(dst).unwrap().type_arc().clone();
+                let suffix = format!("W{e}");
+                let Some(a) = t.attrs.iter().position(|a| a.has(flags::USER) && a.name.ends_with(&suffix)) else { continue };
+                let st = self.s.graph.node(src).unwrap().type_arc().clone();
+                let out = if st.attr_index("keys").is_some() { st.attr_index("output").map(|x| (x, -1)) } else { channel(&st, &plain_attr(&sa)) };
+                let Some((oa, oc)) = out else { continue };
+                if let Err(e) = self.s.graph.connect(&plug_ref(src, oa, oc), &PlugRef::new(dst, a as i32), true) {
+                    self.warnings.push(format!("{}.{sa} -> {}.{}: {e}", doc.nodes[sn].name, doc.nodes[c.dst].name, c.dst_attr));
+                }
+            } else if is_constraint(c.src) && doc.nodes[c.dst].ty == "pairBlend" {
+                let (Some(src), Some(dst)) = (self.id(c.src), self.id(c.dst)) else { continue };
+                self.plain_connection(c, c.src, &c.src_attr, src, dst);
+                if !blends.contains(&c.dst) {
+                    blends.push(c.dst);
+                }
+            }
+        }
+        // The constraint took the channels when it was made; they belong to the pairBlend.
+        for &b in &blends {
+            for c in doc.conns.iter().filter(|c| c.src == b) {
+                let (Some(src), Some(dst)) = (self.id(c.src), self.id(c.dst)) else { continue };
+                self.plain_connection(c, c.src, &c.src_attr, src, dst);
+            }
+        }
+    }
+
     /// Curves with something left to drive; the rest are dropped with what they animated.
     fn curve_is_needed(&self, i: usize) -> bool {
         self.doc.conns.iter().any(|c| {
@@ -2285,7 +2333,7 @@ impl Build<'_> {
                 match self.id(c.dst) {
                     Some(_) if is_plain_node(&d.ty) || deformers::is_file_deformer(&d.ty) => true,
                     Some(id) => channel(self.s.graph.node(id).unwrap().ty(), &plain).is_some(),
-                    None => d.ty == "unitConversion" || d.ty == "ikHandle" || d.ty.starts_with("deform"),
+                    None => d.ty == "unitConversion" || d.ty == "ikHandle" || d.ty.starts_with("deform") || rig::CONSTRAINT_TYPES.contains(&d.ty.as_str()),
                 }
             }
         })
@@ -2563,6 +2611,7 @@ fn build(s: &mut Session, doc: &Doc, import: bool) -> Vec<String> {
             b.create_constraint(i, kind);
         }
     }
+    b.constraint_connections();
     for i in 0..count {
         if doc.nodes[i].ty == "dagPose" {
             b.create_pose(i);

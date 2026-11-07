@@ -9,6 +9,15 @@ fn main() {
     ma_file::open_scene(&mut s, &args[1]).expect("open");
     s.graph.evaluate();
     for a in &args[2..] {
+        if a == "touch" {
+            // Dirties everything and evaluates again: a result that moves was not settled.
+            for id in s.graph.nodes() {
+                s.graph.touch(id);
+            }
+            s.graph.evaluate();
+            println!("-- touched");
+            continue;
+        }
         if a.contains('.') {
             let v = s.run("getAttr", serde_json::json!({"args": [a]}));
             println!("{a} = {v:?}");
