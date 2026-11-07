@@ -22,7 +22,7 @@ Name:           aztek
 Version:        %{aztek_version}
 Release:        1%{?dist}
 Summary:        Modelling, UV, rigging and animation application
-License:        Apache-2.0
+License:        MIT-0
 URL:            https://github.com/srlegrand/AKA-Crest-Aztek
 ExclusiveArch:  x86_64
 
