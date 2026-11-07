@@ -100,7 +100,11 @@ private:
     void marking_menu(QPoint global, int mods);
     void repeat_last();
     void open_scene();
-    void save_scene(bool as);
+    void new_scene();
+    /// True when the scene saved, or when it can be thrown away: asks if it has changes. False: stay where you are.
+    bool confirm_unsaved();
+    bool save_scene(bool as);
+    bool no_prompts_ = false;
     bool hotkey(QKeyEvent* k, bool press);
     // runtime.cpp: named actions, the hotkey table and its editor.
     void build_runtime();

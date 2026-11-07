@@ -219,7 +219,7 @@ void MainWindow::build_runtime() {
     r("HideSelected", "Display", "Hide the selection", [] { exec("hide"); });
     r("ShowLastHidden", "Display", "Show what was last hidden", [] { exec("showLastHidden"); });
     r("ToggleVisibility", "Display", "Show or hide", [] { exec("toggleVisibility"); });
-    r("NewScene", "File", "New scene", [] { aztek_free(aztek_file("new", "")); Host::get()->poke(); });
+    r("NewScene", "File", "New scene", [this] { new_scene(); });
     r("OpenScene", "File", "Open a scene", [this] { open_scene(); });
     r("SaveScene", "File", "Save the scene", [this] { save_scene(false); });
     r("SaveSceneAs", "File", "Save the scene under a new name", [this] { save_scene(true); });

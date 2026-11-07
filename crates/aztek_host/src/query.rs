@@ -524,6 +524,7 @@ pub fn state(core: &Core) -> Value {
         "canUndo": g.undo_stack().can_undo(),
         "canRedo": g.undo_stack().can_redo(),
         "file": core.s.scene_path,
+        "modified": core.s.is_modified(),
         "version": core.version,
     })
 }

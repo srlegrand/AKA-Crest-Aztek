@@ -109,6 +109,7 @@ MainWindow::MainWindow() {
     in_view_ = new InViewEditor(panels_);
 
     connect(Host::get(), &Host::sceneChanged, this, &MainWindow::refresh_state);
+    connect(Host::get(), &Host::sceneChanged, this, &MainWindow::update_title);
     connect(Host::get(), &Host::logLines, this, [this](const QJsonArray& lines) {
         if (script_editor_) script_editor_->append(lines);
         // The command line's result field shows the latest result or error.
@@ -1005,7 +1006,7 @@ void MainWindow::refresh_state() {
 
 void MainWindow::update_title() {
     QString file = state()["file"].toString();
-    setWindowTitle(QString("Aztek - %1").arg(file.isEmpty() ? "untitled" : file));
+    setWindowTitle(QString("Aztek - %1%2").arg(file.isEmpty() ? "untitled" : file, state()["modified"].toBool() ? "*" : ""));
 }
 
 ViewportWidget* MainWindow::active_view() const {
@@ -1077,7 +1078,29 @@ void MainWindow::repeat_last() {
     if (!last_command_.isEmpty()) exec(last_command_, last_call_);
 }
 
+bool MainWindow::confirm_unsaved() {
+    if (no_prompts_ || !state()["modified"].toBool()) return true;
+    QString file = state()["file"].toString();
+    QMessageBox box(QMessageBox::Warning, "Save Changes", file.isEmpty() ? "Save changes to the untitled scene?" : QString("Save changes to %1?").arg(file), QMessageBox::NoButton, this);
+    QPushButton* save = box.addButton("Save", QMessageBox::AcceptRole);
+    QPushButton* discard = box.addButton("Don't Save", QMessageBox::DestructiveRole);
+    box.addButton("Cancel", QMessageBox::RejectRole);
+    box.setDefaultButton(save);
+    box.exec();
+    if (box.clickedButton() == discard) return true;
+    if (box.clickedButton() == save) return save_scene(false);
+    return false;
+}
+
+void MainWindow::new_scene() {
+    if (!confirm_unsaved()) return;
+    aztek_free(aztek_file("new", ""));
+    Host::get()->poke();
+    update_title();
+}
+
 void MainWindow::open_scene() {
+    if (!confirm_unsaved()) return;
     QString f = QFileDialog::getOpenFileName(this, "Open Scene", QString(), "Scenes (*.aztek *.ma);;Aztek scenes (*.aztek);;ASCII scenes (*.ma);;All files (*)");
     if (!f.isEmpty()) open_file(f);
 }
@@ -1095,17 +1118,26 @@ void MainWindow::open_file(const QString& path) {
     update_title();
 }
 
-void MainWindow::save_scene(bool as) {
+bool MainWindow::save_scene(bool as) {
     QString f = state()["file"].toString();
     if (as || f.isEmpty()) {
         QString filter;
         f = QFileDialog::getSaveFileName(this, "Save Scene As", f.isEmpty() ? "untitled.aztek" : f, "Aztek scenes (*.aztek);;ASCII scenes (*.ma)", &filter);
-        if (f.isEmpty()) return;
-        if (!f.section('/', -1).contains('.')) f += filter.contains("*.ma") ? ".ma" : ".aztek";
+        if (f.isEmpty()) return false;
+        if (!f.section('/', -1).contains('.')) {
+            f += filter.contains("*.ma") ? ".ma" : ".aztek";
+            // The dialog only asked about the name as typed.
+            if (QFile::exists(f) && QMessageBox::warning(this, "Save Scene As", QString("%1 already exists. Do you want to replace it?").arg(f), QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return false;
+        }
     }
     QString err = take(aztek_file("save", f.toUtf8().constData()));
     Host::get()->poke();
     update_title();
+    if (!err.isEmpty()) {
+        QMessageBox::critical(this, "Save Scene", err);
+        return false;
+    }
+    return true;
 }
 
 void MainWindow::show_script_editor() {
@@ -1281,6 +1313,10 @@ bool MainWindow::eventFilter(QObject* o, QEvent* e) {
 }
 
 void MainWindow::closeEvent(QCloseEvent* e) {
+    if (!confirm_unsaved()) {
+        e->ignore();
+        return;
+    }
     QSettings s;
     s.setValue("window/geometry", saveGeometry());
     s.setValue("window/state", saveState());
@@ -1288,6 +1324,7 @@ void MainWindow::closeEvent(QCloseEvent* e) {
 }
 
 void MainWindow::run_startup(const QString& script, const QString& screenshot) {
+    no_prompts_ = !screenshot.isEmpty();
     QSettings s;
     if (s.contains("window/geometry") && screenshot.isEmpty()) {
         restoreGeometry(s.value("window/geometry").toByteArray());

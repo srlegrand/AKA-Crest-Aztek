@@ -4530,6 +4530,7 @@ pub fn write_file(s: &mut Session, path: &str, format: Format, only: Option<&[No
 pub fn save_scene(s: &mut Session, path: &str, format: Format) -> Result<Vec<String>, String> {
     let w = write_file(s, path, format, None)?;
     s.scene_path = Some(path.to_string());
+    s.mark_saved();
     Ok(w)
 }
 
@@ -4574,6 +4575,7 @@ pub fn open_scene(s: &mut Session, path: &str) -> Result<Vec<String>, String> {
     let _ = s.run("flushUndo", json!({}));
     s.scene_path = Some(path.to_string());
     crate::shading::scene_was_read(s);
+    s.mark_saved();
     Ok(warnings)
 }
 
@@ -4620,6 +4622,10 @@ fn file_command(s: &mut Session, a: &Args) -> CmdResult {
             _ => Format::of_path(path),
         }
     };
+    // As Maya: a script has to say -force to throw changes away.
+    if (a.bool("new") || a.bool("open")) && !a.bool("force") && s.is_modified() {
+        fail!("file: Unsaved changes.");
+    }
     if a.bool("new") {
         let _ = s.run("newScene", json!({}))?;
         s.scene_path = None;
@@ -4697,7 +4703,7 @@ fn file_query(s: &Session, a: &Args, path: Option<&str>) -> Value {
         return json!([t.type_name()]);
     }
     if a.bool("modified") {
-        return json!(s.graph.undo_stack().can_undo());
+        return json!(s.is_modified());
     }
     if a.has("options") || crate::maya_core::asked(a, "options") {
         return json!("");

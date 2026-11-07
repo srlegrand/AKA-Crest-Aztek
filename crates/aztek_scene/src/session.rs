@@ -67,6 +67,8 @@ pub struct Session {
     pub sculpt_ctx: crate::sculpt::SculptCtx,
     /// The scene's file, what `file -q -sn` returns. None while untitled.
     pub scene_path: Option<String>,
+    /// The undo stack's state when the scene was last saved, opened or made; None until one of those.
+    pub saved_state: Option<u64>,
     /// The file type asked for with `file -type`, for the next save.
     pub scene_type: Option<crate::ma_file::Format>,
     /// Scene settings and references: see system_cmds.
@@ -105,6 +107,7 @@ impl Session {
             poly_state: Default::default(),
             sculpt_ctx: Default::default(),
             scene_path: None,
+            saved_state: None,
             scene_type: None,
             extras: Default::default(),
             new_nodes_from: None,
@@ -200,6 +203,7 @@ impl Session {
             poly_state: Default::default(),
             sculpt_ctx: Default::default(),
             scene_path: Default::default(),
+            saved_state: None,
             scene_type: Default::default(),
             extras: Default::default(),
             buffer_curves: Default::default(),
@@ -278,5 +282,20 @@ impl CommandHost for Session {
         crate::components::command_finished(&mut self.graph, name, source, ok);
         crate::last_op::command_finished(self, name, call, source, ok);
         crate::motion_path::after_command(self, name, ok);
+    }
+}
+
+impl Session {
+    /// Whether the scene has changes that haven't been saved. Undoing back to what was saved counts as no change.
+    pub fn is_modified(&self) -> bool {
+        match self.saved_state {
+            Some(id) => self.graph.undo_stack().newest_id() != id,
+            None => self.graph.undo_stack().can_undo(),
+        }
+    }
+
+    /// What's in the scene now is what's on disk, or a new scene.
+    pub fn mark_saved(&mut self) {
+        self.saved_state = Some(self.graph.undo_stack().newest_id());
     }
 }

@@ -737,6 +737,7 @@ fn register_scene(c: &mut Commands<Session>) {
             s.graph.clear();
             s.extras = Default::default();
             crate::anim::set_frame(&mut s.graph, crate::anim::range().min);
+            s.mark_saved();
             Ok(Value::Null)
         })
         .undoable(false),
