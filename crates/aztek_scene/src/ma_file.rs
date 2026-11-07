@@ -4,14 +4,16 @@
 //! no graph involved; then what Aztek can represent is built from that list, and the rest is reported by node type.
 //! Files are read tolerantly: unknown commands and attributes are skipped, unknown node types become a warning.
 //!
-//! Writing bakes every mesh to stored geometry (.vt .ed .fc), since Aztek's history nodes are not all Maya's. A skinned
-//! mesh gets an intermediate Orig shape holding its bind geometry, as Maya does. Aztek's internal nodes (ikSolve, its
+//! Writing bakes every mesh to stored geometry (.vt .ed .fc), since Aztek's history nodes are not all Maya's. A deformed
+//! mesh gets an intermediate Orig shape holding what its deformers read, as Maya does (see `deformers`). Aztek's internal nodes (ikSolve, its
 //! matrix-fed constraints) are written as the nodes Maya expects: ikEffector and a solver, constraints with their
 //! target compounds.
 //!
 //! Numbers that are easy to get wrong, all as Maya writes them: signed edges in .fc use ~e for reversed, so -2 is edge
 //! 1 reversed; matrices list Aztek's columns in order, which are Maya's rows; .kix is in seconds and .kiy in internal
 //! units (radians on angle curves); tangent codes in .kit and .kot are the file's own (see `tangent_code`).
+
+mod deformers;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
@@ -1008,7 +1010,7 @@ const XFORM_CHANNELS: &[&str] = &[
 /// Rigging and animation nodes that are all attributes and connections.
 const PLAIN_NODES: &[&str] = &["container", "controller", "timeWarp", "hierarchyTreeNode", "curveFromMeshEdge", "characterMap", "keyingGroup"];
 /// The same under a transform.
-const PLAIN_SHAPES: &[&str] = &["distanceDimShape", "paramDimension", "annotationShape", "dropoffLocator"];
+const PLAIN_SHAPES: &[&str] = &["distanceDimShape", "paramDimension", "annotationShape", "dropoffLocator", "lattice", "baseLattice", "softModHandle"];
 
 /// Nodes written and read attribute by attribute, with their connections: utility nodes and expressions.
 fn is_plain_node(ty: &str) -> bool {
@@ -1328,7 +1330,10 @@ struct Chain {
     base: Option<usize>,
     /// polyTweak nodes between that source and the shape, source first.
     tweaks: Vec<usize>,
-    skin: Option<usize>,
+    /// tweak nodes among the deformers.
+    vertex_tweaks: Vec<usize>,
+    /// Deformers and skins with the geometry index they output, source first.
+    deformers: Vec<(usize, i64)>,
     /// Nodes on the way that cannot be replayed.
     lost: Vec<usize>,
 }
@@ -1339,9 +1344,15 @@ fn walk_chain(doc: &Doc, shape: usize, stored: &HashMap<usize, MaMesh>) -> Chain
     let mut c = Chain::default();
     let mut seen = HashSet::new();
     let mut at = shape;
+    // Which geometry of a deformer the walk came out of: that index is the way back.
+    let mut through = 0;
     while seen.insert(at) {
-        let Some(conn) = doc.input(at, INPUT_ATTRS) else { break };
+        let plain = |c: &&Conn| c.dst == at && INPUT_ATTRS.contains(&plain_attr(&c.dst_attr).as_str());
+        let by_index = doc.conns.iter().filter(plain).find(|c| first_index(&c.dst_attr).unwrap_or(0) == through);
+        let Some(conn) = by_index.or_else(|| doc.conns.iter().find(plain)) else { break };
         let next = conn.src;
+        let index = first_index(&conn.src_attr).unwrap_or(0);
+        through = if deformers::is_file_deformer(&doc.nodes[next].ty) || doc.nodes[next].ty == "skinCluster" || doc.nodes[next].ty == "tweak" { index } else { 0 };
         let n = &doc.nodes[next];
         match n.ty.as_str() {
             "mesh" => {
@@ -1350,9 +1361,12 @@ fn walk_chain(doc: &Doc, shape: usize, stored: &HashMap<usize, MaMesh>) -> Chain
                     break;
                 }
             }
-            "polyTweak" => c.tweaks.insert(0, next),
-            "skinCluster" if c.skin.is_none() => c.skin = Some(next),
-            "groupParts" | "groupId" | "tweak" | "unitConversion" => {}
+            // Under a deformer it is in the chain; `walk_chain` moves any with no deformer upstream back to the base.
+            "polyTweak" => c.deformers.insert(0, (next, index)),
+            "skinCluster" => c.deformers.insert(0, (next, index)),
+            t if deformers::is_file_deformer(t) => c.deformers.insert(0, (next, index)),
+            "tweak" => c.vertex_tweaks.push(next),
+            "groupParts" | "groupId" | "unitConversion" => {}
             t if creator_attrs(t).is_some() => {
                 c.creator = Some(next);
                 break;
@@ -1361,10 +1375,24 @@ fn walk_chain(doc: &Doc, shape: usize, stored: &HashMap<usize, MaMesh>) -> Chain
         }
         at = next;
     }
+    while c.deformers.first().is_some_and(|d| doc.nodes[d.0].ty == "polyTweak") {
+        let (t, _) = c.deformers.remove(0);
+        c.tweaks.push(t);
+    }
     c
 }
 
+/// A chain node made for one geometry index of a file's deformer.
+#[derive(Clone, Copy)]
+struct FileDeformer {
+    doc: usize,
+    geometry: i64,
+    id: NodeId,
+    shape: NodeId,
+}
+
 struct Build<'a> {
+    deformers: Vec<FileDeformer>,
     s: &'a mut Session,
     doc: &'a Doc,
     ids: Vec<Option<NodeId>>,
@@ -1417,7 +1445,8 @@ impl Build<'_> {
         }
         let parent = self.nearest_parent(i);
         let n = &self.doc.nodes[i];
-        let Some(t) = types::find(&n.ty) else { return };
+        let handle = if n.ty == "transform" { deformers::handle_under(self.doc, i) } else { None };
+        let Some(t) = types::find(if handle.is_some() { "deformHandle" } else { &n.ty }) else { return };
         let name = if Graph::valid_name(&n.name) { n.name.clone() } else { String::new() };
         let is_shape = t.is_a("shape");
         let r = (|| -> Result<NodeId, String> {
@@ -1436,6 +1465,11 @@ impl Build<'_> {
             Ok(id) => {
                 self.ids[i] = Some(id);
                 self.used[i] = true;
+                if let Some((shape, kind)) = handle {
+                    self.used[shape] = true;
+                    let a = t.attr_index("deformerType").unwrap();
+                    let _ = self.s.graph.set_value(PlugRef::new(id, a as i32), PlugValue::String(kind.into()));
+                }
             }
             Err(e) => self.warnings.push(format!("{}: {e}", n.name)),
         }
@@ -1745,10 +1779,15 @@ impl Build<'_> {
             }
             m
         };
-        let source = if chain.skin.is_none() && own {
+        let chained = !chain.deformers.is_empty();
+        let source = if !chained && own {
             Source::Stored(tweaked(self, i, &[]))
         } else if let Some(base) = chain.base {
-            Source::Stored(tweaked(self, base, &chain.tweaks))
+            let mut m = tweaked(self, base, &chain.tweaks);
+            for &t in &chain.vertex_tweaks {
+                deformers::apply_vertex_tweaks(doc, &mut m, t);
+            }
+            Source::Stored(m)
         } else if let Some(c) = chain.creator {
             if !chain.tweaks.is_empty() {
                 let names: Vec<&str> = chain.tweaks.iter().map(|&t| doc.nodes[t].name.as_str()).collect();
@@ -1761,7 +1800,7 @@ impl Build<'_> {
             Source::Nothing
         };
 
-        let Some(sk) = chain.skin else {
+        if !chained {
             match source {
                 Source::Stored(m) => {
                     let _ = self.s.graph.set_value(in_mesh, PlugValue::Mesh(Some(Arc::new(m))));
@@ -1777,9 +1816,9 @@ impl Build<'_> {
                 Source::Nothing => self.warnings.push(format!("{}: no geometry found", n.name)),
             }
             return;
-        };
+        }
 
-        // Skinned: the bind geometry goes on an intermediate shape (or stays a creator) that feeds the skinCluster.
+        // Deformed: what the deformers read goes on an intermediate shape (or stays a creator) that feeds the first.
         let src = match source {
             Source::Stored(m) => {
                 let parent = self.s.graph.parent(shape);
@@ -1803,22 +1842,32 @@ impl Build<'_> {
                 None
             }
         };
-        let Some(src) = src else { return };
-        self.create_skin(sk, i, shape, src);
+        let Some(mut prev) = src else { return };
+        for &(d, k) in &chain.deformers {
+            let made = match doc.nodes[d].ty.as_str() {
+                skin::SKIN_TYPE => self.create_skin(d),
+                crate::history::TWEAK_TYPE => self.create_chain_tweak(d),
+                _ => self.create_deformer(d, k, shape),
+            };
+            let Some(id) = made else { continue };
+            let t = self.s.graph.node(id).unwrap().type_arc().clone();
+            let (ip, out) = (t.attr_index("inputPolymesh").unwrap(), t.attr_index("output").unwrap());
+            let _ = self.s.graph.connect(&prev, &PlugRef::new(id, ip as i32), false);
+            prev = PlugRef::new(id, out as i32);
+        }
+        let _ = self.s.graph.connect(&prev, &in_mesh, false);
     }
 
-    fn create_skin(&mut self, sk: usize, _shape_node: usize, shape: NodeId, src: PlugRef) {
+    fn create_skin(&mut self, sk: usize) -> Option<NodeId> {
         let doc = self.doc;
         let n = &doc.nodes[sk];
         let t = types::find(skin::SKIN_TYPE).unwrap();
         let at = |name: &str| t.attr_index(name).unwrap();
         let name = if Graph::valid_name(&n.name) { n.name.clone() } else { String::new() };
-        let Ok(id) = self.s.graph.create_node(&t, &name, NO_NODE, false) else { return };
+        let id = self.s.graph.create_node(&t, &name, NO_NODE, false).ok()?;
         self.ids[sk] = Some(id);
         self.used[sk] = true;
         let g = &mut self.s.graph;
-        let _ = g.connect(&src, &PlugRef::new(id, at("inputPolymesh") as i32), false);
-        let _ = g.connect(&PlugRef::new(id, at("output") as i32), &PlugRef::new(shape, MeshNode::IN_MESH as i32), false);
         if let Some(v) = n.num(&["en", "envelope"]) {
             let _ = g.set_value(PlugRef::new(id, at("envelope") as i32), PlugValue::Float(v));
         }
@@ -1838,6 +1887,7 @@ impl Build<'_> {
         if let Some(v) = n.num(&["nw", "normalizeWeights"]) {
             let _ = g.set_value(PlugRef::new(id, at("normalizeWeights") as i32), PlugValue::Int(v as i64));
         }
+        Some(id)
     }
 
     /// Influences, bind matrices and weights: after the skeleton exists and has its values.
@@ -2164,6 +2214,10 @@ impl Build<'_> {
             let (sn, sa) = self.real_source(c);
             let Some(src) = self.id(sn) else { continue };
             let st = self.s.graph.node(src).unwrap().type_arc().clone();
+            // These go through `deformer_connections`.
+            if crate::deform::is_deformer(&dt.name) || crate::deform::is_deformer(&st.name) {
+                continue;
+            }
             if is_plain_node(&dt.name) || is_plain_node(&st.name) {
                 self.plain_connection(c, sn, &sa, src, dst);
                 continue;
@@ -2216,9 +2270,9 @@ impl Build<'_> {
                 let d = &self.doc.nodes[c.dst];
                 let plain = plain_attr(&c.dst_attr);
                 match self.id(c.dst) {
-                    Some(_) if is_plain_node(&d.ty) => true,
+                    Some(_) if is_plain_node(&d.ty) || deformers::is_file_deformer(&d.ty) => true,
                     Some(id) => channel(self.s.graph.node(id).unwrap().ty(), &plain).is_some(),
-                    None => d.ty == "unitConversion" || d.ty == "ikHandle",
+                    None => d.ty == "unitConversion" || d.ty == "ikHandle" || d.ty.starts_with("deform"),
                 }
             }
         })
@@ -2397,7 +2451,7 @@ fn build(s: &mut Session, doc: &Doc, import: bool) -> Vec<String> {
             meshes.insert(i, MaMesh::from_node(n));
         }
     }
-    let mut b = Build { s, doc, ids: vec![None; count], used: vec![false; count], meshes, warnings: doc.warnings.clone() };
+    let mut b = Build { s, doc, ids: vec![None; count], used: vec![false; count], meshes, warnings: doc.warnings.clone(), deformers: Vec::new() };
 
     // Cameras are skipped with the transforms that exist only to hold them.
     for i in 0..count {
@@ -2436,7 +2490,8 @@ fn build(s: &mut Session, doc: &Doc, import: bool) -> Vec<String> {
         }
     }
     for i in 0..count {
-        if doc.nodes[i].ty == "mesh" && b.ids[i].is_some() {
+        // An intermediate mesh with an id is an Orig already filled from the mesh it feeds, tweaks and all.
+        if doc.nodes[i].ty == "mesh" && b.ids[i].is_some() && !doc.nodes[i].truth(&["io", "intermediateObject"]).unwrap_or(false) {
             b.build_mesh(i);
         }
         if doc.nodes[i].ty == "nurbsSurface" && b.ids[i].is_some() {
@@ -2470,6 +2525,8 @@ fn build(s: &mut Session, doc: &Doc, import: bool) -> Vec<String> {
         }
     }
     b.channel_connections();
+    b.read_lattices();
+    b.deformer_connections();
 
     // The time before anything that reads world matrices at this frame.
     if !import {
@@ -2487,6 +2544,7 @@ fn build(s: &mut Session, doc: &Doc, import: bool) -> Vec<String> {
             b.fill_skin(i);
         }
     }
+    b.fill_deformers();
     for i in 0..count {
         if let Some(kind) = rig::CONSTRAINT_TYPES.iter().position(|t| *t == doc.nodes[i].ty) {
             b.create_constraint(i, kind);
@@ -2786,6 +2844,8 @@ fn vec_text(v: DVec3) -> String {
 }
 
 struct Writer<'a> {
+    /// Deformers written with their mesh.
+    chain_written: HashSet<NodeId>,
     s: &'a mut Session,
     out: String,
     /// Connections, sorted when written.
@@ -2929,7 +2989,7 @@ impl Writer<'_> {
         if crate::cameras::is_default_camera(&self.s.graph, id) {
             return false;
         }
-        t.name == "transform" || t.is_a("joint") || t.is_a("locator") || t.is_a("ikHandle") || t.is_a("camera") || PLAIN_SHAPES.contains(&t.name.as_str())
+        t.name == "transform" || t.name == "deformHandle" || t.is_a("joint") || t.is_a("locator") || t.is_a("ikHandle") || t.is_a("camera") || PLAIN_SHAPES.contains(&t.name.as_str())
     }
 
     fn write_dag(&mut self, id: NodeId) {
@@ -2948,7 +3008,7 @@ impl Writer<'_> {
                     return;
                 }
             }
-            self.create_line(&ty, &name, parent);
+            self.create_line(if ty == "deformHandle" { "transform" } else { &ty }, &name, parent);
             self.write_channels(id);
             if is_plain_node(&ty) {
                 let text = self.plain_attr_lines(id);
@@ -2959,6 +3019,12 @@ impl Writer<'_> {
             }
             if ty == "mesh" {
                 self.write_mesh(id, &name, parent);
+            }
+            if ty == "deformHandle" {
+                self.write_handle_shape(id, &name);
+            }
+            if ty == "lattice" {
+                self.write_lattice_points(id);
             }
             if ty == "nurbsCurve" {
                 self.write_nurbs_curve(id);
@@ -3038,14 +3104,14 @@ impl Writer<'_> {
     fn write_mesh(&mut self, shape: NodeId, name: &str, parent: NodeId) {
         let g = &mut self.s.graph;
         let path = g.path(shape);
-        let skin = skin::skin_of(g, shape);
         let out_plug = PlugRef::new(shape, MeshNode::OUT_MESH as i32);
         self.shading.push(format!("connectAttr {} \":initialShadingGroup.dsm\" -na;", quoted(&format!("{path}.iog"))));
-        match skin.filter(|sk| self.keep.contains(sk)) {
-            Some(sk) => {
-                let t = self.s.graph.node(sk).unwrap().type_arc().clone();
+        let chain = self.deformer_chain(shape);
+        match chain.first().copied() {
+            Some(first) => {
+                let t = self.s.graph.node(first).unwrap().type_arc().clone();
                 let ip = t.attr_index("inputPolymesh").unwrap();
-                let base = self.s.graph.value(&PlugRef::new(sk, ip as i32)).ok().and_then(|v| v.as_mesh().cloned());
+                let base = self.s.graph.value(&PlugRef::new(first, ip as i32)).ok().and_then(|v| v.as_mesh().cloned());
                 let Some(base) = base else { return };
                 let stored = stored_mesh(&base);
                 // The scene's own original isn't written as itself: this one takes its place and its name.
@@ -3058,7 +3124,7 @@ impl Writer<'_> {
                 let _ = writeln!(self.out, "\tsetAttr -k off \".v\";");
                 let _ = writeln!(self.out, "\tsetAttr \".io\" yes;");
                 write_stored(&mut self.out, &stored);
-                self.write_skin_node_later(sk, &path, &orig, &stored);
+                self.write_chain(&chain, &path, &orig, &stored);
             }
             None => {
                 let m = self.s.graph.value(&out_plug).ok().and_then(|v| v.as_mesh().cloned());
@@ -3067,14 +3133,6 @@ impl Writer<'_> {
                 }
             }
         }
-    }
-
-    /// Skin nodes are written after the DAG; this keeps the point of the mesh they bind.
-    fn write_skin_node_later(&mut self, sk: NodeId, shape_path: &str, orig: &str, stored: &Stored) {
-        self.conn(&format!("{orig}.w"), &format!("{}.ip[0].ig", self.s.graph.path(sk)));
-        self.conn(&format!("{}.og[0]", self.s.graph.path(sk)), &format!("{shape_path}.i"));
-        let text = self.skin_text(sk, stored);
-        self.pending_nodes_push(text);
     }
 
     fn pending_nodes_push(&mut self, text: String) {
@@ -3469,6 +3527,11 @@ impl Writer<'_> {
 
     /// A node's stored attributes that differ from their defaults, as setAttr lines.
     fn plain_attr_lines(&self, id: NodeId) -> String {
+        self.attr_lines(id, |_, _| true)
+    }
+
+    /// The same for the attributes `wanted` allows, given each attribute's index and definition.
+    fn attr_lines(&self, id: NodeId, wanted: impl Fn(usize, &AttrDef) -> bool) -> String {
         let g = &self.s.graph;
         let n = g.node(id).unwrap();
         let t = n.type_arc().clone();
@@ -3499,7 +3562,7 @@ impl Writer<'_> {
             }
         };
         for (i, a) in t.attrs.iter().enumerate() {
-            if !a.has(flags::INPUT) || !a.has(flags::STORABLE) {
+            if !a.has(flags::INPUT) || !a.has(flags::STORABLE) || !wanted(i, a) {
                 continue;
             }
             if a.is_array() {
@@ -3528,6 +3591,10 @@ impl Writer<'_> {
                 continue;
             }
             let (dt, st) = (dn.ty(), sn.ty());
+            if crate::deform::is_deformer(&dt.name) || crate::deform::is_deformer(&st.name) {
+                self.deformer_connection(src, dst);
+                continue;
+            }
             let plain = |t: &NodeType| is_plain_node(&t.name) || t.name == "unitConversion";
             if plain(dt) || plain(st) {
                 // By full attribute name. Maya's matrix outputs are arrays: worldMatrix[0].
@@ -3655,6 +3722,19 @@ fn closure(g: &Graph, roots: &[NodeId]) -> HashSet<NodeId> {
                 add_dag(g, &mut keep, j);
             }
         }
+        // Other deformers, and the handles and curves that drive them.
+        for h in crate::history::history_of(g, shape) {
+            let Some(n) = g.node(h) else { continue };
+            if !crate::deform::is_deformer(n.ty().name.as_str()) {
+                continue;
+            }
+            keep.insert(h);
+            for (dst, src) in g.connections() {
+                if dst.node == h && g.node(src.node).is_some_and(|x| x.ty().dag) {
+                    add_dag(g, &mut keep, src.node);
+                }
+            }
+        }
     }
     // Everything else that only serves what is kept.
     for id in g.nodes() {
@@ -3689,7 +3769,7 @@ pub fn write_text(s: &mut Session, file_name: &str, only: Option<&[NodeId]>) -> 
     let (ref_head, ref_tail) = crate::references::ma_statements(s);
     let used: HashSet<String> = g.nodes().iter().filter_map(|&id| g.node(id).map(|n| n.name().to_string())).collect();
     let roots = g.roots().to_vec();
-    let mut w = Writer { s, out: String::new(), conns: Vec::new(), shading: Vec::new(), warnings: Vec::new(), used, keep, preferred: HashMap::new(), pending: Vec::new(), solvers: HashSet::new() };
+    let mut w = Writer { s, out: String::new(), conns: Vec::new(), shading: Vec::new(), warnings: Vec::new(), used, keep, preferred: HashMap::new(), pending: Vec::new(), solvers: HashSet::new(), chain_written: HashSet::new() };
 
     // Preferred angles from the chains the IK solvers remember.
     let g = &w.s.graph;
@@ -3742,7 +3822,7 @@ pub fn write_text(s: &mut Session, file_name: &str, only: Option<&[NodeId]>) -> 
             let output = PlugRef::new(id, t.attr_index("output").unwrap() as i32);
             let drives = w.s.graph.destinations(&output).iter().any(|d| {
                 let dt = w.s.graph.node(d.node).unwrap().ty().name.as_str();
-                w.keep.contains(&d.node) && (w.dag_written(d.node) || DRIVEN_CURVES.contains(&dt) || is_plain_node(dt))
+                w.keep.contains(&d.node) && (w.dag_written(d.node) || DRIVEN_CURVES.contains(&dt) || is_plain_node(dt) || crate::deform::is_deformer(dt))
             });
             if drives {
                 w.write_curve(id);
@@ -3761,8 +3841,10 @@ pub fn write_text(s: &mut Session, file_name: &str, only: Option<&[NodeId]>) -> 
             let _ = writeln!(w.out, "createNode reference -n {};", quoted(n.name()));
         } else if ty == skin::SKIN_TYPE || ty == "ikSolve" {
             // Written with their mesh and handle.
-        } else if crate::deform::is_deformer(ty) || ty == "deformHandle" {
-            *unwritten.entry(ty.to_string()).or_default() += 1;
+        } else if crate::deform::is_deformer(ty) {
+            if !w.chain_written.contains(&id) {
+                *unwritten.entry(ty.to_string()).or_default() += 1;
+            }
         } else if crate::deform_sets::deformer_of_set(&w.s.graph, id).is_some() {
             // Goes with its deformer.
         } else if t.is_a("mesh") {

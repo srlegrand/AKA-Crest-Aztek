@@ -870,15 +870,243 @@ fn locks_user_attrs_and_layers_round_trip() {
     assert_eq!(b.graph.node(layer).unwrap().name(), "layerA");
 }
 
+// A scene's deformed points, by evaluating its mesh.
+fn points(s: &mut Session, name: &str) -> Vec<glam::DVec3> {
+    s.graph.evaluate();
+    let id = s.graph.find(name).unwrap().unwrap();
+    let shape = s.graph.children(id).iter().copied().find(|&c| s.graph.node(c).is_some_and(|n| n.ty().is_a("mesh") && !n.bool(aztek_scene::transform::DagNode::INTERMEDIATE_OBJECT))).unwrap();
+    let out = PlugRef::new(shape, aztek_scene::mesh_nodes::MeshNode::OUT_MESH as i32);
+    s.graph.value(&out).unwrap().as_mesh().unwrap().positions().to_vec()
+}
+
+fn assert_close(a: &[glam::DVec3], b: &[glam::DVec3], what: &str) {
+    assert_eq!(a.len(), b.len(), "{what}");
+    for (i, (x, y)) in a.iter().zip(b).enumerate() {
+        assert!((*x - *y).length() < 1e-6, "{what}: point {i}: {x} and {y}");
+    }
+}
+
+fn round_trip(s: &mut Session) -> (Session, String) {
+    let (text, w) = write_text(s, "x.ma", None);
+    assert!(!w.iter().any(|x| x.contains("not written")), "{w:?}");
+    let mut b = Session::new();
+    let w = read_text(&mut b, &text, false);
+    assert!(!w.iter().any(|x| x.contains("not represented")), "{w:?}");
+    (b, text)
+}
+
 #[test]
-fn deformers_warn_on_write_and_bake() {
+fn a_nonlinear_deformer_round_trips_as_maya_lays_it_out() {
     let mut s = Session::new();
     run(&mut s, "polyCube", json!({"name": "box", "subdivisionsY": 4}));
-    run(&mut s, "nonLinear", json!({"args": ["box"], "type": "bend"}));
-    let (text, w) = write_text(&mut s, "x.ma", None);
-    assert!(!w.is_empty(), "{text}");
-    assert!(!text.contains("deformHandle"), "{text}");
-    assert!(text.contains("\".vt\""));
+    run(&mut s, "nonLinear", json!({"args": ["box"], "type": "bend", "curvature": 1.2, "name": "bendy"}));
+    let want = points(&mut s, "box");
+    let (mut b, text) = round_trip(&mut s);
+    assert!(text.contains("createNode nonLinear -n \"bendy\""), "{text}");
+    assert!(text.contains("createNode deformBend -n \"bendyHandleShape\" -p \"bendyHandle\""), "{text}");
+    assert!(text.contains("setAttr \".cur\" 1.2"), "{text}");
+    assert!(text.contains("connectAttr \"bendyHandleShape.dd\" \"bendy.dd\""), "{text}");
+    assert!(text.contains("connectAttr \"bendyHandle.worldMatrix[0]\" \"bendy.ma\""), "{text}");
+    assert_close(&points(&mut b, "box"), &want, "bend");
+    // The handle still drives it.
+    run(&mut b, "setAttr", json!({"args": ["bendyHandle.rotateX", 40.0]}));
+    run(&mut s, "setAttr", json!({"args": ["bendyHandle.rotateX", 40.0]}));
+    assert_close(&points(&mut b, "box"), &points(&mut s, "box"), "bend, handle turned");
+}
+
+#[test]
+fn a_cluster_keeps_its_points_weights_and_handle() {
+    let mut s = Session::new();
+    run(&mut s, "polyCube", json!({"name": "box", "subdivisionsY": 2}));
+    run(&mut s, "cluster", json!({"args": ["box.vtx[0:3]"], "name": "cl"}));
+    run(&mut s, "setAttr", json!({"args": ["clHandle.translateY", 2.0]}));
+    run(&mut s, "percent", json!({"args": ["cl", "box.vtx[1]"], "value": 0.25}));
+    let want = points(&mut s, "box");
+    let (mut b, text) = round_trip(&mut s);
+    assert!(text.contains("createNode clusterHandle"), "{text}");
+    assert!(text.contains("createNode groupParts"), "{text}");
+    assert!(text.contains("\"vtx[0:3]\""), "{text}");
+    assert!(text.contains("createNode objectSet -n \"clSet\""), "{text}");
+    assert_close(&points(&mut b, "box"), &want, "cluster");
+    run(&mut b, "setAttr", json!({"args": ["clHandle.translateX", 1.0]}));
+    run(&mut s, "setAttr", json!({"args": ["clHandle.translateX", 1.0]}));
+    assert_close(&points(&mut b, "box"), &points(&mut s, "box"), "cluster, handle moved");
+    // Its set came back with the same points.
+    let set = run(&mut b, "sets", json!({"args": ["clSet"], "query": true}));
+    assert_eq!(set, run(&mut s, "sets", json!({"args": ["clSet"], "query": true})));
+}
+
+#[test]
+fn a_blend_shape_round_trips_with_its_aliases_and_weights() {
+    let mut s = Session::new();
+    run(&mut s, "polyCube", json!({"name": "box"}));
+    run(&mut s, "polyCube", json!({"name": "smile"}));
+    run(&mut s, "move", json!({"args": ["smile.vtx[2]", 0.0, 1.0, 0.0], "relative": true}));
+    run(&mut s, "polyCube", json!({"name": "frown"}));
+    run(&mut s, "move", json!({"args": ["frown.vtx[4]", 0.0, -1.0, 0.0], "relative": true}));
+    run(&mut s, "blendShape", json!({"args": ["smile", "frown", "box"], "name": "faces"}));
+    run(&mut s, "setAttr", json!({"args": ["faces.smile", 0.5]}));
+    run(&mut s, "delete", json!({"args": ["smile", "frown"]}));
+    let want = points(&mut s, "box");
+    let (mut b, text) = round_trip(&mut s);
+    assert!(text.contains("-type \"attributeAlias\" {\"smile\",\"weight[0]\",\"frown\",\"weight[1]\"}"), "{text}");
+    assert!(text.contains(".it[0].itg[0].iti[6000].ipt\" -type \"pointArray\""), "{text}");
+    assert_close(&points(&mut b, "box"), &want, "blend");
+    run(&mut b, "setAttr", json!({"args": ["faces.frown", 1.0]}));
+    run(&mut s, "setAttr", json!({"args": ["faces.frown", 1.0]}));
+    assert_close(&points(&mut b, "box"), &points(&mut s, "box"), "blend, other target on");
+    assert_eq!(run(&mut b, "blendShape", json!({"args": ["faces"], "query": true, "queried": ["target"]})), run(&mut s, "blendShape", json!({"args": ["faces"], "query": true, "queried": ["target"]})));
+}
+
+#[test]
+fn a_live_blend_target_stays_connected() {
+    let mut s = Session::new();
+    run(&mut s, "polyCube", json!({"name": "box"}));
+    run(&mut s, "polyCube", json!({"name": "smile"}));
+    run(&mut s, "blendShape", json!({"args": ["smile", "box"], "name": "faces"}));
+    run(&mut s, "setAttr", json!({"args": ["faces.smile", 1.0]}));
+    let (mut b, text) = round_trip(&mut s);
+    assert!(text.contains("smileShape.outMesh\" \"faces.it[0].itg[0].iti[6000].igt\""), "{text}");
+    run(&mut b, "move", json!({"args": ["smile.vtx[2]", 0.0, 1.0, 0.0], "relative": true}));
+    run(&mut s, "move", json!({"args": ["smile.vtx[2]", 0.0, 1.0, 0.0], "relative": true}));
+    assert_close(&points(&mut b, "box"), &points(&mut s, "box"), "live target moved");
+}
+
+#[test]
+fn keys_on_a_blend_weight_and_a_bend_survive() {
+    let mut s = Session::new();
+    run(&mut s, "polyCube", json!({"name": "box", "subdivisionsY": 4}));
+    run(&mut s, "polyCube", json!({"name": "smile", "subdivisionsY": 4}));
+    run(&mut s, "move", json!({"args": ["smile.vtx[2]", 0.0, 1.0, 0.0], "relative": true}));
+    run(&mut s, "blendShape", json!({"args": ["smile", "box"], "name": "faces"}));
+    run(&mut s, "delete", json!({"args": ["smile"]}));
+    run(&mut s, "nonLinear", json!({"args": ["box"], "type": "bend", "name": "bendy"}));
+    run(&mut s, "setKeyframe", json!({"args": ["faces.smile"], "time": 1.0, "value": 0.0}));
+    run(&mut s, "setKeyframe", json!({"args": ["faces.smile"], "time": 10.0, "value": 1.0}));
+    run(&mut s, "setKeyframe", json!({"args": ["bendy.curvature"], "time": 1.0, "value": 0.0}));
+    run(&mut s, "setKeyframe", json!({"args": ["bendy.curvature"], "time": 10.0, "value": 1.5}));
+    run(&mut s, "currentTime", json!({"args": [10.0]}));
+    let want = points(&mut s, "box");
+    let (mut b, _) = round_trip(&mut s);
+    run(&mut b, "currentTime", json!({"args": [10.0]}));
+    assert_close(&points(&mut b, "box"), &want, "keyed");
+    run(&mut b, "currentTime", json!({"args": [1.0]}));
+    run(&mut s, "currentTime", json!({"args": [1.0]}));
+    assert_close(&points(&mut b, "box"), &points(&mut s, "box"), "keyed, frame 1");
+}
+
+#[test]
+fn a_blend_shape_under_a_skin_keeps_the_order() {
+    let mut s = Session::new();
+    run(&mut s, "polyCube", json!({"name": "box", "subdivisionsY": 4}));
+    run(&mut s, "polyCube", json!({"name": "smile", "subdivisionsY": 4}));
+    run(&mut s, "move", json!({"args": ["smile.vtx[2]", 0.0, 1.0, 0.0], "relative": true}));
+    run(&mut s, "blendShape", json!({"args": ["smile", "box"], "name": "faces"}));
+    run(&mut s, "delete", json!({"args": ["smile"]}));
+    run(&mut s, "setAttr", json!({"args": ["faces.smile", 1.0]}));
+    run(&mut s, "select", json!({"args": [], "clear": true}));
+    run(&mut s, "joint", json!({"name": "a", "position": [0.0, -1.0, 0.0]}));
+    run(&mut s, "joint", json!({"name": "c", "position": [0.0, 1.0, 0.0]}));
+    run(&mut s, "skinCluster", json!({"args": ["a", "c", "box"], "name": "skin"}));
+    run(&mut s, "setAttr", json!({"args": ["c.rotateX", 30.0]}));
+    let want = points(&mut s, "box");
+    let (mut b, _) = round_trip(&mut s);
+    assert_close(&points(&mut b, "box"), &want, "blend then skin");
+    let hist = run(&mut b, "listHistory", json!({"args": ["box"]}));
+    let names: Vec<String> = hist.as_array().unwrap().iter().filter_map(|v| v.as_str().map(str::to_string)).collect();
+    let (x, y) = (names.iter().position(|n| n == "skin").unwrap(), names.iter().position(|n| n == "faces").unwrap());
+    assert!(x < y, "{names:?}");
+}
+
+#[test]
+fn every_other_deformer_round_trips() {
+    let setup = |s: &mut Session| {
+        run(s, "polyCube", json!({"name": "box", "subdivisionsX": 3, "subdivisionsY": 3, "subdivisionsZ": 3}));
+    };
+    let cases: Vec<(&str, Box<dyn Fn(&mut Session)>)> = vec![
+        ("lattice", Box::new(|s| {
+            let r = run(s, "lattice", json!({"args": ["box"], "divisions": [2, 3, 2]}));
+            let shape = r.as_array().unwrap()[1].as_str().unwrap().to_string();
+            run(s, "move", json!({"args": [format!("{shape}.pt[0][0][0]"), 0.3, 0.0, 0.0], "relative": true}));
+        })),
+        ("softMod", Box::new(|s| {
+            let r = run(s, "softMod", json!({"args": ["box.vtx[0]"], "falloffRadius": 1.5}));
+            let h = r.as_array().unwrap()[1].as_str().unwrap().to_string();
+            run(s, "setAttr", json!({"args": [format!("{h}.translateY"), 1.0]}));
+        })),
+        ("deltaMush", Box::new(|s| {
+            run(s, "deltaMush", json!({"args": ["box"], "smoothingIterations": 4}));
+            run(s, "move", json!({"args": ["box.vtx[0]", 0.2, 0.2, 0.0], "relative": true}));
+        })),
+        ("wire", Box::new(|s| {
+            run(s, "curve", json!({"name": "crv", "point": [[-1.0, 0.5, 0.0], [1.0, 0.5, 0.0]], "degree": 1}));
+            run(s, "wire", json!({"args": ["box"], "wire": ["crv"], "name": "wr"}));
+            run(s, "setAttr", json!({"args": ["crv.translateY", 0.5]}));
+        })),
+        ("wrap", Box::new(|s| {
+            run(s, "polyCube", json!({"name": "cage", "width": 2.0, "height": 2.0, "depth": 2.0}));
+            run(s, "deformer", json!({"args": ["box"], "type": "wrap", "name": "wr"}));
+        })),
+    ];
+    for (what, make) in cases {
+        let mut s = Session::new();
+        setup(&mut s);
+        make(&mut s);
+        let want = points(&mut s, "box");
+        let (mut b, text) = round_trip(&mut s);
+        assert!(text.contains(&format!("createNode {}", if what == "lattice" { "ffd" } else { what })), "{what}: {text}");
+        assert_close(&points(&mut b, "box"), &want, what);
+    }
+}
+
+#[test]
+fn a_deformer_on_two_meshes_as_maya_files_it() {
+    let text = r#"//Maya ASCII 2024 scene
+requires maya "2024";
+createNode transform -n "a";
+createNode mesh -n "aShape" -p "a";
+createNode mesh -n "aShapeOrig" -p "a";
+	setAttr ".io" yes;
+	setAttr -s 3 ".vt";
+	setAttr ".vt[0:2]" 0 0 0 1 0 0 0 1 0;
+	setAttr -s 3 ".ed";
+	setAttr ".ed[0:2]" 0 1 0 1 2 0 2 0 0;
+	setAttr ".fc[0]" -type "polyFaces" f 3 0 1 2;
+createNode transform -n "b";
+createNode mesh -n "bShape" -p "b";
+createNode mesh -n "bShapeOrig" -p "b";
+	setAttr ".io" yes;
+	setAttr -s 3 ".vt";
+	setAttr ".vt[0:2]" 0 0 5 1 0 5 0 1 5;
+	setAttr -s 3 ".ed";
+	setAttr ".ed[0:2]" 0 1 0 1 2 0 2 0 0;
+	setAttr ".fc[0]" -type "polyFaces" f 3 0 1 2;
+createNode transform -n "clHandle";
+	setAttr ".t" -type "double3" 0 2 0 ;
+createNode clusterHandle -n "clHandleShape" -p "clHandle";
+createNode cluster -n "cl";
+	setAttr -s 2 ".wl";
+	setAttr ".wl[0].w[0:2]" 1 0.5 0;
+	setAttr ".wl[1].w[1]" 0.25;
+createNode tweak -n "tw";
+	setAttr ".vl[0].vt[2]" -type "float3" 0 0 1;
+createNode groupParts -n "gp";
+	setAttr ".ic" -type "componentList" 1 "vtx[*]";
+connectAttr "clHandle.wm" "cl.ma";
+connectAttr "aShapeOrig.w" "tw.ip[0].ig";
+connectAttr "tw.og[0]" "gp.ig";
+connectAttr "gp.og" "cl.ip[0].ig";
+connectAttr "bShapeOrig.w" "cl.ip[1].ig";
+connectAttr "cl.og[0]" "aShape.i";
+connectAttr "cl.og[1]" "bShape.i";
+"#;
+    let mut s = Session::new();
+    let w = read_text(&mut s, text, false);
+    assert!(!w.iter().any(|x| x.contains("cluster") || x.contains("no geometry")), "{w:?}");
+    let a = points(&mut s, "a");
+    assert_close(&a, &[glam::dvec3(0.0, 2.0, 0.0), glam::dvec3(1.0, 1.0, 0.0), glam::dvec3(0.0, 1.0, 1.0)], "first geometry, tweak under it");
+    let b = points(&mut s, "b");
+    assert_close(&b, &[glam::dvec3(0.0, 2.0, 5.0), glam::dvec3(1.0, 0.5, 5.0), glam::dvec3(0.0, 3.0, 5.0)], "second geometry");
 }
 
 fn temp(name: &str) -> String {

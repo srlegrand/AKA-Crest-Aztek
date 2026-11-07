@@ -351,3 +351,9 @@ float), real option boxes on menu items (a separate item), `paneLayout -ps`, dra
 movie, `manipMoveContext -ah` reaching the manipulator. Contexts with no tool in the views yet warn once and stay on
 Select: IK handle, spline IK, curve sketch, poly cut, select edit, skin bind, soft mod, the key tools. Events with no
 source in the core (`linearUnitChanged` and the like) are accepted and never fire.
+
+### .ma deformers (07/11/2026)
+
+Deformers save and load in `.ma` as Maya lays them out: Orig shape, groupParts and groupId, the deformer, its objectSet, `.wl` weights, `.gm`. blendShape uses `.it[g].itg[i].iti[k].ipt/.ict`, `.tw`, `.bw` and `attributeAlias`; live targets connect at `.igt`. cluster and nonLinear handles are a transform with Maya's shape (clusterHandle, deformBend and so on), with nonlinear settings on the shape. A deformer on several meshes reads from `.ip[n]`/`.og[n]` into one node per mesh, with the followers linked to the leader. Point moves in a `tweak` node go into the Orig geometry; a polyTweak below a deformer stays in the chain. Data that Maya's attributes can't hold goes in an added string attribute, aztekState. Other history below a deformer still bakes, with a warning.
+
+To check against Maya: the `.cc` lattice layout, whether a file opens without a set for every deformer, the skinCluster's own groupParts, and scripted reading of a real rig.

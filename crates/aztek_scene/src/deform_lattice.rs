@@ -360,7 +360,7 @@ pub(crate) fn register_types(gf: Arc<NodeType>) {
     });
 }
 
-fn current_grid(g: &mut Graph, shape: NodeId) -> Option<LatticeGrid> {
+pub(crate) fn current_grid(g: &mut Graph, shape: NodeId) -> Option<LatticeGrid> {
     match g.value(&plug(shape, LATTICE_OUTPUT)) {
         Ok(v) => grid_of(&v).cloned(),
         Err(_) => None,
