@@ -173,3 +173,38 @@ fn wrap_and_wire_in_maya_spelling() {
     assert_eq!(mel(&mut c, "getAttr w1.dropoffDistance[0];"), json!(3.0));
     assert!(errors(&mut c).is_empty());
 }
+
+#[test]
+fn rig_commands_take_maya_spellings() {
+    let mut c = Core::new();
+    c.mel("joint -p 2 0 0 -n L_arm; joint -p 4 1 0 -n L_hand; select -cl;");
+    assert_eq!(c.mel("mirrorJoint -mirrorYZ -mirrorBehavior -searchReplace \"L_\" \"R_\" L_arm;"), json!(["R_arm", "R_hand"]));
+    c.mel("joint -e -lx -90 90 -lsx on off L_arm;");
+    assert_eq!(c.mel("joint -q -lx L_arm;"), json!([-90.0, 90.0]));
+    assert_eq!(c.mel("joint -q -lsx L_arm;"), json!([true, false]));
+    assert_eq!(c.mel("joint -q -rad L_arm;"), json!([1.0]));
+
+    c.mel("spaceLocator -n a; spaceLocator -n b; polyCube;");
+    c.mel("move -a 1 2 3 a;");
+    assert_eq!(c.mel("pointConstraint -st x -st y a pCube1;"), json!(["pCube1_pointConstraint1"]));
+    assert_eq!(c.mel("getAttr pCube1.translate;"), json!([0.0, 0.0, 3.0]));
+    c.mel("polySphere; pointConstraint -sk x -sk y a pSphere1;");
+    assert_eq!(c.mel("getAttr pSphere1.translate;"), json!([0.0, 0.0, 3.0]));
+    c.mel("polyCone; parentConstraint -w 1 a b pCone1;");
+    c.mel("parentConstraint -e -w 0.5 a pCone1;");
+    assert_eq!(c.mel("parentConstraint -q -w a pCone1;"), json!(0.5));
+    assert_eq!(c.mel("parentConstraint -q -tl pCone1;"), json!(["a", "b"]));
+    assert_eq!(c.mel("parentConstraint -q -wal pCone1;"), json!(["aW0", "bW1"]));
+    c.mel("parentConstraint -e -rm a pCone1;");
+    assert_eq!(c.mel("parentConstraint -q -tl pCone1;"), json!(["b"]));
+
+    assert_eq!(c.mel("ikHandle -sj L_arm -ee L_hand -sol ikSCsolver -n h;"), json!(["h", "effector1"]));
+    assert_eq!(c.mel("ikHandle -q -sj h;"), json!("L_arm"));
+    assert_eq!(c.mel("ikHandle -q -ee h;"), json!("effector1"));
+    assert_eq!(c.mel("ikHandle -q -jl h;"), json!(["L_arm"]));
+    assert_eq!(c.mel("ikHandle -q -sol h;"), json!("ikSCsolver"));
+    c.mel("ikHandle -e -p 4 h;");
+    assert_eq!(c.mel("ikHandle -q -p h;"), json!(4));
+    c.mel("ikSystem -e -sol 0;");
+    assert_eq!(c.mel("ikSystem -q -sol;"), json!(false));
+}

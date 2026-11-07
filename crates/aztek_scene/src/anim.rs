@@ -29,6 +29,16 @@ pub struct Range {
     pub speed: f64,
     pub default_in: Tangent,
     pub default_out: Tangent,
+    /// New curves are weighted (keyTangent -g -wt).
+    pub default_weighted: bool,
+    /// Frames between played frames (playbackOptions -by).
+    pub by: f64,
+    /// all or active: which views update during playback.
+    pub view: String,
+    /// The most frames per second playback may reach, 0 for no limit.
+    pub max_speed: f64,
+    /// playbackOptions -pp: stored for scripts that set it.
+    pub preroll: f64,
 }
 
 static RANGE: Mutex<Option<Range>> = Mutex::new(None);
@@ -43,6 +53,11 @@ fn default_range() -> Range {
         speed: 1.0,
         default_in: Tangent::Auto,
         default_out: Tangent::Auto,
+        default_weighted: false,
+        by: 1.0,
+        view: "all".into(),
+        max_speed: 0.0,
+        preroll: 0.0,
     }
 }
 
@@ -50,7 +65,7 @@ pub fn range() -> Range {
     RANGE.lock().unwrap().clone().unwrap_or_else(default_range)
 }
 
-fn set_range(f: impl FnOnce(&mut Range)) {
+pub(crate) fn set_range(f: impl FnOnce(&mut Range)) {
     let mut r = RANGE.lock().unwrap();
     let mut v = r.clone().unwrap_or_else(default_range);
     f(&mut v);
@@ -59,6 +74,12 @@ fn set_range(f: impl FnOnce(&mut Range)) {
 
 pub fn fps() -> f64 {
     f64::from_bits(FPS_BITS.load(Ordering::Relaxed))
+}
+
+pub(crate) fn set_fps(v: f64) {
+    if v > 0.0 {
+        FPS_BITS.store(v.to_bits(), Ordering::Relaxed);
+    }
 }
 
 pub fn auto_key() -> bool {
@@ -140,17 +161,28 @@ pub struct Key {
     pub in_slope: f64,
     pub out_slope: f64,
     pub breakdown: bool,
+    /// Length of fixed tangents on a weighted curve: the tangent (x seconds, y value) has this length.
+    pub in_weight: f64,
+    pub out_weight: f64,
+    /// In and out tangents move together (keyTangent -l).
+    pub tan_lock: bool,
+    /// The graph editor keeps the handle's length when dragging it (keyTangent -wl).
+    pub weight_lock: bool,
+    /// Drawn in the special tick colour on the time slider (keyframe -tds).
+    pub tick: bool,
 }
 
 impl Key {
     pub fn new(t: f64, v: f64, itt: Tangent, ott: Tangent) -> Key {
-        Key { t, v, itt, ott, in_slope: 0.0, out_slope: 0.0, breakdown: false }
+        Key { t, v, itt, ott, in_slope: 0.0, out_slope: 0.0, breakdown: false, in_weight: 1.0, out_weight: 1.0, tan_lock: true, weight_lock: true, tick: false }
     }
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct Keys {
     pub keys: Vec<Key>,
+    /// The curve's weightedTangents attr, filled in by `keys_of`; not stored with the keys.
+    pub weighted: bool,
 }
 
 impl crate::plug::Data for Keys {
@@ -161,7 +193,7 @@ impl crate::plug::Data for Keys {
         let k: Vec<Value> = self
             .keys
             .iter()
-            .map(|k| json!([k.t, k.v, k.itt.name(), k.ott.name(), k.in_slope, k.out_slope, k.breakdown]))
+            .map(|k| json!([k.t, k.v, k.itt.name(), k.ott.name(), k.in_slope, k.out_slope, k.breakdown, k.in_weight, k.out_weight, k.tan_lock, k.weight_lock, k.tick]))
             .collect();
         json!({"kind": "animKeys", "keys": k})
     }
@@ -179,6 +211,7 @@ impl Keys {
         for e in j.get("keys").and_then(Value::as_array).into_iter().flatten() {
             let f = |i: usize| e.get(i).and_then(Value::as_f64).unwrap_or(0.0);
             let t = |i: usize| e.get(i).and_then(Value::as_str).and_then(Tangent::parse).unwrap_or(Tangent::Auto);
+            let b = |i: usize, d: bool| e.get(i).and_then(Value::as_bool).unwrap_or(d);
             keys.push(Key {
                 t: f(0),
                 v: f(1),
@@ -186,10 +219,15 @@ impl Keys {
                 ott: t(3),
                 in_slope: f(4),
                 out_slope: f(5),
-                breakdown: e.get(6).and_then(Value::as_bool).unwrap_or(false),
+                breakdown: b(6, false),
+                in_weight: e.get(7).and_then(Value::as_f64).unwrap_or(1.0),
+                out_weight: e.get(8).and_then(Value::as_f64).unwrap_or(1.0),
+                tan_lock: b(9, true),
+                weight_lock: b(10, true),
+                tick: b(11, false),
             });
         }
-        Keys { keys }
+        Keys { keys, weighted: false }
     }
 
     pub fn sort(&mut self) {
@@ -233,7 +271,8 @@ impl Keys {
             m.clamp(-lim, lim)
         };
         let clamped = || -> f64 {
-            let near = |o: Option<&Key>| o.is_some_and(|o| (o.v - k.v).abs() <= 1e-3 * (1.0 + k.v.abs()));
+            // Maya flattens a clamped key when a neighbour is within 0.05 of it.
+            let near = |o: Option<&Key>| o.is_some_and(|o| (o.v - k.v).abs() <= 0.05);
             if near(prev) || near(next) {
                 0.0
             } else {
@@ -253,7 +292,83 @@ impl Keys {
         (one(k.itt, k.in_slope, left.or(right)), one(k.ott, k.out_slope, right.or(left)))
     }
 
-    fn eval_inside(&self, t: f64) -> f64 {
+    /// The tangent of key i as Maya holds it: x in seconds, y in value. Fixed tangents have their stored length;
+    /// the others reach as far in time as the neighbouring key, which makes a weighted curve match the Hermite one.
+    pub fn tangent_xy(&self, i: usize, out: bool) -> (f64, f64) {
+        let (si, so) = self.slopes(i);
+        let k = &self.keys[i];
+        let (ty, slope, w) = if out { (k.ott, so, k.out_weight) } else { (k.itt, si, k.in_weight) };
+        if ty == Tangent::Fixed {
+            let a = (slope * fps()).atan();
+            return (w * a.cos(), w * a.sin());
+        }
+        let side = if out { self.keys.get(i + 1) } else { i.checked_sub(1).map(|j| &self.keys[j]) };
+        let other = if out { i.checked_sub(1).map(|j| &self.keys[j]) } else { self.keys.get(i + 1) };
+        let dt = side.or(other).map(|o| (o.t - k.t).abs()).unwrap_or(fps());
+        (dt / fps(), slope * dt)
+    }
+
+    /// What keyTangent reports: the tangent itself on a weighted curve, a unit vector on an unweighted one.
+    pub fn tangent_vector(&self, i: usize, out: bool) -> (f64, f64) {
+        if self.weighted {
+            return self.tangent_xy(i, out);
+        }
+        let (si, so) = self.slopes(i);
+        let a = (if out { so } else { si } * fps()).atan();
+        (a.cos(), a.sin())
+    }
+
+    /// Holds a key's current tangents as fixed ones, keeping the curve's shape. Step tangents stay.
+    pub fn freeze(&mut self, i: usize) {
+        let (si, so) = self.slopes(i);
+        let (ix, iy) = self.tangent_xy(i, false);
+        let (ox, oy) = self.tangent_xy(i, true);
+        let k = &mut self.keys[i];
+        if !matches!(k.itt, Tangent::Step | Tangent::StepNext) {
+            k.itt = Tangent::Fixed;
+            k.in_slope = si;
+            k.in_weight = ix.hypot(iy);
+        }
+        if !matches!(k.ott, Tangent::Step | Tangent::StepNext) {
+            k.ott = Tangent::Fixed;
+            k.out_slope = so;
+            k.out_weight = ox.hypot(oy);
+        }
+    }
+
+    /// The control points between keys a and a+1 of a weighted curve, in frames and value, kept inside the span in
+    /// time so the curve stays a function of time.
+    fn bezier_handles(&self, a: usize) -> [(f64, f64); 2] {
+        let (k0, k1) = (&self.keys[a], &self.keys[a + 1]);
+        let h = k1.t - k0.t;
+        let (ox, oy) = self.tangent_xy(a, true);
+        let (ix, iy) = self.tangent_xy(a + 1, false);
+        let f = fps();
+        // A handle is a third of the tangent.
+        let (mut dx1, mut dy1) = (ox * f / 3.0, oy / 3.0);
+        let (mut dx2, mut dy2) = (ix * f / 3.0, iy / 3.0);
+        if dx1 > h {
+            dy1 *= h / dx1;
+            dx1 = h;
+        }
+        if dx2 > h {
+            dy2 *= h / dx2;
+            dx2 = h;
+        }
+        [(k0.t + dx1, k0.v + dy1), (k1.t - dx2, k1.v - dy2)]
+    }
+
+    fn eval_bezier(&self, a: usize, t: f64) -> f64 {
+        let (k0, k1) = (&self.keys[a], &self.keys[a + 1]);
+        let [(x1, y1), (x2, y2)] = self.bezier_handles(a);
+        let (x0, x3) = (k0.t, k1.t);
+        let s = bezier_param(x0, x1, x2, x3, t);
+        let u = 1.0 - s;
+        u * u * u * k0.v + 3.0 * u * u * s * y1 + 3.0 * u * s * s * y2 + s * s * s * k1.v
+    }
+
+    /// The curve between its first and last key.
+    pub(crate) fn eval_inside(&self, t: f64, weighted: bool) -> f64 {
         let ks = &self.keys;
         let i = ks.partition_point(|k| k.t <= t);
         if i == 0 {
@@ -273,6 +388,9 @@ impl Keys {
         if h <= 1e-12 {
             return b.v;
         }
+        if weighted {
+            return self.eval_bezier(i - 1, t);
+        }
         let m0 = self.slopes(i - 1).1;
         let m1 = self.slopes(i).0;
         let s = (t - a.t) / h;
@@ -280,8 +398,81 @@ impl Keys {
         (2.0 * s3 - 3.0 * s2 + 1.0) * a.v + (s3 - 2.0 * s2 + s) * h * m0 + (-2.0 * s3 + 3.0 * s2) * b.v + (s3 - s2) * h * m1
     }
 
+    /// Splits the curve at frame t with a key that leaves its shape as it was. The tangents around it become fixed.
+    /// False when the curve is empty or already has a key there.
+    pub fn insert(&mut self, t: f64) -> bool {
+        let n = self.keys.len();
+        if n == 0 || self.keys.iter().any(|k| (k.t - t).abs() < 1e-6) {
+            return false;
+        }
+        let i = self.keys.partition_point(|k| k.t <= t);
+        let r = range();
+        if i == 0 || i >= n {
+            // Outside the keys: a key at the value the curve holds there.
+            let v = if i == 0 { self.keys[0].v } else { self.keys[n - 1].v };
+            self.keys.insert(i, Key::new(t, v, r.default_in, r.default_out));
+            return true;
+        }
+        let v = self.eval_inside(t, self.weighted);
+        let stepped = matches!(self.keys[i - 1].ott, Tangent::Step | Tangent::StepNext);
+        let weighted = self.weighted;
+        let (mut s_in, mut s_out, mut w_in, mut w_out) = (0.0, 0.0, 1.0, 1.0);
+        let mut left = None;
+        let mut right = None;
+        if !stepped {
+            let (a, b) = (self.keys[i - 1], self.keys[i]);
+            let h = b.t - a.t;
+            if weighted {
+                // De Casteljau: the two halves' control points.
+                let [(x1, y1), (x2, y2)] = self.bezier_handles(i - 1);
+                let s = bezier_param(a.t, x1, x2, b.t, t);
+                let l = |p: (f64, f64), q: (f64, f64)| (p.0 + (q.0 - p.0) * s, p.1 + (q.1 - p.1) * s);
+                let (p01, p12, p23) = (l((a.t, a.v), (x1, y1)), l((x1, y1), (x2, y2)), l((x2, y2), (b.t, b.v)));
+                let (p012, p123) = (l(p01, p12), l(p12, p23));
+                let f = fps();
+                let measure = |d: (f64, f64)| (d.1 / d.0.max(1e-9), (3.0 * d.0 / f).hypot(3.0 * d.1));
+                left = Some(measure((p01.0 - a.t, p01.1 - a.v)));
+                right = Some(measure((b.t - p23.0, b.v - p23.1)));
+                (s_in, w_in) = measure((t - p012.0, v - p012.1));
+                (s_out, w_out) = measure((p123.0 - t, p123.1 - v));
+            } else {
+                let (m0, m1) = (self.slopes(i - 1).1, self.slopes(i).0);
+                let s = (t - a.t) / h;
+                // The derivative of the Hermite segment.
+                let d = ((6.0 * s * s - 6.0 * s) * a.v + (3.0 * s * s - 4.0 * s + 1.0) * h * m0 + (-6.0 * s * s + 6.0 * s) * b.v + (3.0 * s * s - 2.0 * s) * h * m1) / h;
+                s_in = d;
+                s_out = d;
+            }
+        }
+        self.freeze(i - 1);
+        self.freeze(i);
+        if let Some((sl, wl)) = left {
+            self.keys[i - 1].out_slope = sl;
+            self.keys[i - 1].out_weight = wl;
+        }
+        if let Some((sr, wr)) = right {
+            self.keys[i].in_slope = sr;
+            self.keys[i].in_weight = wr;
+        }
+        let mut k = Key::new(t, v, Tangent::Fixed, Tangent::Fixed);
+        k.in_slope = s_in;
+        k.out_slope = s_out;
+        k.in_weight = w_in;
+        k.out_weight = w_out;
+        k.tan_lock = (s_in - s_out).abs() < 1e-9;
+        if stepped {
+            k.ott = self.keys[i - 1].ott;
+        }
+        self.keys.insert(i, k);
+        true
+    }
+
     /// The value at frame t, with the curve's infinities before and after its keys.
     pub fn eval(&self, t: f64, pre: Infinity, post: Infinity) -> f64 {
+        self.eval_mode(t, pre, post, self.weighted)
+    }
+
+    pub(crate) fn eval_mode(&self, t: f64, pre: Infinity, post: Infinity, weighted: bool) -> f64 {
         let ks = &self.keys;
         if ks.is_empty() {
             return 0.0;
@@ -289,7 +480,7 @@ impl Keys {
         let (t0, t1) = (ks[0].t, ks[ks.len() - 1].t);
         let span = t1 - t0;
         if t >= t0 && t <= t1 || span <= 1e-9 {
-            return self.eval_inside(t.clamp(t0, t1));
+            return self.eval_inside(t.clamp(t0, t1), weighted);
         }
         let (inf, before) = if t < t0 { (pre, true) } else { (post, false) };
         let (v0, v1) = (ks[0].v, ks[ks.len() - 1].v);
@@ -314,7 +505,7 @@ impl Keys {
                 if inf == Infinity::Oscillate && (n as i64).rem_euclid(2) == 1 {
                     local = t1 - (local - t0);
                 }
-                let v = self.eval_inside(local);
+                let v = self.eval_inside(local, weighted);
                 if inf == Infinity::CycleRelative {
                     v + n * (v1 - v0)
                 } else {
@@ -323,6 +514,29 @@ impl Keys {
             }
         }
     }
+}
+
+/// The s where a cubic Bezier from x0 to x3 with these inner control points reaches x. The x's rise, so Newton steps
+/// kept inside a shrinking bracket always land.
+fn bezier_param(x0: f64, x1: f64, x2: f64, x3: f64, x: f64) -> f64 {
+    let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
+    let mut s = ((x - x0) / (x3 - x0)).clamp(0.0, 1.0);
+    for _ in 0..60 {
+        let u = 1.0 - s;
+        let e = u * u * u * x0 + 3.0 * u * u * s * x1 + 3.0 * u * s * s * x2 + s * s * s * x3 - x;
+        if e.abs() < 1e-10 {
+            break;
+        }
+        if e > 0.0 {
+            hi = s;
+        } else {
+            lo = s;
+        }
+        let d = 3.0 * (u * u * (x1 - x0) + 2.0 * u * s * (x2 - x1) + s * s * (x3 - x2));
+        let n = if d.abs() > 1e-12 { s - e / d } else { -1.0 };
+        s = if n > lo && n < hi { n } else { 0.5 * (lo + hi) };
+    }
+    s
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -354,6 +568,16 @@ pub const KEYS: usize = 0;
 pub const PRE: usize = 1;
 pub const POST: usize = 2;
 pub const OUTPUT: usize = 3;
+pub const WEIGHTED: usize = 4;
+pub const ROT_INTERP: usize = 5;
+/// Rotation curves converted to quaternion interpolation read the keys of all three axes through these.
+pub const ROT_KEYS: usize = 6;
+pub const ROT_AXIS: usize = 9;
+pub const ROT_ORDER: usize = 10;
+/// The attrs every animCurve has; driven curves add theirs after these.
+pub const BASE_ATTRS: usize = 11;
+
+pub const ROT_INTERP_NAMES: &[&str] = &["none", "euler", "quaternionSlerp", "quaternionSquad", "quaternion"];
 
 pub struct CurveNode;
 
@@ -364,7 +588,10 @@ impl NodeBehavior for CurveNode {
                 let f = ctx.time * fps();
                 let r = f.round();
                 let f = if (f - r).abs() < 1e-6 { r } else { f };
-                k.eval(f, infinity(d.int(PRE)), infinity(d.int(POST)))
+                if let Some(v) = (d.int(ROT_INTERP) >= 2).then(|| crate::anim_filter::eval_quaternion(k, d, f)).flatten() {
+                    return v;
+                }
+                k.eval_mode(f, infinity(d.int(PRE)), infinity(d.int(POST)), d.bool(WEIGHTED))
             }),
             _ => None,
         };
@@ -372,6 +599,30 @@ impl NodeBehavior for CurveNode {
     }
     fn as_any(&self) -> &dyn Any {
         self
+    }
+}
+
+fn hidden_keys(name: &str, short: &str) -> AttrDef {
+    AttrDef {
+        name: name.into(),
+        short_name: short.into(),
+        ty: PlugType::Data,
+        default_value: PlugValue::Data(None),
+        flags: flags::INPUT | flags::STORABLE | flags::HIDDEN,
+        doc: "A copy of the keys of one rotation axis.".into(),
+        ..Default::default()
+    }
+}
+
+fn hidden_int(name: &str, short: &str) -> AttrDef {
+    AttrDef {
+        name: name.into(),
+        short_name: short.into(),
+        ty: PlugType::Int,
+        default_value: PlugValue::Int(0),
+        flags: flags::INPUT | flags::STORABLE | flags::HIDDEN,
+        doc: "Used by quaternion interpolation.".into(),
+        ..Default::default()
     }
 }
 
@@ -418,6 +669,30 @@ fn register_types_now() {
                 doc: "The value at the current time.".into(),
                 ..Default::default()
             },
+            AttrDef {
+                name: "weightedTangents".into(),
+                short_name: "wgt".into(),
+                ty: PlugType::Bool,
+                default_value: PlugValue::Bool(false),
+                flags: flags::INPUT | flags::STORABLE,
+                doc: "Tangents have length: the curve is a Bezier in time and value.".into(),
+                ..Default::default()
+            },
+            AttrDef {
+                name: "rotationInterpolation".into(),
+                short_name: "roti".into(),
+                ty: PlugType::Enum,
+                default_value: PlugValue::Int(0),
+                flags: flags::INPUT | flags::STORABLE,
+                enum_names: ROT_INTERP_NAMES.iter().map(|s| s.to_string()).collect(),
+                doc: "Rotation curves: how the three axes interpolate together. See rotationInterpolation.".into(),
+                ..Default::default()
+            },
+            hidden_keys("rotationKeysX", "rkx"),
+            hidden_keys("rotationKeysY", "rky"),
+            hidden_keys("rotationKeysZ", "rkz"),
+            hidden_int("rotationAxis", "rax"),
+            hidden_int("rotationOrder", "rord"),
         ],
         ..Default::default()
     };
@@ -445,35 +720,79 @@ pub fn is_curve(g: &Graph, id: NodeId) -> bool {
 
 pub fn keys_of(g: &Graph, curve: NodeId) -> Keys {
     match g.node(curve).map(|n| n.data().value(KEYS)) {
-        Some(PlugValue::Data(Some(k))) => k.as_any().downcast_ref::<Keys>().cloned().unwrap_or_default(),
-        _ => Keys::default(),
+        Some(PlugValue::Data(Some(k))) => {
+            let mut k = k.as_any().downcast_ref::<Keys>().cloned().unwrap_or_default();
+            k.weighted = g.node(curve).is_some_and(|n| n.data().bool(WEIGHTED));
+            k
+        }
+        _ => Keys { keys: Vec::new(), weighted: g.node(curve).is_some_and(|n| n.data().bool(WEIGHTED)) },
     }
 }
 
 pub fn set_keys(g: &mut Graph, curve: NodeId, k: Keys) -> CmdResult<()> {
-    g.set_value(PlugRef::new(curve, KEYS as i32), PlugValue::Data(Some(Arc::new(k))))?;
+    let data: Arc<dyn crate::plug::Data> = Arc::new(k);
+    g.set_value(PlugRef::new(curve, KEYS as i32), PlugValue::Data(Some(data.clone())))?;
+    // Curves under quaternion interpolation each keep a copy of the others' keys: connecting them would be a cycle.
+    let d = g.node(curve).map(|n| (n.data().int(ROT_INTERP), n.data().int(ROT_AXIS)));
+    if let Some((mode, axis)) = d {
+        if mode >= 2 {
+            for other in rotation_siblings(g, curve) {
+                if other != curve {
+                    g.set_value(PlugRef::new(other, (ROT_KEYS as i64 + axis) as i32), PlugValue::Data(Some(data.clone())))?;
+                }
+            }
+        }
+    }
     Ok(())
 }
 
-/// The curve driving a plug, if any.
-pub fn curve_of(g: &Graph, p: &PlugRef) -> Option<NodeId> {
-    let s = g.source(p)?;
-    (is_curve(g, s.node) && s.attr == OUTPUT as i32).then_some(s.node)
+/// The curves of a rotate's three axes, given one of them.
+pub(crate) fn rotation_siblings(g: &Graph, curve: NodeId) -> Vec<NodeId> {
+    let Some(p) = driven_by(g, curve).into_iter().find(|p| p.component >= 0) else { return Vec::new() };
+    (0..3).filter_map(|c| curve_of(g, &PlugRef::component(p.node, p.attr, c))).collect()
 }
 
-/// The channels a curve drives.
+/// The curve driving a plug, if any: through a mute node, and for a channel in animation layers, the curve of the layer
+/// keys go to.
+pub fn curve_of(g: &Graph, p: &PlugRef) -> Option<NodeId> {
+    let s = crate::anim_layers::driver(g, p)?;
+    if is_curve(g, s.node) && s.attr == OUTPUT as i32 {
+        return Some(s.node);
+    }
+    if crate::anim_layers::is_blend(g, s.node) {
+        return crate::anim_layers::best_curve(g, p);
+    }
+    None
+}
+
+/// The channels a curve drives, through mute and blend nodes.
 pub fn driven_by(g: &Graph, curve: NodeId) -> Vec<PlugRef> {
-    g.destinations(&PlugRef::new(curve, OUTPUT as i32))
+    let mut out = Vec::new();
+    for d in g.destinations(&PlugRef::new(curve, OUTPUT as i32)) {
+        out.extend(crate::anim_layers::final_plugs(g, d));
+    }
+    out
 }
 
 /// Every (plug, curve) pair animating a node.
 pub fn curves_on(g: &Graph, node: NodeId) -> Vec<(PlugRef, NodeId)> {
-    let mut out: Vec<(PlugRef, NodeId)> = g
-        .connections()
-        .into_iter()
-        .filter(|(d, s)| d.node == node && is_curve(g, s.node) && s.attr == OUTPUT as i32)
-        .map(|(d, s)| (d, s.node))
-        .collect();
+    let mut out: Vec<(PlugRef, NodeId)> = Vec::new();
+    for (d, s) in g.connections() {
+        if d.node != node {
+            continue;
+        }
+        if is_curve(g, s.node) && s.attr == OUTPUT as i32 {
+            out.push((d, s.node));
+        } else if crate::anim_layers::is_routing(g, s.node) {
+            // A rotation blend drives the whole vector; each axis has its own curves.
+            let plugs = if d.component < 0 && g.attr(&d).ty == PlugType::Vec3 { (0..3).map(|c| PlugRef::component(d.node, d.attr, c)).collect() } else { vec![d] };
+            for p in plugs {
+                if let Some(c) = curve_of(g, &p) {
+                    out.push((p, c));
+                }
+            }
+        }
+    }
     out.sort_by_key(|(d, _)| (d.attr, d.component));
     out
 }
@@ -483,23 +802,79 @@ pub fn keyable_plugs(g: &Graph, node: NodeId) -> Vec<PlugRef> {
     let Some(n) = g.node(node) else { return Vec::new() };
     let mut out = Vec::new();
     for (i, a) in n.ty().attrs.iter().enumerate() {
-        if !a.has(flags::KEYABLE) || !a.has(flags::INPUT) || a.has(flags::HIDDEN) || a.is_array() {
+        if !a.has(flags::INPUT) || a.has(flags::HIDDEN) || a.is_array() {
             continue;
         }
         match a.ty {
-            PlugType::Vec3 => (0..3).for_each(|c| out.push(PlugRef::component(node, i as i32, c))),
-            PlugType::Float | PlugType::Int | PlugType::Bool | PlugType::Enum => out.push(PlugRef::new(node, i as i32)),
+            PlugType::Vec3 => (0..3).for_each(|c| {
+                let p = PlugRef::component(node, i as i32, c);
+                if is_keyable(g, &p) {
+                    out.push(p);
+                }
+            }),
+            PlugType::Float | PlugType::Int | PlugType::Bool | PlugType::Enum => {
+                let p = PlugRef::new(node, i as i32);
+                if is_keyable(g, &p) {
+                    out.push(p);
+                }
+            }
             _ => {}
         }
     }
     out
 }
 
-fn curve_type_for(g: &Graph, p: &PlugRef) -> &'static str {
+/// Node by node, setAttr -k changes which channels are keyable. The changes live in an attr of their own, added the
+/// first time, so they save and undo with the scene.
+const KEYABLE_OVERRIDES: &str = "channelKeyable";
+
+fn keyable_overrides(g: &Graph, node: NodeId) -> Option<Value> {
+    let n = g.node(node)?;
+    let at = n.ty().attr_index(KEYABLE_OVERRIDES)?;
+    Some(crate::rig::json_of(n.data(), at))
+}
+
+/// Whether a channel is keyable: as setAttr -k left it, else as its type says.
+pub fn is_keyable(g: &Graph, p: &PlugRef) -> bool {
+    if let Some(v) = keyable_overrides(g, p.node).and_then(|o| o.get(channel_name(g, p)).and_then(Value::as_bool)) {
+        return v;
+    }
+    g.attr(p).has(flags::KEYABLE)
+}
+
+/// setAttr -k. A whole vector means its three channels.
+pub fn set_keyable(g: &mut Graph, p: &PlugRef, on: bool) -> CmdResult<()> {
+    let at = match g.node(p.node).and_then(|n| n.ty().attr_index(KEYABLE_OVERRIDES)) {
+        Some(at) => at,
+        None => g.add_attr(
+            p.node,
+            AttrDef {
+                name: KEYABLE_OVERRIDES.into(),
+                short_name: "chky".into(),
+                ty: PlugType::Data,
+                default_value: PlugValue::Data(None),
+                flags: flags::INPUT | flags::STORABLE | flags::HIDDEN,
+                doc: "Channels made keyable, or not, on this node.".into(),
+                ..Default::default()
+            },
+        )?,
+    };
+    let mut o = keyable_overrides(g, p.node).filter(Value::is_object).unwrap_or_else(|| json!({}));
+    if p.component < 0 && g.attr(p).ty == PlugType::Vec3 {
+        for c in 0..3 {
+            o[channel_name(g, &PlugRef::component(p.node, p.attr, c))] = json!(on);
+        }
+    } else {
+        o[channel_name(g, p)] = json!(on);
+    }
+    crate::rig::set_json(g, p.node, at, o)
+}
+
+pub(crate) fn curve_type_for(g: &Graph, p: &PlugRef) -> &'static str {
     let a = g.attr(p);
     if a.name == "rotate" || a.name.starts_with("rotate") && a.ty == PlugType::Float {
         "animCurveTA"
-    } else if a.name == "translate" {
+    } else if a.name == "translate" || a.name == "uValue" {
         "animCurveTL"
     } else {
         "animCurveTU"
@@ -518,7 +893,7 @@ pub(crate) fn channel_name(g: &Graph, p: &PlugRef) -> String {
     }
 }
 
-fn plug_scalar(g: &mut Graph, p: &PlugRef) -> f64 {
+pub(crate) fn plug_scalar(g: &mut Graph, p: &PlugRef) -> f64 {
     match g.value(p) {
         Ok(v) => v.scalar().unwrap_or(0.0),
         Err(_) => 0.0,
@@ -532,6 +907,13 @@ fn steps_only(g: &Graph, p: &PlugRef) -> bool {
 /// Sets a key on a plug at frame t (value: the plug's current one when None). Makes and connects the curve if
 /// needed. Returns false when the plug can't be keyed (locked, or driven by something else).
 pub fn key_plug(g: &mut Graph, p: &PlugRef, t: f64, value: Option<f64>, itt: Option<Tangent>, ott: Option<Tangent>) -> CmdResult<bool> {
+    key_plug_in(g, p, t, value, itt, ott, None, false)
+}
+
+/// key_plug, into a given animation layer if the plug is in it. no_resolve puts the value straight on the layer's curve
+/// instead of the value that makes the channel come out at it.
+#[allow(clippy::too_many_arguments)]
+pub fn key_plug_in(g: &mut Graph, p: &PlugRef, t: f64, value: Option<f64>, itt: Option<Tangent>, ott: Option<Tangent>, layer: Option<NodeId>, no_resolve: bool) -> CmdResult<bool> {
     if g.is_locked(p) {
         return Ok(false);
     }
@@ -541,32 +923,53 @@ pub fn key_plug(g: &mut Graph, p: &PlugRef, t: f64, value: Option<f64>, itt: Opt
     };
     let r = range();
     let stepped = steps_only(g, p);
-    let itt = itt.unwrap_or(if stepped { Tangent::Step } else { r.default_in });
-    let ott = ott.unwrap_or(if stepped { Tangent::Step } else { r.default_out });
-    let curve = match curve_of(g, p) {
-        Some(c) => c,
-        None => {
-            if g.source(p).is_some() || (p.component >= 0 && g.source(&p.whole()).is_some()) {
-                return Ok(false);
+    let new_itt = itt.unwrap_or(if stepped { Tangent::Step } else { r.default_in });
+    let new_ott = ott.unwrap_or(if stepped { Tangent::Step } else { r.default_out });
+    let driver = crate::anim_layers::driver(g, p);
+    let (curve, v) = if driver.is_some_and(|s| crate::anim_layers::is_blend(g, s.node)) {
+        let Some((c, v)) = crate::anim_layers::layer_curve_for_key(g, p, layer, v, value.is_some() && no_resolve)? else { return Ok(false) };
+        (c, v)
+    } else {
+        match driver {
+            Some(s) if is_curve(g, s.node) && s.attr == OUTPUT as i32 => (s.node, v),
+            Some(_) => return Ok(false),
+            None => {
+                let name = format!("{}_{}", g.node(p.node).map(|n| n.name.clone()).unwrap_or_default(), channel_name(g, p));
+                let slot = crate::anim_layers::curve_slot(g, p);
+                (new_curve(g, curve_type_for(g, p), &name, &slot)?, v)
             }
-            let ty = types::find(curve_type_for(g, p)).unwrap();
-            let name = format!("{}_{}", g.node(p.node).map(|n| n.name.clone()).unwrap_or_default(), channel_name(g, p));
-            let c = g.create_node(&ty, &name, NO_NODE, true)?;
-            g.connect(&PlugRef::new(c, OUTPUT as i32), p, false)?;
-            c
         }
     };
     let mut k = keys_of(g, curve);
     match k.keys.iter_mut().find(|e| (e.t - t).abs() < 1e-6) {
-        Some(e) => e.v = v,
-        None => k.set(Key::new(t, v, itt, ott)),
+        Some(e) => {
+            e.v = v;
+            if let Some(x) = itt {
+                e.itt = x;
+            }
+            if let Some(x) = ott {
+                e.ott = x;
+            }
+        }
+        None => k.set(Key::new(t, v, new_itt, new_ott)),
     }
     set_keys(g, curve, k)?;
     Ok(true)
 }
 
+/// A new curve connected to a plug, weighted if that is the default.
+pub(crate) fn new_curve(g: &mut Graph, ty: &str, name: &str, to: &PlugRef) -> CmdResult<NodeId> {
+    let t = types::find(ty).unwrap();
+    let c = g.create_node(&t, name, NO_NODE, true)?;
+    if range().default_weighted {
+        g.set_value(PlugRef::new(c, WEIGHTED as i32), PlugValue::Bool(true))?;
+    }
+    g.connect(&PlugRef::new(c, OUTPUT as i32), to, false)?;
+    Ok(c)
+}
+
 /// Turns the plug arguments of a key command into plugs: "node.attr" as named, a node as its keyable channels (or the
-/// -attribute ones).
+/// -attribute ones), a character as its members. -hi and -s widen a node to its hierarchy and shapes.
 pub(crate) fn targets(s: &Session, a: &aztek_ops::Args, cmd: &str) -> CmdResult<Vec<PlugRef>> {
     let g = &s.graph;
     let attrs: Vec<String> = match a.get("attribute") {
@@ -574,40 +977,82 @@ pub(crate) fn targets(s: &Session, a: &aztek_ops::Args, cmd: &str) -> CmdResult<
         Some(Value::Array(v)) => v.iter().filter_map(|x| x.as_str().map(str::to_string)).collect(),
         _ => Vec::new(),
     };
+    let split = |p: PlugRef| -> Vec<PlugRef> {
+        if g.attr(&p).ty == PlugType::Vec3 && p.component < 0 {
+            (0..3).map(|c| PlugRef::component(p.node, p.attr, c)).collect()
+        } else {
+            vec![p]
+        }
+    };
+    let hi = a.string("hierarchy", "none");
+    let want_shape = a.get("shape").and_then(Value::as_bool) == Some(true);
     let mut out = Vec::new();
-    for name in objects(s, a) {
+    let mut names = objects(s, a);
+    if a.named().is_empty() && names.is_empty() {
+        names = s.current_characters.iter().map(|&c| g.path(c)).collect();
+    }
+    for name in names {
         if name.contains('.') && !name.ends_with(']') {
-            out.push(g.plug(&name)?);
+            out.extend(split(g.plug(&name)?));
             continue;
         }
         let base = name.split('.').next().unwrap_or(&name);
         let Some(id) = g.find(base)? else { fail!("{cmd}: no object named {name}") };
+        if crate::characters::is_character(g, id) {
+            let members = crate::characters::member_plugs(g, id);
+            out.extend(members.into_iter().filter(|p| attrs.is_empty() || attrs.iter().any(|x| crate::characters::plug_matches(g, p, x))));
+            continue;
+        }
         // Components and shapes key their transform.
         let id = if g.node(id).is_some_and(|n| n.ty().dag && !n.ty().is_a("transform")) { crate::dag::transform_of(g, id) } else { id };
-        if attrs.is_empty() {
-            out.extend(keyable_plugs(g, id));
-        } else {
-            for at in &attrs {
-                let path = format!("{}.{}", g.path(id), at);
-                match g.plug(&path) {
-                    Ok(p) => {
-                        if g.attr(&p).ty == PlugType::Vec3 && p.component < 0 {
-                            (0..3).for_each(|c| out.push(PlugRef::component(p.node, p.attr, c)));
-                        } else {
-                            out.push(p);
+        let mut nodes = vec![id];
+        if matches!(hi.as_str(), "below" | "both") {
+            nodes.extend(g.descendants(id).into_iter().filter(|&d| g.node(d).is_some_and(|x| x.ty().is_a("transform"))));
+        }
+        if matches!(hi.as_str(), "above" | "both") {
+            let mut n = g.parent(id);
+            while n != NO_NODE {
+                nodes.push(n);
+                n = g.parent(n);
+            }
+        }
+        for node in nodes {
+            if attrs.is_empty() {
+                out.extend(keyable_plugs(g, node));
+                if want_shape {
+                    for &k in g.children(node) {
+                        if g.node(k).is_some_and(|x| x.ty().dag && !x.ty().is_a("transform")) {
+                            // A shape's visibility isn't one of the channels S keys.
+                            out.extend(keyable_plugs(g, k).into_iter().filter(|p| p.attr != crate::transform::DagNode::VISIBILITY as i32));
                         }
                     }
-                    Err(e) => fail!("{cmd}: {e}"),
+                }
+            } else {
+                for at in &attrs {
+                    let path = format!("{}.{}", g.path(node), at);
+                    match g.plug(&path) {
+                        Ok(p) => out.extend(split(p)),
+                        // Below or above the named object, a channel it doesn't have is passed over.
+                        Err(_) if node != id => {}
+                        Err(e) => fail!("{cmd}: {e}"),
+                    }
                 }
             }
         }
     }
+    let mut seen = std::collections::HashSet::new();
+    out.retain(|p| seen.insert((p.node, p.attr, p.component, p.element)));
     Ok(out)
 }
 
 /// A -time flag: a frame, "10:20", "10:" or ":20", or [start, end]. None means all time.
 pub(crate) fn time_range(a: &aztek_ops::Args) -> CmdResult<Option<(f64, f64)>> {
-    let Some(v) = a.get("time") else { return Ok(None) };
+    range_flag(a, "time")
+}
+
+/// A flag holding a range of times or driver values, as -time and -float do.
+pub(crate) fn range_flag(a: &aztek_ops::Args, flag: &str) -> CmdResult<Option<(f64, f64)>> {
+    let Some(v) = a.get(flag) else { return Ok(None) };
     let parse = |s: &str| -> CmdResult<(f64, f64)> {
         let s = s.trim().trim_matches(|c| c == '"' || c == '(' || c == ')');
         if let Some((x, y)) = s.split_once(':') {
@@ -640,7 +1085,7 @@ pub(crate) fn in_range(r: Option<(f64, f64)>, t: f64) -> bool {
     r.is_none_or(|(a, b)| t >= a - 1e-6 && t <= b + 1e-6)
 }
 
-fn queried(a: &aztek_ops::Args, names: &[&str]) -> bool {
+pub(crate) fn queried(a: &aztek_ops::Args, names: &[&str]) -> bool {
     let q: Vec<&str> = a.get("queried").and_then(Value::as_array).map(|v| v.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
     names.iter().any(|n| q.contains(n) || a.get(n).is_some_and(|v| v == &Value::Bool(true)))
 }
@@ -659,6 +1104,16 @@ pub(crate) fn tangent_flag(a: &aztek_ops::Args, name: &str) -> CmdResult<Option<
 pub(crate) fn target_curves(s: &Session, a: &aztek_ops::Args, cmd: &str) -> CmdResult<Vec<(PlugRef, NodeId)>> {
     let g = &s.graph;
     let mut out = Vec::new();
+    // The selected keys' curves, with -sl or nothing named.
+    if a.named().is_empty() && (a.bool("selected") || a.bool("lastSelected") || a.string("animation", "") == "keys") {
+        for (c, _) in &s.key_selection {
+            if is_curve(g, *c) && !out.iter().any(|(_, o)| o == c) {
+                let p = driven_by(g, *c).first().copied().unwrap_or(PlugRef::new(*c, OUTPUT as i32));
+                out.push((p, *c));
+            }
+        }
+        return Ok(out);
+    }
     // Curves named directly.
     let names = objects(s, a);
     if names.iter().all(|n| g.find(n).ok().flatten().is_some_and(|id| is_curve(g, id))) && !names.is_empty() {
@@ -684,21 +1139,35 @@ pub(crate) fn target_curves(s: &Session, a: &aztek_ops::Args, cmd: &str) -> CmdR
 pub fn install(g: &mut Graph) {
     set_frame(g, range().min);
     g.set_driven_set_hook(Arc::new(|g: &mut Graph, dst: &PlugRef, src: &PlugRef, v: f64| {
-        if !is_curve(g, src.node) {
+        if let Some(edit) = crate::rig::driven_scalar_set(g, dst, src, v) {
+            return edit;
+        }
+        if !holds(g, src) {
             return DrivenEdit::Reject;
         }
         if auto_key() {
             let t = frame(g);
-            let mut k = keys_of(g, src.node);
-            match k.keys.iter_mut().find(|e| (e.t - t).abs() < 1e-6) {
-                Some(e) => e.v = v,
-                None => {
-                    let r = range();
-                    k.set(Key::new(t, v, r.default_in, r.default_out));
-                }
+            if key_plug_in(g, dst, t, Some(v), None, None, None, false).unwrap_or(false) {
+                return DrivenEdit::Handled;
             }
-            if set_keys(g, src.node, k).is_ok() {
-                let _ = dst;
+        }
+        DrivenEdit::Hold
+    }));
+    g.set_driven_vec_set_hook(Arc::new(|g: &mut Graph, dst: &PlugRef, src: &PlugRef, v: glam::DVec3| {
+        if let Some(edit) = crate::rig::driven_vec_set(g, dst, src, v) {
+            return edit;
+        }
+        if !crate::anim_layers::is_routing(g, src.node) {
+            return DrivenEdit::Reject;
+        }
+        if auto_key() {
+            let t = frame(g);
+            let mut done = true;
+            for c in 0..3 {
+                let p = PlugRef::component(dst.node, dst.attr, c);
+                done &= key_plug_in(g, &p, t, Some(v[c as usize]), None, None, None, false).unwrap_or(false);
+            }
+            if done {
                 return DrivenEdit::Handled;
             }
         }
@@ -706,17 +1175,35 @@ pub fn install(g: &mut Graph) {
     }));
 }
 
-/// Curves left driving nothing after their channels' nodes were deleted, as Maya removes them.
+/// What drives a plug but lets a set on it hold until the time changes: curves, and the mute, blend and clip nodes
+/// they feed through.
+fn holds(g: &Graph, src: &PlugRef) -> bool {
+    is_curve(g, src.node) || crate::anim_layers::is_routing(g, src.node) || crate::characters::is_clip_channel(g, src.node)
+}
+
+/// Curves left driving nothing after their channels' nodes were deleted, as Maya removes them, with the mute, blend
+/// and motion path nodes between.
 pub fn orphans(g: &Graph, doomed: &[NodeId]) -> Vec<NodeId> {
-    let mut out = Vec::new();
-    for (d, s) in g.connections() {
-        if doomed.contains(&d.node) && is_curve(g, s.node) && !doomed.contains(&s.node) && !out.contains(&s.node) {
-            if driven_by(g, s.node).iter().all(|p| doomed.contains(&p.node)) {
+    let mut out: Vec<NodeId> = Vec::new();
+    let mut gone: Vec<NodeId> = doomed.to_vec();
+    let conns = g.connections();
+    loop {
+        let mut grew = false;
+        for (d, s) in &conns {
+            if !gone.contains(&d.node) || gone.contains(&s.node) {
+                continue;
+            }
+            let goes = is_curve(g, s.node) || crate::anim_layers::is_routing(g, s.node) || crate::motion_path::is_motion_path(g, s.node) || crate::characters::is_clip_channel(g, s.node);
+            if goes && conns.iter().filter(|(_, x)| x.node == s.node).all(|(x, _)| gone.contains(&x.node)) {
+                gone.push(s.node);
                 out.push(s.node);
+                grew = true;
             }
         }
+        if !grew {
+            return out;
+        }
     }
-    out
 }
 
 /// Key times on these nodes' curves, sorted and unique.
@@ -738,13 +1225,13 @@ pub fn key_times(g: &Graph, nodes: &[NodeId]) -> Vec<f64> {
 // ---------------------------------------------------------------------------------------------------------------------
 // Commands
 
-type Cmd = CommandDef<Session>;
+pub(crate) type Cmd = CommandDef<Session>;
 
-fn f(name: &str, short: &str, ty: ArgType, doc: &str) -> FlagDef {
+pub(crate) fn f(name: &str, short: &str, ty: ArgType, doc: &str) -> FlagDef {
     FlagDef::new(name, short, ty, Value::Null, doc)
 }
 
-fn query_flags(c: Cmd) -> Cmd {
+pub(crate) fn query_flags(c: Cmd) -> Cmd {
     c.flag(f("query", "q", ArgType::Bool, "Return the value of the flags named instead of setting them."))
         .flag(f("edit", "e", ArgType::Bool, "Change the flags named."))
         .flag(f("queried", "", ArgType::List, "The flags asked about in query mode (filled in from q=True calls)."))
@@ -754,91 +1241,12 @@ pub fn register(c: &mut Commands<Session>) {
     register_types();
     register_edit_keys(c);
     crate::anim_edit::register(c);
-
-    c.register(
-        query_flags(Cmd::new(
-            "currentTime",
-            "Set the current frame, or query it. Animated channels move to their values there.",
-            |s, a| {
-                if !a.bool("query") {
-                    let t = match a.positional.first().and_then(Value::as_f64).or_else(|| a.get("time").and_then(Value::as_f64)) {
-                        Some(t) => t,
-                        None => fail!("currentTime: expected a frame"),
-                    };
-                    set_frame(&mut s.graph, t);
-                }
-                Ok(frame_json(frame(&s.graph)))
-            },
-        ))
-        .positional("frame")
-        .flag(f("time", "t", ArgType::Float, "The frame to go to."))
-        .flag(f("update", "u", ArgType::Bool, "Accepted for Maya scripts; the scene always updates."))
-        .undoable(false),
-    );
-
-    c.register(
-        query_flags(Cmd::new(
-            "playbackOptions",
-            "The playback range (min/max), the whole animation range (ast/aet), looping and speed. In query mode returns the \
-             flag asked about.",
-            |_s, a| {
-                if a.bool("query") {
-                    let r = range();
-                    return Ok(if queried(a, &["maxTime"]) {
-                        frame_json(r.max)
-                    } else if queried(a, &["animationStartTime"]) {
-                        frame_json(r.anim_start)
-                    } else if queried(a, &["animationEndTime"]) {
-                        frame_json(r.anim_end)
-                    } else if queried(a, &["loop"]) {
-                        json!(r.loop_mode)
-                    } else if queried(a, &["playbackSpeed"]) {
-                        json!(r.speed)
-                    } else if queried(a, &["framesPerSecond"]) {
-                        json!(fps())
-                    } else {
-                        frame_json(r.min)
-                    });
-                }
-                set_range(|r| {
-                    if let Some(v) = a.get("minTime").and_then(Value::as_f64) {
-                        r.min = v;
-                    }
-                    if let Some(v) = a.get("maxTime").and_then(Value::as_f64) {
-                        r.max = v;
-                    }
-                    if let Some(v) = a.get("animationStartTime").and_then(Value::as_f64) {
-                        r.anim_start = v;
-                    }
-                    if let Some(v) = a.get("animationEndTime").and_then(Value::as_f64) {
-                        r.anim_end = v;
-                    }
-                    if let Some(v) = a.get("loop").and_then(Value::as_str) {
-                        r.loop_mode = v.to_string();
-                    }
-                    if let Some(v) = a.get("playbackSpeed").and_then(Value::as_f64) {
-                        r.speed = v;
-                    }
-                    r.anim_start = r.anim_start.min(r.min);
-                    r.anim_end = r.anim_end.max(r.max);
-                });
-                if let Some(v) = a.get("framesPerSecond").and_then(Value::as_f64) {
-                    if v > 0.0 {
-                        FPS_BITS.store(v.to_bits(), Ordering::Relaxed);
-                    }
-                }
-                Ok(Value::Null)
-            },
-        ))
-        .flag(f("minTime", "min", ArgType::Float, "First frame of the playback range."))
-        .flag(f("maxTime", "max", ArgType::Float, "Last frame of the playback range."))
-        .flag(f("animationStartTime", "ast", ArgType::Float, "First frame of the whole animation."))
-        .flag(f("animationEndTime", "aet", ArgType::Float, "Last frame of the whole animation."))
-        .flag(f("loop", "l", ArgType::String, "continuous, once or oscillate.").choices(&["continuous", "once", "oscillate"]))
-        .flag(f("playbackSpeed", "ps", ArgType::Float, "1 for real time, 0 for every frame."))
-        .flag(f("framesPerSecond", "fps", ArgType::Float, "Frames per second (24 by default, film)."))
-        .undoable(false),
-    );
+    crate::anim_keys::register(c);
+    crate::anim_time::register(c);
+    crate::anim_filter::register(c);
+    crate::anim_layers::register(c);
+    crate::motion_path::register(c);
+    crate::characters::register(c);
 
     c.register(
         query_flags(Cmd::new(
@@ -855,313 +1263,6 @@ pub fn register(c: &mut Commands<Session>) {
         ))
         .flag(f("state", "st", ArgType::Bool, "On or off."))
         .undoable(false),
-    );
-
-    c.register(
-        Cmd::new(
-            "setKeyframe",
-            "Key channels at the current frame (or -t). Objects key all their keyable channels unless -at names some. Returns \
-             the number of keys set.",
-            |s, a| {
-                let plugs = targets(s, a, "setKeyframe")?;
-                let times: Vec<f64> = match a.get("time") {
-                    Some(Value::Array(v)) => v.iter().filter_map(Value::as_f64).collect(),
-                    Some(v) => v.as_f64().into_iter().collect(),
-                    None => vec![frame(&s.graph)],
-                };
-                let value = a.get("value").and_then(Value::as_f64);
-                let (itt, ott) = (tangent_flag(a, "inTangentType")?, tangent_flag(a, "outTangentType")?);
-                let mut n = 0;
-                for p in plugs {
-                    for &t in &times {
-                        // A held (changed but unkeyed) value is what gets keyed at the current frame.
-                        if key_plug(&mut s.graph, &p, t, value, itt, ott)? {
-                            if let Some(bd) = a.get("breakdown").and_then(Value::as_bool) {
-                                if let Some(c) = curve_of(&s.graph, &p) {
-                                    let mut k = keys_of(&s.graph, c);
-                                    if let Some(e) = k.keys.iter_mut().find(|e| (e.t - t).abs() < 1e-6) {
-                                        e.breakdown = bd;
-                                    }
-                                    set_keys(&mut s.graph, c, k)?;
-                                }
-                            }
-                            n += 1;
-                        }
-                    }
-                }
-                Ok(json!(n))
-            },
-        )
-        .positional("objects or object.attribute plugs (the selection when none)")
-        .flag(f("attribute", "at", ArgType::Any, "Channel name(s) to key: tx, rotateY..."))
-        .flag(f("time", "t", ArgType::Any, "Frame(s) to key at."))
-        .flag(f("value", "v", ArgType::Float, "Value to key instead of the current one."))
-        .flag(f("inTangentType", "itt", ArgType::String, "Tangent into the key.").choices(Tangent::NAMES))
-        .flag(f("outTangentType", "ott", ArgType::String, "Tangent out of the key.").choices(Tangent::NAMES))
-        .flag(f("breakdown", "bd", ArgType::Bool, "The key is a breakdown: it keeps its place between the keys around it."))
-        .flag(f("hierarchy", "hi", ArgType::String, "Accepted for Maya scripts."))
-        .flag(f("controlPoints", "cp", ArgType::Bool, "Accepted for Maya scripts."))
-        .flag(f("shape", "s", ArgType::Bool, "Accepted for Maya scripts.")),
-    );
-
-    c.register(
-        query_flags(Cmd::new(
-            "keyframe",
-            "Query or edit keys. -q -kc counts them, -q -tc lists their frames, -q -vc their values, -q -n the curves. -tc/-vc \
-             (with -r for relative) move the keys in -t (or all).",
-            |s, a| {
-                let curves = target_curves(s, a, "keyframe")?;
-                let range = time_range(a)?;
-                let index: Option<Vec<usize>> = match a.get("index") {
-                    Some(Value::Array(v)) => Some(v.iter().filter_map(Value::as_u64).map(|i| i as usize).collect()),
-                    Some(Value::Number(n)) => Some(vec![n.as_u64().unwrap_or(0) as usize]),
-                    _ => None,
-                };
-                let pick = |i: usize, k: &Key| in_range(range, k.t) && index.as_ref().is_none_or(|ix| ix.contains(&i));
-                if a.bool("query") {
-                    if queried(a, &["name"]) {
-                        return Ok(json!(curves.iter().map(|(_, c)| s.graph.path(*c)).collect::<Vec<_>>()));
-                    }
-                    let mut count = 0;
-                    let mut times = Vec::new();
-                    let mut values = Vec::new();
-                    let mut both = Vec::new();
-                    for (_, c) in &curves {
-                        for (i, k) in keys_of(&s.graph, *c).keys.iter().enumerate() {
-                            if pick(i, k) {
-                                count += 1;
-                                times.push(json!(k.t));
-                                values.push(json!(k.v));
-                                both.push(json!(k.t));
-                                both.push(json!(k.v));
-                            }
-                        }
-                    }
-                    if queried(a, &["keyframeCount"]) {
-                        return Ok(json!(count));
-                    }
-                    if queried(a, &["breakdown"]) {
-                        let mut v = Vec::new();
-                        for (_, c) in &curves {
-                            for (i, k) in keys_of(&s.graph, *c).keys.iter().enumerate() {
-                                if pick(i, k) && k.breakdown {
-                                    v.push(json!(k.t));
-                                }
-                            }
-                        }
-                        return Ok(Value::Array(v));
-                    }
-                    if queried(a, &["floatChange"]) {
-                        return Ok(Value::Array(times));
-                    }
-                    if queried(a, &["valueChange"]) && queried(a, &["timeChange"]) {
-                        return Ok(Value::Array(both));
-                    }
-                    if queried(a, &["valueChange"]) {
-                        return Ok(Value::Array(values));
-                    }
-                    if queried(a, &["eval"]) {
-                        let t = frame(&s.graph);
-                        let v: Vec<Value> = curves.iter().map(|(_, c)| json!(keys_of(&s.graph, *c).eval(t, Infinity::Constant, Infinity::Constant))).collect();
-                        return Ok(Value::Array(v));
-                    }
-                    return Ok(Value::Array(times));
-                }
-                let rel = a.bool("relative");
-                let tc = a.get("timeChange").and_then(Value::as_f64).or(a.get("floatChange").and_then(Value::as_f64));
-                let vc = a.get("valueChange").and_then(Value::as_f64);
-                let bd = a.get("breakdown").and_then(|v| v.as_bool().or(v.as_i64().map(|i| i != 0)));
-                let mut n = 0;
-                for (_, c) in &curves {
-                    let mut k = keys_of(&s.graph, *c);
-                    let before = k.keys.clone();
-                    for (i, key) in k.keys.iter_mut().enumerate() {
-                        if !pick(i, key) {
-                            continue;
-                        }
-                        if let Some(b) = bd {
-                            key.breakdown = b;
-                        }
-                        if let Some(t) = tc {
-                            key.t = if rel { key.t + t } else { t };
-                        }
-                        if let Some(v) = vc {
-                            key.v = if rel { key.v + v } else { v };
-                        }
-                        n += 1;
-                    }
-                    crate::anim_edit::retime_breakdowns(&before, &mut k.keys);
-                    k.keys.sort_by(|a, b| a.t.total_cmp(&b.t));
-                    set_keys(&mut s.graph, *c, k)?;
-                }
-                Ok(json!(n))
-            },
-        ))
-        .positional("objects, plugs or curves (the selection when none)")
-        .flag(f("attribute", "at", ArgType::Any, "Channel name(s)."))
-        .flag(f("time", "t", ArgType::Any, "A frame or range \"10:20\"."))
-        .flag(f("floatChange", "fc", ArgType::Float, "Driven keys: the driver value, as -tc for time keys."))
-        .flag(f("breakdown", "bd", ArgType::Bool, "Query: the breakdown keys' frames. Edit: make keys breakdowns, or not."))
-        .flag(f("index", "in", ArgType::Any, "Key index(es) on each curve."))
-        .flag(f("keyframeCount", "kc", ArgType::Bool, "Query: how many keys."))
-        .flag(f("timeChange", "tc", ArgType::Float, "Query: the keys' frames. Edit: their new frame (or offset with -r)."))
-        .flag(f("valueChange", "vc", ArgType::Float, "Query: the keys' values. Edit: their new value (or offset with -r)."))
-        .flag(f("relative", "r", ArgType::Bool, "Edits are offsets."))
-        .flag(f("absolute", "a", ArgType::Bool, "Edits are new values (the default)."))
-        .flag(f("option", "o", ArgType::String, "Accepted for Maya scripts."))
-        .flag(f("name", "n", ArgType::Bool, "Query: the curves' names."))
-        .flag(f("eval", "ev", ArgType::Bool, "Query: the curves' values at the current frame."))
-        .flag(f("selected", "sl", ArgType::Bool, "Accepted for Maya scripts.")),
-    );
-
-    c.register(
-        Cmd::new(
-            "cutKey",
-            "Delete keys in -t (or all of them) from objects or channels. Curves left with no keys are deleted, leaving the \
-             channel at its value.",
-            |s, a| {
-                let curves = target_curves(s, a, "cutKey")?;
-                let range = time_range(a)?;
-                if !a.bool("clear") {
-                    // Maya's cut leaves what it took on the clipboard.
-                    let mut clip = crate::anim_edit::KeyClipboard::default();
-                    let (mut lo, mut hi) = (f64::MAX, f64::MIN);
-                    for (p, c) in &curves {
-                        let keys: Vec<Key> = keys_of(&s.graph, *c).keys.into_iter().filter(|k| in_range(range, k.t)).collect();
-                        if keys.is_empty() {
-                            continue;
-                        }
-                        for k in &keys {
-                            lo = lo.min(k.t);
-                            hi = hi.max(k.t);
-                        }
-                        let g = &s.graph;
-                        clip.entries.push(crate::anim_edit::ClipEntry { attr: channel_name(g, p), keys, pre: g.node(*c).map(|n| n.data().int(PRE)).unwrap_or(0), post: g.node(*c).map(|n| n.data().int(POST)).unwrap_or(0) });
-                    }
-                    if !clip.entries.is_empty() {
-                        clip.start = lo;
-                        clip.end = hi;
-                        s.key_clipboard = clip;
-                    }
-                }
-                let mut n = 0;
-                for (p, c) in curves {
-                    let mut k = keys_of(&s.graph, c);
-                    let before = k.keys.len();
-                    k.keys.retain(|key| !in_range(range, key.t));
-                    n += before - k.keys.len();
-                    if k.keys.is_empty() {
-                        let v = plug_scalar(&mut s.graph, &p);
-                        s.graph.delete_node(c)?;
-                        if p.node != c {
-                            let _ = s.graph.set_value(p, PlugValue::Float(v));
-                        }
-                    } else {
-                        set_keys(&mut s.graph, c, k)?;
-                    }
-                }
-                Ok(json!(n))
-            },
-        )
-        .positional("objects, plugs or curves (the selection when none)")
-        .flag(f("attribute", "at", ArgType::Any, "Channel name(s)."))
-        .flag(f("time", "t", ArgType::Any, "A frame or range \"10:20\"."))
-        .flag(f("clear", "cl", ArgType::Bool, "Delete without copying to the clipboard."))
-        .flag(f("option", "o", ArgType::String, "Accepted for Maya scripts."))
-        .flag(f("index", "in", ArgType::Any, "Accepted for Maya scripts.")),
-    );
-
-    c.register(
-        query_flags(Cmd::new(
-            "keyTangent",
-            "Set the tangent types of keys (-itt, -ott; -t limits them), their angles (-ia, -oa, degrees), or with -g the \
-             defaults new keys get.",
-            |s, a| {
-                let (itt, ott) = (tangent_flag(a, "inTangentType")?, tangent_flag(a, "outTangentType")?);
-                if a.bool("global") {
-                    if a.bool("query") {
-                        let r = range();
-                        return Ok(json!(if queried(a, &["outTangentType"]) { r.default_out.name() } else { r.default_in.name() }));
-                    }
-                    set_range(|r| {
-                        if let Some(t) = itt {
-                            r.default_in = t;
-                        }
-                        if let Some(t) = ott {
-                            r.default_out = t;
-                        }
-                    });
-                    return Ok(Value::Null);
-                }
-                let curves = target_curves(s, a, "keyTangent")?;
-                let range = time_range(a)?;
-                if a.bool("query") {
-                    let mut out = Vec::new();
-                    for (_, c) in &curves {
-                        let k = keys_of(&s.graph, *c);
-                        for (i, key) in k.keys.iter().enumerate() {
-                            if !in_range(range, key.t) {
-                                continue;
-                            }
-                            let (si, so) = k.slopes(i);
-                            if queried(a, &["inAngle"]) {
-                                out.push(json!(si.atan().to_degrees()));
-                            } else if queried(a, &["outAngle"]) {
-                                out.push(json!(so.atan().to_degrees()));
-                            } else if queried(a, &["outTangentType"]) {
-                                out.push(json!(key.ott.name()));
-                            } else {
-                                out.push(json!(key.itt.name()));
-                            }
-                        }
-                    }
-                    return Ok(Value::Array(out));
-                }
-                let ia = a.get("inAngle").and_then(Value::as_f64);
-                let oa = a.get("outAngle").and_then(Value::as_f64);
-                let mut n = 0;
-                for (_, c) in &curves {
-                    let mut k = keys_of(&s.graph, *c);
-                    let slopes: Vec<(f64, f64)> = (0..k.keys.len()).map(|i| k.slopes(i)).collect();
-                    for (i, key) in k.keys.iter_mut().enumerate() {
-                        if !in_range(range, key.t) {
-                            continue;
-                        }
-                        if let Some(t) = itt {
-                            key.itt = t;
-                        }
-                        if let Some(t) = ott {
-                            key.ott = t;
-                        }
-                        if ia.is_some() || oa.is_some() || a.bool("lock") {
-                            key.in_slope = ia.map(|d| d.to_radians().tan()).unwrap_or(slopes[i].0);
-                            key.out_slope = oa.map(|d| d.to_radians().tan()).unwrap_or(slopes[i].1);
-                            if a.bool("lock") {
-                                if ia.is_some() {
-                                    key.out_slope = key.in_slope;
-                                } else if oa.is_some() {
-                                    key.in_slope = key.out_slope;
-                                }
-                            }
-                            key.itt = Tangent::Fixed;
-                            key.ott = Tangent::Fixed;
-                        }
-                        n += 1;
-                    }
-                    set_keys(&mut s.graph, *c, k)?;
-                }
-                Ok(json!(n))
-            },
-        ))
-        .positional("objects, plugs or curves (the selection when none)")
-        .flag(f("attribute", "at", ArgType::Any, "Channel name(s)."))
-        .flag(f("time", "t", ArgType::Any, "A frame or range \"10:20\"."))
-        .flag(f("inTangentType", "itt", ArgType::String, "Tangent into the keys.").choices(Tangent::NAMES))
-        .flag(f("outTangentType", "ott", ArgType::String, "Tangent out of the keys.").choices(Tangent::NAMES))
-        .flag(f("inAngle", "ia", ArgType::Float, "In tangent angle, degrees (makes it fixed)."))
-        .flag(f("outAngle", "oa", ArgType::Float, "Out tangent angle, degrees (makes it fixed)."))
-        .flag(f("lock", "l", ArgType::Bool, "Keep in and out tangents together."))
-        .flag(f("global", "g", ArgType::Bool, "The default tangents for new keys.")),
     );
 
     c.register(

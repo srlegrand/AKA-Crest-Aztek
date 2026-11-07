@@ -770,6 +770,45 @@ pub fn register(c: &mut Commands<Session>) {
 
     c.register(
         Cmd::new(
+            "setMeshUVs",
+            "Set the UV of every face corner of a mesh at once, face by face in order: -u and -v, one number per corner. One \
+             polyTweakUV history node.",
+            |s, a| {
+                let names = a.named();
+                let Some(name) = names.first() else { fail!("setMeshUVs: name a mesh") };
+                let g = &mut s.graph;
+                let id = crate::rig::find(g, name, "setMeshUVs")?;
+                let Some(mesh) = components::as_mesh(g, id) else { fail!("setMeshUVs: {name} is not a mesh") };
+                let list = |k: &str| -> Vec<f64> { a.get(k).and_then(Value::as_array).map(|l| l.iter().filter_map(Value::as_f64).collect()).unwrap_or_default() };
+                let (us, vs) = (list("u"), list("v"));
+                if us.len() != vs.len() {
+                    fail!("setMeshUVs: {} u values and {} v values", us.len(), vs.len());
+                }
+                let mut bad = None;
+                edit_mesh(g, mesh, "polyTweakUV", |m| {
+                    let corners: Vec<Index> = all_faces(m).into_iter().flat_map(|f| m.face_corners(f)).collect();
+                    if corners.len() != us.len() {
+                        bad = Some(corners.len());
+                        return;
+                    }
+                    let layer = m.corner_attrs_mut().get_or_add::<[f32; 2]>(UV);
+                    for (i, c) in corners.into_iter().enumerate() {
+                        layer[c as usize] = [us[i] as f32, vs[i] as f32];
+                    }
+                })?;
+                if let Some(n) = bad {
+                    fail!("setMeshUVs: {name} has {n} face corners, got {}", us.len());
+                }
+                Ok(json!(us.len()))
+            },
+        )
+        .positional("a mesh")
+        .flag(f("u", "", ArgType::List, Value::Null, "U per face corner."))
+        .flag(f("v", "", ArgType::List, Value::Null, "V per face corner.")),
+    );
+
+    c.register(
+        Cmd::new(
             "polyProjection",
             "Project UVs of the selected faces (or meshes) through a plane, cylinder or sphere. -md picks the plane's axis \
              (x, y, z) or b for best fit.",

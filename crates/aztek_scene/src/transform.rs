@@ -192,6 +192,11 @@ pub trait TransformBehavior {
             RotateOrder::from_index(d.int(Transform::ROTATE_ORDER)),
         )
     }
+    /// The inverse of the parent's scale, between translate and the rotation terms: a joint's segment scale compensate.
+    /// Identity otherwise.
+    fn inverse_parent_scale(&self, _d: &NodeData) -> DMat4 {
+        DMat4::IDENTITY
+    }
     /// rotateAxis as a matrix (XYZ order), applied before rotate as Maya does.
     fn rotate_axis_matrix(&self, d: &NodeData) -> DMat4 {
         euler_to_matrix(d.vec3(Transform::ROTATE_AXIS), RotateOrder::Xyz)
@@ -213,7 +218,11 @@ impl DagNode {
     pub const OVERRIDE_COLOR: usize = 7;
     pub const OVERRIDE_RGB_COLORS: usize = 8;
     pub const OVERRIDE_COLOR_RGB: usize = 9;
-    pub const COUNT: usize = 10;
+    pub const GHOSTING: usize = 10;
+    pub const GHOST_PRE_FRAMES: usize = 11;
+    pub const GHOST_POST_FRAMES: usize = 12;
+    pub const GHOST_STEP: usize = 13;
+    pub const COUNT: usize = 14;
 
     pub fn make_type() -> NodeType {
         let keyable = flags::INPUT | flags::STORABLE | flags::KEYABLE;
@@ -307,6 +316,42 @@ impl DagNode {
                     ..Default::default()
                 },
                 crate::node::vec3_attr("overrideColorRGB", "ovrgb", DVec3::ZERO, IN_STORE, "The override colour, 0 to 1 per channel."),
+                AttrDef {
+                    name: "ghosting".into(),
+                    short_name: "gh".into(),
+                    ty: PlugType::Bool,
+                    default_value: PlugValue::Bool(false),
+                    flags: IN_STORE,
+                    doc: "Show this object at the frames around the current one.".into(),
+                    ..Default::default()
+                },
+                AttrDef {
+                    name: "ghostPreSteps".into(),
+                    short_name: "gprs".into(),
+                    ty: PlugType::Int,
+                    default_value: PlugValue::Int(3),
+                    flags: IN_STORE,
+                    doc: "How many ghosts before the current frame.".into(),
+                    ..Default::default()
+                },
+                AttrDef {
+                    name: "ghostPostSteps".into(),
+                    short_name: "gpos".into(),
+                    ty: PlugType::Int,
+                    default_value: PlugValue::Int(3),
+                    flags: IN_STORE,
+                    doc: "How many ghosts after the current frame.".into(),
+                    ..Default::default()
+                },
+                AttrDef {
+                    name: "ghostStepSize".into(),
+                    short_name: "gss".into(),
+                    ty: PlugType::Int,
+                    default_value: PlugValue::Int(1),
+                    flags: IN_STORE,
+                    doc: "Frames between ghosts.".into(),
+                    ..Default::default()
+                },
             ],
             ..Default::default()
         }
@@ -395,8 +440,14 @@ impl Transform {
         let axis = t
             .map(|t| t.rotate_axis_matrix(d))
             .unwrap_or(DMat4::IDENTITY);
-        let before =
-            tr(d.vec3(Self::TRANSLATE)) * tr(d.vec3(Self::ROTATE_PIVOT_TRANSLATE)) * tr(rp) * pre;
+        let inverse_scale = t
+            .map(|t| t.inverse_parent_scale(d))
+            .unwrap_or(DMat4::IDENTITY);
+        let before = tr(d.vec3(Self::TRANSLATE))
+            * tr(d.vec3(Self::ROTATE_PIVOT_TRANSLATE))
+            * tr(rp)
+            * inverse_scale
+            * pre;
         let after = axis
             * tr(-rp)
             * tr(d.vec3(Self::SCALE_PIVOT_TRANSLATE))
@@ -408,10 +459,17 @@ impl Transform {
 
     /// Sets translate/rotate/scale (undoably) so the local matrix becomes `m`, keeping pivots. Shear is dropped.
     pub fn set_local_matrix(g: &mut Graph, id: NodeId, m: &DMat4) -> Result<()> {
-        let (scale, rotation, translation) = decompose(m);
         let n = g
             .node(id)
             .ok_or_else(|| crate::error::GraphError::invalid("no such node"))?;
+        // A joint's compensated parent scale sits inside m: what is left is its own rotation and scale.
+        let compensated = n
+            .behavior()
+            .as_transform()
+            .map(|t| t.inverse_parent_scale(n.data()))
+            .unwrap_or(DMat4::IDENTITY);
+        let (scale, rotation, translation) = decompose(&(compensated.inverse() * *m));
+        let translation = if compensated == DMat4::IDENTITY { translation } else { m.w_axis.truncate() };
         // Shapes have no channels of their own: they sit wherever their transform is.
         if !n.ty().is_a("transform") {
             return Ok(());

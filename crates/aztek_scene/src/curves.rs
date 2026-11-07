@@ -1,7 +1,7 @@
 //! NURBS curves: the nurbsCurve shape with its CVs as components, makeNurbCircle and the curve commands (curve, circle,
 //! rebuildCurve, reverseCurve, closeCurve, ...), each edit a history node as in Maya; the info nodes (curveInfo,
-//! nearestPointOnCurve, pointOnCurveInfo); and building meshes from curves (extrude, revolve, loft, planar).
-//! Maya's extrude, revolve and loft make NURBS surfaces by default; here they always make polygons, as their -po 1 does.
+//! nearestPointOnCurve, pointOnCurveInfo); and building surfaces from curves (extrude, revolve, loft, planar): NURBS by
+//! default, polygons with -po 1, as in Maya.
 
 use std::any::Any;
 use std::sync::Arc;
@@ -59,27 +59,27 @@ pub(crate) fn curve_value(v: &PlugValue) -> Option<&NurbsCurve> {
     }
 }
 
-fn to_value(c: NurbsCurve) -> PlugValue {
+pub(crate) fn to_value(c: NurbsCurve) -> PlugValue {
     PlugValue::Data(Some(Arc::new(CurveData(c))))
 }
 
-fn curve_attr(name: &str, short: &str, fl: u32, doc: &str) -> AttrDef {
+pub(crate) fn curve_attr(name: &str, short: &str, fl: u32, doc: &str) -> AttrDef {
     AttrDef { name: name.into(), short_name: short.into(), ty: PlugType::Data, default_value: PlugValue::Data(None), flags: fl, doc: doc.into(), ..Default::default() }
 }
 
-fn int_out(name: &str, short: &str, doc: &str) -> AttrDef {
+pub(crate) fn int_out(name: &str, short: &str, doc: &str) -> AttrDef {
     AttrDef { name: name.into(), short_name: short.into(), ty: PlugType::Int, default_value: PlugValue::Int(0), flags: flags::OUTPUT, doc: doc.into(), ..Default::default() }
 }
 
-fn float_out(name: &str, short: &str, doc: &str) -> AttrDef {
+pub(crate) fn float_out(name: &str, short: &str, doc: &str) -> AttrDef {
     AttrDef { name: name.into(), short_name: short.into(), ty: PlugType::Float, default_value: PlugValue::Float(0.0), flags: flags::OUTPUT, doc: doc.into(), ..Default::default() }
 }
 
-fn int_in(name: &str, short: &str, def: i64, doc: &str) -> AttrDef {
+pub(crate) fn int_in(name: &str, short: &str, def: i64, doc: &str) -> AttrDef {
     AttrDef { name: name.into(), short_name: short.into(), ty: PlugType::Int, default_value: PlugValue::Int(def), flags: flags::INPUT | flags::STORABLE | flags::KEYABLE, doc: doc.into(), ..Default::default() }
 }
 
-fn store_bool(name: &str, def: bool, doc: &str) -> AttrDef {
+pub(crate) fn store_bool(name: &str, def: bool, doc: &str) -> AttrDef {
     AttrDef { flags: flags::INPUT | flags::STORABLE, ..bool_attr(name, def, doc) }
 }
 
@@ -236,6 +236,7 @@ fn register_provider() {
                 let _ = set_cached(g, node, c.transformed(m));
                 let _ = crate::rig::set_json(g, node, CurveShape::TWEAK, Value::Null);
                 g.disconnect(&plug(node, CurveShape::CREATE));
+                let _ = g.set_value(plug(node, CurveShape::CREATE), PlugValue::Data(None));
             }
         })),
         soft: None,
@@ -407,8 +408,10 @@ struct SurfNode {
 }
 
 const S_CURVES: usize = 0;
-const S_OUT: usize = 1;
-const S_P: usize = 2;
+const S_OUT_SURFACE: usize = 1;
+const S_OUT: usize = 2;
+const S_POLYGON: usize = 3;
+const S_P: usize = 4;
 
 fn grid_mesh(rows: &[Vec<DVec3>], close_u: bool, close_v: bool) -> Mesh {
     let mut m = Mesh::default();
@@ -465,6 +468,42 @@ fn open_points(c: &NurbsCurve, per_span: usize) -> (Vec<DVec3>, bool) {
 impl NodeBehavior for SurfNode {
     fn compute(&mut self, _ctx: &EvalContext, d: &mut NodeData) {
         let curves: Vec<NurbsCurve> = d.elements(S_CURVES).iter().filter_map(|(_, v)| curve_value(v).cloned()).collect();
+        if self.kind != SurfKind::Sweep && d.int(S_POLYGON) != 1 {
+            let surface = match self.kind {
+                SurfKind::Extrude => curves.first().and_then(|profile| {
+                    let o = crate::surfaces::ExtrudeOptions {
+                        extrude_type: d.int(S_P + 2),
+                        direction: d.vec3(S_P + 4),
+                        length: d.float(S_P + 5),
+                        scale: d.float(S_P),
+                        rotation: d.float(S_P + 1),
+                        fixed_path: d.bool(S_P + 6),
+                    };
+                    crate::surfaces::extrude_surface(profile, curves.get(1), o)
+                }),
+                SurfKind::Revolve => curves.first().filter(|c| c.is_valid()).map(|c| {
+                    let (start, end) = (d.float(S_P + 4), d.float(S_P + 5));
+                    nurbs::revolved(c, d.vec3(S_P), d.vec3(S_P + 1), start, end, d.int(S_P + 2).max(3) as usize, d.int(S_P + 6).clamp(1, 3) as usize)
+                }),
+                SurfKind::Loft => crate::surfaces::loft_surface(
+                    &curves,
+                    crate::surfaces::LoftOptions {
+                        close: d.bool(S_P),
+                        uniform: d.bool(S_P + 2),
+                        degree: d.int(S_P + 3).max(1) as usize,
+                        section_spans: d.int(S_P + 4).max(1) as usize,
+                        auto_reverse: d.bool(S_P + 5),
+                        reverse_normals: d.bool(S_P + 6),
+                    },
+                ),
+                SurfKind::Planar => curves.first().and_then(crate::surfaces::rectangle_surface),
+                SurfKind::Sweep => None,
+            };
+            d.set_output(S_OUT_SURFACE, surface.map(crate::surfaces::to_value).unwrap_or(PlugValue::Data(None)));
+            d.set_output(S_OUT, PlugValue::Mesh(None));
+            return;
+        }
+        d.set_output(S_OUT_SURFACE, PlugValue::Data(None));
         let mesh = match self.kind {
             SurfKind::Extrude => (|| {
                 let profile = curves.first()?;
@@ -595,17 +634,19 @@ impl NodeBehavior for SurfNode {
 fn surf_type(name: &str, kind: SurfKind, doc: &str, params: Vec<AttrDef>) -> NodeType {
     let mut attrs = vec![
         curve_attr("inputCurve", "ic", flags::INPUT | flags::ARRAY | flags::HIDDEN, "The curves it's made from."),
-        mesh_attr("outputSurface", "os", flags::OUTPUT | flags::HIDDEN, "The mesh."),
+        curve_attr("outputSurface", "os", flags::OUTPUT | flags::HIDDEN, "The NURBS surface."),
+        mesh_attr("outputMesh", "om", flags::OUTPUT | flags::HIDDEN, "The mesh, with polygon on."),
+        int_in("polygon", "po", 0, "0 NURBS, 1 polygons."),
     ];
     attrs.extend(params);
     NodeType { name: name.into(), icon: "chart-line".into(), doc: doc.into(), own_attrs: attrs, create: Some(Arc::new(move || Box::new(SurfNode { kind }))), ..Default::default() }
 }
 
-fn f_in(name: &str, short: &str, def: f64, doc: &str) -> AttrDef {
+pub(crate) fn f_in(name: &str, short: &str, def: f64, doc: &str) -> AttrDef {
     float_attr_short(name, short, def, doc, None, None)
 }
 
-fn v_in(name: &str, short: &str, def: DVec3, doc: &str) -> AttrDef {
+pub(crate) fn v_in(name: &str, short: &str, def: DVec3, doc: &str) -> AttrDef {
     vec3_attr(name, short, def, flags::INPUT | flags::STORABLE | flags::KEYABLE, doc)
 }
 
@@ -736,6 +777,7 @@ pub fn register_types() {
                     int_in("divisions", "dv", 8, "Mesh points per span of the profile."),
                     v_in("direction", "d", DVec3::Y, "Direction with no path."),
                     f_in("length", "l", 1.0, "Length with no path."),
+                    store_bool("fixedPath", false, "The surface sits on the path, not where the profile is."),
                 ],
             ),
             surf_type(
@@ -749,13 +791,22 @@ pub fn register_types() {
                     int_in("divisions", "dv", 4, "Mesh points per span of the profile."),
                     f_in("startSweep", "ssw", 0.0, "Start, degrees."),
                     f_in("endSweep", "esw", 360.0, "End, degrees."),
+                    int_in("degree", "d", 3, "Degree around."),
                 ],
             ),
             surf_type(
                 "loft",
                 SurfKind::Loft,
                 "A surface through curves in order.",
-                vec![store_bool("close", false, "Back to the first curve."), int_in("divisions", "dv", 8, "Mesh points per span of the first curve.")],
+                vec![
+                    store_bool("close", false, "Back to the first curve."),
+                    int_in("divisions", "dv", 8, "Mesh points per span of the first curve."),
+                    store_bool("uniform", false, "Even parameters between the curves, rather than by their distance."),
+                    int_in("degree", "d", 3, "Degree across the curves."),
+                    int_in("sectionSpans", "ss", 1, "Spans between each pair of curves."),
+                    store_bool("autoReverse", true, "Turn curves round to run alike."),
+                    store_bool("reverseSurfaceNormals", false, "Flip the normals."),
+                ],
             ),
             surf_type("planarTrim", SurfKind::Planar, "A face inside a closed curve.", vec![]),
             surf_type(
@@ -783,7 +834,7 @@ pub fn register_types() {
 
 type Cmd = CommandDef<Session>;
 
-fn f(name: &str, short: &str, ty: ArgType, doc: &str) -> FlagDef {
+pub(crate) fn f(name: &str, short: &str, ty: ArgType, doc: &str) -> FlagDef {
     FlagDef::new(name, short, ty, Value::Null, doc)
 }
 
@@ -802,13 +853,18 @@ fn points_flag(a: &Args, name: &str) -> Vec<DVec3> {
     nums.chunks(3).filter(|c| c.len() == 3).map(|c| DVec3::new(c[0], c[1], c[2])).collect()
 }
 
-fn create_curve(g: &mut Graph, name: &str, c: NurbsCurve, select: bool) -> CmdResult<(NodeId, NodeId)> {
+pub(crate) fn create_curve(g: &mut Graph, name: &str, c: NurbsCurve, select: bool) -> CmdResult<(NodeId, NodeId)> {
     let (tr, sh) = crate::dag::create_with_shape(g, SHAPE_TYPE, name, NO_NODE)?;
     set_cached(g, sh, c)?;
     if select {
         g.select(&[tr], SelectMode::Replace);
     }
     Ok((tr, sh))
+}
+
+/// A new curve object, selection untouched.
+pub(crate) fn create_curve_node(g: &mut Graph, name: &str, c: NurbsCurve) -> CmdResult<(NodeId, NodeId)> {
+    create_curve(g, name, c, false)
 }
 
 fn curve_arg(g: &Graph, name: &str, cmd: &str) -> CmdResult<NodeId> {
@@ -886,6 +942,8 @@ pub fn bake_history(g: &mut Graph, shape: NodeId) -> CmdResult<()> {
     let create = plug(shape, CurveShape::CREATE);
     let mut src = g.source(&create);
     g.disconnect(&create);
+    // A disconnected plug keeps its last value, which would hide the shape's own curve.
+    g.set_value(create, PlugValue::Data(None))?;
     set_cached(g, shape, c)?;
     let _ = g.set_value(plug(shape, CurveShape::TWEAK), PlugValue::Data(None));
     while let Some(p) = src {
@@ -910,7 +968,8 @@ pub fn curve_history(g: &Graph, shape: NodeId) -> Vec<NodeId> {
     out
 }
 
-fn surf_output(g: &mut Graph, ty: &str, name: &str, node_name: &str, inputs: &[NodeId], set: &[(usize, PlugValue)]) -> CmdResult<(NodeId, NodeId)> {
+#[allow(clippy::too_many_arguments)]
+fn surf_output(g: &mut Graph, ty: &str, name: &str, node_name: &str, inputs: &[NodeId], set: &[(usize, PlugValue)], polygon: bool) -> CmdResult<(NodeId, NodeId)> {
     let t = types::find(ty).ok_or_else(|| aztek_ops::CommandError::new(format!("no node type {ty}")))?;
     let node = g.create_node(&t, node_name, NO_NODE, true)?;
     for (i, &shape) in inputs.iter().enumerate() {
@@ -919,14 +978,22 @@ fn surf_output(g: &mut Graph, ty: &str, name: &str, node_name: &str, inputs: &[N
     for (attr, v) in set {
         g.set_value(plug(node, *attr), v.clone())?;
     }
-    let (tr, sh) = crate::mesh_nodes::create_mesh_node(g, name)?;
-    g.connect(&plug(node, S_OUT), &plug(sh, crate::mesh_nodes::MeshNode::IN_MESH), true)?;
+    g.set_value(plug(node, S_POLYGON), PlugValue::Int(polygon as i64))?;
+    let tr = if polygon {
+        let (tr, sh) = crate::mesh_nodes::create_mesh_node(g, name)?;
+        g.connect(&plug(node, S_OUT), &plug(sh, crate::mesh_nodes::MeshNode::IN_MESH), true)?;
+        tr
+    } else {
+        let (tr, sh) = crate::dag::create_with_shape(g, crate::surfaces::SHAPE_TYPE, name, NO_NODE)?;
+        g.connect(&plug(node, S_OUT_SURFACE), &plug(sh, crate::surfaces::SurfaceShape::CREATE), false)?;
+        tr
+    };
     g.select(&[tr], SelectMode::Replace);
     Ok((tr, node))
 }
 
 fn surf_flags(c: Cmd) -> Cmd {
-    c.flag(f("polygon", "po", ArgType::Int, "Accepted: the output is always polygons."))
+    c.flag(f("polygon", "po", ArgType::Int, "0 NURBS (the default), 1 polygons."))
         .flag(f("constructionHistory", "ch", ArgType::Bool, "Keep the node (on by default)."))
         .flag(f("range", "rn", ArgType::Bool, "Accepted for Maya scripts."))
         .flag(f("name", "n", ArgType::String, "Name of the new object."))
@@ -937,13 +1004,15 @@ fn finish_surf(g: &mut Graph, a: &Args, tr: NodeId, node: NodeId) -> CmdResult {
     if !ch {
         if let Some(m) = components::as_mesh(g, tr) {
             crate::history::delete_history(g, m)?;
+        } else if let Some(s) = crate::surfaces::as_surface(g, tr) {
+            crate::surfaces::bake_history(g, s)?;
         }
         return Ok(json!([g.path(tr)]));
     }
     Ok(json!([g.path(tr), g.path(node)]))
 }
 
-fn v3(a: &Args, name: &str, def: DVec3) -> DVec3 {
+pub(crate) fn v3(a: &Args, name: &str, def: DVec3) -> DVec3 {
     a.vec3(name).map(DVec3::from_array).unwrap_or(def)
 }
 
@@ -1277,6 +1346,25 @@ pub fn register(c: &mut Commands<Session>) {
     );
 
     c.register(
+        Cmd::new("setCurvePoints", "Move a curve's CVs at once, in object space: -p [[x, y, z], ...], from the first CV. A periodic curve's wrapped CVs follow their first lap.", |s, a| {
+            let names = objects(s, a);
+            let Some(n) = names.first() else { fail!("setCurvePoints: name or select a curve") };
+            let g = &mut s.graph;
+            let shape = curve_arg(g, n, "setCurvePoints")?;
+            let pts = points_flag(a, "points");
+            let Some(cur) = local_curve(g, shape) else { fail!("setCurvePoints: {n} has no curve") };
+            if pts.len() > cur.cvs.len() {
+                fail!("setCurvePoints: {n} has {} CVs, got {}", cur.cvs.len(), pts.len());
+            }
+            let moves: Vec<(u32, DVec3)> = pts.iter().enumerate().map(|(i, p)| (i as u32, *p)).collect();
+            move_cvs(g, shape, &moves);
+            Ok(json!(pts.len()))
+        })
+        .positional("a curve (the selection when none)")
+        .flag(f("points", "p", ArgType::List, "[[x, y, z], ...].")),
+    );
+
+    c.register(
         Cmd::new("arclen", "The length of a curve along its arc, world space.", |s, a| {
             let names = objects(s, a);
             let Some(n) = names.first() else { fail!("arclen: name or select a curve") };
@@ -1402,8 +1490,9 @@ pub fn register(c: &mut Commands<Session>) {
                     (S_P + 3, PlugValue::Int(a.int("divisions", 8))),
                     (S_P + 4, PlugValue::Vec3(v3(a, "direction", DVec3::Y))),
                     (S_P + 5, PlugValue::Float(a.float("length", 1.0))),
+                    (S_P + 6, PlugValue::Bool(a.bool("fixedPath"))),
                 ];
-                let (tr, node) = surf_output(g, "extrude", &a.string("name", "extrudedSurface1"), "extrude1", &inputs, &set)?;
+                let (tr, node) = surf_output(g, "extrude", &a.string("name", "extrudedSurface1"), "extrude1", &inputs, &set, a.int("polygon", 0) == 1)?;
                 finish_surf(g, a, tr, node)
             },
         )
@@ -1414,7 +1503,7 @@ pub fn register(c: &mut Commands<Session>) {
         .flag(f("direction", "d", ArgType::Vec3, "Direction, with no path."))
         .flag(f("length", "l", ArgType::Float, "Length, with no path."))
         .flag(f("divisions", "dv", ArgType::Int, "Mesh points per span of the profile."))
-        .flag(f("fixedPath", "fpt", ArgType::Bool, "Accepted for Maya scripts."))
+        .flag(f("fixedPath", "fpt", ArgType::Bool, "The surface sits on the path, not where the profile is."))
         .flag(f("useComponentPivot", "ucp", ArgType::Int, "Accepted for Maya scripts."))
         .flag(f("useProfileNormal", "upn", ArgType::Bool, "Accepted for Maya scripts."))
         .flag(f("reverseSurfaceIfPathReversed", "rsp", ArgType::Bool, "Accepted for Maya scripts.")),
@@ -1436,8 +1525,9 @@ pub fn register(c: &mut Commands<Session>) {
                     (S_P + 3, PlugValue::Int(a.int("divisions", 4))),
                     (S_P + 4, PlugValue::Float(a.float("startSweep", 0.0))),
                     (S_P + 5, PlugValue::Float(a.float("endSweep", 360.0))),
+                    (S_P + 6, PlugValue::Int(a.int("degree", 3))),
                 ];
-                let (tr, node) = surf_output(g, "revolve", &a.string("name", "revolvedSurface1"), "revolve1", &[shape], &set)?;
+                let (tr, node) = surf_output(g, "revolve", &a.string("name", "revolvedSurface1"), "revolve1", &[shape], &set, a.int("polygon", 0) == 1)?;
                 finish_surf(g, a, tr, node)
             },
         )
@@ -1448,7 +1538,7 @@ pub fn register(c: &mut Commands<Session>) {
         .flag(f("divisions", "dv", ArgType::Int, "Mesh points per span of the curve."))
         .flag(f("startSweep", "ssw", ArgType::Float, "Start, degrees."))
         .flag(f("endSweep", "esw", ArgType::Float, "End, degrees."))
-        .flag(f("degree", "d", ArgType::Int, "Accepted for Maya scripts."))
+        .flag(f("degree", "d", ArgType::Int, "Degree around (3)."))
         .flag(f("useTolerance", "ut", ArgType::Bool, "Accepted for Maya scripts."))
         .flag(f("tolerance", "tol", ArgType::Float, "Accepted for Maya scripts.")),
     ));
@@ -1464,30 +1554,45 @@ pub fn register(c: &mut Commands<Session>) {
                     fail!("loft: name or select two curves or more");
                 }
                 let inputs: Vec<NodeId> = names.iter().map(|n| curve_arg(g, n, "loft")).collect::<CmdResult<_>>()?;
-                let set = vec![(S_P, PlugValue::Bool(a.bool("close"))), (S_P + 1, PlugValue::Int(a.int("divisions", 8)))];
-                let (tr, node) = surf_output(g, "loft", &a.string("name", "loftedSurface1"), "loft1", &inputs, &set)?;
+                let set = vec![
+                    (S_P, PlugValue::Bool(a.bool("close"))),
+                    (S_P + 1, PlugValue::Int(a.int("divisions", 8))),
+                    (S_P + 2, PlugValue::Bool(a.bool("uniform"))),
+                    (S_P + 3, PlugValue::Int(a.int("degree", 3))),
+                    (S_P + 4, PlugValue::Int(a.int("sectionSpans", 1))),
+                    (S_P + 5, PlugValue::Bool(a.get("autoReverse").and_then(Value::as_bool).unwrap_or(true))),
+                    (S_P + 6, PlugValue::Bool(a.bool("reverseSurfaceNormals"))),
+                ];
+                let (tr, node) = surf_output(g, "loft", &a.string("name", "loftedSurface1"), "loft1", &inputs, &set, a.int("polygon", 0) == 1)?;
                 finish_surf(g, a, tr, node)
             },
         )
         .positional("curves in order (the selection when none)")
         .flag(f("close", "c", ArgType::Bool, "Back to the first curve."))
         .flag(f("divisions", "dv", ArgType::Int, "Mesh points per span of the first curve."))
-        .flag(f("uniform", "u", ArgType::Bool, "Accepted for Maya scripts."))
-        .flag(f("autoReverse", "ar", ArgType::Bool, "Accepted for Maya scripts."))
-        .flag(f("degree", "d", ArgType::Int, "Accepted for Maya scripts."))
-        .flag(f("sectionSpans", "ss", ArgType::Int, "Accepted for Maya scripts.")),
+        .flag(f("uniform", "u", ArgType::Bool, "Even parameters between the curves, rather than by their distance."))
+        .flag(f("autoReverse", "ar", ArgType::Bool, "Turn curves round to run alike (on)."))
+        .flag(f("degree", "d", ArgType::Int, "Degree across the curves, 1 to 3 (3)."))
+        .flag(f("sectionSpans", "ss", ArgType::Int, "Spans between each pair of curves (1)."))
+        .flag(f("reverseSurfaceNormals", "rsn", ArgType::Bool, "Flip the normals.")),
     ));
 
     c.register(surf_flags(
         Cmd::new(
             "planar",
-            "A face filling a closed curve. Returns [planarTrimmedSurface1, planarTrim1].",
+            "A surface filling a closed curve. Trims aren't modelled: a rectangle makes an untrimmed surface, anything else a polygon \
+             face with a warning, as does -po 1. Returns [planarTrimmedSurface1, planarTrim1].",
             |s, a| {
                 let names = objects(s, a);
                 let g = &mut s.graph;
                 let Some(n) = names.first() else { fail!("planar: name or select a closed curve") };
                 let shape = curve_arg(g, n, "planar")?;
-                let (tr, node) = surf_output(g, "planarTrim", &a.string("name", "planarTrimmedSurface1"), "planarTrim1", &[shape], &[])?;
+                let mut polygon = a.int("polygon", 0) == 1;
+                if !polygon && world_curve(g, shape).and_then(|c| crate::surfaces::rectangle_surface(&c)).is_none() {
+                    log::warn!("planar: trimmed surfaces aren't supported; {n} isn't a rectangle, so this makes polygons");
+                    polygon = true;
+                }
+                let (tr, node) = surf_output(g, "planarTrim", &a.string("name", "planarTrimmedSurface1"), "planarTrim1", &[shape], &[], polygon)?;
                 finish_surf(g, a, tr, node)
             },
         )
@@ -1513,7 +1618,7 @@ pub fn register(c: &mut Commands<Session>) {
                     (S_P + 3, PlugValue::Float(a.float("taper", 1.0))),
                     (S_P + 4, PlugValue::Float(a.float("twist", 0.0))),
                 ];
-                let (tr, node) = surf_output(g, "sweepMeshCreator", &a.string("name", "sweep1"), "sweepMeshCreator1", &[shape], &set)?;
+                let (tr, node) = surf_output(g, "sweepMeshCreator", &a.string("name", "sweep1"), "sweepMeshCreator1", &[shape], &set, true)?;
                 finish_surf(g, a, tr, node)
             },
         )

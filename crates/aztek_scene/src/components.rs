@@ -1539,6 +1539,11 @@ pub fn component_strings(g: &Graph, flatten: bool) -> Vec<String> {
             out.extend(grid_strings(&path, dims, ids, flatten));
             continue;
         }
+        if let Some(stride) = crate::surfaces::id_stride(g, node) {
+            let list = if flatten { crate::surfaces::format_cvs_flat(ids, stride) } else { crate::surfaces::format_cvs(ids, stride) };
+            out.extend(list.into_iter().map(|c| format!("{path}.{c}")));
+            continue;
+        }
         if flatten {
             let p = match kind {
                 ComponentMode::Vertex if !is_mesh(g, node) => "cv",

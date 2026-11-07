@@ -567,12 +567,22 @@ fn register_scene(c: &mut Commands<Session>) {
                         if let Some(c) = crate::curves::as_curve(g, id) {
                             crate::curves::bake_history(g, c)?;
                         }
+                        let mut under = g.descendants(id);
+                        under.push(id);
+                        for d in under {
+                            if crate::surfaces::is_surface(g, d) {
+                                crate::surfaces::bake_history(g, d)?;
+                            }
+                        }
                     }
                     Ok(())
                 })();
                 g.close_chunk();
                 r?;
                 return Ok(Value::Null);
+            }
+            for &id in &ids {
+                crate::anim_layers::before_delete(g, id)?;
             }
             // A deformer goes with its handle or lattice, and the chain closes up.
             let ids = crate::deform::expand_delete(g, ids)?;
@@ -591,6 +601,9 @@ fn register_scene(c: &mut Commands<Session>) {
                     if crate::components::is_mesh(g, d) {
                         let (base, _) = crate::modifiers::chain_base(g, d);
                         history.extend(crate::history::upstream_nodes(g, &base).into_iter().filter(|&h| !g.node(h).unwrap().ty().dag));
+                    }
+                    if crate::surfaces::is_surface(g, d) {
+                        history.extend(crate::surfaces::surface_history(g, d));
                     }
                 }
             }
@@ -732,7 +745,8 @@ fn register_attrs(c: &mut Commands<Session>) {
              without a value: a locked plug can't be changed until it is unlocked.",
             |s, a| {
                 let lock_only = a.has("lock") && a.positional.len() == 1;
-                if (a.positional.len() < 2 && !lock_only) || a.pos_str(0).is_none() {
+                let keyable = a.get("keyable").or(a.get("channelBox")).and_then(Value::as_bool);
+                if (a.positional.len() < 2 && !lock_only && keyable.is_none()) || a.pos_str(0).is_none() {
                     fail!("setAttr: expected (plug, value)");
                 }
                 let g = &mut s.graph;
@@ -740,6 +754,12 @@ fn register_attrs(c: &mut Commands<Session>) {
                     return r;
                 }
                 let p = plug_arg(g, &a.positional[0])?;
+                if let Some(on) = keyable {
+                    crate::anim::set_keyable(g, &p, on)?;
+                    if a.positional.len() < 2 && !lock_only {
+                        return Ok(Value::Null);
+                    }
+                }
                 // Unlock before setting and lock after, so setAttr(plug, v, lock=...) works either way.
                 if a.has("lock") && !a.bool("lock") {
                     g.set_locked(&p, false)?;
@@ -766,7 +786,9 @@ fn register_attrs(c: &mut Commands<Session>) {
             },
         )
         .positional("plug [value]")
-        .flag(flag("lock", "l", T::Bool, Value::Null, "Lock (True) or unlock (False) the plug.")),
+        .flag(flag("lock", "l", T::Bool, Value::Null, "Lock (True) or unlock (False) the plug."))
+        .flag(flag("keyable", "k", T::Bool, Value::Null, "Make the channel keyable, or not: it shows in the channel box and S keys it."))
+        .flag(flag("channelBox", "cb", T::Bool, Value::Null, "As -k: the channel box shows keyable channels.")),
     );
 
     c.register(
@@ -784,6 +806,9 @@ fn register_attrs(c: &mut Commands<Session>) {
                 if a.bool("lock") {
                     return Ok(json!(g.is_locked(&p)));
                 }
+                if a.bool("keyable") {
+                    return Ok(json!(crate::anim::is_keyable(g, &p)));
+                }
                 if a.bool("multiIndices") {
                     return Ok(json!(g.elements(&p).iter().map(|e| e.element).collect::<Vec<_>>()));
                 }
@@ -799,6 +824,7 @@ fn register_attrs(c: &mut Commands<Session>) {
         )
         .positional("plug")
         .flag(flag("lock", "l", T::Bool, json!(false), "Return the lock state instead of the value."))
+        .flag(flag("keyable", "k", T::Bool, json!(false), "Return whether the channel is keyable instead of the value."))
         .flag(flag("multiIndices", "mi", T::Bool, json!(false), "Return an array's element indices, ascending."))
         .undoable(false),
     );
@@ -1430,6 +1456,7 @@ fn register_queries(c: &mut Commands<Session>) {
         .positional("object")
         .flag(flag("parent", "p", T::Bool, json!(false), ""))
         .flag(flag("allDescendents", "ad", T::Bool, json!(false), ""))
+        .flag(flag("children", "c", T::Bool, json!(false), "The children: what it lists by default."))
         .undoable(false),
     );
 
@@ -1474,6 +1501,7 @@ fn register_queries(c: &mut Commands<Session>) {
             flag("rotation", "ro", T::Any, Value::Null, "Euler rotation in degrees as (x, y, z) to set, or True to read it with query.")
                 .example("xform(\"cube1\", rotation=(0, 45, 0))"),
         )
+        .flag(flag("rotateAxis", "ra", T::Any, Value::Null, "rotateAxis as (x, y, z) to set, or True to read it with query."))
         .flag(
             flag("scale", "s", T::Any, Value::Null, "Scale as (x, y, z) to set, or True to read it with query.")
                 .example("xform(\"cube1\", scale=(2, 2, 2))"),
@@ -1527,6 +1555,9 @@ fn xform(s: &mut Session, a: &Args) -> CmdResult {
         if a.has("scale") {
             return Ok(to_json(n.value(Transform::SCALE)));
         }
+        if a.has("rotateAxis") {
+            return Ok(to_json(n.value(Transform::ROTATE_AXIS)));
+        }
         fail!("xform: query what?");
     }
     let need = |f: &str| {
@@ -1557,6 +1588,9 @@ fn xform(s: &mut Session, a: &Args) -> CmdResult {
                     * m;
             }
             Transform::set_local_matrix(g, id, &m)?;
+        }
+        if a.has("rotateAxis") {
+            set_vec(g, id, Transform::ROTATE_AXIS, need("rotateAxis")?)?;
         }
         if a.has("rotation") {
             set_vec(g, id, Transform::ROTATE, need("rotation")?)?;
