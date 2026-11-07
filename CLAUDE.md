@@ -31,17 +31,23 @@ bin, and the target is Maya's behaviour. PARITY.md holds the target and status; 
   `anim.rs` (animCurveTL/TA/TU, setKeyframe, keyframe, cutKey, keyTangent, playbackOptions, currentTime in frames,
   autoKeyframe, held values), `uv_ops.rs` (maps and shells from corner UVs, projections, unfold, layout, cut, sew,
   polyEditUV; each a history node holding a UvEdit), `rig.rs` (joint, orientJoint, skinCluster, skinPercent,
-  constraints, ikHandle RP/SC), `deform.rs` (nonLinear, cluster, blendShape), `maya_cmds.rs` (polyEvaluate,
-  listConnections, filterExpand, ...). New commands register in `session.rs`.
+  constraints, ikHandle), `ik.rs` (RP, SC, spline), `constraint.rs`, `skin.rs` (weights, painting, mirror, copy),
+  `deform*.rs` (nonLinear, cluster, blendShape, lattice, wrap, wire, delta mush, softMod and the rest), `curves.rs` and
+  `surfaces.rs` (NURBS), `sculpt.rs`, `hik.rs` (HumanIK subset), `ma_file.rs` and `ma_file/deformers.rs` (.ma read and
+  write), `references.rs`, `maya_cmds.rs` (polyEvaluate, listConnections, filterExpand, ...). New commands register in
+  `session.rs`.
 - `crates/aztek_host` static library the UI links: C ABI (`lib.rs`, header `app/src/aztek.h`), `core.rs` (Core:
   exec with MEL echo, exec_silent for previews, retract_preview, query/edit routing, UI runtime commands like
   GraphEditor, MoveTool), `mel.rs` (MEL parsing, Maya command and flag aliases), `query.rs` (JSON snapshots for the
   panels), `view.rs` / `viewport.rs` / `render.rs` / `gpu.rs` (ash Vulkan viewport, picking, manipulators, joints and
-  handles drawn as lines, snapping X/V, pivot mode D), `python.rs` + `python/bootstrap.py` (pyo3).
+  handles drawn as lines, snapping X/V, pivot mode D), `tools.rs` (Multi-Cut, Quad Draw and other view tools),
+  `python.rs` + `python/bootstrap.py` (pyo3), `scriptui.rs`, `panel_cmds.rs`, `ui_cmds.rs`, `ctx_cmds.rs` and
+  `script_jobs.rs` (script-built UI, panels, tool contexts, scriptJob), `mel/` (the MEL interpreter).
 - `app/src` Qt 6 Widgets shell in C++17: `mainwindow.*` (menus by menu set, shelves, hotkeys, time slider, editors),
   `panels.*` (outliner, channel box with picked channels and virtual slider, layer and attribute editors, script
   editor), `viewport.*`, `widgets.*` (option boxes, time and range sliders, splash, About), `grapheditor.*`,
-  `uveditor.*`, `markingmenu.*`, `icons.cpp` (icons drawn with QPainter), `style.qss`.
+  `uveditor.*`, `dopesheet.*`, `nodeeditor.*`, `toolsettings.*`, `shapeeditor.cpp`, `runtime.cpp` (script-built windows),
+  `markingmenu.*`, `icons.cpp` (icons drawn with QPainter), `style.qss`.
 - `app/icons` logo and app icon (SVG sources, PNG, ICO). `docs/` README screenshots.
 
 The UI talks to the core only through commands (exec, exec_quiet, ask) and JSON queries; panels refresh when the
@@ -71,16 +77,9 @@ Pick the next gap from PARITY.md ("Not yet") or below, implement it to Maya's be
 `tests/`, build, check it in the UI with screenshots, update PARITY.md's status with the date. Commit locally in small
 steps with plain messages (no attribution); Simon pushes.
 
-## Next, roughly in order
+## Next
 
-- Paint skin weights (artisan-style brush in the viewport), mirror and copy skin weights.
-- Dope sheet; set driven keys; breakdowns; copy and paste keys.
-- NURBS curves (CV curve tool, `curve`, `circle` controls for rigs), extrude and sweep along curves.
-- Lattice, wrap, wire, delta mush, softMod.
-- Spline IK, pole vector constraint, mirror joints, insert joint tool.
-- Quad Draw, Create Polygon, Append to Polygon, Slide Edge, Multi-Cut parity.
-- Tool Settings window (double-click a tool): soft select falloff, move axis orientation (world/object/component).
-- MEL: variables, arrays, for/foreach/if/while, procedures, backticks, `eval`.
-- OpenMaya API 2.0 subset in Python (MSelectionList, MDagPath, MFnMesh, MPoint/MVector/MMatrix, MPxCommand plugins).
-- `.ma` read and write for exchange.
-- Outliner: cameras and default sets as in Maya; Node Editor.
+Everything on the original list is in (paint weights, dope sheet, set driven keys, NURBS, the deformers, spline IK, Quad
+Draw and friends, Tool Settings, MEL, OpenMaya, `.ma`, Node Editor). What is left is in PARITY.md under "Not yet" and in
+each dated section's list of what is shallower than Maya. None of it has been checked against a real copy of Maya, so
+the most useful next step is opening real files from Maya and running real Maya scripts.

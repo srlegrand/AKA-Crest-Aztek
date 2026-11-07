@@ -263,6 +263,27 @@ fn add_wire(g: &mut Graph, n: NodeId, name: &str) -> CmdResult<()> {
     set_floats(g, n, BASE_WIRE, pack(&base))
 }
 
+/// One wire from a file: the curve that drives and the curve holding where it rested, as Maya keeps them. Keeps a dropoff the
+/// file already set.
+pub(crate) fn add_file_wire(g: &mut Graph, n: NodeId, index: i32, driver: NodeId, base_shape: NodeId) -> CmdResult<()> {
+    g.evaluate();
+    let line = driver_points(g, base_shape);
+    if line.is_empty() {
+        fail!("wire: the rest curve has no points");
+    }
+    let xf = crate::dag::transform_of(g, driver);
+    g.connect(&plug(xf, Transform::WORLD_MATRIX), &PlugRef::element(n, WIRE_MATRIX as i32, index), false)?;
+    if g.node(n).unwrap().element(DROPOFF, index).is_none() {
+        g.set_value(PlugRef::element(n, DROPOFF as i32, index), PlugValue::Float(1.0))?;
+    }
+    let mut base = floats_of(g.node(n).unwrap().data(), BASE_WIRE).map(unpack).unwrap_or_default();
+    if base.len() <= index as usize {
+        base.resize(index as usize + 1, Vec::new());
+    }
+    base[index as usize] = line;
+    set_floats(g, n, BASE_WIRE, pack(&base))
+}
+
 /// -dds index distance, any number of pairs.
 fn set_dropoffs(g: &mut Graph, n: NodeId, a: &Args) -> CmdResult<()> {
     fn numbers(v: &Value, out: &mut Vec<f64>) {

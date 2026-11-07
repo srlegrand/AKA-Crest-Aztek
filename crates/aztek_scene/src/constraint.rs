@@ -22,7 +22,7 @@ use crate::attr_defs::{enum_attr, float_attr};
 use crate::graph::{DrivenEdit, Graph};
 use crate::node::{types, vec3_attr, EvalContext, NodeBehavior, NodeData, NodeType};
 use crate::plug::{flags, AttrDef, NodeId, PlugRef, PlugType, PlugValue, NO_NODE};
-use crate::rig::{asked, f, find, mat3, matrix_in, plug, rot3, set_vec3, vec3_of, world, Cmd, Joint};
+use crate::rig::{asked, f, find, mat3, matrix_in, plug, set_vec3, vec3_of, world, Cmd, Joint};
 use crate::session::Session;
 use crate::transform::{matrix_to_euler, RotateOrder, Transform};
 
@@ -50,6 +50,17 @@ const NORMAL: usize = 7;
 const POINT_ON_POLY: usize = 8;
 const TANGENT: usize = 9;
 
+/// The rotation in a matrix. A mirrored one is a rotation times a scale of -1 on every axis, as Maya takes it apart, so a
+/// constraint under a mirrored parent or on a mirrored target always works in true rotations.
+fn rot3(m: &DMat4) -> DMat3 {
+    let r = crate::rig::rot3(m);
+    if r.determinant() < 0.0 {
+        r * -1.0
+    } else {
+        r
+    }
+}
+
 const T_MATRIX: usize = 0;
 const T_OFFSET_T: usize = 1;
 const T_OFFSET_R: usize = 2;
@@ -76,6 +87,14 @@ const WORLD_UP_VECTOR: usize = 22;
 const WORLD_UP_TYPE: usize = 23;
 const WORLD_UP_MATRIX: usize = 24;
 const T_CURVE: usize = 25;
+const T_PIVOT: usize = 26;
+
+/// A target's world matrix with its origin moved to its rotate pivot, which is where Maya constrains to.
+fn at_pivot(m: DMat4, rp: DVec3) -> DMat4 {
+    let mut out = m;
+    out.w_axis = m.transform_point3(rp).extend(1.0);
+    out
+}
 
 const WORLD_UP_NAMES: [&str; 5] = ["scene", "object", "objectrotation", "vector", "none"];
 
@@ -121,7 +140,7 @@ fn targets_in(d: &NodeData) -> Vec<Weighted> {
         .iter()
         .map(|(i, v)| Weighted {
             index: *i,
-            matrix: v.as_matrix(),
+            matrix: at_pivot(v.as_matrix(), d.element(T_PIVOT, *i).map_or(DVec3::ZERO, |p| p.as_vec3())),
             weight: suffix_attr(d.ty(), 'W', *i).map(|a| d.float(a)).unwrap_or(1.0),
         })
         .collect()
@@ -167,7 +186,7 @@ fn world_up_at(d: &NodeData, eye: DVec3) -> Option<DVec3> {
     match d.int(WORLD_UP_TYPE) {
         0 => Some(DVec3::Y),
         1 => Some(m.w_axis.truncate() - eye),
-        2 => Some(rot3(&m) * d.vec3(WORLD_UP_VECTOR)),
+        2 => Some(crate::rig::rot3(&m) * d.vec3(WORLD_UP_VECTOR)),
         3 => Some(d.vec3(WORLD_UP_VECTOR)),
         _ => None,
     }
@@ -308,17 +327,18 @@ impl NodeBehavior for ConstraintNode {
                         at += x.matrix.w_axis.truncate() * w;
                     }
                     let dir = at / total - eye;
-                    if let Some(frame) = aim_rotation(d, dir, eye, &pr, rest_e) {
-                        let frame = pr.transpose() * frame * mat3(offset, RotateOrder::Xyz);
+                    if let Some(frame) = aim_rotation(d, dir, eye, &pm, rest_e) {
+                        let frame = frame * mat3(offset, RotateOrder::Xyz);
                         e = rotate_for(d, &with_rest(vec![(DQuat::from_mat3(&frame), total)]));
                     }
                 }
             }
             POLE => {
-                let start = pm.transform_point3(d.vec3(POSITION));
+                // In the space of the start joint's parent, as the handle's poleVector is.
+                let start = d.vec3(POSITION);
                 let mut sum = rest_t * rest;
                 for (x, &w) in ts.iter().zip(&share) {
-                    sum += (x.matrix.w_axis.truncate() - start + offset) * w;
+                    sum += (pinv.transform_point3(x.matrix.w_axis.truncate()) - start + offset) * w;
                 }
                 t = sum;
             }
@@ -346,8 +366,8 @@ impl NodeBehavior for ConstraintNode {
                     }
                 }
                 if total > 1e-12 {
-                    if let Some(frame) = aim_rotation(d, dir, eye, &pr, rest_e) {
-                        let frame = pr.transpose() * frame * mat3(offset, RotateOrder::Xyz);
+                    if let Some(frame) = aim_rotation(d, dir, eye, &pm, rest_e) {
+                        let frame = frame * mat3(offset, RotateOrder::Xyz);
                         e = rotate_for(d, &with_rest(vec![(DQuat::from_mat3(&frame), total)]));
                     }
                 }
@@ -367,8 +387,8 @@ impl NodeBehavior for ConstraintNode {
                     }
                 }
                 if total > 1e-12 {
-                    if let Some(frame) = aim_rotation(d, dir, eye, &pr, rest_e) {
-                        let frame = pr.transpose() * frame * mat3(offset, RotateOrder::Xyz);
+                    if let Some(frame) = aim_rotation(d, dir, eye, &pm, rest_e) {
+                        let frame = frame * mat3(offset, RotateOrder::Xyz);
                         e = rotate_for(d, &with_rest(vec![(DQuat::from_mat3(&frame), total)]));
                     }
                 }
@@ -401,14 +421,17 @@ impl NodeBehavior for ConstraintNode {
     }
 }
 
-/// The aim rotation in world space. With worldUpType none, the shortest turn from the rest pose.
-fn aim_rotation(d: &NodeData, dir: DVec3, eye: DVec3, pr: &DMat3, rest_e: DVec3) -> Option<DMat3> {
+/// The aim rotation in the parent's frame, where a mirrored parent cancels out as it does in Maya. With worldUpType none, the
+/// shortest turn from the rest pose.
+fn aim_rotation(d: &NodeData, dir: DVec3, eye: DVec3, pm: &DMat4, rest_e: DVec3) -> Option<DMat3> {
     let aim = d.vec3(AIM_VECTOR);
     let up = d.vec3(UP_VECTOR);
+    let inv = pm.inverse();
+    let dir = inv.transform_vector3(dir);
     match world_up_at(d, eye) {
-        Some(world_up) => aim_frame(dir, world_up, aim, up),
+        Some(world_up) => aim_frame(dir, inv.transform_vector3(world_up), aim, up),
         None => {
-            let rest = *pr * local_frame(d, rest_e);
+            let rest = local_frame(d, rest_e);
             let (from, to) = ((rest * aim).normalize_or_zero(), dir.normalize_or_zero());
             if from == DVec3::ZERO || to == DVec3::ZERO {
                 return None;
@@ -475,6 +498,7 @@ pub(crate) fn register_types() {
                     doc: "Tangent constraint: each target's curve, world space.".into(),
                     ..Default::default()
                 },
+                array_vec("target.targetRotatePivot", "trp", "Each target's rotate pivot: the place on it that constrains."),
             ],
             create: Some(Arc::new(move || Box::new(ConstraintNode { kind: k }))),
             ..Default::default()
@@ -486,6 +510,20 @@ pub(crate) fn register_types() {
 // ---------------------------------------------------------------------------------------------------------------------
 // Keeping in step
 
+/// Where a constraint rests, from a file: what the command takes from the object as it is. Its driver, if any, gives way.
+pub(crate) fn set_rest(g: &mut Graph, c: NodeId, t: Option<DVec3>, r: Option<DVec3>) -> CmdResult<()> {
+    for (attr, v) in [(REST_T, t), (REST_R, r)] {
+        if let Some(v) = v {
+            let p = plug(c, attr);
+            if g.source(&p).is_some() {
+                g.disconnect(&p);
+            }
+            set_vec3(g, c, attr, v)?;
+        }
+    }
+    Ok(())
+}
+
 /// The node a constraint drives. A constraint feeding a geometry constraint drives what that one drives.
 pub(crate) fn driven_of(g: &Graph, c: NodeId) -> Option<NodeId> {
     for attr in [OUT_T, OUT_R, OUT_S] {
@@ -494,7 +532,22 @@ pub(crate) fn driven_of(g: &Graph, c: NodeId) -> Option<NodeId> {
             dsts.extend(g.destinations(&PlugRef::component(c, attr as i32, k)));
         }
         if let Some(d) = dsts.first() {
-            return if kind_of(g, d.node).is_some() { driven_of(g, d.node) } else { Some(d.node) };
+            if kind_of(g, d.node).is_some() {
+                return driven_of(g, d.node);
+            }
+            // Blended with animation: what the pairBlend drives is the object.
+            if g.node(d.node).is_some_and(|n| n.ty().name == "pairBlend") {
+                let t = g.node(d.node).unwrap().type_arc().clone();
+                let found = ["outTranslate", "outRotate"].iter().filter_map(|a| t.attr_index(a)).find_map(|a| {
+                    let mut out = g.destinations(&plug(d.node, a));
+                    for k in 0..3 {
+                        out.extend(g.destinations(&PlugRef::component(d.node, a as i32, k)));
+                    }
+                    out.first().map(|x| x.node)
+                });
+                return found;
+            }
+            return Some(d.node);
         }
     }
     None
@@ -650,6 +703,10 @@ fn add_target(g: &mut Graph, c: NodeId, kind: usize, target: NodeId, component: 
     let index = g.elements(&plug(c, T_MATRIX)).iter().map(|e| e.element).max().map(|m| m + 1).unwrap_or(0);
     let xf = crate::dag::transform_of(g, target);
     g.connect(&plug(xf, Transform::WORLD_MATRIX), &PlugRef::element(c, T_MATRIX as i32, index), false)?;
+    // Geometry targets are read through their full matrix.
+    if !matches!(kind, GEOMETRY | NORMAL | POINT_ON_POLY) {
+        g.connect(&plug(xf, Transform::ROTATE_PIVOT), &PlugRef::element(c, T_PIVOT as i32, index), false)?;
+    }
     if matches!(kind, GEOMETRY | NORMAL | POINT_ON_POLY) {
         let Some(shape) = crate::components::as_mesh(g, target) else { fail!("{}: {} has no geometry", CONSTRAINT_TYPES[kind], g.path(target)) };
         g.connect(&plug(shape, crate::mesh_nodes::MeshNode::OUT_MESH), &PlugRef::element(c, T_GEOMETRY as i32, index), false)?;
@@ -683,6 +740,7 @@ fn remove_target(g: &mut Graph, c: NodeId, index: i32) -> CmdResult<()> {
     g.disconnect(&PlugRef::element(c, T_MATRIX as i32, index));
     g.disconnect(&PlugRef::element(c, T_GEOMETRY as i32, index));
     g.disconnect(&PlugRef::element(c, T_CURVE as i32, index));
+    g.disconnect(&PlugRef::element(c, T_PIVOT as i32, index));
     for attr in [T_OFFSET_T, T_OFFSET_R] {
         let e = PlugRef::element(c, attr as i32, index);
         if g.node(c).unwrap().element(attr, index).is_some() {
@@ -736,7 +794,8 @@ fn maintain_offset(g: &mut Graph, c: NodeId, kind: usize, driven: NodeId, only: 
     for &(i, t) in &targets {
         let xf = crate::dag::transform_of(g, t);
         let w = suffix_attr(&ty, 'W', i).map(|a| g.node(c).unwrap().data().float(a)).unwrap_or(1.0);
-        items.push((i, world(g, xf), w));
+        let rp = g.node(xf).map_or(DVec3::ZERO, |n| n.data().vec3(Transform::ROTATE_PIVOT));
+        items.push((i, at_pivot(world(g, xf), rp), w));
     }
     let total: f64 = items.iter().map(|x| x.2).sum::<f64>();
     let share = |w: f64| if total > 1e-12 { w / total } else { 1.0 / items.len().max(1) as f64 };
@@ -787,16 +846,20 @@ fn maintain_offset(g: &mut Graph, c: NodeId, kind: usize, driven: NodeId, only: 
                 at += tm.w_axis.truncate() * share(w);
             }
             let d = g.node(c).unwrap().data();
-            let frame = aim_rotation(d, at - p_now, p_now, &pr, d.vec3(REST_R));
+            let frame = aim_rotation(d, at - p_now, p_now, &pm, d.vec3(REST_R));
             if let Some(frame) = frame {
-                set_vec3(g, c, OFFSET, matrix_to_euler(&(frame.transpose() * w_now), RotateOrder::Xyz))?;
+                set_vec3(g, c, OFFSET, matrix_to_euler(&(frame.transpose() * pr.transpose() * w_now), RotateOrder::Xyz))?;
             }
         }
         POLE => {
-            let start = crate::ik::start_of(g, driven).map(|s| world(g, s).w_axis.truncate()).unwrap_or(DVec3::ZERO);
+            // In the space of the start joint's parent, as the constraint works it out.
+            let joint = crate::ik::start_of(g, driven);
+            let start = joint.map_or(DVec3::ZERO, |s| vec3_of(g, s, Transform::TRANSLATE));
+            let up = joint.map_or(NO_NODE, |s| g.parent(s));
+            let inv = if up == NO_NODE { DMat4::IDENTITY } else { world(g, up).inverse() };
             let mut avg = DVec3::ZERO;
             for &(_, tm, w) in &items {
-                avg += (tm.w_axis.truncate() - start) * share(w);
+                avg += (inv.transform_point3(tm.w_axis.truncate()) - start) * share(w);
             }
             let pv = vec3_of(g, driven, crate::ik::IkHandle::POLE_VECTOR);
             set_vec3(g, c, OFFSET, pv - avg)?;

@@ -132,6 +132,27 @@ pub enum Tool {
     CamZoom,
     CamRoll,
     CamYawPitch,
+    /// Drag a box to dolly in on it, or out with a drag the other way.
+    CamBoxDolly,
+    /// Left drag looks round, middle drag walks.
+    CamWalk,
+    /// Drag in the view to change the current time.
+    ModelTime,
+    /// Clicks add points to the selected curve; Enter adds them.
+    CurveAddPt,
+    /// Clicks and drags place Bezier anchors and their tangents; Enter makes the curve.
+    CurveBezier,
+    /// Two clicks make an arc; three clicks another.
+    ArcTwo,
+    ArcThree,
+    /// Two clicks on border edges, or on faces, merge them.
+    MergeEdge,
+    MergeFacet,
+    /// Drag on the grid for the base; a cube then takes its height from the mouse and a click.
+    CreateCube,
+    CreatePlane,
+    /// Two clicks: a point on the object to move, and where it goes.
+    SnapTogether,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -280,6 +301,8 @@ pub struct Viewport {
     /// What the modelling tools draw over the scene, world space.
     pub tool_lines: Vec<(DVec3, DVec3, [u8; 4])>,
     pub tool_points: Vec<(DVec3, [u8; 4])>,
+    /// The handle a script made active (the contexts' -ah): what a middle drag takes when none is under the mouse.
+    pub active_handle: Option<Handle>,
 }
 
 const LEAD: [u8; 4] = [66, 255, 163, 255];
@@ -327,6 +350,7 @@ impl Viewport {
             frame: DMat3::IDENTITY,
             tool_lines: Vec::new(),
             tool_points: Vec::new(),
+            active_handle: None,
         }
     }
 
@@ -1524,6 +1548,11 @@ impl Viewport {
     pub fn manip_pivot(&self, s: &mut Session, items: &[DrawItem]) -> Option<DVec3> {
         if !self.manipulates() {
             return None;
+        }
+        if let Some(p) = crate::ctx_cmds::manip_pivot_override() {
+            if !s.graph.selection().is_empty() {
+                return Some(p);
+            }
         }
         let mode = components::mode(&s.graph);
         if mode == ComponentMode::Object {

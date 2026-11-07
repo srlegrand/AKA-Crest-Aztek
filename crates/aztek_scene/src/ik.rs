@@ -537,8 +537,9 @@ impl NodeBehavior for IkSolve {
                 handle: d.matrix(IK_HANDLE),
                 joints: &joints,
                 end: v3(&chain, "end"),
-                pole: d.vec3(IK_POLE),
-                rest_pole: d.vec3(IK_REST_POLE),
+                // Both are in the space of the start joint's parent.
+                pole: d.matrix(IK_PARENT).transform_vector3(d.vec3(IK_POLE)),
+                rest_pole: d.matrix(IK_PARENT).transform_vector3(d.vec3(IK_REST_POLE)),
                 // Outside spline IK, twist and roll both turn the plane about the handle line.
                 twist: if SolverKind::from_index(d.int(IK_TYPE)) == SolverKind::Spline { d.float(IK_TWIST) } else { d.float(IK_TWIST) + d.float(IK_ROLL) },
                 roll: d.float(IK_ROLL),
@@ -686,6 +687,13 @@ impl NodeBehavior for PlainNode {
 // ---------------------------------------------------------------------------------------------------------------------
 // The wiring
 
+/// The pole vector a chain's rest pose goes with: where a file says it was, in place of what a new handle works out.
+pub(crate) fn set_rest_pole(g: &mut Graph, handle: NodeId, pole: DVec3) {
+    if let Some(sv) = solver_of(g, handle) {
+        let _ = set_vec3(g, sv, IK_REST_POLE, pole);
+    }
+}
+
 pub(crate) fn solver_of(g: &Graph, handle: NodeId) -> Option<NodeId> {
     g.destinations(&plug(handle, Transform::WORLD_MATRIX)).iter().map(|d| d.node).find(|&n| g.node(n).is_some_and(|x| x.ty().name == "ikSolve"))
 }
@@ -761,7 +769,11 @@ pub(crate) fn sync_handle(g: &mut Graph, handle: NodeId, after: bool) -> bool {
         valid &= g.parent(w[1]) == w[0];
     }
     let end_t = g.node(end).unwrap().data().vec3(Transform::TRANSLATE);
-    let chain = json!({"valid": valid, "joints": joints.iter().map(|&j| joint_json(g, j)).collect::<Vec<_>>(), "end": vec3_json(end_t)});
+    let mut chain = json!({"valid": valid, "joints": joints.iter().map(|&j| joint_json(g, j)).collect::<Vec<_>>(), "end": vec3_json(end_t)});
+    // Set once by the command; everything else here follows the joints.
+    if let Some(r) = json_of(g.node(solver).unwrap().data(), IK_CHAIN).get("rootOnCurve").cloned() {
+        chain["rootOnCurve"] = r;
+    }
     if json_of(g.node(solver).unwrap().data(), IK_CHAIN) != chain {
         g.set_derived(&plug(solver, IK_CHAIN), &PlugValue::Data(Some(Arc::new(JsonData(chain)))));
         changed = true;
@@ -973,7 +985,8 @@ fn set_default_pole(g: &mut Graph, handle: NodeId, solver: NodeId) -> CmdResult<
             pole = any_perpendicular(x);
         }
     }
-    let pole = pole.normalize();
+    // Held in the space of the start joint's parent.
+    let pole = parent.inverse().transform_vector3(pole).normalize();
     set_vec3(g, handle, IkHandle::POLE_VECTOR, pole)?;
     set_vec3(g, solver, IK_REST_POLE, pole)
 }

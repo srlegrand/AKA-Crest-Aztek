@@ -52,6 +52,31 @@ struct SculptStroke {
     last: Option<DVec3>,
 }
 
+/// The polygon creation tools' draft.
+#[derive(Clone, Copy)]
+struct PrimDraft {
+    a: DVec3,
+    b: DVec3,
+    height: f64,
+    stage: u8,
+    press_y: f64,
+}
+
+/// A button or slider of the heads up display, placed.
+struct HudPart {
+    name: String,
+    slider: bool,
+    lo: DVec2,
+    hi: DVec2,
+    text: String,
+    text_at: DVec2,
+    min: f64,
+    max: f64,
+    value: f64,
+    int: bool,
+    precision: usize,
+}
+
 pub struct View {
     pub gpu: Gpu,
     pub r: Renderer,
@@ -85,6 +110,17 @@ pub struct View {
     pub brush_dragged: bool,
     /// Tab held: a left drag selects what it passes over.
     pub tab_held: bool,
+    /// The heads up display's control being pressed: its name, and whether it is the slider.
+    hud_grab: Option<(String, bool)>,
+    /// The Bezier tool's anchors and the tangent end of each, world space, and whether the last is being dragged.
+    bezier: Vec<(DVec3, DVec3)>,
+    bezier_drag: bool,
+    /// The cube and plane tools: first corner, far corner, height, and which stage: 1 dragging the base, 2 the height.
+    prim: Option<PrimDraft>,
+    /// The Snap Together tool's first click: object and world point.
+    snap_first: Option<(String, DVec3)>,
+    /// Where the time drag has got to.
+    time_drag: f64,
     /// A lasso, drag select or paint select in progress.
     lassoing: bool,
     drag_selecting: bool,
@@ -127,6 +163,12 @@ impl View {
             soft_drag: None,
             brush_dragged: false,
             tab_held: false,
+            hud_grab: None,
+            bezier: Vec::new(),
+            bezier_drag: false,
+            prim: None,
+            snap_first: None,
+            time_drag: 0.0,
             lassoing: false,
             drag_selecting: false,
             pick_hist: Vec::new(),
@@ -272,9 +314,102 @@ impl View {
         rows
     }
 
+    /// Where the script-made controls of the heads up display sit: a section's column, a block's row.
+    fn hud_parts(&self) -> Vec<HudPart> {
+        let [_, _, w, h] = self.vp.rect;
+        let s = self.dpr;
+        let size = 9.0 * s;
+        let row_h = 18.0 * s;
+        let num = |c: &Value, k: &str, d: f64| c.get(k).and_then(Value::as_f64).unwrap_or(d);
+        let txt = |c: &Value, k: &str| c.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+        let mut out = Vec::new();
+        for (name, c) in crate::ui_cmds::hud_controls() {
+            let section = num(&c, "section", 0.0) as i64;
+            let block = num(&c, "block", 0.0);
+            let kind = txt(&c, "kind");
+            let label = if kind == "hudSliderButton" { txt(&c, "sliderLabel") } else { txt(&c, "label") };
+            let has_slider = kind != "hudButton";
+            let has_button = kind != "hudSlider";
+            let button_text = if kind == "hudButton" { label.clone() } else { txt(&c, "buttonLabel") };
+            let button_w = num(&c, "buttonWidth", 0.0).max(0.0) * s;
+            let button_w = if button_w > 0.0 { button_w } else { font::width(&button_text, size) + 12.0 * s };
+            let track = if kind == "hudSliderButton" { num(&c, "sliderLength", 80.0) } else { num(&c, "sliderLength", 100.0) } * s;
+            let label_w = if has_slider { font::width(&label, size) + 6.0 * s } else { 0.0 };
+            let total = label_w + if has_slider { track + 52.0 * s } else { 0.0 } + if has_button { button_w + 4.0 * s } else { 0.0 };
+            let x0 = match section % 5 {
+                0 | 1 => 10.0 * s,
+                2 => w * 0.5 - total * 0.5,
+                _ => w - total - 10.0 * s,
+            };
+            let y = if section < 5 { 16.0 * s + block * row_h } else { h - 26.0 * s - block * row_h };
+            let mut x = x0;
+            if has_slider {
+                let at = DVec2::new(x + label_w, y - 5.0 * s);
+                out.push(HudPart { name: name.clone(), slider: true, lo: at, hi: at + DVec2::new(track, 12.0 * s), text: label.clone(), text_at: DVec2::new(x, y), min: num(&c, "minValue", 0.0), max: num(&c, "maxValue", 100.0), value: num(&c, "value", 0.0), int: txt(&c, "type") == "int", precision: num(&c, "decimalPrecision", 2.0) as usize });
+                x += label_w + track + 52.0 * s;
+            }
+            if has_button {
+                let at = DVec2::new(x, y - 7.0 * s);
+                out.push(HudPart { name: name.clone(), slider: false, lo: at, hi: at + DVec2::new(button_w, 14.0 * s), text: button_text, text_at: DVec2::new(x + 6.0 * s, y), min: 0.0, max: 0.0, value: 0.0, int: false, precision: 0 });
+            }
+        }
+        out
+    }
+
+    /// A press, drag or release on the heads up display's controls. True when it was theirs.
+    fn hud_mouse(&mut self, core: &mut Core, kind: i32, button: i32, px: DVec2) -> bool {
+        let run = |core: &mut Core, name: &str, flags: &[&str]| {
+            let c = crate::ui_cmds::hud_controls().into_iter().find(|(n, _)| n == name).map(|x| x.1);
+            for f in flags {
+                if let Some(cb) = c.as_ref().and_then(|c| c.get(*f)).cloned() {
+                    core.run_callback(&cb, &[]);
+                }
+            }
+        };
+        let set = |p: &HudPart, x: f64| {
+            let t = ((x - p.lo.x) / (p.hi.x - p.lo.x).max(1.0)).clamp(0.0, 1.0);
+            let v = p.min + (p.max - p.min) * t;
+            crate::ui_cmds::hud_set_value(&p.name, if p.int { v.round() } else { v });
+        };
+        match kind {
+            0 if button == 1 => {
+                let Some(p) = self.hud_parts().into_iter().find(|p| px.x >= p.lo.x && px.x <= p.hi.x && px.y >= p.lo.y && px.y <= p.hi.y) else { return false };
+                if p.slider {
+                    set(&p, px.x);
+                    run(core, &p.name, &["pressCommand", "sliderPressCommand"]);
+                } else {
+                    run(core, &p.name, &["pressCommand", "buttonPressCommand"]);
+                }
+                self.hud_grab = Some((p.name, p.slider));
+                self.needs_redraw = true;
+                true
+            }
+            1 => {
+                let Some((name, slider)) = self.hud_grab.clone() else { return false };
+                if slider {
+                    if let Some(p) = self.hud_parts().into_iter().find(|p| p.slider && p.name == name) {
+                        set(&p, px.x);
+                        run(core, &name, &["dragCommand", "sliderDragCommand"]);
+                    }
+                }
+                self.needs_redraw = true;
+                true
+            }
+            2 => {
+                let Some((name, slider)) = self.hud_grab.take() else { return false };
+                let flags: [&str; 2] = if slider { ["releaseCommand", "sliderReleaseCommand"] } else { ["releaseCommand", "buttonReleaseCommand"] };
+                run(core, &name, &flags);
+                self.needs_redraw = true;
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Screen-space extras: marquee, lasso, gates, heads up display, axis triad, camera name, numeric readout.
     fn overlay(&mut self, core: &mut Core, items: &[crate::viewport::DrawItem]) {
         let hud = self.hud_rows(core, items);
+        let hud_parts = self.hud_parts();
         let readout = self.readout();
         let gate = self.gate_aspects(core);
         let [_, _, w, h] = self.vp.rect;
@@ -378,6 +513,35 @@ impl View {
                 for (a, b) in font::strokes(t, DVec2::new(x, y), size) {
                     seg(a, b, [230, 230, 230, 255]);
                 }
+            }
+        }
+        // What scripts put there: buttons as boxes, sliders as a track and a handle, drawn in lines like the rest.
+        for p in &hud_parts {
+            let (white, dim) = ([230, 230, 230, 255], [150, 150, 150, 255]);
+            for (a, b) in font::strokes(&p.text, p.text_at, size) {
+                seg(a, b, white);
+            }
+            if p.slider {
+                let mid = (p.lo.y + p.hi.y) * 0.5;
+                seg(DVec2::new(p.lo.x, mid), DVec2::new(p.hi.x, mid), dim);
+                let t = if p.max > p.min { ((p.value - p.min) / (p.max - p.min)).clamp(0.0, 1.0) } else { 0.0 };
+                let x = p.lo.x + (p.hi.x - p.lo.x) * t;
+                let r = 3.0 * s;
+                let (a, b, c, d) = (DVec2::new(x - r, p.lo.y), DVec2::new(x + r, p.lo.y), DVec2::new(x + r, p.hi.y), DVec2::new(x - r, p.hi.y));
+                seg(a, b, white);
+                seg(b, c, white);
+                seg(c, d, white);
+                seg(d, a, white);
+                let value = if p.int { format!("{}", p.value.round() as i64) } else { format!("{:.*}", p.precision, p.value) };
+                for (a, b) in font::strokes(&value, DVec2::new(p.hi.x + 6.0 * s, p.text_at.y), size) {
+                    seg(a, b, white);
+                }
+            } else {
+                let (a, b, c, d) = (p.lo, DVec2::new(p.hi.x, p.lo.y), p.hi, DVec2::new(p.lo.x, p.hi.y));
+                seg(a, b, white);
+                seg(b, c, white);
+                seg(c, d, white);
+                seg(d, a, white);
             }
         }
         // Dimension and annotation labels.
@@ -554,6 +718,9 @@ impl View {
         let gathered = gather(&mut core.s.graph);
         let items = self.vp.filter_items(&core.s.graph, gathered);
         let alt = mods & ALT != 0;
+        if !alt && self.hud_mouse(core, kind, button, px) {
+            return true;
+        }
         if !alt && self.nav.is_none() && (kind != 1 || buttons == 0 || buttons & 1 != 0 || buttons & 2 != 0) {
             if let Some(r) = self.tool_mouse(core, kind, button, px, mods, &items) {
                 return r;
@@ -574,14 +741,85 @@ impl View {
                     Tool::CamZoom => Some(4),
                     Tool::CamRoll => Some(5),
                     Tool::CamYawPitch => Some(6),
+                    Tool::CamWalk => Some(6),
+                    Tool::ModelTime => Some(8),
                     _ => None,
                 };
+                if self.vp.tool == Tool::CamWalk && button == 2 {
+                    self.cam_push();
+                    self.nav = Some((7, px));
+                    return false;
+                }
+                if self.vp.tool == Tool::ModelTime && button == 1 {
+                    self.time_drag = aztek_scene::anim::frame(&core.s.graph);
+                }
                 if let Some(b) = cam_nav {
                     if button == 1 {
                         self.cam_push();
                         self.nav = Some((b, px));
                     }
                     return false;
+                }
+                if button == 1 {
+                    match self.vp.tool {
+                        Tool::CamBoxDolly => {
+                            self.marquee = Some(px);
+                            return true;
+                        }
+                        Tool::CurveBezier => {
+                            let at = self.vp.place_point(px);
+                            self.bezier.push((at, at));
+                            self.bezier_drag = true;
+                            self.bezier_preview();
+                            return true;
+                        }
+                        Tool::CreateCube | Tool::CreatePlane => {
+                            let at = self.vp.place_point(px);
+                            match self.prim {
+                                // The height's click finishes the cube.
+                                Some(p) if p.stage == 2 => self.prim_finish(core, p),
+                                _ => {
+                                    self.prim = Some(PrimDraft { a: at, b: at, height: 0.0, stage: 1, press_y: px.y });
+                                    self.prim_preview();
+                                }
+                            }
+                            return true;
+                        }
+                        Tool::MergeEdge | Tool::MergeFacet => {
+                            let picked = self.vp.pick(&core.s, &items, px);
+                            self.note_pick(&picked);
+                            select_picked(core, picked, SHIFT | CTRL);
+                            if self.pick_hist.len() == 2 && self.pick_hist[0].0 == self.pick_hist[1].0 && self.pick_hist[0].1 == self.pick_hist[1].1 && self.pick_hist[0].2 != self.pick_hist[1].2 {
+                                let (a, b) = (self.pick_hist[0].clone(), self.pick_hist[1].clone());
+                                let call = if self.vp.tool == Tool::MergeEdge {
+                                    ("polyMergeEdge", json!({"args": [a.0], "firstEdge": a.2, "secondEdge": b.2}))
+                                } else {
+                                    ("polyMergeFacet", json!({"args": [a.0], "firstFacet": a.2, "secondFacet": b.2}))
+                                };
+                                let _ = core.exec(call.0, call.1);
+                                self.pick_hist.clear();
+                            }
+                            return true;
+                        }
+                        Tool::SnapTogether => {
+                            if let Some((i, _, world)) = self.vp.raycast(&items, px) {
+                                let obj = core.s.graph.path(items[i].xf);
+                                match self.snap_first.take() {
+                                    None => {
+                                        self.snap_first = Some((obj, world));
+                                        self.vp.tool_points = vec![(world, [255, 255, 60, 255])];
+                                    }
+                                    Some((first, from)) => {
+                                        let by = world - from;
+                                        let _ = core.exec("move", json!({"args": [first], "by": [by.x, by.y, by.z]}));
+                                        self.vp.tool_points.clear();
+                                    }
+                                }
+                            }
+                            return true;
+                        }
+                        _ => {}
+                    }
                 }
                 // B held: the drag sizes soft select's falloff.
                 if self.brush_adjust && (button == 1 || button == 2) && !matches!(self.vp.tool, Tool::Sculpt | Tool::PaintSkin) {
@@ -656,7 +894,7 @@ impl View {
                 let start_drag = match (button, hit, pivot) {
                     (1, Some(h), Some(_)) => Some(h),
                     // Middle drag anywhere drags the active handle, or in the view plane.
-                    (2, h, Some(_)) => Some(h.or(self.vp.hover).or(self.vp.constraint).unwrap_or(match self.vp.eff_tool() {
+                    (2, h, Some(_)) => Some(h.or(self.vp.active_handle).or(self.vp.hover).or(self.vp.constraint).unwrap_or(match self.vp.eff_tool() {
                         Tool::Rotate => Handle::ViewRing,
                         _ => Handle::Center,
                     })),
@@ -729,7 +967,7 @@ impl View {
                     }
                     return true;
                 }
-                if button == 1 && matches!(self.vp.tool, Tool::Joint | Tool::CurveCv | Tool::CurveEp) {
+                if button == 1 && matches!(self.vp.tool, Tool::Joint | Tool::CurveCv | Tool::CurveEp | Tool::CurveAddPt | Tool::ArcTwo | Tool::ArcThree) {
                     self.joint_press = Some(px);
                     return false;
                 }
@@ -739,6 +977,10 @@ impl View {
                 false
             }
             1 => {
+                // The pointer leaving the view is reported as a move far away.
+                if px.x < -1e5 && self.nav.is_some() {
+                    return false;
+                }
                 if let Some((b, last)) = self.nav {
                     let d = px - last;
                     let aspect = self.vp.aspect();
@@ -763,10 +1005,45 @@ impl View {
                             c.pitch = (c.pitch + d.y * 0.2).clamp(-89.9, 89.9);
                             c.coi = eye - c.dir_to_eye() * c.distance;
                         }
+                        // Walk: forward and back on the view's line, sideways by tracking.
+                        7 => {
+                            let k = self.vp.cam.distance * 0.005;
+                            let dir = self.vp.cam.dir_to_eye();
+                            self.vp.cam.coi += dir * d.y * k;
+                            self.vp.cam.track(DVec2::new(d.x, 0.0), self.vp.rect[3], aspect);
+                        }
+                        8 => {
+                            self.time_drag += d.x / self.dpr * 0.1;
+                            let _ = core.exec_quiet("currentTime", json!({"args": [self.time_drag.round()]}), aztek_ops::CallSource::Script);
+                            self.nav = Some((b, px));
+                            return true;
+                        }
                         _ => self.vp.cam.dolly((d.x + d.y) / self.dpr),
                     }
                     self.nav = Some((b, px));
                     self.write_camera(core);
+                    return true;
+                }
+                if self.bezier_drag {
+                    let at = self.vp.place_point(px);
+                    if let Some(last) = self.bezier.last_mut() {
+                        last.1 = at;
+                    }
+                    self.bezier_preview();
+                    return true;
+                }
+                if let Some(mut p) = self.prim {
+                    let at = self.vp.place_point(px);
+                    match p.stage {
+                        1 if buttons != 0 => p.b = at,
+                        2 => {
+                            let upp = self.vp.cam.units_per_px_at(p.a, self.vp.rect[3], self.vp.aspect());
+                            p.height = (p.press_y - px.y) * upp;
+                        }
+                        _ => {}
+                    }
+                    self.prim = Some(p);
+                    self.prim_preview();
                     return true;
                 }
                 if let Some((start, radius)) = self.soft_drag {
@@ -915,8 +1192,25 @@ impl View {
                 false
             }
             _ => {
-                if self.nav.is_some_and(|(b, _)| b == button) {
+                // A camera tool's left drag carries another number than the button it is on.
+                let tool_drag = button == 1 && matches!(self.vp.tool, Tool::CamTumble | Tool::CamTrack | Tool::CamDolly | Tool::CamZoom | Tool::CamRoll | Tool::CamYawPitch | Tool::CamWalk | Tool::ModelTime);
+                if self.nav.is_some_and(|(b, _)| b == button || tool_drag || (b == 7 && button == 2)) {
                     self.nav = None;
+                    return true;
+                }
+                if self.bezier_drag {
+                    self.bezier_drag = false;
+                    return true;
+                }
+                if let Some(mut p) = self.prim.filter(|p| p.stage == 1) {
+                    p.press_y = px.y;
+                    let dragged = (p.b - p.a).length() > 1e-6;
+                    if self.vp.tool == Tool::CreateCube && dragged {
+                        p.stage = 2;
+                        self.prim = Some(p);
+                    } else {
+                        self.prim_finish(core, p);
+                    }
                     return true;
                 }
                 if let Some((start, _)) = self.soft_drag.take() {
@@ -975,9 +1269,30 @@ impl View {
                             place_joint(core, at);
                         } else {
                             self.vp.curve_points.push(at);
+                            let want = match self.vp.tool {
+                                Tool::ArcTwo => 2,
+                                Tool::ArcThree => 3,
+                                _ => 0,
+                            };
+                            if want > 0 && self.vp.curve_points.len() == want {
+                                let flat: Vec<[f64; 3]> = self.vp.curve_points.drain(..).map(|p| p.to_array()).collect();
+                                let cmd = if want == 2 { "twoPointArc" } else { "threePointArc" };
+                                let mut call = json!({"point1": flat[0], "point2": flat[1]});
+                                if want == 3 {
+                                    call["point3"] = json!(flat[2]);
+                                }
+                                let _ = core.exec(cmd, call);
+                            }
                         }
                     }
                     return true;
+                }
+                if self.vp.tool == Tool::CamBoxDolly {
+                    if let Some(start) = self.marquee.take() {
+                        self.vp.marquee = None;
+                        self.box_dolly(core, start, px);
+                        return true;
+                    }
                 }
                 if let Some(start) = self.marquee.take() {
                     self.vp.marquee = None;
@@ -996,6 +1311,84 @@ impl View {
                 }
                 false
             }
+        }
+    }
+
+    /// The box in the view fills it: dragged left to right the camera comes in, the other way it goes out.
+    fn box_dolly(&mut self, core: &mut Core, start: DVec2, end: DVec2) {
+        if (end - start).length() < 4.0 * self.dpr {
+            return;
+        }
+        let [_, _, w, h] = self.vp.rect;
+        let middle = (start + end) * 0.5;
+        let aspect = self.vp.aspect();
+        self.cam_push();
+        self.vp.cam.track(DVec2::new(w * 0.5, h * 0.5) - middle, h, aspect);
+        let ratio = ((end.x - start.x).abs() / w.max(1.0)).max((end.y - start.y).abs() / h.max(1.0)).clamp(1e-3, 1.0);
+        let scale = if end.x >= start.x { ratio } else { 1.0 / ratio };
+        if self.vp.cam.ortho() {
+            self.vp.cam.ortho_width = (self.vp.cam.ortho_width * scale).max(1e-3);
+        } else {
+            self.vp.cam.distance = (self.vp.cam.distance * scale).max(1e-3);
+        }
+        self.write_camera(core);
+        self.needs_redraw = true;
+    }
+
+    /// Anchors, tangents and the curve so far, as the tool's lines.
+    fn bezier_preview(&mut self) {
+        let cvs = bezier_cvs(&self.bezier);
+        self.vp.tool_lines.clear();
+        self.vp.tool_points = self.bezier.iter().map(|x| (x.0, [255, 255, 255, 255])).collect();
+        for (a, out) in &self.bezier {
+            let mirrored = *a * 2.0 - *out;
+            self.vp.tool_lines.push((mirrored, *out, [150, 150, 150, 255]));
+        }
+        for at in (0..cvs.len().saturating_sub(3)).step_by(3) {
+            let (p0, p1, p2, p3) = (cvs[at], cvs[at + 1], cvs[at + 2], cvs[at + 3]);
+            let mut last = p0;
+            for k in 1..=24 {
+                let t = k as f64 / 24.0;
+                let u = 1.0 - t;
+                let q = p0 * (u * u * u) + p1 * (3.0 * u * u * t) + p2 * (3.0 * u * t * t) + p3 * (t * t * t);
+                self.vp.tool_lines.push((last, q, [70, 255, 120, 255]));
+                last = q;
+            }
+        }
+    }
+
+    /// The draft's outline: the base, and the height for a cube.
+    fn prim_preview(&mut self) {
+        self.vp.tool_lines.clear();
+        let Some(p) = self.prim else { return };
+        let (c, size) = prim_box(&p);
+        let (x, z) = (size.x * 0.5, size.z * 0.5);
+        let corners = [DVec3::new(-x, 0.0, -z), DVec3::new(x, 0.0, -z), DVec3::new(x, 0.0, z), DVec3::new(-x, 0.0, z)];
+        let up = DVec3::Y * p.height;
+        let green = [70, 255, 120, 255];
+        for i in 0..4 {
+            let (a, b) = (c + corners[i], c + corners[(i + 1) % 4]);
+            self.vp.tool_lines.push((a, b, green));
+            if p.height.abs() > 1e-9 {
+                self.vp.tool_lines.push((a + up, b + up, green));
+                self.vp.tool_lines.push((a, a + up, green));
+            }
+        }
+    }
+
+    fn prim_finish(&mut self, core: &mut Core, p: PrimDraft) {
+        self.prim = None;
+        self.vp.tool_lines.clear();
+        let (c, size) = prim_box(&p);
+        // A click with no drag: the unit size, where it was clicked.
+        let (w, d) = if size.x < 1e-6 || size.z < 1e-6 { (1.0, 1.0) } else { (size.x, size.z) };
+        let cube = self.vp.tool == Tool::CreateCube;
+        let height = if p.height.abs() < 1e-6 { w.min(d) } else { p.height.abs() };
+        let made = if cube { core.exec("polyCube", json!({"width": w, "height": height, "depth": d})) } else { core.exec("polyPlane", json!({"width": w, "height": d})) };
+        if made.is_ok() {
+            // A cube stands on its base, or hangs from it when the height was dragged down.
+            let y = if cube { c.y + height * 0.5 * if p.height < 0.0 { -1.0 } else { 1.0 } } else { c.y };
+            let _ = core.exec("move", json!({"to": [c.x, y, c.z]}));
         }
     }
 
@@ -1077,6 +1470,10 @@ impl View {
         match key {
             "tool" => {
                 self.ts = Default::default();
+                self.bezier.clear();
+                self.bezier_drag = false;
+                self.prim = None;
+                self.snap_first = None;
                 self.vp.tool_lines.clear();
                 self.vp.tool_points.clear();
                 self.vp.constraint = None;
@@ -1111,6 +1508,18 @@ impl View {
                     "createPolygon" => Tool::CreatePolygon,
                     "appendPolygon" => Tool::AppendPolygon,
                     "quadDraw" => Tool::QuadDraw,
+                    "camBoxDolly" => Tool::CamBoxDolly,
+                    "camWalk" => Tool::CamWalk,
+                    "modelTime" => Tool::ModelTime,
+                    "curveAddPt" => Tool::CurveAddPt,
+                    "curveBezier" => Tool::CurveBezier,
+                    "arcTwo" => Tool::ArcTwo,
+                    "arcThree" => Tool::ArcThree,
+                    "mergeEdge" => Tool::MergeEdge,
+                    "mergeFacet" => Tool::MergeFacet,
+                    "createCube" => Tool::CreateCube,
+                    "createPlane" => Tool::CreatePlane,
+                    "snapTogether" => Tool::SnapTogether,
                     _ => Tool::Select,
                 }
             }
@@ -1256,7 +1665,22 @@ impl View {
             "finishTool" => {
                 let items = gather(&mut core.s.graph);
                 self.tool_finish(core, &items);
-                if matches!(self.vp.tool, Tool::CurveCv | Tool::CurveEp) && self.vp.curve_points.len() >= 2 {
+                if self.vp.tool == Tool::CurveBezier {
+                    let cvs = bezier_cvs(&self.bezier);
+                    self.bezier.clear();
+                    self.vp.tool_lines.clear();
+                    self.vp.tool_points.clear();
+                    if cvs.len() >= 4 {
+                        let pts: Vec<[f64; 3]> = cvs.iter().map(|p| p.to_array()).collect();
+                        let _ = core.exec("curve", json!({"bezier": true, "degree": 3, "point": pts}));
+                    }
+                } else if self.vp.tool == Tool::CurveAddPt {
+                    let pts: Vec<[f64; 3]> = self.vp.curve_points.drain(..).map(|p| p.to_array()).collect();
+                    let target = core.s.graph.selection().last().map(|&i| core.s.graph.path(i));
+                    if let (false, Some(t)) = (pts.is_empty(), target) {
+                        let _ = core.exec("curve", json!({"args": [t], "append": true, "point": pts}));
+                    }
+                } else if matches!(self.vp.tool, Tool::CurveCv | Tool::CurveEp) && self.vp.curve_points.len() >= 2 {
                     let pts: Vec<[f64; 3]> = self.vp.curve_points.drain(..).map(|p| p.to_array()).collect();
                     let flag = if self.vp.tool == Tool::CurveEp { "editPoint" } else { "point" };
                     let _ = core.exec("curve", json!({"degree": self.vp.curve_degree, flag: pts}));
@@ -1264,9 +1688,28 @@ impl View {
                     self.vp.curve_points.clear();
                 }
             }
+            "activeHandle" => {
+                // Maya's numbers: 0 X, 1 Y, 2 Z, 3 centre, then the planes.
+                let h = match v.as_i64().unwrap_or(3) {
+                    0 => Some(Handle::Axis(0)),
+                    1 => Some(Handle::Axis(1)),
+                    2 => Some(Handle::Axis(2)),
+                    4 => Some(Handle::Plane(2)),
+                    5 => Some(Handle::Plane(0)),
+                    6 => Some(Handle::Plane(1)),
+                    _ => None,
+                };
+                self.vp.active_handle = h;
+                self.vp.hover = h;
+            }
+            "redraw" => {}
             "undoToolPoint" => {
                 self.tool_back();
                 self.vp.curve_points.pop();
+                if self.vp.tool == Tool::CurveBezier {
+                    self.bezier.pop();
+                    self.bezier_preview();
+                }
             }
             "brushAdjust" => self.brush_adjust = v.as_bool().unwrap_or(false),
             "smoothCage" => self.vp.smooth_cage = v.as_bool().unwrap_or(false),
@@ -1354,6 +1797,30 @@ pub fn select_picked(core: &mut Core, picked: Vec<String>, mods: i32) {
         json!({"args": picked})
     };
     let _ = core.exec("select", call);
+}
+
+/// Anchors and tangent ends to a Bezier curve's points: anchor, out, in, anchor. An anchor with no tangent gets one a
+/// third of the way to its neighbour.
+fn bezier_cvs(anchors: &[(DVec3, DVec3)]) -> Vec<DVec3> {
+    let mut out = Vec::new();
+    for (i, (a, o)) in anchors.iter().enumerate() {
+        if i > 0 {
+            let inward = if (*o - *a).length() < 1e-9 { a.lerp(anchors[i - 1].0, 1.0 / 3.0) } else { *a * 2.0 - *o };
+            out.push(inward);
+        }
+        out.push(*a);
+        if i + 1 < anchors.len() {
+            let forward = if (*o - *a).length() < 1e-9 { a.lerp(anchors[i + 1].0, 1.0 / 3.0) } else { *o };
+            out.push(forward);
+        }
+    }
+    out
+}
+
+/// A draft's base: its middle, and its size along X and Z.
+fn prim_box(p: &PrimDraft) -> (DVec3, DVec3) {
+    let c = (p.a + p.b) * 0.5;
+    (c, (p.a - p.b).abs())
 }
 
 #[allow(dead_code)]

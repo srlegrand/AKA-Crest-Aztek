@@ -592,8 +592,9 @@ impl EvalView<'_> {
         let dag = n.data.ty.dag;
         if dag {
             let p = self.parent(n.id);
+            // A node free of its parent may be computed alongside it, or before it: it reads what the parent last held.
             let pw = if p != NO_NODE {
-                self.nodes[&p].matrix(Transform::WORLD_MATRIX)
+                self.nodes.get(&p).map_or_else(|| n.data.matrix(Transform::PARENT_MATRIX), |up| up.matrix(Transform::WORLD_MATRIX))
             } else {
                 DMat4::IDENTITY
             };
@@ -2392,7 +2393,7 @@ impl Graph {
             }
             stack.extend(inputs_of(&self.inputs, p.node).map(|(_, s)| (*s, false)));
             let parent = self.parent(p.node);
-            if parent != NO_NODE {
+            if parent != NO_NODE && !n.ty().free_of_parent {
                 stack.push((PlugRef::new(parent, Transform::WORLD_MATRIX as i32), false));
             }
         }
@@ -3114,20 +3115,29 @@ impl Graph {
     // Evaluation
 
     fn mark_dirty(&mut self, id: NodeId) {
+        self.any_dirty = true;
+        self.version.fetch_add(1, Ordering::Relaxed);
+        // The start is walked even when dirty, once, to drop the held values on its outputs. With none held there is
+        // nothing to do; loading a rig connects into the same high fan-out nodes thousands of times.
+        if self.held.is_empty() && self.nodes.get(&id).is_some_and(|n| n.dirty) {
+            return;
+        }
+        let mut first = true;
         let mut stack = vec![id];
         while let Some(cur) = stack.pop() {
             let Some(n) = self.nodes.get_mut(&cur) else {
                 continue;
             };
-            // Already dirty means everything downstream already is.
-            if n.dirty && cur != id {
+            // Already dirty means everything downstream already is. A node can drive itself (a.tx -> a.foo), so this
+            // has to stop the walk at the start node too when it comes back round.
+            if n.dirty && !first {
                 continue;
             }
             n.dirty = true;
             if let Some(dsts) = self.outgoing_dst.get(&cur) {
                 for dst in dsts {
                     // A held value lasts only until its source changes.
-                    if cur == id {
+                    if first {
                         self.held.remove(dst);
                     }
                     stack.push(dst.node);
@@ -3139,9 +3149,8 @@ impl Graph {
                     .map(|r| r.children.as_slice())
                     .unwrap_or(&[]),
             );
+            first = false;
         }
-        self.any_dirty = true;
-        self.version.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Marks a node for recompute on the next `evaluate()`, like an input change would.
@@ -3263,6 +3272,11 @@ impl Graph {
 
     /// Computes only what the given nodes depend on, leaving the rest dirty for the next `evaluate()`, without the
     /// evaluate hooks.
+    /// Nodes an evaluate could not reach because they wait on each other. Their values are stale: a node-level loop.
+    pub fn stuck_nodes(&self) -> Vec<NodeId> {
+        self.nodes.iter().filter(|(_, n)| n.dirty).map(|(id, _)| *id).collect()
+    }
+
     pub fn evaluate_upstream(&mut self, nodes: &[NodeId]) {
         self.evaluate_dirty(Some(nodes));
     }
@@ -3301,7 +3315,7 @@ impl Graph {
                     continue;
                 }
                 let p = self.parent(id);
-                if p != NO_NODE {
+                if p != NO_NODE && !self.nodes.get(&id).is_some_and(|n| n.data.ty.free_of_parent) {
                     stack.push(p);
                 }
                 stack.extend(inputs_of(&self.inputs, id).map(|(_, s)| s.node));
@@ -3339,7 +3353,7 @@ impl Graph {
         };
         for &id in &dirty {
             let p = self.parent(id);
-            if p != NO_NODE {
+            if p != NO_NODE && !self.nodes.get(&id).is_some_and(|n| n.data.ty.free_of_parent) {
                 add_edge(p, id, &mut pending);
             }
         }

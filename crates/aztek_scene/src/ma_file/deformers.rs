@@ -106,6 +106,22 @@ pub(super) fn apply_vertex_tweaks(doc: &Doc, m: &mut Mesh, tweak: usize) {
     }
 }
 
+/// A tweak node's stored moves for one geometry, by point.
+pub(super) fn tweak_moves(doc: &Doc, tweak: usize, geometry: i64) -> Vec<(i64, DVec3)> {
+    let mut out = Vec::new();
+    for s in &doc.nodes[tweak].sets {
+        let Some(path) = matches_path(s, &[&["vl", "vlist"], &["vt", "vertex"]]).or_else(|| matches_path(s, &[&["pl", "plist"], &["cp", "controlPoints"]])) else { continue };
+        if path[0].range.map_or(0, |r| r.0) != geometry {
+            continue;
+        }
+        let start = path[1].range.map_or(0, |r| r.0);
+        for (k, c) in s.values.chunks_exact(3).enumerate() {
+            out.push((start + k as i64, tok_vec3(c)));
+        }
+    }
+    out
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Reading
 
@@ -223,6 +239,25 @@ impl Build<'_> {
         }
         if t.name == "blendShape" {
             self.read_blend(&d, &state, lead);
+        }
+        if t.name == "wire" {
+            self.read_wires(&d);
+        }
+    }
+
+    /// `.dw[k]` drives and `.bw[k]` is where it rested.
+    fn read_wires(&mut self, d: &FileDeformer) {
+        let doc = self.doc;
+        let of = |this: &Self, names: [&str; 2], k: i64| {
+            doc.conns.iter().find(|c| c.dst == d.doc && names.contains(&plain_attr(&c.dst_attr).as_str()) && first_index(&c.dst_attr).unwrap_or(0) == k).and_then(|c| this.id(c.src))
+        };
+        let indices: Vec<i64> = doc.conns.iter().filter(|c| c.dst == d.doc && matches!(plain_attr(&c.dst_attr).as_str(), "dw" | "deformedWire")).map(|c| first_index(&c.dst_attr).unwrap_or(0)).collect();
+        for k in indices {
+            let Some(driver) = of(self, ["dw", "deformedWire"], k) else { continue };
+            let base = of(self, ["bw", "baseWire"], k).unwrap_or(driver);
+            if let Err(e) = crate::deform_wire::add_file_wire(&mut self.s.graph, d.id, k as i32, driver, base) {
+                self.warnings.push(format!("{}: {e}", doc.nodes[d.doc].name));
+            }
         }
     }
 
@@ -389,7 +424,7 @@ impl Build<'_> {
             }
             let (sn, sa) = self.real_source(c);
             let plain_dst = plain_attr(&c.dst_attr);
-            if matches!(plain_dst.as_str(), "ip.ig" | "ip.gi" | "input.inputGeometry" | "input.groupId" | "i" | "inMesh" | "dd" | "deformerData" | "gm" | "geomMatrix") || matches!(plain_attr(&sa).as_str(), "og" | "outputGeometry" | "msg" | "message") {
+            if matches!(plain_dst.as_str(), "bw" | "baseWire" | "dw" | "deformedWire" | "ip.ig" | "ip.gi" | "input.inputGeometry" | "input.groupId" | "i" | "inMesh" | "dd" | "deformerData" | "gm" | "geomMatrix") || matches!(plain_attr(&sa).as_str(), "og" | "outputGeometry" | "msg" | "message") {
                 continue;
             }
             let Some(src) = self.id(sn) else { continue };
@@ -407,6 +442,7 @@ impl Build<'_> {
                     let key = i * 100_000 + iti;
                     let is_this = self.deformers.iter().any(|d| d.id == id && d.geometry == g);
                     if is_this {
+                        let from = self.target_source(src, from.clone());
                         self.connect_quietly(&from, &format!("{path}.inputGeomTarget[{key}]"));
                         let xf = crate::dag::transform_of(&self.s.graph, src);
                         let m = self.s.graph.path(xf);

@@ -14,6 +14,7 @@
 //! units (radians on angle curves); tangent codes in .kit and .kot are the file's own (see `tangent_code`).
 
 mod deformers;
+mod nurbs;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
@@ -1008,9 +1009,9 @@ const XFORM_CHANNELS: &[&str] = &[
 ];
 
 /// Rigging and animation nodes that are all attributes and connections.
-const PLAIN_NODES: &[&str] = &["container", "controller", "timeWarp", "hierarchyTreeNode", "curveFromMeshEdge", "characterMap", "keyingGroup"];
+const PLAIN_NODES: &[&str] = &["blendWeighted", "makeNurbCircle", "makeNurbPlane", "transformGeometry", "pointOnCurveInfo", "curveInfo", "nearestPointOnCurve", "container", "controller", "timeWarp", "hierarchyTreeNode", "curveFromMeshEdge", "characterMap", "keyingGroup"];
 /// The same under a transform.
-const PLAIN_SHAPES: &[&str] = &["distanceDimShape", "paramDimension", "annotationShape", "dropoffLocator", "lattice", "baseLattice", "softModHandle"];
+const PLAIN_SHAPES: &[&str] = &["follicle", "distanceDimShape", "paramDimension", "annotationShape", "dropoffLocator", "lattice", "baseLattice", "softModHandle"];
 
 /// Nodes written and read attribute by attribute, with their connections: utility nodes and expressions.
 fn is_plain_node(ty: &str) -> bool {
@@ -1311,6 +1312,7 @@ const QUIET_TYPES: &[&str] = &[
     "unitConversion",
     "ikRPsolver",
     "ikSCsolver",
+    "ikSplineSolver",
     "ikEffector",
     "ikSystem",
     "camera",
@@ -1646,6 +1648,9 @@ impl Build<'_> {
     fn build_curve(&mut self, i: usize) {
         use aztek_geo::nurbs::{self, Form, NurbsCurve};
         let Some(shape) = self.id(i) else { return };
+        if self.chain_nurbs(i, crate::curves::CurveShape::LOCAL, crate::curves::CurveShape::CREATE) {
+            return;
+        }
         let doc = self.doc;
         let n = &doc.nodes[i];
         let mut curve = None;
@@ -1677,7 +1682,8 @@ impl Build<'_> {
         if curve.is_none() {
             if let Some(c) = doc.input(i, &["cr", "create"]) {
                 let g = &doc.nodes[c.src];
-                if g.ty == "makeNurbCircle" {
+                // One in the scene by now feeds the shape itself.
+                if g.ty == "makeNurbCircle" && self.id(c.src).is_none() {
                     let nr = g.vec3(&["nr", "normal"]).unwrap_or(DVec3::Z);
                     let cen = g.vec3(&["c", "center"]).unwrap_or(DVec3::ZERO);
                     let fp = g.vec3(&["fp", "firstPoint"]).unwrap_or(DVec3::X);
@@ -1690,7 +1696,10 @@ impl Build<'_> {
             }
         }
         let Some(c) = curve else {
-            self.warnings.push(format!("{}: no stored curve", n.name));
+            // History that is in the scene gives the curve by connection.
+            if !doc.input(i, &["cr", "create"]).is_some_and(|c| self.id(c.src).is_some()) {
+                self.warnings.push(format!("{}: no stored curve", n.name));
+            }
             return;
         };
         let at = crate::curves::CurveShape::CACHED;
@@ -1701,6 +1710,9 @@ impl Build<'_> {
     fn build_surface(&mut self, i: usize) {
         use aztek_geo::nurbs::{Form, NurbsSurface};
         let Some(shape) = self.id(i) else { return };
+        if self.chain_nurbs(i, crate::surfaces::SurfaceShape::LOCAL, crate::surfaces::SurfaceShape::CREATE) {
+            return;
+        }
         let n = &self.doc.nodes[i];
         let mut made = None;
         if let Some(cc) = n.set_of(&["cc", "cached"]) {
@@ -1728,7 +1740,9 @@ impl Build<'_> {
             }
         }
         let Some(c) = made else {
-            self.warnings.push(format!("{}: no stored surface", n.name));
+            if !self.doc.input(i, &["cr", "create"]).is_some_and(|c| self.id(c.src).is_some()) {
+                self.warnings.push(format!("{}: no stored surface", n.name));
+            }
             return;
         };
         let at = crate::surfaces::SurfaceShape::CACHED;
@@ -1939,7 +1953,7 @@ impl Build<'_> {
         let start = src_of(&["hsj", "startJoint"]);
         let effector = src_of(&["hee", "endEffector"]);
         let solver_ty = src_of(&["hsv", "ikSolver"]).map_or("ikRPsolver", |s| doc.nodes[s].ty.as_str());
-        if !matches!(solver_ty, "ikRPsolver" | "ikSCsolver") {
+        if !matches!(solver_ty, "ikRPsolver" | "ikSCsolver" | "ikSplineSolver") {
             self.warnings.push(format!("{}: {solver_ty} is not represented; handle skipped", n.name));
             return;
         }
@@ -1980,7 +1994,17 @@ impl Build<'_> {
                 if parent != NO_NODE {
                     let _ = self.s.graph.set_parent(h, parent, false, usize::MAX);
                 }
+                // A new handle sits at the end joint; the file says where it is, and leaves out zeros.
+                let g = &mut self.s.graph;
+                let _ = g.set_value(PlugRef::new(h, Transform::TRANSLATE as i32), PlugValue::Vec3(DVec3::ZERO));
+                let _ = g.set_value(PlugRef::new(h, Transform::ROTATE as i32), PlugValue::Vec3(DVec3::ZERO));
                 self.apply_channels(i);
+                // The rest reference: the constraint's rest value when one drives it, else the stored vector.
+                let driven_by = doc.input(i, &["pvx", "poleVectorX", "pv", "poleVector"]).map(|c| &doc.nodes[c.src]);
+                let rest = driven_by.and_then(|c| c.vec3(&["rst", "restTranslate"])).or_else(|| n.vec3(&["pv", "poleVector"]));
+                if let Some(p) = rest {
+                    crate::ik::set_rest_pole(&mut self.s.graph, h, p);
+                }
             }
             Err(e) => self.warnings.push(format!("{}: {e}", n.name)),
         }
@@ -2004,6 +2028,8 @@ impl Build<'_> {
             .iter()
             .find(|c| c.src == i && matches!(plain_attr(&c.src_attr).as_str(), "ctx" | "cty" | "ctz" | "ct" | "crx" | "cry" | "crz" | "cr" | "csx" | "csy" | "csz" | "cs"))
             .map(|c| c.dst)
+            // A constraint blended with animation goes through a pairBlend; what it drives is what that drives.
+            .map(|d| if doc.nodes[d].ty == "pairBlend" { doc.conns.iter().find(|c| c.src == d && matches!(plain_attr(&c.src_attr).as_str(), "ot" | "otx" | "oty" | "otz" | "or" | "orx" | "ory" | "orz")).map_or(d, |c| c.dst) } else { d })
             .or_else(|| doc.input(i, &["cpim"]).map(|c| c.src))
             .or(n.parent);
         let Some(driven_id) = driven.and_then(|d| self.id(d)) else {
@@ -2097,6 +2123,18 @@ impl Build<'_> {
             if let Some(v) = n.vec3(&names) {
                 set_vec(g, attr, None, v);
             }
+        }
+        // Where it rests with its weights at zero. A pole vector's rest stays what the handle gave.
+        if cmd != "poleVectorConstraint" {
+            if let Some(v) = n.vec3(&["rst", "restTranslate"]) {
+                let _ = crate::constraint::set_rest(g, c, Some(v * doc.lin), None);
+            }
+            if let Some(v) = n.vec3(&["rsrr", "restRotate"]) {
+                let _ = crate::constraint::set_rest(g, c, None, Some(v * doc.ang));
+            }
+        }
+        if let (Some(on), Some(at)) = (n.truth(&["erp", "enableRestPosition"]), t.attr_index("enableRestPosition")) {
+            let _ = g.set_value(PlugRef::new(c, at as i32), PlugValue::Bool(on));
         }
         if let (Some(w), Some(at)) = (n.num(&["wut", "worldUpType"]), t.attr_index("worldUpType")) {
             let _ = g.set_value(PlugRef::new(c, at as i32), PlugValue::Int(w as i64));
@@ -2218,7 +2256,9 @@ impl Build<'_> {
             if crate::deform::is_deformer(&dt.name) || crate::deform::is_deformer(&st.name) {
                 continue;
             }
-            if is_plain_node(&dt.name) || is_plain_node(&st.name) {
+            // A CV driven by a locator or anything else, as an eyelid rig does.
+            let into_cv = dt.name == crate::curves::SHAPE_TYPE && matches!(plain_attr(&c.dst_attr).as_str(), "cp" | "controlPoints");
+            if into_cv || is_plain_node(&dt.name) || is_plain_node(&st.name) {
                 self.plain_connection(c, sn, &sa, src, dst);
                 continue;
             }
@@ -2263,6 +2303,46 @@ impl Build<'_> {
         }
     }
 
+    /// Connections with a constraint at one end, which `channel_connections` could not make because the constraints come later:
+    /// what drives a target's weight, usually a set driven key for a space switch, and a constraint feeding a pairBlend.
+    fn constraint_connections(&mut self) {
+        let doc = self.doc;
+        let is_constraint = |i: usize| rig::CONSTRAINT_TYPES.contains(&doc.nodes[i].ty.as_str());
+        let mut blends: Vec<usize> = Vec::new();
+        for c in &doc.conns {
+            if is_constraint(c.dst) && matches!(plain_attr(&c.dst_attr).as_str(), "wum" | "worldUpMatrix") {
+                let (Some(src), Some(dst)) = (self.id(c.src), self.id(c.dst)) else { continue };
+                self.plain_connection(c, c.src, &c.src_attr, src, dst);
+            } else if is_constraint(c.dst) && c.src != c.dst {
+                let Some(e) = plain_attr(&c.dst_attr).strip_prefix('w').and_then(|x| x.parse::<usize>().ok()) else { continue };
+                let (sn, sa) = self.real_source(c);
+                let (Some(src), Some(dst)) = (self.id(sn), self.id(c.dst)) else { continue };
+                let t = self.s.graph.node(dst).unwrap().type_arc().clone();
+                let suffix = format!("W{e}");
+                let Some(a) = t.attrs.iter().position(|a| a.has(flags::USER) && a.name.ends_with(&suffix)) else { continue };
+                let st = self.s.graph.node(src).unwrap().type_arc().clone();
+                let out = if st.attr_index("keys").is_some() { st.attr_index("output").map(|x| (x, -1)) } else { channel(&st, &plain_attr(&sa)) };
+                let Some((oa, oc)) = out else { continue };
+                if let Err(e) = self.s.graph.connect(&plug_ref(src, oa, oc), &PlugRef::new(dst, a as i32), true) {
+                    self.warnings.push(format!("{}.{sa} -> {}.{}: {e}", doc.nodes[sn].name, doc.nodes[c.dst].name, c.dst_attr));
+                }
+            } else if is_constraint(c.src) && doc.nodes[c.dst].ty == "pairBlend" {
+                let (Some(src), Some(dst)) = (self.id(c.src), self.id(c.dst)) else { continue };
+                self.plain_connection(c, c.src, &c.src_attr, src, dst);
+                if !blends.contains(&c.dst) {
+                    blends.push(c.dst);
+                }
+            }
+        }
+        // The constraint took the channels when it was made; they belong to the pairBlend.
+        for &b in &blends {
+            for c in doc.conns.iter().filter(|c| c.src == b) {
+                let (Some(src), Some(dst)) = (self.id(c.src), self.id(c.dst)) else { continue };
+                self.plain_connection(c, c.src, &c.src_attr, src, dst);
+            }
+        }
+    }
+
     /// Curves with something left to drive; the rest are dropped with what they animated.
     fn curve_is_needed(&self, i: usize) -> bool {
         self.doc.conns.iter().any(|c| {
@@ -2272,7 +2352,7 @@ impl Build<'_> {
                 match self.id(c.dst) {
                     Some(_) if is_plain_node(&d.ty) || deformers::is_file_deformer(&d.ty) => true,
                     Some(id) => channel(self.s.graph.node(id).unwrap().ty(), &plain).is_some(),
-                    None => d.ty == "unitConversion" || d.ty == "ikHandle" || d.ty.starts_with("deform"),
+                    None => d.ty == "unitConversion" || d.ty == "ikHandle" || d.ty.starts_with("deform") || rig::CONSTRAINT_TYPES.contains(&d.ty.as_str()),
                 }
             }
         })
@@ -2550,6 +2630,7 @@ fn build(s: &mut Session, doc: &Doc, import: bool) -> Vec<String> {
             b.create_constraint(i, kind);
         }
     }
+    b.constraint_connections();
     for i in 0..count {
         if doc.nodes[i].ty == "dagPose" {
             b.create_pose(i);

@@ -15,6 +15,8 @@ mod python_api;
 mod query;
 mod render;
 pub mod script_jobs;
+pub mod attr_ui;
+pub mod script_objects;
 pub mod scriptui;
 pub mod tools;
 pub mod ui_cmds;
@@ -219,6 +221,8 @@ pub extern "C" fn aztek_query(what: *const c_char, arg: *const c_char) -> *mut c
                 Value::Null
             }
             "runtimeCommands" => ui_cmds::runtime_commands(),
+            "uiDrag" => attr_ui::drag_start(c, &arg),
+            "aeTemplate" => script_objects::ae_template(c, &arg),
             "panelSync" => {
                 panel_cmds::shell_sync(&serde_json::from_str(&arg).unwrap_or(json!({})));
                 Value::Null

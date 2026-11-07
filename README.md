@@ -24,6 +24,8 @@ target and status, including where it differs from Maya; [docs/COMMANDS.md](docs
 - **Interface:** menu sets, shelves with an editor, hotkey editor, marking menus, hotbox, channel box, outliner, attribute
   editor, node editor, tool settings, panel layouts, workspaces.
 
+![Splash](docs/splash.png)
+
 ![Aztek](docs/screenshot.png)
 
 ## Screens
@@ -167,5 +169,5 @@ with `loadPlugin`. C++ plug-ins can't load.
 
 The target is that Maya's scripts, habits and `.ma` files carry over. It has been developed without a copy of Maya to
 compare against, so behaviour comes from the published reference: expect differences in details, and see PARITY.md for
-the known ones. `.mb` files, references and C++ plug-ins are not supported. Rendering, dynamics and Bifrost are out of
+the known ones. `.mb` files and C++ plug-ins are not supported. Rendering, dynamics and Bifrost are out of
 scope.

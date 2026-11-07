@@ -71,6 +71,7 @@ impl Core {
         register_ui_commands(&mut c.s);
         crate::ui_cmds::register(&mut c.s);
         crate::scriptui::register(&mut c.s);
+        crate::script_objects::register(&mut c.s);
         crate::script_jobs::register(&mut c.s);
         crate::ctx_cmds::register(&mut c.s);
         crate::panel_cmds::register(&mut c.s);
@@ -183,6 +184,7 @@ impl Core {
     /// What the user did in a script window; see `scriptui::shell_event`.
     pub fn ui_event(&mut self, ev: &Value) {
         let due = crate::scriptui::shell_event(ev);
+        crate::attr_ui::shell_changed(self, ev);
         for (cb, args) in due {
             self.run_callback(&cb, &args);
         }
@@ -195,6 +197,7 @@ impl Core {
             return;
         }
         self.in_idle = true;
+        crate::attr_ui::idle(self);
         let scripts = crate::script_jobs::scan(&mut self.s);
         let deferred = crate::script_jobs::take_deferred();
         self.drain_captured();
@@ -581,6 +584,16 @@ fn python_callback(core: &mut Core, id: i64, args: &[Value]) -> Result<(), Strin
 
 #[cfg(not(feature = "python"))]
 fn python_callback(_core: &mut Core, _id: i64, _args: &[Value]) -> Result<(), String> {
+    Err("python: this build has no Python.".into())
+}
+
+#[cfg(feature = "python")]
+pub(crate) fn python_value(core: &mut Core, id: i64, args: &[Value]) -> Result<Value, String> {
+    crate::python::fire_value(core, id, args)
+}
+
+#[cfg(not(feature = "python"))]
+pub(crate) fn python_value(_core: &mut Core, _id: i64, _args: &[Value]) -> Result<Value, String> {
     Err("python: this build has no Python.".into())
 }
 

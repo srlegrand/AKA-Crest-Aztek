@@ -40,6 +40,9 @@ pub struct NodeType {
     pub user_of: Option<Arc<NodeType>>,
     /// Attr names older scene files may hold that no longer mean anything; loading skips them without a warning.
     pub retired_attrs: Vec<String>,
+    /// Its outputs don't depend on where its parent is, so they may drive that parent: a follicle's outTranslate moves the
+    /// transform above it.
+    pub free_of_parent: bool,
 }
 
 impl fmt::Debug for NodeType {

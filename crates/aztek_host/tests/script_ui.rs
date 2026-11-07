@@ -18,6 +18,636 @@ fn press(c: &mut Core, path: &str, flag: &str, args: Value) {
     c.ui_event(&json!({"path": path, "fire": [flag], "args": args}));
 }
 
+/// A change in a control, as the shell reports it: its value and the callback flags.
+fn user_set(c: &mut Core, path: &str, flag: &str, v: Value, fire: &str) {
+    c.ui_event(&json!({"path": path, "set": {flag: v.clone()}, "fire": [fire], "args": [v]}));
+}
+
+fn bound_window(c: &mut Core) {
+    ok(c, "polyCube -n box; window w; columnLayout col;");
+}
+
+#[test]
+fn connect_control_shows_sets_and_follows_a_plug() {
+    let mut c = Core::new();
+    bound_window(&mut c);
+    ok(&mut c, "setAttr box.tx 3;");
+    let f = ok(&mut c, "floatSliderGrp -f 1 -min -10 -max 10 s;");
+    let path = f.as_str().unwrap().to_string();
+    ok(&mut c, "connectControl s box.tx;");
+    assert_eq!(ok(&mut c, "floatSliderGrp -q -v s;"), json!(3.0));
+    // The plug moves: at idle the control follows.
+    ok(&mut c, "setAttr box.tx 5;");
+    c.idle();
+    assert_eq!(ok(&mut c, "floatSliderGrp -q -v s;"), json!(5.0));
+    // The user drags: the plug follows quietly, and letting go leaves one undoable line.
+    user_set(&mut c, &path, "value", json!(6.0), "dragCommand");
+    assert_eq!(ok(&mut c, "getAttr box.tx;"), json!(6.0));
+    user_set(&mut c, &path, "value", json!(7.0), "dragCommand");
+    assert_eq!(ok(&mut c, "getAttr box.tx;"), json!(7.0));
+    c.take_log();
+    user_set(&mut c, &path, "value", json!(8.0), "changeCommand");
+    assert_eq!(ok(&mut c, "getAttr box.tx;"), json!(8.0));
+    let echoes: Vec<String> = c.take_log().as_array().unwrap().iter().filter(|l| l["kind"] == 0).map(|l| l["text"].as_str().unwrap().to_string()).collect();
+    assert_eq!(echoes.iter().filter(|l| l.starts_with("setAttr")).count(), 1, "{echoes:?}");
+    ok(&mut c, "undo;");
+    assert_eq!(ok(&mut c, "getAttr box.tx;"), json!(5.0));
+    c.idle();
+    assert_eq!(ok(&mut c, "floatSliderGrp -q -v s;"), json!(5.0));
+    // A script's edit of a bound control sets the plug.
+    ok(&mut c, "floatSliderGrp -e -v 2 s;");
+    assert_eq!(ok(&mut c, "getAttr box.tx;"), json!(2.0));
+    assert!(c.mel_checked("connectControl s nothing.tx;").is_err());
+    errors(&mut c);
+}
+
+#[test]
+fn connect_control_on_fields_by_index_and_compound() {
+    let mut c = Core::new();
+    bound_window(&mut c);
+    ok(&mut c, "setAttr box.t 1 2 3;");
+    ok(&mut c, "floatFieldGrp -nf 3 g;");
+    ok(&mut c, "connectControl g box.t;");
+    assert_eq!(ok(&mut c, "floatFieldGrp -q -v g;"), json!([1.0, 2.0, 3.0]));
+    ok(&mut c, "floatFieldGrp -nf 2 h;");
+    ok(&mut c, "connectControl -index 2 h box.ry; connectControl -index 3 h box.rz; connectControl -index 1 h box.ry;");
+    ok(&mut c, "setAttr box.rz 9;");
+    c.idle();
+    assert_eq!(ok(&mut c, "floatFieldGrp -q -v2 h;"), json!(9.0));
+    assert_eq!(ok(&mut c, "floatFieldGrp -q -l h;"), json!("Rotate Y"));
+    ok(&mut c, "checkBox cb;");
+    ok(&mut c, "connectControl cb box.visibility;");
+    assert_eq!(ok(&mut c, "checkBox -q -v cb;"), json!(true));
+    let p = ok(&mut c, "checkBox -q -fpn cb;").as_str().unwrap().to_string();
+    user_set(&mut c, &p, "value", json!(false), "changeCommand");
+    assert_eq!(ok(&mut c, "getAttr box.visibility;"), json!(false));
+    errors(&mut c);
+}
+
+#[test]
+fn attr_controls_take_their_shape_from_the_attribute() {
+    let mut c = Core::new();
+    bound_window(&mut c);
+    ok(&mut c, "addAttr -ln \"mood\" -at \"enum\" -en \"calm:angry=4:odd\" box;");
+    ok(&mut c, "addAttr -ln \"tint\" -at \"float3\" -uac box; addAttr -ln \"tintR\" -at \"float\" -p tint box; addAttr -ln \"tintG\" -at \"float\" -p tint box; addAttr -ln \"tintB\" -at \"float\" -p tint box;");
+    ok(&mut c, "addAttr -ln \"gain\" -at \"double\" -min 0 -max 4 box;");
+    ok(&mut c, "addAttr -ln \"count\" -at \"long\" box;");
+    ok(&mut c, "addAttr -ln \"note\" -dt \"string\" box; setAttr -type \"string\" box.note \"hi\";");
+
+    assert_eq!(ok(&mut c, "attrFieldSliderGrp -at box.gain fs;"), json!("w|col|fs"));
+    assert_eq!(ok(&mut c, "attrFieldSliderGrp -q -at fs;"), json!("box.gain"));
+    assert_eq!(ok(&mut c, "attrFieldSliderGrp -q -ex fs;"), json!(true));
+    assert_eq!(ok(&mut c, "attrFieldSliderGrp -q -max fs;"), json!(4.0));
+    assert_eq!(ok(&mut c, "attrFieldSliderGrp -q -l fs;"), json!("Gain"));
+    ok(&mut c, "setAttr box.gain 2.5;");
+    c.idle();
+    assert_eq!(ok(&mut c, "attrFieldSliderGrp -q -v fs;"), json!(2.5));
+    user_set(&mut c, "w|col|fs", "value", json!(1.5), "changeCommand");
+    assert_eq!(ok(&mut c, "getAttr box.gain;"), json!(1.5));
+    ok(&mut c, "undo;");
+    assert_eq!(ok(&mut c, "getAttr box.gain;"), json!(2.5));
+
+    // Three fields for a compound, one to a child.
+    ok(&mut c, "setAttr box.t 1 2 3;");
+    ok(&mut c, "attrFieldGrp -at box.t af;");
+    assert_eq!(ok(&mut c, "floatFieldGrp -q -nf af;"), json!(3));
+    assert_eq!(ok(&mut c, "floatFieldGrp -q -v af;"), json!([1.0, 2.0, 3.0]));
+    user_set(&mut c, "w|col|af", "value2", json!(7.0), "changeCommand");
+    assert_eq!(ok(&mut c, "getAttr box.ty;"), json!(7.0));
+
+    // attrControlGrp picks by type.
+    ok(&mut c, "attrControlGrp -a box.visibility c1; attrControlGrp -a box.mood c2; attrControlGrp -a box.count c3; attrControlGrp -a box.t c4; attrControlGrp -a box.tint c5; attrControlGrp -a box.note c6; attrControlGrp -a box.gain c7;");
+    let ty = |c: &mut Core, n: &str| aztek_host::scriptui::control_kind_of(&ok(c, &format!("control -q -fpn {n};")).as_str().unwrap().to_string());
+    assert_eq!(ty(&mut c, "c1").as_deref(), Some("checkBoxGrp"));
+    assert_eq!(ty(&mut c, "c2").as_deref(), Some("optionMenuGrp"));
+    assert_eq!(ty(&mut c, "c3").as_deref(), Some("intSliderGrp"));
+    assert_eq!(ty(&mut c, "c4").as_deref(), Some("floatFieldGrp"));
+    assert_eq!(ty(&mut c, "c5").as_deref(), Some("colorSliderGrp"));
+    assert_eq!(ty(&mut c, "c6").as_deref(), Some("textFieldGrp"));
+    assert_eq!(ty(&mut c, "c7").as_deref(), Some("floatSliderGrp"));
+    assert_eq!(ok(&mut c, "attrControlGrp -q -a c2;"), json!("box.mood"));
+    assert_eq!(ok(&mut c, "textFieldGrp -q -tx c6;"), json!("hi"));
+
+    // An enum with gaps: the menu's position is not the value.
+    ok(&mut c, "setAttr box.mood 4;");
+    c.idle();
+    assert_eq!(ok(&mut c, "optionMenuGrp -q -v c2;"), json!("angry"));
+    user_set(&mut c, "w|col|c2", "select", json!(3), "changeCommand");
+    assert_eq!(ok(&mut c, "getAttr box.mood;"), json!(5));
+    // Rebinding: same kind in place, another kind made again under the same name.
+    ok(&mut c, "attrControlGrp -e -a box.tx c7;");
+    assert_eq!(ok(&mut c, "attrControlGrp -q -a c7;"), json!("box.tx"));
+    ok(&mut c, "attrControlGrp -e -a box.visibility c7;");
+    assert_eq!(ty(&mut c, "c7").as_deref(), Some("checkBoxGrp"));
+
+    // A colour.
+    ok(&mut c, "setAttr box.tint 0.5 0.25 1;");
+    ok(&mut c, "attrColorSliderGrp -at box.tint cs;");
+    assert_eq!(ok(&mut c, "colorSliderGrp -q -rgb cs;"), json!([0.5, 0.25, 1.0]));
+    user_set(&mut c, "w|col|cs", "rgbValue", json!([1.0, 0.0, 0.0]), "changeCommand");
+    assert_eq!(ok(&mut c, "getAttr box.tintG;"), json!(0.0));
+
+    // Named items over an enum's own.
+    ok(&mut c, "attrEnumOptionMenuGrp -at box.mood -ei 0 \"Still\" -ei 4 \"Cross\" em;");
+    ok(&mut c, "setAttr box.mood 4;");
+    c.idle();
+    assert_eq!(ok(&mut c, "optionMenuGrp -q -v em;"), json!("Cross"));
+    ok(&mut c, "attrEnumOptionMenu -at box.mood eo;");
+    assert_eq!(ok(&mut c, "optionMenu -q -ni eo;"), json!(3));
+    assert!(c.mel_checked("attrFieldSliderGrp -at box.nothing bad;").is_err());
+    assert!(c.mel_checked("attrControlGrp bad2;").is_err());
+    errors(&mut c);
+}
+
+#[test]
+fn bound_controls_say_how_the_plug_is_driven() {
+    let mut c = Core::new();
+    bound_window(&mut c);
+    ok(&mut c, "attrFieldSliderGrp -at box.tx fs;");
+    aztek_host::scriptui::take_ops();
+    ok(&mut c, "setKeyframe box.tx;");
+    c.idle();
+    let ops = aztek_host::scriptui::take_ops();
+    assert!(ops.iter().any(|o| o["props"]["plugState"] == "keyOnFrame"), "{ops:?}");
+    errors(&mut c);
+}
+
+#[test]
+fn more_controls_as_maya_has_them() {
+    let mut c = Core::new();
+    ok(&mut c, "window w; columnLayout col;");
+    ok(&mut c, "floatSliderButtonGrp -l \"Size\" -f 1 -bl \"Reset\" -bc \"$gReset = 1;\" -min 0 -max 5 -v 2 fb;");
+    assert_eq!(ok(&mut c, "floatSliderButtonGrp -q -v fb;"), json!(2.0));
+    assert_eq!(ok(&mut c, "floatSliderButtonGrp -q -bl fb;"), json!("Reset"));
+    ok(&mut c, "global int $gReset = 0;");
+    press(&mut c, "w|col|fb", "buttonCommand", json!([]));
+    assert_eq!(ok(&mut c, "global int $gReset; $x = $gReset;"), json!(1));
+
+    ok(&mut c, "symbolButton -i \"a.png\" -c \"$gReset = 2;\" sb;");
+    assert_eq!(ok(&mut c, "symbolButton -q -i sb;"), json!("a.png"));
+
+    let t = ok(&mut c, "shelfTabLayout st;");
+    assert_eq!(t, json!("w|col|st"));
+    assert_eq!(ok(&mut c, "shelfTabLayout -q -ex st;"), json!(true));
+    assert_eq!(ok(&mut c, "objectTypeUI st;"), json!("tabLayout"));
+    ok(&mut c, "columnLayout one; setParent ..; columnLayout two; setParent ..;");
+    assert_eq!(ok(&mut c, "shelfTabLayout -q -ca st;"), json!(["one", "two"]));
+    ok(&mut c, "shelfTabLayout -e -sti 2 st;");
+    assert_eq!(ok(&mut c, "shelfTabLayout -q -st st;"), json!("two"));
+    ok(&mut c, "setParent ..;");
+
+    ok(&mut c, "layerButton -n \"mine\" -s 1 -lv 0 -ls \"template\" lb;");
+    assert_eq!(ok(&mut c, "layerButton -q -n lb;"), json!("mine"));
+    assert_eq!(ok(&mut c, "layerButton -q -lv lb;"), json!(false));
+    assert_eq!(ok(&mut c, "layerButton -q -ls lb;"), json!("template"));
+
+    ok(&mut c, "timePort tp;");
+    assert_eq!(ok(&mut c, "timePort -q -ex tp;"), json!(true));
+    ok(&mut c, "playbackOptions -min 3 -max 40;");
+    ok(&mut c, "rangeControl rc;");
+    assert_eq!(ok(&mut c, "rangeControl -q -min rc;").as_f64(), Some(3.0));
+    ok(&mut c, "rangeControl -e -min 5 -max 20 rc;");
+    assert_eq!(ok(&mut c, "playbackOptions -q -min;").as_f64(), Some(5.0));
+    assert_eq!(ok(&mut c, "playbackOptions -q -max;").as_f64(), Some(20.0));
+    ok(&mut c, "timeRangeControl trc;");
+    assert_eq!(ok(&mut c, "timeRangeControl -q -ex trc;"), json!(true));
+    errors(&mut c);
+}
+
+#[test]
+fn script_table_asks_its_scripts() {
+    let mut c = Core::new();
+    ok(&mut c, "global proc string cell(int $r, int $c) { return ($r + \"x\" + $c); }");
+    ok(&mut c, "global string $gSeen = \"\"; global proc int change(int $r, int $c, string $v) { global string $gSeen; $gSeen = $v; return ($v != \"no\"); }");
+    ok(&mut c, "window w; columnLayout col;");
+    ok(&mut c, "scriptTable -rows 2 -columns 2 -label 1 \"A\" -label 2 \"B\" -cw 1 40 -gcc \"cell\" -ccc \"change\" t;");
+    c.idle();
+    assert_eq!(ok(&mut c, "scriptTable -q -rows t;"), json!(2));
+    assert_eq!(ok(&mut c, "scriptTable -ci 2 1 -q -cv t;"), json!("2x1"));
+    c.ui_event(&json!({"path": "w|col|t", "cellEdit": [1, 2, "yes"]}));
+    assert_eq!(ok(&mut c, "scriptTable -ci 1 2 -q -cv t;"), json!("yes"));
+    c.ui_event(&json!({"path": "w|col|t", "cellEdit": [1, 1, "no"]}));
+    assert_eq!(ok(&mut c, "scriptTable -ci 1 1 -q -cv t;"), json!("1x1"));
+    ok(&mut c, "scriptTable -e -ir 1 t;");
+    assert_eq!(ok(&mut c, "scriptTable -q -rows t;"), json!(3));
+    assert_eq!(ok(&mut c, "scriptTable -ci 2 1 -q -cv t;"), json!("1x1"));
+    ok(&mut c, "scriptTable -e -dr 1 t;");
+    assert_eq!(ok(&mut c, "scriptTable -ci 1 1 -q -cv t;"), json!("1x1"));
+    c.ui_event(&json!({"path": "w|col|t", "set": {"selectedCells": [2, 1, 2, 2]}}));
+    assert_eq!(ok(&mut c, "scriptTable -q -sr t;"), json!(2));
+    assert_eq!(ok(&mut c, "scriptTable -q -scs t;"), json!([1, 2]));
+    ok(&mut c, "scriptTable -e -clr t;");
+    assert_eq!(ok(&mut c, "scriptTable -q -rows t;"), json!(0));
+    errors(&mut c);
+}
+
+#[test]
+fn tool_buttons_set_and_follow_the_tool() {
+    let mut c = Core::new();
+    ok(&mut c, "window w; columnLayout col; toolCollection tc;");
+    ok(&mut c, "toolButton -t moveSuperContext mv; toolButton -t scaleSuperContext sc;");
+    assert_eq!(ok(&mut c, "toolButton -q -t mv;"), json!("moveSuperContext"));
+    assert_eq!(ok(&mut c, "toolButton -q -tc mv;"), json!(1));
+    assert_eq!(ok(&mut c, "toolCollection -q -cia tc;"), json!(["mv", "sc"]));
+    c.ui_event(&json!({"path": "w|col|mv", "set": {"select": true}}));
+    assert_eq!(ok(&mut c, "currentCtx;"), json!("moveSuperContext"));
+    assert_eq!(ok(&mut c, "toolCollection -q -sl tc;"), json!("mv"));
+    ok(&mut c, "setToolTo scaleSuperContext;");
+    c.idle();
+    assert_eq!(ok(&mut c, "toolCollection -q -sl tc;"), json!("sc"));
+    assert_eq!(ok(&mut c, "toolButton -q -sl mv;"), json!(false));
+    ok(&mut c, "toolButton -e -sl 1 mv;");
+    assert_eq!(ok(&mut c, "currentCtx;"), json!("moveSuperContext"));
+    assert_eq!(ok(&mut c, "toolHasOptions moveSuperContext;"), json!(true));
+    errors(&mut c);
+}
+
+#[test]
+fn hud_controls_live_with_the_heads_up_display() {
+    let mut c = Core::new();
+    ok(&mut c, "hudButton -s 3 -b 1 -l \"Go\" -pc \"print 1;\" hb;");
+    ok(&mut c, "hudSlider -s 3 -b 2 -l \"Amount\" -min 0 -max 10 -v 2 -t \"float\" hs;");
+    ok(&mut c, "hudSliderButton -s 3 -b 3 -sl \"Size\" -bl \"Set\" -v 1 hsb;");
+    assert_eq!(ok(&mut c, "hudButton -q -l hb;"), json!("Go"));
+    assert_eq!(ok(&mut c, "hudSlider -q -max hs;"), json!(10));
+    ok(&mut c, "hudSlider -e -v 4 hs;");
+    assert_eq!(ok(&mut c, "hudSlider -q -v hs;"), json!(4));
+    assert_eq!(ok(&mut c, "headsUpDisplay -ex hb;"), json!(true));
+    assert_eq!(aztek_host::ui_cmds::hud_controls().iter().filter(|(n, _)| ["hb", "hs", "hsb"].contains(&n.as_str())).count(), 3);
+    ok(&mut c, "headsUpDisplay -rem hb; headsUpDisplay -rem hs; headsUpDisplay -rem hsb;");
+    assert_eq!(ok(&mut c, "hudButton -ex hb;"), json!(false));
+    errors(&mut c);
+}
+
+#[test]
+fn filters_connections_configurations_and_templates() {
+    let mut c = Core::new();
+    ok(&mut c, "polyCube -n boxA; polyCube -n boxB; spaceLocator -n loc;");
+    assert_eq!(ok(&mut c, "itemFilter -byType \"locator\" lf;"), json!("lf"));
+    assert_eq!(ok(&mut c, "itemFilter -ex lf;"), json!(true));
+    ok(&mut c, "itemFilter -bn \"boxA*\" nf; itemFilter -un lf nf both; itemFilter -neg 1 -bn \"box*\" notbox;");
+    let l = ok(&mut c, "lsThroughFilter lf;");
+    assert!(l.as_array().unwrap().iter().any(|x| x.as_str().unwrap().ends_with("locShape")), "{l:?}");
+    let l = ok(&mut c, "lsThroughFilter nf;");
+    assert_eq!(l.as_array().unwrap().iter().filter(|x| x.as_str().unwrap().contains("boxB")).count(), 0);
+    let l = ok(&mut c, "lsThroughFilter both;");
+    assert!(l.as_array().unwrap().iter().any(|x| x.as_str().unwrap().contains("boxA")));
+    assert!(l.as_array().unwrap().iter().any(|x| x.as_str().unwrap().ends_with("locShape")));
+    assert!(ok(&mut c, "itemFilter -q -bn nf;").to_string().contains("boxA"));
+
+    ok(&mut c, "selectionConnection -activeList act;");
+    ok(&mut c, "select boxA;");
+    assert_eq!(ok(&mut c, "selectionConnection -q -obj act;"), json!(["boxA"]));
+    ok(&mut c, "selectionConnection -e -clr act;");
+    assert_eq!(ok(&mut c, "ls -sl;"), json!([]));
+    ok(&mut c, "selectionConnection own;");
+    ok(&mut c, "selectionConnection -e -s boxA -s boxB own;");
+    assert_eq!(ok(&mut c, "selectionConnection -q -obj own;"), json!(["boxA", "boxB"]));
+    ok(&mut c, "selectionConnection -e -d boxA own;");
+    assert_eq!(ok(&mut c, "selectionConnection -q -obj own;"), json!(["boxB"]));
+    assert_eq!(ok(&mut c, "selectionConnection -q -ex own;").as_bool(), None);
+    assert_eq!(ok(&mut c, "selectionConnection -ex own;"), json!(true));
+
+    ok(&mut c, "panelConfiguration -l \"Two\" -sc 0 -cfs \"x\" -ap 1 \"Persp\" \"modelPanel\" \"a\" \"b\" cfg;");
+    assert_eq!(ok(&mut c, "panelConfiguration -q -np cfg;"), json!(1));
+    assert_eq!(ok(&mut c, "panelConfiguration -q -l cfg;"), json!("Two"));
+    assert_eq!(ok(&mut c, "getPanel -cwl \"Two\";"), json!("cfg"));
+    assert!(ok(&mut c, "getPanel -ac;").as_array().unwrap().contains(&json!("cfg")));
+
+    ok(&mut c, "editorTemplate -bsl; editorTemplate -bl \"Mine\" -cl 0; editorTemplate -ac \"translate\"; editorTemplate -as; editorTemplate -el; editorTemplate -s \"caching\"; editorTemplate -aec; editorTemplate -esl;");
+    let t = aztek_host::script_objects::take_template();
+    let kinds: Vec<&str> = t.iter().map(|x| x["kind"].as_str().unwrap()).collect();
+    assert_eq!(kinds, ["beginLayout", "control", "separator", "endLayout", "suppress", "extraControls"]);
+    assert_eq!(t[1]["attr"], "translate");
+
+    assert_eq!(ok(&mut c, "baseTemplate -ex \"x\";"), json!(false));
+    ok(&mut c, "baseTemplate -l \"x\";");
+    assert_eq!(ok(&mut c, "baseTemplate -ex \"x\";"), json!(true));
+    errors(&mut c);
+}
+
+#[test]
+fn editors_scripts_make() {
+    let mut c = Core::new();
+    ok(&mut c, "polyCube -n box; window w; columnLayout col;");
+    assert_eq!(ok(&mut c, "outlinerEditor -showShapes 1 -showDagOnly 0 -mlc \"worldList\" oe;"), json!("w|col|oe"));
+    assert_eq!(ok(&mut c, "outlinerEditor -q -showShapes oe;"), json!(true));
+    assert_eq!(ok(&mut c, "outlinerEditor -q -dag oe;"), json!(false));
+    assert_eq!(ok(&mut c, "outlinerEditor -q -mlc oe;"), json!("worldList"));
+    ok(&mut c, "outlinerEditor -e -shp 0 oe;");
+    assert_eq!(ok(&mut c, "outlinerEditor -q -shp oe;"), json!(false));
+    assert_eq!(ok(&mut c, "outlinerEditor -ex oe;"), json!(true));
+    assert_eq!(ok(&mut c, "control -q -ex oe;"), json!(true));
+    // The application's own, under Maya's names.
+    ok(&mut c, "outlinerEditor -e -showShapes 1 outlinerPanel1;");
+    assert_eq!(ok(&mut c, "outlinerEditor -q -showShapes outlinerPanel1;"), json!(true));
+    assert_eq!(ok(&mut c, "outlinerPanel -q -outlinerEditor outlinerPanel1;"), json!("outlinerPanel1"));
+
+    // Panels with editors in them.
+    assert_eq!(ok(&mut c, "outlinerPanel op;"), json!("op"));
+    assert_eq!(ok(&mut c, "outlinerPanel -q -oe op;"), json!("op"));
+    assert_eq!(ok(&mut c, "outlinerEditor -q -ex op;"), json!(true));
+    assert!(ok(&mut c, "getPanel -typ \"outlinerPanel\";").as_array().unwrap().contains(&json!("op")));
+    ok(&mut c, "blendShapePanel bp; posePanel pp;");
+    assert_eq!(ok(&mut c, "blendShapePanel -q -be bp;"), json!("bp"));
+    assert_eq!(ok(&mut c, "posePanel -q -pe pp;"), json!("pp"));
+
+    assert_eq!(ok(&mut c, "nodeEditor -gv 1 -ntm \"short\" ne;"), json!("w|col|ne"));
+    assert_eq!(ok(&mut c, "nodeEditor -q -ntm ne;"), json!("short"));
+    ok(&mut c, "select box; nodeEditor -e -rfs ne;");
+    assert_eq!(ok(&mut c, "dopeSheetEditor -stk 1 de;"), json!("w|col|de"));
+    assert_eq!(ok(&mut c, "dopeSheetEditor -q -stk de;"), json!(true));
+    ok(&mut c, "animCurveEditor -dk \"on\" ce;");
+    assert_eq!(ok(&mut c, "animCurveEditor -q -dk ce;"), json!("on"));
+    ok(&mut c, "setKeyframe box.tx;");
+    assert_eq!(ok(&mut c, "animCurveEditor -q -cs ce;"), json!(["box_translateX"]));
+    assert_eq!(ok(&mut c, "animCurveEditor -q -ex ce;"), json!(true));
+    ok(&mut c, "blendShapeEditor -vs 1 be; poseEditor pe;");
+    assert_eq!(ok(&mut c, "blendShapeEditor -q -vs be;"), json!(true));
+    ok(&mut c, "componentEditor -pre 4 ce2; spreadSheetEditor -ko 0 se;");
+    assert_eq!(ok(&mut c, "componentEditor -q -pre ce2;"), json!(4));
+    assert_eq!(ok(&mut c, "spreadSheetEditor -q -ko se;"), json!(false));
+    ok(&mut c, "keyframeOutliner -an \"box_translateX\" ko;");
+    assert_eq!(ok(&mut c, "keyframeOutliner -q -an ko;"), json!("box_translateX"));
+
+    // Made with no layout, put in one later.
+    ok(&mut c, "setParent -top; deleteUI w;");
+    assert_eq!(ok(&mut c, "outlinerEditor loose;"), json!("loose"));
+    ok(&mut c, "window w2; columnLayout col2;");
+    ok(&mut c, "outlinerEditor -e -p col2 loose;");
+    assert_eq!(ok(&mut c, "control -q -fpn loose;"), json!("w2|col2|loose"));
+    ok(&mut c, "outlinerEditor -e -up loose;");
+    assert_eq!(ok(&mut c, "control -q -fpn loose;"), json!("loose"));
+
+    // No clips here: a plain warning, and the Dope Sheet opens.
+    c.take_log();
+    aztek_host::take_ui_requests_for_tests();
+    assert_eq!(ok(&mut c, "clipEditor;"), json!("clipEditor1"));
+    assert!(aztek_host::take_ui_requests_for_tests().to_string().contains("DopeSheetEditor"));
+    assert!(c.take_log().to_string().contains("clips are not available"));
+    assert_eq!(ok(&mut c, "clipEditor -ex x;"), json!(false));
+    errors(&mut c);
+}
+
+fn requests() -> Vec<String> {
+    aztek_host::take_ui_requests_for_tests().as_array().unwrap().iter().filter_map(|r| r.as_str().map(str::to_string)).collect()
+}
+
+#[test]
+fn contexts_reach_the_tools_that_serve_them() {
+    let mut c = Core::new();
+    requests();
+    for (cmd, want) in [
+        ("orbitCtx", "setTool|camTumble"),
+        ("boxDollyCtx", "setTool|camBoxDolly"),
+        ("walkCtx", "setTool|camWalk"),
+        ("modelCurrentTimeCtx", "setTool|modelTime"),
+        ("curveAddPtCtx", "setTool|curveAddPt"),
+        ("curveMoveEPCtx", "setTool|move"),
+        ("curveBezierCtx", "setTool|curveBezier"),
+        ("twoPointArcCtx", "setTool|arcTwo"),
+        ("threePointArcCtx", "setTool|arcThree"),
+        ("polySelectCtx", "setTool|select"),
+        ("polySuperCtx", "setTool|select"),
+        ("polyCreaseCtx", "setTool|crease"),
+        ("polyMergeEdgeCtx", "setTool|mergeEdge"),
+        ("polyMergeFacetCtx", "setTool|mergeFacet"),
+        ("createPolyCubeCtx", "setTool|createCube"),
+        ("createPolyPlaneCtx", "setTool|createPlane"),
+        ("snapTogetherCtx", "setTool|snapTogether"),
+        ("showManipCtx", "ShowManipulators"),
+        ("setEditCtx", "setTool|editMembership"),
+        ("artSetPaintCtx", "setTool|paintSelect"),
+        ("artUserPaintCtx", "setTool|paintSelect"),
+        ("artAttrPaintVertexCtx", "setTool|paintSelect"),
+        ("artPuttyCtx", "setTool|sculpt"),
+        ("graphDollyCtx", "keyTool|dolly"),
+        ("graphTrackCtx", "keyTool|track"),
+        ("graphSelectContext", "keyTool|select"),
+        ("directKeyCtx", "keyTool|move"),
+        ("currentTimeCtx", "keyTool|time"),
+        ("curveEditorCtx", "keyTool|move"),
+        ("setKeyCtx", "keyTool|set"),
+        ("keyframeRegionMoveKeyCtx", "keyTool|move"),
+        ("keyframeRegionScaleKeyCtx", "keyTool|scale"),
+        ("keyframeRegionSelectKeyCtx", "keyTool|select"),
+        ("keyframeRegionSetKeyCtx", "keyTool|set"),
+        ("keyframeRegionInsertKeyCtx", "keyTool|insert"),
+        ("keyframeRegionDirectKeyCtx", "keyTool|move"),
+        ("keyframeRegionDollyCtx", "keyTool|dolly"),
+        ("keyframeRegionTrackCtx", "keyTool|track"),
+        ("keyframeRegionCurrentTimeCtx", "keyTool|time"),
+        ("texRotateContext", "uvTool|rotate"),
+        ("texScaleContext", "uvTool|scale"),
+        ("texSelectContext", "uvTool|select"),
+        ("texMoveUVShellContext", "uvTool|shell"),
+        ("texCutContext", "uvTool|cut"),
+        ("texSmoothContext", "uvTool|smooth"),
+        ("texTweakUVContext", "uvTool|tweak"),
+        ("texSelectShortestPathCtx", "uvTool|path"),
+        ("textureLassoContext", "uvTool|lasso"),
+        ("texWinToolCtx", "uvTool|window"),
+    ] {
+        let n = format!("{cmd}Made");
+        ok(&mut c, &format!("{cmd} {n}; setToolTo {n};"));
+        assert_eq!(ok(&mut c, "currentCtx;"), json!(n));
+        let r = requests();
+        assert!(r.iter().any(|x| x == want), "{cmd}: {r:?}");
+    }
+    // A curve can take a key from the tools by the curve's own name.
+    ok(&mut c, "polyCube -n keyed; setKeyframe keyed.tx;");
+    let plugs = ok(&mut c, "listConnections -p 1 -d 1 -s 0 keyed_translateX;");
+    assert_eq!(plugs, json!(["keyed.translateX"]));
+    ok(&mut c, "setKeyframe -t 10 -i keyed.translateX;");
+    assert_eq!(ok(&mut c, "keyframe -q -kc keyed_translateX;"), json!(2));
+    // Maya's own names for the UV tools work from the start.
+    ok(&mut c, "setToolTo texMoveContext;");
+    assert!(requests().iter().any(|x| x == "uvTool|move"));
+    // Those with nothing behind them say so, once.
+    c.take_log();
+    ok(&mut c, "texSmudgeUVContext sm; setToolTo sm; texLatticeDeformContext lt; setToolTo lt; setToolTo sm;");
+    let log = c.take_log().to_string();
+    assert_eq!(log.matches("texSmudgeUVContext: this tool").count(), 1, "{log}");
+    assert_eq!(log.matches("texLatticeDeformContext: this tool").count(), 1, "{log}");
+    assert_eq!(ok(&mut c, "toolHasOptions sm;"), json!(true));
+    errors(&mut c);
+}
+
+#[test]
+fn view_commands_for_cameras_and_manipulators() {
+    let mut c = Core::new();
+    ok(&mut c, "polyCube -n box;");
+    let before = ok(&mut c, "getAttr persp.tx;");
+    ok(&mut c, "tumble -aa 30 -ea 10 persp;");
+    assert_ne!(ok(&mut c, "getAttr persp.tx;"), before);
+    let before = ok(&mut c, "getAttr persp.tx;");
+    ok(&mut c, "panZoom -r 2 persp;");
+    assert_ne!(ok(&mut c, "getAttr persp.tx;"), before);
+
+    assert_eq!(ok(&mut c, "manipPivot -q -v;"), json!(false));
+    ok(&mut c, "select box; manipPivot -p 1 2 3;");
+    assert_eq!(ok(&mut c, "manipPivot -q -p;"), json!([1.0, 2.0, 3.0]));
+    assert_eq!(ok(&mut c, "manipPivot -q -v;"), json!(true));
+    c.idle();
+    ok(&mut c, "select -cl;");
+    c.idle();
+    assert_eq!(ok(&mut c, "manipPivot -q -v;"), json!(false));
+    ok(&mut c, "manipPivot -p 1 0 0; manipPivot -r;");
+    assert_eq!(ok(&mut c, "manipPivot -q -v;"), json!(false));
+
+    requests();
+    ok(&mut c, "manipOptions -s 2;");
+    assert_eq!(ok(&mut c, "manipOptions -q -s;"), json!(2));
+    assert!(requests().iter().any(|x| x.contains("manipSize")));
+    assert_eq!(ok(&mut c, "setXformManip -q -ws;"), json!(true));
+    ok(&mut c, "setXformManip -ws 0;");
+    assert_eq!(ok(&mut c, "setXformManip -q -ws;"), json!(false));
+    ok(&mut c, "viewManip -v 0;");
+    assert_eq!(ok(&mut c, "viewManip -q -v;"), json!(false));
+    ok(&mut c, "viewManip -v 1;");
+    requests();
+    ok(&mut c, "pixelMove 3 4;");
+    assert!(requests().iter().any(|x| x.starts_with("pixelMove|")));
+    ok(&mut c, "softSelectOptionsCtx so; setToolTo so; softSelectOptionsCtx -e -btd 1 so;");
+    assert!(requests().iter().any(|x| x.contains("brushAdjust")));
+    errors(&mut c);
+}
+
+#[test]
+fn script_contexts_run_on_what_is_picked() {
+    let mut c = Core::new();
+    ok(&mut c, "polyCube -n a; polyCube -n b; select -cl;");
+    ok(&mut c, "global string $gStarted = \"\"; global string $gPicked = \"\"; global string $gDone = \"\";");
+    ok(&mut c, "scriptCtx -ts \"global string $gStarted; $gStarted = \\\"yes\\\";\" -tf \"global string $gDone; $gDone = \\\"yes\\\";\" -ssc 2 -sac 1 -euc 0 -fcs \"global string $gPicked; $gPicked = stringArrayToString($Selection1, \\\",\\\");\" pick;");
+    ok(&mut c, "setToolTo pick;");
+    c.idle();
+    assert_eq!(ok(&mut c, "global string $gStarted; $x = $gStarted;"), json!("yes"));
+    ok(&mut c, "select a;");
+    c.idle();
+    assert_eq!(ok(&mut c, "global string $gPicked; $x = $gPicked;"), json!(""));
+    ok(&mut c, "select -add b;");
+    c.idle();
+    assert_eq!(ok(&mut c, "global string $gPicked; $x = $gPicked;"), json!("a,b"));
+    assert_eq!(ok(&mut c, "ls -sl;"), json!([]));
+    // Leaving runs the finish script.
+    ok(&mut c, "setToolTo selectSuperContext;");
+    c.idle();
+    assert_eq!(ok(&mut c, "global string $gDone; $x = $gDone;"), json!("yes"));
+    // Enter finishes one that does not complete by itself.
+    ok(&mut c, "scriptCtx -ssc 1 -fcs \"global string $gPicked; $gPicked = \\\"enter\\\";\" pick2; setToolTo pick2; select a;");
+    c.idle();
+    assert_ne!(ok(&mut c, "global string $gPicked; $x = $gPicked;"), json!("enter"));
+    ok(&mut c, "ctxCompletion;");
+    c.idle();
+    assert_eq!(ok(&mut c, "global string $gPicked; $x = $gPicked;"), json!("enter"));
+    errors(&mut c);
+}
+
+#[test]
+fn paint_contexts_act_on_what_the_brush_takes() {
+    let mut c = Core::new();
+    ok(&mut c, "polyCube -n a; sets -em -n mine; select -cl;");
+    ok(&mut c, "artSetPaintCtx -stm mine ps; setToolTo ps;");
+    c.idle();
+    ok(&mut c, "select a.vtx[0];");
+    c.idle();
+    assert!(ok(&mut c, "sets -q mine;").to_string().contains("vtx[0]"));
+    ok(&mut c, "select -cl; setToolTo selectSuperContext;");
+    c.idle();
+    ok(&mut c, "global int $gSeen = -1; global proc setVal(int $s, int $v, float $x) { global int $gSeen; $gSeen = $v; }");
+    ok(&mut c, "artUserPaintCtx -svc \"setVal\" up; setToolTo up;");
+    c.idle();
+    ok(&mut c, "select a.vtx[3];");
+    c.idle();
+    assert_eq!(ok(&mut c, "global int $gSeen; $x = $gSeen;"), json!(3));
+    ok(&mut c, "select -cl; artPuttyCtx -r 2.5 -mtm \"smooth\" pt; setToolTo pt;");
+    errors(&mut c);
+}
+
+#[test]
+fn attribute_editor_templates_run_by_type() {
+    let mut c = Core::new();
+    ok(&mut c, "polyCube -n box;");
+    assert_eq!(aztek_host::script_objects::ae_template(&mut c, "transform box"), json!([]));
+    ok(&mut c, "global proc AEtransformTemplate(string $n) { editorTemplate -bsl; editorTemplate -bl \"Mine\"; editorTemplate -ac \"translateX\"; editorTemplate -el; editorTemplate -s \"caching\"; editorTemplate -esl; }");
+    let t = aztek_host::script_objects::ae_template(&mut c, "transform box");
+    assert_eq!(t[0]["title"], "Mine");
+    assert_eq!(t[1]["attr"], "translateX");
+    assert_eq!(t[3]["kind"], "suppress");
+    errors(&mut c);
+}
+
+#[test]
+fn menu_items_say_what_they_are() {
+    let mut c = Core::new();
+    ok(&mut c, "window w -mb 1; menu m; menuItem -l \"Do\" one; menuItem -ob 1 box; menuItem -cb 1 chk;");
+    assert_eq!(ok(&mut c, "menuItem -q -iob box;"), json!(true));
+    assert_eq!(ok(&mut c, "menuItem -q -iob one;"), json!(false));
+    assert_eq!(ok(&mut c, "menuItem -q -icb chk;"), json!(true));
+    errors(&mut c);
+}
+
+#[test]
+fn panes_keep_their_sizes() {
+    let mut c = Core::new();
+    ok(&mut c, "window w; paneLayout -cn \"vertical2\" -ps 1 30 100 pl;");
+    assert_eq!(ok(&mut c, "paneLayout -q -ps pl;"), json!([30, 100]));
+    aztek_host::scriptui::take_ops();
+    ok(&mut c, "paneLayout -e -ps 2 70 100 pl;");
+    assert_eq!(ok(&mut c, "paneLayout -q -ps pl;"), json!([30, 100, 70, 100]));
+    let ops = aztek_host::scriptui::take_ops();
+    assert_eq!(ops[0]["props"]["paneSizes"]["1"], json!([30, 100]), "{ops:?}");
+    errors(&mut c);
+}
+
+#[test]
+fn workspace_controls_say_where_they_are() {
+    let mut c = Core::new();
+    ok(&mut c, "workspaceControl -l \"Free\" free;");
+    assert_eq!(ok(&mut c, "workspaceControl -q -fl free;"), json!(true));
+    ok(&mut c, "workspaceControl -dtm \"right\" 1 fixed;");
+    assert_eq!(ok(&mut c, "workspaceControl -q -fl fixed;"), json!(false));
+    ok(&mut c, "workspaceControl -e -dtc \"Outliner\" \"bottom\" free;");
+    assert_eq!(ok(&mut c, "workspaceControl -q -fl free;"), json!(false));
+    ok(&mut c, "window dw; columnLayout; text; dockControl -a \"left\" -con dw -l \"Dock\" dc;");
+    assert_eq!(ok(&mut c, "dockControl -q -a dc;"), json!("left"));
+    assert_eq!(ok(&mut c, "dockControl -q -fl dc;"), json!(false));
+    errors(&mut c);
+}
+
+#[test]
+fn drags_carry_messages_to_the_drop() {
+    let mut c = Core::new();
+    ok(&mut c, "global string $gGot = \"\";");
+    ok(&mut c, "global proc string[] dragIt(string $ctl, int $x, int $y, int $mods) { return {\"one\", \"two\"}; }");
+    ok(&mut c, "global proc dropIt(string $from, string $to, string $msgs[], int $x, int $y, int $type) { global string $gGot; $gGot = ($from + \">\" + $to + \":\" + $msgs[1] + \":\" + $x); }");
+    ok(&mut c, "window w; columnLayout col; button -dgc \"dragIt\" a; button -dpc \"dropIt\" b;");
+    let ops = aztek_host::scriptui::take_ops();
+    assert!(ops.iter().any(|o| o["props"]["hasDrag"] == true), "{ops:?}");
+    assert!(ops.iter().any(|o| o["props"]["hasDrop"] == true), "{ops:?}");
+    let msgs = aztek_host::attr_ui::drag_start_for_tests(&mut c, &json!({"path": "w|col|a", "x": 3, "y": 4, "modifiers": 0}).to_string());
+    assert_eq!(msgs, json!(["one", "two"]));
+    c.ui_event(&json!({"path": "w|col|b", "dropFrom": "w|col|a", "messages": msgs, "x": 7, "y": 8, "dragType": 1}));
+    assert_eq!(ok(&mut c, "global string $gGot; $x = $gGot;"), json!("w|col|a>w|col|b:two:7"));
+    errors(&mut c);
+}
+
+#[test]
+fn movies_go_through_ffmpeg() {
+    use aztek_host::panel_cmds::{find_program, movie_arguments, movie_file_name};
+    assert!(find_program("surely-no-program-has-this-name").is_none());
+    assert_eq!(movie_file_name("/a.b/shot", "qt"), "/a.b/shot.mov");
+    assert_eq!(movie_file_name("/a/shot", "avi"), "/a/shot.avi");
+    assert_eq!(movie_file_name("/a/shot.mp4", "movie"), "/a/shot.mp4");
+    let args = movie_arguments("/t/frame.%06d.png", 24.0, "/a/shot.mov");
+    assert_eq!(args.first().map(String::as_str), Some("-y"));
+    assert_eq!(args.last().map(String::as_str), Some("/a/shot.mov"));
+    assert!(args.iter().any(|x| x == "24"));
+    let mut c = Core::new();
+    assert!(ok(&mut c, "playblast -q -fmt;").to_string().contains("movie"));
+    errors(&mut c);
+}
+
 #[test]
 fn names_and_paths_as_maya_returns_them() {
     let mut c = Core::new();
@@ -683,8 +1313,8 @@ fn tool_contexts() {
     assert!(has("setTool|multiCut") && has("setTool|createPolygon") && has("setTool|targetWeld") && has("setTool|shortestPath") && has("setTool|curveEp") && has("setTool|insertJoint") && has("setTool|paintSelect"), "{reqs}");
     // No tool yet: one warning per kind.
     let warnings: Vec<String> = c.take_log().as_array().unwrap().iter().filter(|l| l["kind"] == 4).map(|l| l["text"].as_str().unwrap().to_string()).collect();
-    assert_eq!(warnings.iter().filter(|w| w.contains("setKeyCtx")).count(), 1, "{warnings:?}");
-    ok(&mut c, "setToolTo setKeyCtxMine;");
+    assert_eq!(warnings.iter().filter(|w| w.contains("ikHandleCtx")).count(), 1, "{warnings:?}");
+    ok(&mut c, "setToolTo ikHandleCtxMine;");
     let warnings: Vec<String> = c.take_log().as_array().unwrap().iter().filter(|l| l["kind"] == 4).map(|l| l["text"].as_str().unwrap().to_string()).collect();
     assert!(warnings.is_empty(), "{warnings:?}");
     assert!(c.mel_checked("setToolTo nothingLikeIt;").is_err());

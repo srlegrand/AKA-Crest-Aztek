@@ -152,6 +152,7 @@ impl Session {
         crate::ma_file::register(&mut s.commands);
         crate::expression::register(&mut s.commands);
         crate::script_node::register_types();
+        crate::nurbs_nodes::register_types();
         crate::maya_attrs::register(&mut s.commands);
         crate::maya_xforms::register(&mut s.commands);
         crate::maya_scene::register(&mut s.commands);

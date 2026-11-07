@@ -34,18 +34,18 @@
 namespace az {
 
 QPixmap splash_pixmap() {
-    QPixmap pm(640, 340);
-    pm.fill(QColor(0, 0, 0));
+    // 1200 x 700 artwork (app/icons/make_splash.py), shown at 600 x 350.
+    QPixmap pm(":/aztek-splash.png");
     QPainter p(&pm);
-    p.setRenderHint(QPainter::SmoothPixmapTransform);
-    QImage logo(":/aztek-logo.png");
-    QRect r(70, 20, 500, 253);
-    p.drawImage(r, logo);
-    p.setPen(QColor(150, 150, 150));
+    p.setRenderHint(QPainter::TextAntialiasing);
     QFont f = p.font();
-    f.setPointSize(9);
+    f.setPixelSize(30);
     p.setFont(f);
-    p.drawText(QRect(0, 280, 620, 20), Qt::AlignRight, QString("Version %1").arg(AZTEK_VERSION));
+    p.setPen(QColor(235, 235, 235));
+    p.drawText(QRect(44, 600, 600, 50), Qt::AlignLeft | Qt::AlignVCenter,
+               QString("Aztek  Version %1").arg(AZTEK_VERSION));
+    p.end();
+    pm.setDevicePixelRatio(2.0);
     return pm;
 }
 
@@ -54,7 +54,7 @@ void show_about(QWidget* parent) {
     d.setWindowTitle("About Aztek");
     auto* v = new QVBoxLayout(&d);
     auto* img = new QLabel(&d);
-    img->setPixmap(splash_pixmap().scaledToWidth(480, Qt::SmoothTransformation));
+    img->setPixmap(splash_pixmap());
     v->addWidget(img);
     auto* text = new QLabel(QString("Aztek %1<br>Modelling, UVs, rigging and animation.<br>Rust core, Qt interface, Vulkan viewport.<br><br>"
                                     "<a href=\"https://github.com/srlegrand/AKA-Crest-Aztek\" style=\"color:#7fb4d6\">github.com/srlegrand/AKA-Crest-Aztek</a>")

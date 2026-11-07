@@ -12,6 +12,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QTimer>
 #include <QToolBar>
 #include <QVBoxLayout>
 #include <QWheelEvent>
@@ -99,7 +100,140 @@ void UvCanvas::set_mode(const QString& m) {
 }
 
 void UvCanvas::set_tool(const QString& t) {
-    tool_ = t;
+    // The shell tool is the move tool picking whole shells.
+    if (t == "shell") {
+        set_mode("shell");
+        tool_ = "move";
+    } else {
+        tool_ = t;
+    }
+    lasso_.clear();
+    path_map_ = -1;
+    update();
+}
+
+// A left press with one of the tools that are not a manipulator. True when it was taken.
+void UvCanvas::tool_press(QMouseEvent* e) {
+    QPointF pos = e->position();
+    bool ctrl = e->modifiers() & Qt::ControlModifier;
+    if (tool_ == "lasso") {
+        drag_ = Mode::Lasso;
+        lasso_.clear();
+        lasso_ << pos;
+    } else if (tool_ == "window") {
+        drag_ = Mode::Pan;
+    } else if (tool_ == "tweak") {
+        // The nearest UV, picked and dragged at once.
+        double best = 14;
+        QString mesh;
+        int id = -1;
+        for (const UvMesh& m : meshes_)
+            for (int i = 0; i < m.maps.size(); ++i) {
+                double d = QLineF(to_screen(m.maps[i]), pos).length();
+                if (d < best) best = d, mesh = m.path, id = i;
+            }
+        if (id < 0) return;
+        uv_sel_.clear();
+        uv_sel_[mesh].insert(id);
+        mode_ = "uv";
+        drag_ = Mode::Drag;
+        handle_ = 3;
+        pivot_ = selection_center();
+        applied_ = false;
+        drag_targets_ = targets();
+        emit picked();
+        update();
+    } else if (tool_ == "cut") {
+        // Click an edge: cut it. Ctrl-click: sew it.
+        double best = 8;
+        QString mesh;
+        int edge = -1;
+        for (const UvMesh& m : meshes_)
+            for (const auto& fc : m.faces)
+                for (int k = 0; k < fc.edges.size(); ++k) {
+                    QLineF l(to_screen(m.maps[fc.maps[k]]), to_screen(m.maps[fc.maps[(k + 1) % fc.maps.size()]]));
+                    double t = qBound(0.0, QPointF::dotProduct(pos - l.p1(), l.p2() - l.p1()) / qMax(1e-9, l.length() * l.length()), 1.0);
+                    double d = QLineF(l.pointAt(t), pos).length();
+                    if (d < best) best = d, mesh = m.path, edge = fc.edges[k];
+                }
+        if (edge < 0) return;
+        exec(ctrl ? "polyMapSew" : "polyMapCut", QJsonObject{{"args", QJsonArray{QString("%1.e[%2]").arg(mesh).arg(edge)}}});
+        Host::get()->poke();
+    } else if (tool_ == "path") {
+        pick_path(pos);
+    } else if (tool_ == "smooth") {
+        // A press runs the unfold over the selected UVs, or the meshes shown.
+        QJsonArray t = targets();
+        exec("u3dUnfold", t.isEmpty() ? QJsonObject() : QJsonObject{{"args", t}});
+        Host::get()->poke();
+    }
+}
+
+// What the lasso drew round, as a UV selection.
+void UvCanvas::pick_lasso(Qt::KeyboardModifiers mods) {
+    bool ctrl = mods & Qt::ControlModifier, shift = mods & Qt::ShiftModifier;
+    if (!ctrl && !shift) uv_sel_.clear();
+    mode_ = "uv";
+    for (const UvMesh& m : meshes_)
+        for (int i = 0; i < m.maps.size(); ++i)
+            if (lasso_.containsPoint(to_screen(m.maps[i]), Qt::OddEvenFill)) {
+                if (ctrl) uv_sel_[m.path].remove(i);
+                else uv_sel_[m.path].insert(i);
+            }
+    lasso_.clear();
+    emit picked();
+    update();
+}
+
+// The nearest UV: the shortest way along the UV edges from the last one picked is selected.
+void UvCanvas::pick_path(QPointF pos) {
+    double best = 14;
+    int mi = -1, id = -1;
+    for (int k = 0; k < meshes_.size(); ++k)
+        for (int i = 0; i < meshes_[k].maps.size(); ++i) {
+            double d = QLineF(to_screen(meshes_[k].maps[i]), pos).length();
+            if (d < best) best = d, mi = k, id = i;
+        }
+    if (mi < 0) return;
+    const UvMesh& m = meshes_[mi];
+    mode_ = "uv";
+    if (path_mesh_ != m.path || path_map_ < 0) {
+        uv_sel_.clear();
+        uv_sel_[m.path].insert(id);
+    } else {
+        // Dijkstra over the maps, by length in UV space.
+        QHash<int, QList<int>> next;
+        for (const auto& fc : m.faces)
+            for (int k = 0; k < fc.maps.size(); ++k) {
+                int a = fc.maps[k], b = fc.maps[(k + 1) % fc.maps.size()];
+                next[a] << b;
+                next[b] << a;
+            }
+        QHash<int, double> dist{{path_map_, 0.0}};
+        QHash<int, int> from;
+        QSet<int> done;
+        while (true) {
+            int cur = -1;
+            double low = 1e300;
+            for (auto it = dist.begin(); it != dist.end(); ++it)
+                if (!done.contains(it.key()) && it.value() < low) low = it.value(), cur = it.key();
+            if (cur < 0 || cur == id) break;
+            done.insert(cur);
+            for (int n : next.value(cur)) {
+                double d = low + QLineF(m.maps[cur], m.maps[n]).length();
+                if (!dist.contains(n) || d < dist[n]) {
+                    dist[n] = d;
+                    from[n] = cur;
+                }
+            }
+        }
+        QSet<int>& s = uv_sel_[m.path];
+        s.insert(id);
+        for (int at = id; from.contains(at); at = from[at]) s.insert(from[at]);
+    }
+    path_mesh_ = m.path;
+    path_map_ = id;
+    emit picked();
     update();
 }
 
@@ -414,6 +548,10 @@ void UvCanvas::mousePressEvent(QMouseEvent* e) {
         drag_ = Mode::Zoom;
         return;
     }
+    if (e->button() == Qt::LeftButton && (tool_ == "lasso" || tool_ == "window" || tool_ == "tweak" || tool_ == "cut" || tool_ == "path" || tool_ == "smooth")) {
+        tool_press(e);
+        return;
+    }
     if (e->button() == Qt::LeftButton || e->button() == Qt::MiddleButton) {
         int h = handle_at(e->position());
         bool mid = e->button() == Qt::MiddleButton;
@@ -435,7 +573,7 @@ void UvCanvas::drag_to(QPointF pos, bool final) {
     QJsonObject call{{"args", drag_targets_}};
     QPointF d = to_uv(pos) - to_uv(press_);
     double px = pos.x() - press_.x();
-    if (tool_ == "move") {
+    if (tool_ == "move" || tool_ == "tweak") {
         if (handle_ == 1) d.setY(0);
         if (handle_ == 2) d.setX(0);
         if (std::abs(d.x()) < 1e-9 && std::abs(d.y()) < 1e-9) return;
@@ -477,6 +615,10 @@ void UvCanvas::mouseMoveEvent(QMouseEvent* e) {
         break;
     }
     case Mode::Marquee: update(); break;
+    case Mode::Lasso:
+        if (lasso_.isEmpty() || QLineF(lasso_.last(), pos).length() > 2) lasso_ << pos;
+        update();
+        break;
     case Mode::Drag: drag_to(pos, false); break;
     default: break;
     }
@@ -484,7 +626,9 @@ void UvCanvas::mouseMoveEvent(QMouseEvent* e) {
 }
 
 void UvCanvas::mouseReleaseEvent(QMouseEvent* e) {
-    if (drag_ == Mode::Marquee) {
+    if (drag_ == Mode::Lasso) {
+        pick_lasso(e->modifiers());
+    } else if (drag_ == Mode::Marquee) {
         bool rect = QLineF(press_, e->position()).length() > 4;
         pick(press_, e->position(), rect, e->modifiers());
     } else if (drag_ == Mode::Drag) {
@@ -536,7 +680,53 @@ void UvCanvas::contextMenuEvent(QContextMenuEvent* e) {
 // ---------------------------------------------------------------------------------------------------------------------
 // Editor
 
+// Every UV Editor there is, and the tool they are on.
+static QList<UvEditor*>& uv_editors() {
+    static QList<UvEditor*> all;
+    return all;
+}
+static QString g_uv_tool = "move";
+
+void UvEditor::set_tool_everywhere(const QString& t) {
+    g_uv_tool = t;
+    for (UvEditor* e : uv_editors()) e->show_tool(t);
+}
+
+void UvEditor::show_tool(const QString& t) {
+    canvas_->set_tool(t);
+    QString shown = t == "shell" ? "move" : t;
+    if (QAction* a = tool_buttons_.value(shown)) {
+        a->setChecked(true);
+    } else {
+        // A tool with no button: none of the four stays lit.
+        for (QAction* b : tool_buttons_) {
+            if (b->actionGroup()) b->actionGroup()->setExclusive(false);
+            b->setChecked(false);
+            if (b->actionGroup()) b->actionGroup()->setExclusive(true);
+        }
+    }
+}
+
+void UvEditor::apply_flags(const QJsonObject& p) {
+    if (p.contains("displayCheckered")) {
+        canvas_->show_checker = p["displayCheckered"].toBool();
+        canvas_->update();
+    }
+    if (p.contains("displayUVShaded")) {
+        canvas_->shaded = p["displayUVShaded"].toBool();
+        canvas_->update();
+    }
+    if (p["frameAll"].toBool()) canvas_->frame(false);
+    if (p["frameSelected"].toBool()) canvas_->frame(true);
+}
+
 UvEditor::UvEditor(QWidget* parent) : QWidget(parent) {
+    uv_editors().append(this);
+    connect(this, &QObject::destroyed, [this] { uv_editors().removeOne(this); });
+    // Made after a context chose a tool: on that tool.
+    QTimer::singleShot(0, this, [this] {
+        if (g_uv_tool != "move") show_tool(g_uv_tool);
+    });
     setWindowTitle("UV Editor");
     auto* v = new QVBoxLayout(this);
     v->setContentsMargins(0, 0, 0, 0);
@@ -558,6 +748,7 @@ UvEditor::UvEditor(QWidget* parent) : QWidget(parent) {
         a->setCheckable(true);
         a->setChecked(QString(tool) == "move");
         tools->addAction(a);
+        tool_buttons_.insert(tool, a);
     }
     bar->addSeparator();
     bar->addAction("Planar", [this] { run("polyProjection", {{"type", "planar"}, {"mapDirection", "b"}}); });

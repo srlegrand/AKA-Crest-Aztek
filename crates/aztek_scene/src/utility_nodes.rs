@@ -64,6 +64,15 @@ fn vec_kids(name: &str, short: &str, d: [f64; 3], fl: u32, kids: [(&str, &str); 
     }
     a
 }
+/// pairBlend's inputs, whose children carry the number last: inTranslateX1, itx1.
+fn numbered(name: &str, short: &str, k: u32) -> AttrDef {
+    let mut a = vec_kids(&format!("{name}{k}"), &format!("{short}{k}"), [0.0; 3], IN, XYZ);
+    for (i, axis) in ["X", "Y", "Z"].into_iter().enumerate() {
+        a.child_names[i] = format!("{name}{axis}{k}");
+        a.child_short[i] = format!("{short}{}{k}", axis.to_lowercase());
+    }
+    a
+}
 fn vin(name: &str, short: &str, d: [f64; 3]) -> AttrDef {
     vec_kids(name, short, d, IN, XYZ)
 }
@@ -513,7 +522,7 @@ fn table() -> Vec<Spec> {
                 set(d, "distance", x.distance(y));
             }),
         Spec("angleBetween", "utility/general", "The rotation from vector1 to vector2: axis, angle in degrees, and as Euler angles.",
-            vec![vin("vector1", "v1", [1.0, 0.0, 0.0]), vin("vector2", "v2", [1.0, 0.0, 0.0]), vout("axis", "a"), fout("angle", "ang"), vout("euler", "eu")],
+            vec![vin("vector1", "v1", [1.0, 0.0, 0.0]), vin("vector2", "v2", [1.0, 0.0, 0.0]), vout("axis", "ax"), fout("angle", "a"), vout("euler", "eu")],
             |d| {
                 let (x, y) = (v(d, "vector1").normalize_or_zero(), v(d, "vector2").normalize_or_zero());
                 let angle = x.angle_between(y);
@@ -555,10 +564,10 @@ fn table() -> Vec<Spec> {
         Spec("pairBlend", "utility/general", "Blends two translations and rotations by weight: 0 is the first, 1 the second.",
             vec![
                 fin("weight", "w", 1.0),
-                vin("inTranslate1", "it1", [0.0; 3]),
-                vin("inRotate1", "ir1", [0.0; 3]),
-                vin("inTranslate2", "it2", [0.0; 3]),
-                vin("inRotate2", "ir2", [0.0; 3]),
+                numbered("inTranslate", "it", 1),
+                numbered("inRotate", "ir", 1),
+                numbered("inTranslate", "it", 2),
+                numbered("inRotate", "ir", 2),
                 en("rotInterpolation", "ri", 0, &["Euler Angles", "Quaternions"]),
                 en("rotateOrder", "ro", 0, &ORDERS),
                 vout("outTranslate", "ot"),

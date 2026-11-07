@@ -52,6 +52,12 @@ void NodeEditor::add_selected() {
     refresh();
 }
 
+void NodeEditor::add_nodes(const QStringList& names) {
+    for (const QString& n : names)
+        if (!n.isEmpty() && !roots_.contains(n)) roots_ << n;
+    refresh();
+}
+
 void NodeEditor::clear_graph() {
     roots_.clear();
     nodes_.clear();

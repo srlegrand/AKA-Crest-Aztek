@@ -1286,3 +1286,16 @@ fn surfaces_round_trip() {
         assert!((a[k].as_f64().unwrap() - b[k].as_f64().unwrap()).abs() < 1e-9, "{a} {b}");
     }
 }
+
+/// One attribute of a node driving another on the same node, which rigs do: the walk that marks nodes dirty has to stop
+/// when it comes back to where it started.
+#[test]
+fn a_node_connected_to_itself_does_not_hang() {
+    let mut s = Session::new();
+    run(&mut s, "createNode", json!({"args": ["transform"], "n": "a"}));
+    run(&mut s, "addAttr", json!({"args": ["a"], "ln": "foo", "at": "double"}));
+    s.graph.evaluate();
+    run(&mut s, "connectAttr", json!({"args": ["a.translateX", "a.foo"]}));
+    run(&mut s, "setAttr", json!({"args": ["a.translateX", 3.0]}));
+    assert_eq!(get(&mut s, "a.foo"), vec![3.0]);
+}

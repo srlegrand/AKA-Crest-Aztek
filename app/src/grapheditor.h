@@ -41,6 +41,9 @@ public:
     void select_all_keys_of(const QSet<QString>& curves);
     QVector<CurveView>& curves() { return curves_; }
     void set_display(CurveDisplay d);
+    // What a left drag does here, as the key contexts set it: select, move, scale, set, insert, dolly, track or time.
+    static void set_tool(const QString& t);
+    static QString tool();
     // The selected keys as frames, curve by curve.
     QList<QPair<QString, double>> selected_times() const;
     // Frames to sample curves over, and the step.

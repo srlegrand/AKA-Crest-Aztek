@@ -69,7 +69,7 @@ int main(int argc, char** argv) {
     if (!args.isSet(shot)) {
         splash = new QSplashScreen(az::splash_pixmap());
         splash->show();
-        splash->showMessage("Starting the core...", Qt::AlignBottom | Qt::AlignLeft, QColor(170, 170, 170));
+        splash->showMessage("Starting the core...", Qt::AlignBottom | Qt::AlignRight, QColor(150, 150, 150));
         app.processEvents();
     }
     az::MainWindow w;

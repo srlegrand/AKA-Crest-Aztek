@@ -7,12 +7,14 @@
 #include <QJsonObject>
 #include <QList>
 #include <QObject>
+#include <QPoint>
 #include <QPointer>
 #include <QString>
 #include <functional>
 
 class QAction;
 class QActionGroup;
+class QDockWidget;
 class QLabel;
 class QMainWindow;
 class QMenu;
@@ -35,6 +37,8 @@ public:
     // A view shown in a script's layout, by panel name.
     ViewportWidget* embedded_view(const QString& panel) const;
     void show_in_view_message(const QJsonObject& o);
+    // One of the application's own editors, for scripts to set up by Maya's name for it.
+    void add_builtin_editor(const QString& name, const QString& kind, QWidget* w);
     void hook(const QString& kind, const QJsonObject& payload);
 protected:
     bool eventFilter(QObject* o, QEvent* e) override;
@@ -49,6 +53,8 @@ private:
     void build_control(Item* it, const QJsonObject& props);
     void build_layout(Item* it, const QJsonObject& props);
     void build_window(Item* it, const QJsonObject& props);
+    void place_dock(Item* it, const QJsonObject& props, bool made);
+    QDockWidget* dock_named(const QString& name) const;
     void build_group(Item* it, const QJsonObject& props);
     void build_menu(Item* it, Item* parent, const QJsonObject& props);
     void build_menu_item(Item* it, Item* parent, const QJsonObject& props);
@@ -80,6 +86,7 @@ private:
     bool wait_cursor_ = false;
     QHash<QString, QActionGroup*> radio_groups_;
     QPointer<QLabel> in_view_;
+    QPoint drag_from_;
 };
 
 // Called by the Host poller.
