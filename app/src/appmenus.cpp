@@ -826,7 +826,6 @@ void MainWindow::nudge(int dx, int dy) {
 void MainWindow::show_history_manips() {
     // The node's handles in the view, and its numbers in the in-view editor.
     set_tool("showManip");
-    in_view_->show_last();
     help_line_->setText("Show Manipulator Tool: drag a handle to change the node's attribute.");
 }
 
@@ -893,9 +892,16 @@ void MainWindow::view_scrub(QObject* o, QEvent* e) {
 
 void MainWindow::tool_marking_menu(QPoint global, const QString& hold) {
     QList<MarkItem> items;
-    auto axis = [this](const QString& mode) {
-        return [this, mode] {
-            for (ViewportWidget* v : panels_->views()) v->set("axisOrientation", "\"" + mode + "\"");
+    QString kind = hold == "rotate" ? "manipRotateContext" : hold == "scale" ? "manipScaleContext" : "manipMoveContext";
+    QString ctx = hold == "rotate" ? "Rotate" : hold == "scale" ? "Scale" : "Move";
+    auto mode = [kind, ctx](int m) {
+        return [kind, ctx, m] { exec_quiet(kind, QJsonObject{{"edit", true}, {"args", QJsonArray{ctx}}, {"mode", m}}); };
+    };
+    auto flip = [kind, ctx](const char* flag) {
+        QString f = flag;
+        return [kind, ctx, f] {
+            bool on = ask(kind, QJsonObject{{"query", true}, {"queried", QJsonArray{f}}, {"args", QJsonArray{ctx}}}).toBool();
+            exec_quiet(kind, QJsonObject{{"edit", true}, {"args", QJsonArray{ctx}}, {f, !on}});
         };
     };
     auto soft = [](bool on) { return [on] { exec("softSelect", QJsonObject{{"softSelectEnabled", on ? 1 : 0}}); }; };
@@ -909,15 +915,16 @@ void MainWindow::tool_marking_menu(QPoint global, const QString& hold) {
         items = {{"Select Tool", 0, [this] { set_tool("select"); }}, {"Lasso Tool", 2, [this] { set_tool("lasso"); }}, {"Paint Selection Tool", 6, [this] { set_tool("paintSelect"); }},
                  {"Soft Select", 4, soft(true)}, {"Soft Select Off", -1, soft(false)}, {"Tool Settings...", -1, [this] { show_tool_settings(); }}};
     } else if (hold == "move") {
-        items = {{"World", 0, axis("world")}, {"Object", 2, axis("object")}, {"Component", 4, axis("component")}, {"Parent", 6, axis("parent")}, {"Normal", 1, axis("normal")},
-                 {"Soft Select", 3, soft(true)}, {"Soft Select Off", 5, soft(false)},
+        items = {{"World", 0, mode(2)}, {"Object", 2, mode(0)}, {"Component", 4, mode(10)}, {"Parent", 6, mode(1)}, {"Normal", 1, mode(3)},
+                 {"Soft Select", 3, soft(true)}, {"Soft Select Off", 5, soft(false)}, {"Custom", 7, mode(6)},
+                 {"Along Rotation Axis", -1, mode(4)}, {"Along Live Object Axis", -1, mode(5)}, {"Tweak Mode", -1, flip("tweakMode")}, {"Preserve Children", -1, flip("preserveChildPosition")},
                  {"Step Snap Off", -1, step("stepMove", 0)}, {"Step Snap 1", -1, step("stepMove", 1)}, {"Tool Settings...", -1, [this] { show_tool_settings(); }}};
     } else if (hold == "rotate") {
-        items = {{"World", 0, axis("world")}, {"Object", 2, axis("object")}, {"Component", 4, axis("component")}, {"Parent", 6, axis("parent")},
-                 {"Step Snap Off", 3, step("stepRotate", 0)}, {"Step Snap 15", 5, step("stepRotate", 15)}, {"Tool Settings...", -1, [this] { show_tool_settings(); }}};
+        items = {{"World", 0, mode(1)}, {"Object", 2, mode(0)}, {"Component", 4, mode(10)}, {"Gimbal", 6, mode(2)}, {"Custom", 7, mode(3)},
+                 {"Step Snap Off", 3, step("stepRotate", 0)}, {"Step Snap 15", 5, step("stepRotate", 15)}, {"Preserve Children", -1, flip("preserveChildPosition")}, {"Tool Settings...", -1, [this] { show_tool_settings(); }}};
     } else if (hold == "scale") {
-        items = {{"World", 0, axis("world")}, {"Object", 2, axis("object")}, {"Component", 4, axis("component")}, {"Normal", 6, axis("normal")},
-                 {"Soft Select", 3, soft(true)}, {"Soft Select Off", 5, soft(false)}, {"Tool Settings...", -1, [this] { show_tool_settings(); }}};
+        items = {{"World", 0, mode(2)}, {"Object", 2, mode(0)}, {"Component", 4, mode(10)}, {"Normal", 6, mode(3)}, {"Parent", 1, mode(1)}, {"Custom", 7, mode(6)},
+                 {"Soft Select", 3, soft(true)}, {"Soft Select Off", 5, soft(false)}, {"Preserve Children", -1, flip("preserveChildPosition")}, {"Tool Settings...", -1, [this] { show_tool_settings(); }}};
     }
     if (!items.isEmpty()) MarkingMenu::show_at(global, items);
 }

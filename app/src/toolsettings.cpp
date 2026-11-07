@@ -87,51 +87,6 @@ QDoubleSpinBox* ToolSettings::slider_row(QFormLayout* form, const QString& label
     return spin;
 }
 
-QWidget* ToolSettings::build_transform_page() {
-    auto* w = new QWidget(this);
-    auto* v = new QVBoxLayout(w);
-    v->setContentsMargins(0, 0, 0, 0);
-    auto* form = new QFormLayout();
-    axis_ = new QComboBox(w);
-    axis_->addItems({"World", "Object", "Component", "Parent", "Normal"});
-    connect(axis_, &QComboBox::currentTextChanged, this, [this](const QString& m) {
-        if (!loading_) emit axisOrientation(m.toLower());
-    });
-    form->addRow("Axis Orientation:", axis_);
-    soft_ = new QCheckBox("Soft Select", w);
-    connect(soft_, &QCheckBox::toggled, this, [this](bool on) {
-        if (!loading_) exec("softSelect", QJsonObject{{"softSelectEnabled", on ? 1 : 0}});
-    });
-    form->addRow("", soft_);
-    soft_mode_ = new QComboBox(w);
-    soft_mode_->addItems({"Volume", "Surface", "Global", "Object"});
-    connect(soft_mode_, &QComboBox::currentIndexChanged, this, [this](int i) {
-        if (!loading_) exec("softSelect", QJsonObject{{"softSelectFalloff", i}});
-    });
-    form->addRow("Falloff mode:", soft_mode_);
-    soft_radius_ = slider_row(form, "Falloff radius:", 0.0, 20.0, 0.1, [](double x) { exec_quiet("softSelect", QJsonObject{{"softSelectDistance", x}}); });
-    // Step Snap: Maya's relative steps, for each transform tool.
-    auto step = [this, w, form](const QString& label, const char* key, double hi) {
-        QString k = key;
-        auto* sb = new QDoubleSpinBox(w);
-        sb->setRange(0, hi);
-        sb->setDecimals(3);
-        sb->setSpecialValueText("Off");
-        sb->setValue(QSettings().value("prefs/" + k, 0.0).toDouble());
-        connect(sb, &QDoubleSpinBox::valueChanged, this, [this, k](double x) {
-            QSettings().setValue("prefs/" + k, x);
-            emit stepSnap(k, x);
-        });
-        form->addRow(label, sb);
-    };
-    step("Move step snap:", "stepMove", 1000);
-    step("Rotate step snap:", "stepRotate", 180);
-    step("Scale step snap:", "stepScale", 100);
-    v->addLayout(form);
-    v->addStretch(1);
-    return w;
-}
-
 QWidget* ToolSettings::build_sculpt_page() {
     auto* w = new QWidget(this);
     auto* v = new QVBoxLayout(w);
@@ -420,7 +375,6 @@ void ToolSettings::set_tool(const QString& tool) {
         QString n = tool.left(1).toUpper() + tool.mid(1);
         title_->setText(n + " Tool");
         stack_->setCurrentWidget(transform_page_);
-        axis_->setEnabled(tool != "select");
     }
     schedule();
 }
@@ -431,17 +385,6 @@ void ToolSettings::refresh() {
     else if (tool_ == "paintSkin") refresh_paint();
     else if (tool_ == "sculpt") refresh_sculpt();
     else if (stack_->currentWidget() == transform_page_) refresh_transform();
-}
-
-void ToolSettings::refresh_transform() {
-    loading_ = true;
-    QJsonValue on = ask("softSelect", QJsonObject{{"query", true}, {"softSelectEnabled", true}});
-    if (!on.isUndefined()) soft_->setChecked(on.toInt(on.toBool() ? 1 : 0) != 0);
-    QJsonValue dist = ask("softSelect", QJsonObject{{"query", true}, {"softSelectDistance", true}});
-    if (dist.isDouble() && !soft_radius_->hasFocus()) soft_radius_->setValue(dist.toDouble());
-    QJsonValue mode = ask("softSelect", QJsonObject{{"query", true}, {"softSelectFalloff", true}});
-    if (mode.isDouble()) soft_mode_->setCurrentIndex(mode.toInt());
-    loading_ = false;
 }
 
 void ToolSettings::refresh_paint() {

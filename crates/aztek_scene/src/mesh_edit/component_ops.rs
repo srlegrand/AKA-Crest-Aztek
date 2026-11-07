@@ -430,6 +430,11 @@ pub fn register(c: &mut Commands<Session>) {
             },
         )
         .flag(flag("thickness", T::Float, json!(0.0), "Distance along the normals, cm."))
+        .flag(FlagDef::new("keepFacesTogether", "kft", T::Bool, Value::Null, "Faces that touch extrude as one."))
+        .flag(FlagDef::new("divisions", "d", T::Int, Value::Null, "Segments along the extrusion."))
+        .flag(FlagDef::new("smoothingAngle", "sma", T::Float, Value::Null, "New edges sharper than this are hard."))
+        .flag(FlagDef::new("taper", "tp", T::Float, Value::Null, "Scale at the far end."))
+        .flag(FlagDef::new("twist", "twt", T::Float, Value::Null, "Turn at the far end, degrees."))
         .flag(flag(
             "offset",
             T::Float,
@@ -466,9 +471,14 @@ pub fn register(c: &mut Commands<Session>) {
             // Faces bevel the border of each selected region, not the edges between selected faces (Maya).
             let from_faces = components::mode(&s.graph) == K::Face;
             let mut a2 = a.clone();
-            a2.flags.insert("chamfer".into(), json!(false));
+            if a.get("chamfer").is_none() {
+                a2.flags.insert("chamfer".into(), json!(false));
+            }
+            if from_faces && a.get("offset").is_none() {
+                a2.flags.insert("offset".into(), json!(2.0));
+            }
             // Named with no width, edges bevel by Maya's default: half way to the shortest edge's middle.
-            if !from_faces && a.get("offset").is_none() {
+            if !from_faces && a.get("offset").is_none() && a.get("offsetAsFraction").is_none() {
                 a2.flags.insert("offsetAsFraction".into(), json!(true));
                 a2.flags.insert("fraction".into(), json!(0.5));
             }
@@ -479,7 +489,11 @@ pub fn register(c: &mut Commands<Session>) {
             }
             Ok(out)
         })
-        .flag(flag("offset", T::Float, json!(2.0), "Width, cm.").min(0.0))
+        .flag(FlagDef::new("offset", "o", T::Float, Value::Null, "Width, cm.").min(0.0))
+        .flag(FlagDef::new("fraction", "f", T::Float, Value::Null, "Width as a fraction, with offsetAsFraction."))
+        .flag(FlagDef::new("offsetAsFraction", "oaf", T::Bool, Value::Null, "Width by fraction rather than distance."))
+        .flag(FlagDef::new("depth", "dp", T::Float, Value::Null, "How far the bevel rounds out; held for the node."))
+        .flag(FlagDef::new("chamfer", "c", T::Bool, Value::Null, "Flat across rather than round."))
         .flag(flag("segments", T::Int, json!(1), "Segments across the bevel.").min(1.0).max(64.0))
         .flag(flag("profile", T::Float, json!(0.5), "0.5 round, 0.25 straight, toward 1 square.").min(0.0).max(1.0))
         .flag(flag("clamp", T::Bool, json!(true), "Keep widths from overlapping."))

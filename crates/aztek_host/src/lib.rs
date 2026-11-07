@@ -10,6 +10,7 @@ use aztek_geo::stroke_font as font;
 mod gpu;
 pub mod mel;
 pub mod node_manip;
+pub mod option_boxes;
 pub mod panel_cmds;
 #[cfg(feature = "python")]
 mod python;
@@ -278,6 +279,7 @@ pub extern "C" fn aztek_query(what: *const c_char, arg: *const c_char) -> *mut c
                 Value::Null
             }
             "uiCustomAxis" => axis_orient::from_selection(&mut c.s, &arg).map_or(Value::Null, |e| json!(e)),
+            "optionBox" => json!(option_boxes::rows(&arg)),
             "nodeManip" => node_manip::fields_json(c),
             "uiShowManip" => {
                 node_manip::show_node(c, &arg);

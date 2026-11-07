@@ -50,6 +50,7 @@ add_executable(aztek WIN32
   app/src/viewport.cpp
   app/src/panels.cpp
   app/src/widgets.cpp
+  app/src/toolsettings_xform.cpp
   app/src/markingmenu.cpp
   app/src/mainwindow.cpp
   app/src/grapheditor.cpp

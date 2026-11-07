@@ -127,11 +127,8 @@ MainWindow::MainWindow() {
             if (k == 1 || k == 2 || k == 4) command_line_->show_result(l["text"].toString(), k == 2);
             if (k == 0) {
                 remember_command(l["text"].toString());
-                // After an edit that made a history node: its attributes in the view.
                 QString t = l["text"].toString();
-                bool off = QSettings().value("prefs/inViewEditorOff", false).toBool();
-                if (!off && t.startsWith("poly") && !t.startsWith("polyEvaluate")) QTimer::singleShot(0, this, [this] { in_view_->show_last(); });
-                else if (t.startsWith("select")) in_view_->hide();
+                if (t.startsWith("select") && tool_ != "showManip") in_view_->hide();
             }
         }
     });
@@ -751,6 +748,9 @@ void MainWindow::build_docks() {
     connect(tool_settings_, &ToolSettings::stepSnap, this, [this](const QString& k, double x) {
         for (ViewportWidget* v : panels_->views()) v->set(k, QString::number(x));
     });
+    connect(tool_settings_, &ToolSettings::pivotMode, this, [this](bool on) {
+        for (ViewportWidget* v : panels_->views()) v->set("pivotMode", on ? "true" : "false");
+    });
     connect(tool_settings_, &ToolSettings::curveDegree, this, [this](int d) {
         for (ViewportWidget* v : panels_->views()) v->set("curveDegree", QString::number(d));
     });
@@ -1055,6 +1055,10 @@ void MainWindow::set_tool(const QString& tool) {
     for (ViewportWidget* v : panels_->views()) v->set("tool", "\"" + tool + "\"");
     query("uiToolChanged", tool);
     if (tool_settings_) tool_settings_->set_tool(tool);
+    // The tool brings the node's numbers with it; any other puts them away.
+    bool off = QSettings().value("prefs/inViewEditorOff", false).toBool();
+    if (tool == "showManip" && !off) QTimer::singleShot(0, this, [this] { in_view_->show_last(); });
+    else if (tool != "showManip") in_view_->hide();
     static const QHash<QString, QString> tool_help{
         {"showManip", "Show Manipulator Tool: drag a handle to change the node's attribute. Middle-drag takes the highlighted channel's handle."},
         {"lasso", "Lasso Tool: drag round what to select. Shift toggles, Ctrl deselects, Ctrl+Shift adds."},
