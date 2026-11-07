@@ -68,6 +68,7 @@ add_executable(aztek WIN32
   app/src/prefswindow.cpp
   app/src/editors.cpp
   app/src/attreditor.cpp
+  app/src/colorchooser.cpp
   app/src/scripteditor.cpp
   app/src/outlinerpanel.cpp
   app/src/icons_more.cpp

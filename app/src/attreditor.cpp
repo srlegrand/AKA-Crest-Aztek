@@ -1,6 +1,7 @@
 // The Attribute Editor: a tab per node in the chain, sections by node type, sliders on ranged attributes, a Notes box, and
 // Select, Load Attributes and Copy Tab along the bottom.
 #include "panels.h"
+#include "colorchooser.h"
 #include "host.h"
 #include "icons.h"
 
@@ -12,6 +13,7 @@
 #include <QMenu>
 #include <QComboBox>
 #include <QFormLayout>
+#include <QHash>
 #include <QHBoxLayout>
 #include <QJsonArray>
 #include <QLabel>
@@ -50,24 +52,38 @@ void set_plug(const QString& plug, const QJsonValue& v, const QString& type) {
 // Which section an attribute falls in, by node type, in the order sections come. Anything else goes to Extra Attributes.
 struct Section { const char* title; const char* attrs; };
 
+// In the order the Attribute Editor lists them under Display.
+const char* const kDrawingOverrides = "overrideEnabled overrideDisplayType overrideLevelOfDetail overrideShading overrideTexturing overridePlayback overrideVisibility hideOnPlayback overrideRGBColors overrideColor overrideColorRGB";
+
+QString override_label(const QString& attr, const QString& nice) {
+    static const QHash<QString, QString> labels{{"overrideEnabled", "Enable Overrides"},  {"overrideDisplayType", "Display Type"}, {"overrideLevelOfDetail", "Level of Detail"},
+                                                {"overrideShading", "Shading"},           {"overrideTexturing", "Texturing"},      {"overridePlayback", "Playback"},
+                                                {"overrideVisibility", "Visible"},        {"hideOnPlayback", "Hide on Playback"},  {"overrideRGBColors", "Enable RGB Colors"},
+                                                {"overrideColor", "Color"},               {"overrideColorRGB", "Color RGB"}};
+    return labels.value(attr, nice);
+}
+
 const QList<Section>& sections_for(const QString& type) {
     static const QList<Section> xf{
         {"Transform Attributes", "translate rotate rotateOrder scale shear rotateAxis inheritsTransform"},
         {"Pivots", "rotatePivot scalePivot rotatePivotTranslate scalePivotTranslate displayRotatePivot displayScalePivot"},
         {"Limit Information", "minTransLimit maxTransLimit minRotLimit maxRotLimit minScaleLimit maxScaleLimit"},
-        {"Display", "visibility template displayHandle displayLocalAxis intermediateObject overrideEnabled overrideDisplayType overrideColor overrideRGBColors overrideColorRGB"},
+        {"Display", "visibility template displayHandle displayLocalAxis intermediateObject useObjectColor objectColor wireColorRGB useOutlinerColor outlinerColor hiddenInOutliner"},
+        {"Drawing Overrides", kDrawingOverrides},
         {"Node Behaviour", "caching nodeState frozen"}};
     static const QList<Section> joint{
         {"Transform Attributes", "translate rotate rotateOrder scale shear inheritsTransform"},
         {"Joint", "jointOrient jointType segmentScaleCompensate preferredAngle stiffness radius drawStyle side type otherType"},
         {"Limit Information", "minRotLimit maxRotLimit minTransLimit maxTransLimit"},
-        {"Display", "visibility displayLocalAxis overrideEnabled overrideDisplayType overrideColor overrideRGBColors overrideColorRGB"},
+        {"Display", "visibility template displayLocalAxis useObjectColor objectColor wireColorRGB useOutlinerColor outlinerColor hiddenInOutliner"},
+        {"Drawing Overrides", kDrawingOverrides},
         {"Node Behaviour", "caching nodeState frozen"}};
     static const QList<Section> mesh{
         {"Mesh Component Display", "displayVertices displayEdges displayBorders displayNormal normalSize backfaceCulling"},
         {"Smooth Mesh", "displaySmoothMesh smoothLevel smoothPreview"},
         {"Symmetry", "symmetry symmetryPlane"},
-        {"Display", "visibility intermediateObject overrideEnabled overrideDisplayType overrideColor overrideRGBColors overrideColorRGB"},
+        {"Display", "visibility template intermediateObject useObjectColor objectColor wireColorRGB useOutlinerColor outlinerColor hiddenInOutliner"},
+        {"Drawing Overrides", kDrawingOverrides},
         {"Node Behaviour", "caching nodeState frozen"}};
     static const QList<Section> camera{
         {"Camera Attributes", "focalLength lensSqueezeRatio cameraScale nearClipPlane farClipPlane centerOfInterest"},
@@ -78,7 +94,8 @@ const QList<Section>& sections_for(const QString& type) {
     static const QList<Section> curve{
         {"NURBS Curve History", "degree form spans"},
         {"Component Display", "dispCV dispEP dispHull lineWidth"},
-        {"Display", "visibility intermediateObject overrideEnabled overrideDisplayType overrideColor overrideRGBColors overrideColorRGB"},
+        {"Display", "visibility template intermediateObject useObjectColor objectColor wireColorRGB useOutlinerColor outlinerColor hiddenInOutliner"},
+        {"Drawing Overrides", kDrawingOverrides},
         {"Node Behaviour", "caching nodeState frozen"}};
     static const QList<Section> skin{
         {"Skin Cluster Attributes", "envelope skinningMethod useComponents maxInfluences maintainMaxInfluences normalizeWeights weightDistribution deformUserNormals"},
@@ -97,6 +114,12 @@ const QList<Section>& sections_for(const QString& type) {
     static const QList<Section> place{{"2d Texture Placement Attributes", "coverage translateFrame rotateFrame mirrorU mirrorV wrapU wrapV stagger repeatUV offset rotateUV noiseUV"}};
     static const QList<Section> group{{"Shading Group Attributes", "surfaceShader volumeShader displacementShader imageShader renderableOnlySet annotation"}};
     static const QList<Section> other{{"Node Behaviour", "caching nodeState frozen"}};
+    static const QList<Section> shape{
+        {"Display", "visibility template intermediateObject useObjectColor objectColor wireColorRGB useOutlinerColor outlinerColor hiddenInOutliner"},
+        {"Drawing Overrides", kDrawingOverrides},
+        {"Node Behaviour", "caching nodeState frozen"}};
+    static const QSet<QString> shapes{"nurbsSurface", "lattice", "baseLattice", "deformHandle", "softModHandle", "follicle", "distanceDimShape", "annotationShape", "motionTrailShape", "ikEffector"};
+    if (shapes.contains(type)) return shape;
     static const QSet<QString> materials{"lambert", "blinn", "phong", "phongE", "anisotropic", "surfaceShader", "standardSurface"};
     if (materials.contains(type)) return material;
     if (type == "file") return file;
@@ -178,14 +201,16 @@ QWidget* color_field(const QJsonObject& a, QWidget* parent) {
     h->setSpacing(3);
     auto* swatch = new QPushButton(w);
     swatch->setFixedSize(56, 18);
-    QColor shown = swatch_color(a["value"].toArray());
+    bool stored = a["displayColor"].toBool();
+    QJsonArray value = a["value"].toArray();
+    QColor shown = stored ? QColor::fromRgbF(value.at(0).toDouble(), value.at(1).toDouble(), value.at(2).toDouble()) : swatch_color(value);
     swatch->setStyleSheet(QString("background-color: %1; border: 1px solid #222;").arg(shown.name()));
     swatch->setEnabled(!ro);
     swatch->setObjectName("colorSwatch");
-    QObject::connect(swatch, &QPushButton::clicked, swatch, [swatch, plug, shown] {
+    QObject::connect(swatch, &QPushButton::clicked, swatch, [swatch, plug, shown, stored] {
         QColor c = QColorDialog::getColor(shown, swatch, "Color");
         if (!c.isValid()) return;
-        auto dec = [](int x) { return std::pow(x / 255.0, 2.2); };
+        auto dec = [stored](int x) { return stored ? x / 255.0 : std::pow(x / 255.0, 2.2); };
         exec("setAttr", QJsonObject{{"args", QJsonArray{plug, dec(c.red()), dec(c.green()), dec(c.blue())}}, {"type", "double3"}});
     });
     h->addWidget(swatch);
@@ -256,9 +281,52 @@ QWidget* file_field(const QJsonObject& a, QWidget* parent) {
     return w;
 }
 
+// The override colour's index: its swatch, which opens the palette, and a slider through the 32 entries.
+QWidget* color_index_field(const QJsonObject& a, QWidget* parent) {
+    QString plug = a["plug"].toString();
+    bool ro = a["output"].toBool() || a["connected"].toBool();
+    int index = a["value"].toInt();
+    auto* w = new QWidget(parent);
+    auto* h = new QHBoxLayout(w);
+    h->setContentsMargins(0, 0, 0, 0);
+    h->setSpacing(4);
+    auto* swatch = new QPushButton(w);
+    swatch->setObjectName("colorSwatch");
+    swatch->setFixedSize(36, 18);
+    swatch->setStyleSheet(QString("background-color: %1; border: 1px solid #222;").arg(palette_color(index).name()));
+    swatch->setEnabled(!ro);
+    QObject::connect(swatch, &QPushButton::clicked, swatch, [swatch, plug, index] {
+        ColorChoice c = choose_display_color(swatch, "Color", index, false, Qt::red);
+        if (!c.accepted) return;
+        if (c.use_rgb) {
+            QString node = plug.left(plug.lastIndexOf('.'));
+            set_plug(node + ".overrideRGBColors", true, "bool");
+            exec("setAttr", QJsonObject{{"args", QJsonArray{node + ".overrideColorRGB", c.rgb.redF(), c.rgb.greenF(), c.rgb.blueF()}}, {"type", "double3"}});
+        } else {
+            set_plug(plug, c.index, "int");
+        }
+    });
+    auto* s = new QSlider(Qt::Horizontal, w);
+    s->setRange(0, 31);
+    s->setValue(index);
+    s->setEnabled(!ro);
+    auto* number = new QLabel(QString::number(index), w);
+    number->setFixedWidth(20);
+    QObject::connect(s, &QSlider::sliderMoved, number, [number, swatch](int v) {
+        number->setText(QString::number(v));
+        swatch->setStyleSheet(QString("background-color: %1; border: 1px solid #222;").arg(palette_color(v).name()));
+    });
+    QObject::connect(s, &QSlider::sliderReleased, s, [s, plug] { set_plug(plug, s->value(), "int"); });
+    h->addWidget(swatch);
+    h->addWidget(number);
+    h->addWidget(s, 1);
+    return w;
+}
+
 QWidget* attr_field(const QJsonObject& a, QWidget* parent) {
     QString type = a["type"].toString(), plug = a["plug"].toString();
     bool ro = a["output"].toBool() || a["connected"].toBool();
+    if (a["attr"].toString() == "overrideColor") return color_index_field(a, parent);
     if (type == "vec3" && a["color"].toBool()) return color_field(a, parent);
     if (type == "string" && a["file"].toBool() && !ro) return file_field(a, parent);
     if (type == "bool") {
@@ -483,18 +551,28 @@ void AttributeEditor::refresh() {
                 }
             }
         }
+        // Drawing overrides do nothing until they are enabled, and show the index or RGB colour that is in use.
+        bool overrides_on = false, overrides_rgb = false;
+        for (const QJsonValue& av : attrs) {
+            QJsonObject a = av.toObject();
+            if (a["attr"].toString() == "overrideEnabled") overrides_on = a["value"].toBool();
+            if (a["attr"].toString() == "overrideRGBColors") overrides_rgb = a["value"].toBool();
+        }
         for (const Section& sec : layout.isEmpty() ? sections_for(node_type) : QList<Section>()) {
             QStringList names = QString(sec.attrs).split(' ');
             QFormLayout* f = nullptr;
+            bool drawing = QString(sec.title) == "Drawing Overrides";
             for (const QString& n : names)
                 for (const QJsonValue& av : attrs) {
                     QJsonObject a = av.toObject();
                     if (a["attr"].toString() != n || a["type"].toString() == "matrix") continue;
                     if (!f) f = add_section(v, body, sec.title);
                     used.insert(n);
+                    if (drawing && n == (overrides_rgb ? "overrideColor" : "overrideColorRGB")) continue;
                     QWidget* field = attr_field(a, body);
                     field->setToolTip(a["doc"].toString());
-                    f->addRow(a["nice"].toString(), field);
+                    if (drawing && n != "overrideEnabled") field->setEnabled(overrides_on);
+                    f->addRow(override_label(n, a["nice"].toString()), field);
                 }
         }
         // The rest grouped by their own category, then Extra Attributes.
