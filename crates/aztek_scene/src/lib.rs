@@ -33,6 +33,7 @@ pub mod components;
 pub mod error;
 pub mod extrude_modifier;
 pub mod graph;
+pub mod hik;
 pub mod history;
 pub mod ik;
 pub mod instancing;

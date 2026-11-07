@@ -564,6 +564,13 @@ QMenu* MainWindow::skeleton_menu() {
     cmd(m, "Set Preferred Angle", "joint", QJsonObject{{"edit", true}, {"setPreferredAngles", true}, {"children", true}});
     cmd(m, "Assume Preferred Angle", "joint", QJsonObject{{"edit", true}, {"assumePreferredAngles", true}, {"children", true}});
     m->addSeparator();
+    QMenu* hik = m->addMenu("HumanIK");
+    cmd(hik, "Create Skeleton", "hikCreateSkeleton", QJsonObject{{"character", true}}, QString(), true);
+    cmd(hik, "Define Character from Selection", "hikCreateCharacter");
+    hik->addAction("Create Control Rig...", [] {
+        exec("hikCreateControlRig", QJsonObject{{"args", QJsonArray{"Character1"}}});
+    });
+    m->addSeparator();
     cmd(m, "Create IK Handle", "ikHandle", QJsonObject{{"solver", "ikRPsolver"}}, QString(), true);
     cmd(m, "Create IK Handle (Single Chain)", "ikHandle", QJsonObject{{"solver", "ikSCsolver"}});
     cmd(m, "Create IK Spline Handle", "ikHandle", QJsonObject{{"solver", "ikSplineSolver"}}, QString(), true);
