@@ -369,3 +369,26 @@ fn unfrozen_transforms_lists_non_identity_objects_and_filters_rotations_by_step(
     run(&mut s, "freezeTransforms", json!({"args": [moved, quarter, tilted, scaled]}));
     assert!(run(&mut s, "unfrozenTransforms", json!({"scene": true})).as_array().unwrap().is_empty());
 }
+
+/// Whichever way an edit is asked for, it's one more node on what was there, as in Maya. These used to bake and wipe it.
+#[test]
+fn edits_add_to_the_history_and_never_wipe_it() {
+    for (cmd, comps, node) in [
+        ("polySubdivide", "", "polySmoothFace1"),
+        ("polyMirror", "", "polyMirror1"),
+        ("polyReduce", "", "polyReduce1"),
+        ("polySmooth", "", "polySmoothFace1"),
+        ("polyExtract", "f[1]", "polyDelFacet1"),
+    ] {
+        let mut s = Session::new();
+        s.run("polyCube", json!({"name": "box", "sx": 2, "sy": 2, "sz": 2})).unwrap();
+        let target = if comps.is_empty() { "box".to_string() } else { format!("box.{comps}") };
+        s.run("select", json!({"args": [target]})).unwrap();
+        s.run(cmd, json!({})).unwrap_or_else(|e| panic!("{cmd}: {e}"));
+        let h = s.run("listHistory", json!({"args": ["box"]})).unwrap().to_string();
+        assert!(h.contains("polyCube1"), "{cmd} kept what was there: {h}");
+        assert!(h.contains(node), "{cmd} added {node}: {h}");
+        s.run("undo", json!({})).unwrap();
+        assert!(!s.run("listHistory", json!({"args": ["box"]})).unwrap().to_string().contains(node), "{cmd} undoes");
+    }
+}

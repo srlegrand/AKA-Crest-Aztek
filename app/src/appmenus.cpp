@@ -1036,7 +1036,7 @@ void MainWindow::marking_menu(QPoint global, int mods) {
                      {"Delete Vertex", 6, run("polyDissolve")}, {"Target Weld", 1, [this] { set_tool("targetWeld"); }}, {"Average Vertices", 7, run("polyAverageVertex")},
                      {"Multi-Cut", -1, [this] { set_tool("multiCut"); }}};
         } else {
-            items = {{"Combine", 0, run("polyCombine")}, {"Separate", 4, run("polySeparate")}, {"Smooth", 2, run("polySubdivide")},
+            items = {{"Combine", 0, run("polyCombine")}, {"Separate", 4, run("polySeparate")}, {"Smooth", 2, run("polySmooth")},
                      {"Mirror", 6, run("polyMirror")}, {"Boolean Union", 1, run("polyBoolean", {{"operation", "union"}})},
                      {"Boolean Difference", 7, run("polyBoolean", {{"operation", "difference"}})},
                      {"Delete History", -1, run("delete", {{"constructionHistory", true}})}, {"Center Pivot", -1, run("centerPivot")},

@@ -465,21 +465,26 @@ pub fn register(c: &mut Commands<Session>) {
                 fail!("polyExtract: no faces selected");
             }
             let mut out = Vec::new();
-            let (mut made, mut sources) = (Vec::new(), Vec::new());
+            let (mut made, mut sources, mut gone) = (Vec::new(), Vec::new(), Vec::new());
             components::clear(g);
             for (node, sel) in targets {
-                let base = base_plug(g, node)?;
-                let mut m = base_mesh(g, &base);
-                let mut part = extract_faces(&m, &sel);
+                // The source keeps its history, with one more node taking the faces out.
+                let Some(now) = modifiers::cage(g, node) else { continue };
+                let mut part = extract_faces(&now, &sel);
                 part.compact(None);
-                delete_faces(&mut m, &sel, None);
-                m.compact(None);
-                set_mesh(g, base, m)?;
                 let piece = mesh_beside(g, node, part)?;
+                let faces = crate::history::format_components(K::Face, &sel);
+                let path = components::display_path(g, node);
+                let list: Vec<String> = faces.split_whitespace().map(|f| format!("{path}.{f}")).collect();
+                gone.push(list);
                 out.push(json!(components::display_path(g, piece)));
                 made.push(piece);
                 sources.push(node);
             }
+            for list in gone {
+                s.run("polyDelFacet", json!({"args": list}))?;
+            }
+            let g = &mut s.graph;
             isolation::inherit(g, &made, &sources);
             components::set_mode(g, K::Object);
             g.select(&made, SelectMode::Replace);

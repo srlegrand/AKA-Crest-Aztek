@@ -1081,10 +1081,9 @@ pub(super) fn register(c: &mut Commands<Session>) {
         "polyMirrorFace",
         &[("axis", json!(0)), ("axisDirection", json!(1)), ("mergeMode", json!(1)), ("mergeThreshold", json!(0.001)), ("mirrorAxis", json!(2))],
     ));
+    // Every form leaves a node in the history; only reflecting in place, which adds no geometry, is left to the plain command.
     extend(c, "polyMirror", "polyMirrorFace", &[], move |s, a| {
-        let maya = a.get("axis").is_some_and(Value::is_number)
-            || ["axisDirection", "mirrorAxis", "mergeMode", "mergeThreshold", "mergeThresholdType", "mirrorPosition", "cutMesh", "flipUVs"].iter().any(|f| a.has(f));
-        if !maya {
+        if a.bool("flip") {
             return None;
         }
         let mut a2 = a.clone();
@@ -1092,8 +1091,34 @@ pub(super) fn register(c: &mut Commands<Session>) {
             let i = a2.string("axis", "x").bytes().next().map_or(0, |b| (b - b'x') as i64);
             a2.flags.insert("axis".into(), json!(i));
         }
-        a2.flags.remove("direction");
+        if let Some(direction) = a2.get("direction").and_then(Value::as_str).map(str::to_string) {
+            // Positive keeps the + side and rebuilds the other from it; both adds a copy of everything.
+            a2.flags.insert("axisDirection".into(), json!(if direction == "negative" { 0 } else { 1 }));
+            if !a2.has("cutMesh") {
+                a2.flags.insert("cutMesh".into(), json!(direction != "both"));
+            }
+            a2.flags.remove("direction");
+        } else if !a2.has("cutMesh") && !a2.has("axisDirection") {
+            a2.flags.insert("cutMesh".into(), json!(true));
+        }
+        match a2.get("space").and_then(Value::as_str) {
+            Some("world") => {
+                a2.flags.insert("mirrorAxis".into(), json!(2));
+            }
+            Some(_) => {
+                a2.flags.insert("mirrorAxis".into(), json!(1));
+            }
+            None => {}
+        }
+        a2.flags.remove("space");
         Some(mirror_run(s, &a2))
+    });
+    // The same smooth as polySmooth, which is a node of its own in the history.
+    extend(c, "polySubdivide", "polySmooth", &[], |s, a| {
+        let mut a2 = a.clone();
+        a2.flags.insert("divisions".into(), json!(a.int("levels", 1).clamp(1, 5)));
+        a2.flags.insert("method".into(), json!(0));
+        Some(run_op(s, "polySmoothFace", &a2))
     });
     if let Some(mut d) = c.find("polyMirror").cloned() {
         if !d.flags.iter().any(|f| f.name == "cutMesh") {
@@ -1123,8 +1148,8 @@ pub(super) fn register(c: &mut Commands<Session>) {
         ],
         |s, a| {
         // The reference's flags go through the node; the ratio form keeps the modifier and radial handling it always had.
-        let maya = a.has("percentage") || a.has("vertexCount") || a.has("triangleCount") || a.has("sharpness") || a.has("constructionHistory");
-        if !maya {
+        // Symmetric reduction mirrors a half and has no node form.
+        if a.get("symmetry").and_then(Value::as_str).is_some_and(|x| !x.is_empty() && x != "auto") {
             return None;
         }
         let mut a2 = a.clone();

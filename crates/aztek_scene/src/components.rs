@@ -191,11 +191,19 @@ pub fn mode_from_name(name: &str) -> Result<ComponentMode, String> {
 }
 
 pub fn selected_all(g: &Graph, kind: ComponentMode) -> &BTreeMap<NodeId, Ids> {
+    static NONE: BTreeMap<NodeId, Ids> = BTreeMap::new();
+    if kind == ComponentMode::Object {
+        return &NONE;
+    }
     &g.components.sets[slot(kind)]
 }
 
 /// A mesh's selected components of kind; a transform stands for its mesh shape.
 pub fn selected(g: &Graph, node: NodeId, kind: ComponentMode) -> &[u32] {
+    // Object mode has no components, and a command asking in it just finds none.
+    if kind == ComponentMode::Object {
+        return &[];
+    }
     let set = &g.components.sets[slot(kind)];
     if let Some(v) = set.get(&node) {
         return v.as_slice();
