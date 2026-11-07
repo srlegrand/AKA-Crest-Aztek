@@ -3,11 +3,19 @@
 Generated from the command registry by `cargo run -p aztek_host --example gen_commands`; do not edit by hand.
 Commands take Maya's flags, long or short, in MEL and in Python (`aztek.cmds` or `maya.cmds`).
 
-485 commands.
+801 commands.
 
 ## AppendToPolygonTool
 
 The Append to Polygon tool.
+
+## ArtPaintAttrTool
+
+The paint attribute tool, on deformers' weights.
+
+## ArtPaintAttrToolOptions
+
+The paint attribute tool and its settings.
 
 ## ArtPaintSkinWeightsTool
 
@@ -40,6 +48,10 @@ Open the Dope Sheet.
 ## EPCurveTool
 
 The EP curve tool: click to place edit points, Enter to finish.
+
+## EditMembershipTool
+
+The edit membership tool: which points a deformer holds.
 
 ## FourViewLayout
 
@@ -137,6 +149,10 @@ The select tool.
 
 Open the Set Driven Key window.
 
+## ShapeEditor
+
+The Shape Editor: blend shapes and their targets.
+
 ## SingleViewLayout
 
 One view: the perspective.
@@ -181,6 +197,26 @@ Turn ghosting off for the selected objects.
 
 Arguments: objects (the selection when none)
 
+## about
+
+About the application and the system: -v, -os, -win, -linux, -mac, -batch, -api.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `version` | `v` | What to ask. |
+| `apiVersion` | `api` | What to ask. |
+| `operatingSystem` | `os` | What to ask. |
+| `windows` | `win` | What to ask. |
+| `nt` | `nt` | What to ask. |
+| `linux` | `li` | What to ask. |
+| `macOS` | `mac` | What to ask. |
+| `batch` | `b` | What to ask. |
+| `is64` | `x64` | What to ask. |
+| `uiLanguage` | `uil` | What to ask. |
+| `codeset` | `cs` | What to ask. |
+| `product` | `p` | What to ask. |
+| `application` | `a` | What to ask. |
+
 ## addAttr
 
 Add an attribute to objects (Maya's addAttr): attributeType for a single value or, with multi, an array of them; dataType for strings and arrays (stringArray, doubleArray, Int32Array, vectorArray). attributeType='compound' groups the attributes then added with parent=; a multi compound gives each element every child, node.targets[2].weight. Compounds nest one level. Saved with the scene. Returns the new plugs.
@@ -209,6 +245,24 @@ Arguments: objects
 | `usedAsFilename` | `uaf` | A string holding a file path: editors offer a file browser. |
 | `category` |  | A heading the Attribute Editor groups it under. |
 | `doc` |  | What it is for: editors show it as a tooltip. |
+| `query` | `q` | Query. |
+| `edit` | `e` | Edit. |
+| `exists` | `ex` | With -q: whether it exists. |
+| `hasMinValue` | `hnv` | Whether it has a hard minimum. |
+| `hasMaxValue` | `hxv` | Whether it has a hard maximum. |
+| `hasSoftMinValue` | `hsn` | Accepted for Maya scripts. |
+| `hasSoftMaxValue` | `hsx` | Accepted for Maya scripts. |
+| `indexMatters` | `im` | Accepted: a multi's indices always matter here. |
+| `readable` | `r` | Accepted for Maya scripts. |
+| `writable` | `w` | Accepted for Maya scripts. |
+| `storable` | `s` | Accepted for Maya scripts. |
+| `cachedInternally` | `ci` | Accepted for Maya scripts. |
+| `internalSet` | `is` | Accepted for Maya scripts. |
+| `disconnectBehaviour` | `dcb` | Accepted for Maya scripts. |
+| `fromPlugin` | `fp` | Accepted for Maya scripts. |
+| `binaryTag` | `bt` | Accepted for Maya scripts. |
+| `proxy` | `pxy` | Accepted for Maya scripts. |
+| `usedAsProxy` | `uap` | Accepted for Maya scripts. |
 
 ## addModifier
 
@@ -254,6 +308,54 @@ Arguments: targets, then the object to drive or the constraint
 | `skipScale` |  | Scale axes to leave alone: x, y, z or none. |
 | `edit` | `e` | Change the constraint. |
 | `query` | `q` | Ask about the constraint. |
+
+## aliasAttr
+
+aliasAttr('alias', 'node.attr') names an attribute another way. -q lists a node's aliases and their attributes; -rm removes.
+
+Arguments: alias plug, or a node with -q
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | List the aliases. |
+| `remove` | `rm` | Remove the alias. |
+
+## align
+
+Lines objects' bounding boxes up: align -x Mid a b c. Min, Mid or Max per axis; -atl to the last object.
+
+Arguments: objects
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `alignX` | `x` | Min, Mid or Max. |
+| `alignY` | `y` | Min, Mid or Max. |
+| `alignZ` | `z` | Min, Mid or Max. |
+| `alignToLead` | `atl` | To the last object rather than the whole set. |
+
+## angleBetween
+
+The rotation from -v1 to -v2: axis and angle in degrees, or -er Euler angles.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `vector1` | `v1` | From. |
+| `vector2` | `v2` | To. |
+| `euler` | `er` | Euler angles instead. |
+| `constructionHistory` | `ch` | Accepted for Maya scripts. |
+
+## animDisplay
+
+How animation shows, kept for scripts: -upd, -tc, -tco, -rae; -q reads.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `modelUpdate` | `upd` | A setting. |
+| `refAnimCurvesEditable` | `rae` | A setting. |
+| `timeCode` | `tc` | A setting. |
+| `timeCodeOffset` | `tco` | A setting. |
 
 ## animLayer
 
@@ -308,6 +410,17 @@ Arguments: the layer, or for -afl and -bl the objects or plugs
 | `forceUIRebuild` | `fur` | Accepted for Maya scripts. |
 | `forceUIRefresh` | `uir` | Accepted for Maya scripts. |
 
+## annotate
+
+A note in the viewport: -tx text, -p where; the line points at the object named. Returns the shape.
+
+Arguments: object
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `text` | `tx` | The note. |
+| `point` | `p` | Where it goes. |
+
 ## applyAllModifiers
 
 Bake every modifier of a mesh into its base mesh, leaving an empty stack over an editable source.
@@ -340,6 +453,26 @@ Arguments: modifier, [object]
 | --- | --- | --- |
 | `pivot` |  | Centre on the arrayed mesh's current pivot. |
 
+## artAttrCtx
+
+The paint attribute tool's settings. Edit and query: -val value, -op opacity, -r radius, -sao the operation (absolute, additive, scale, smooth), -stP the stamp (gaussian, poly, solid, square), -asl what it paints, as cluster.cluster1.weights. -clear floods. -q -pa lists what a selected mesh offers.
+
+Arguments: the tool's name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `value` | `val` | The value the brush paints, 0 to 1. |
+| `opacity` | `op` | How much of the value each dab applies. |
+| `radius` | `r` | Brush radius in world units. |
+| `selectedattroper` | `sao` | absolute (replace), additive, scale or smooth. |
+| `stampProfile` | `stP` | gaussian, poly, solid or square. |
+| `attrSelected` | `asl` | What it paints: cluster.cluster1.weights. |
+| `paintableAttrs` | `pa` | Query: what the selected meshes offer. |
+| `colorfeedback` | `cl` | Show the values in colour. |
+| `clear` | `clr` | Flood: the operation over the selection's points. |
+| `edit` | `e` | Edit mode. |
+| `query` | `q` | Query mode. |
+
 ## artAttrSkinPaintCtx
 
 The paint skin weights tool's settings. Edit and query: -val value, -op opacity, -r radius, -sao the operation (absolute, additive, scale, smooth), -stP the stamp (gaussian, poly, solid, square), -inf the influence. -clear floods the mesh with the value.
@@ -358,6 +491,43 @@ Arguments: the tool's name
 | `clear` | `clr` | Flood: paint the value over the selection's points. |
 | `edit` | `e` | Edit mode. |
 | `query` | `q` | Query mode. |
+
+## artSelectCtx
+
+A artSelectCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `selectop` | `sop` |  |
+| `radius` | `r` |  |
+| `lowerradius` | `lr` |  |
+| `opacity` | `op` |  |
+| `stampProfile` | `stP` |  |
+| `addselection` | `ads` |  |
+| `unselectall` | `ual` |  |
+| `selectall` | `sal` |  |
+| `outline` | `o` |  |
+| `tablet` | `tab` |  |
+| `reflection` | `rfl` |  |
+| `reflectionaxis` | `ra` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## artSetToolAndSelectAttr
+
+Picks the paint attribute tool and what it paints: artSetToolAndSelectAttr artAttrCtx cluster.cluster1.weights.
+
+Arguments: the tool, then nodeType.node.attribute
 
 ## attachCurve
 
@@ -393,6 +563,98 @@ Arguments: two surfaces (the selection when none)
 | `object` | `o` | Accepted for Maya scripts. |
 | `polygon` | `po` | Accepted for Maya scripts. |
 
+## attrPaintStamp
+
+One dab of the paint attribute brush at a world point, from the tool's settings: for scripts and tests. -inv paints the inverse, as Ctrl does in the tool; -sm smooths, as Shift does. Returns how many points it touched.
+
+Arguments: a deformed mesh
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `position` | `p` | World centre of the dab. |
+| `invert` | `inv` | Paint the inverse. |
+| `smooth` | `sm` | Smooth instead. |
+
+## attributeInfo
+
+A node's attributes filtered: -b boolean, -e enumerated, -h hidden, -w writable, -m multi, -lf leaf, -inh inherited; -t a type in place of a node; -s short names.
+
+Arguments: object
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `allAttributes` | `all` | All (what no filter gives). |
+| `bool` | `b` | Booleans. |
+| `enumerated` | `e` | Enums. |
+| `hidden` | `h` | Hidden ones. |
+| `inherited` | `inh` | Inherited from the base type. |
+| `internal` | `i` | Internal ones: none here. |
+| `leaf` | `lf` | Not compounds. |
+| `logicalAnd` | `la` | All filters must hold, not any. |
+| `multi` | `m` | Arrays. |
+| `short` | `s` | Short names. |
+| `type` | `t` | A type rather than a node. |
+| `userInterface` | `ui` | Accepted for Maya scripts. |
+| `writable` | `w` | Writable ones. |
+
+## attributeName
+
+An attribute's name: -n nice (the default), -l long, -s short, -lf the leaf.
+
+Arguments: plug
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `nice` | `n` | The name editors show. |
+| `long` | `l` | The long name. |
+| `short` | `s` | The short name. |
+| `leaf` | `lf` | Without its parent's name. |
+
+## attributeQuery
+
+Facts about an attribute: attributeQuery -n node -k attr, or -type nodeType.
+
+Arguments: attribute
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `exists` | `ex` | Whether it exists. |
+| `keyable` | `k` | Keyable. |
+| `channelBox` | `ch` | Shown in the channel box. |
+| `hidden` | `h` | Hidden. |
+| `writable` | `w` | Takes values. |
+| `readable` | `r` | Can be read. |
+| `connectable` | `c` | Can connect. |
+| `storable` | `s` | Saved. |
+| `multi` | `m` | A multi attribute. |
+| `indexMatters` | `im` | A multi's indices matter. |
+| `usedAsColor` | `uac` | A colour. |
+| `usedAsFilename` | `uaf` | A file name. |
+| `attributeType` | `at` | Its type. |
+| `typeExact` | `tex` | Its exact type. |
+| `longName` | `ln` | The long name. |
+| `shortName` | `sn` | The short name. |
+| `niceName` | `nn` | The nice name. |
+| `listEnum` | `le` | An enum's labels. |
+| `listParent` | `lp` | The compound it is in. |
+| `listChildren` | `lc` | A compound's children. |
+| `listSiblings` | `ls` | The other children. |
+| `listDefault` | `ld` | The default. |
+| `minExists` | `mne` | Has a hard minimum. |
+| `maxExists` | `mxe` | Has a hard maximum. |
+| `softMinExists` | `sme` | Has a soft minimum. |
+| `softMaxExists` | `sxe` | Has a soft maximum. |
+| `minimum` | `min` | The hard minimum. |
+| `maximum` | `max` | The hard maximum. |
+| `mn` |  | The hard minimum. |
+| `mx` |  | The hard maximum. |
+| `softMin` | `smn` | The soft minimum. |
+| `softMax` | `smx` | The soft maximum. |
+| `range` | `rg` | The hard range. |
+| `softRange` | `sr` | The soft range. |
+| `node` | `n` | The node. |
+| `type` | `typ` | A node type. |
+
 ## autoBevel
 
 Add an autoBevel modifier to the top of each mesh's stack: bevels fold edges found live on its input mesh. Returns the modifier names.
@@ -425,6 +687,19 @@ Auto key: changing an animated channel keys it at the current frame. Returns whe
 | `edit` | `e` | Change the flags named. |
 | `state` | `st` | On or off. |
 
+## bakeClip
+
+Bake clips into one, frame by frame: -ci which (all by default), -bl a blend's two, -k keeps the originals disabled, -n its name. Returns the new clip.
+
+Arguments: character
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `clipIndex` | `ci` | A clip's place on the scheduler. |
+| `blend` | `bl` | A blend's two clips. |
+| `keepOriginals` | `k` | Keep the clips, disabled. |
+| `name` | `n` | The new clip's name. |
+
 ## bakeModifierStack
 
 Bake meshes to their current result, deleting the generator and modifiers feeding them. Curves likewise keep what their history makes and lose the history; other objects are skipped.
@@ -456,6 +731,48 @@ Arguments: objects or plugs (the selection when none)
 | `minimizeRotation` | `mr` | Accepted for Maya scripts. |
 | `controlPoints` | `cp` | Accepted for Maya scripts. |
 | `shape` | `s` | Accepted for Maya scripts. |
+
+## bakeSimulation
+
+Key channels with what they evaluate to, stepping through time: bakeResults -simulation.
+
+Arguments: objects or plugs (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `attribute` | `at` | Channel name(s). |
+| `time` | `t` | The range to bake: "1:100" (the playback range by default). |
+| `sampleBy` | `sb` | Frames between keys (1). |
+| `hierarchy` | `hi` | none or below. |
+| `preserveOutsideKeys` | `pok` | Keep keys outside the baked range. |
+| `simulation` | `sm` | Accepted for Maya scripts (always evaluated in time order). |
+| `disableImplicitControl` | `dic` | Accepted for Maya scripts. |
+| `sparseAnimCurveBake` | `sac` | Accepted for Maya scripts. |
+| `minimizeRotation` | `mr` | Accepted for Maya scripts. |
+| `controlPoints` | `cp` | Accepted for Maya scripts. |
+| `shape` | `s` | Accepted for Maya scripts. |
+
+## bevel
+
+A bevelled wall round a curve: -w width, -d depth, -ed wall depth, -bst 1 straight or 2 arc. Returns [surface, node].
+
+Arguments: a curve
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `width` | `w` | How far out (0.1). |
+| `depth` | `d` | How deep the bevel (0.1). |
+| `extrudeDepth` | `ed` | How deep the wall (1). |
+| `bevelShapeType` | `bst` | 1 straight, 2 arc. |
+| `cornerType` | `ct` | Accepted for Maya scripts. |
+| `constructionHistory` | `ch` | Keep the node (on by default). |
+| `name` | `n` | The new object's name. |
+| `object` | `o` | Accepted for Maya scripts. |
+| `range` | `rn` | Accepted for Maya scripts. |
+| `caching` | `cch` | Accepted for Maya scripts. |
+| `nodeState` | `nds` | Accepted for Maya scripts. |
+| `tolerance` | `tol` | Accepted for Maya scripts. |
+| `polygon` | `po` | 0 NURBS, 1 polygons. |
 
 ## bevelApplyEdges
 
@@ -493,6 +810,51 @@ Set an autoBevel modifier's thin to 1.5 times the longest selected edge (pick a 
 
 Arguments: modifier or mesh
 
+## bevelPlus
+
+A bevel with caps: -w, -d, -ed, -ns sides of the round, -cap 1 none, 2 front, 3 back, 4 both, -po 1 polygons (the default here). Returns [surface or group, node].
+
+Arguments: a curve
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `width` | `w` | How far out (0.1). |
+| `depth` | `d` | How deep the bevel (0.1). |
+| `extrudeDepth` | `ed` | How deep the wall (1). |
+| `numberOfSides` | `ns` | Sides of the round. |
+| `capSides` | `cap` | 1 none, 2 front, 3 back, 4 both. |
+| `innerStyle` | `is` | Accepted for Maya scripts. |
+| `outerStyle` | `os` | Accepted for Maya scripts. |
+| `constructionHistory` | `ch` | Keep the node (on by default). |
+| `name` | `n` | The new object's name. |
+| `object` | `o` | Accepted for Maya scripts. |
+| `range` | `rn` | Accepted for Maya scripts. |
+| `caching` | `cch` | Accepted for Maya scripts. |
+| `nodeState` | `nds` | Accepted for Maya scripts. |
+| `tolerance` | `tol` | Accepted for Maya scripts. |
+| `polygon` | `po` | 0 NURBS, 1 polygons. |
+
+## bindSkin
+
+Rigid bind: each point follows one joint, a skinCluster of 1.0 weights. -tsb only the bones named, -ub unbinds, -ubk keeps history. Returns 1.
+
+Arguments: skeleton and geometry
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `byClosestPoint` | `bcp` | Accepted: closest point is how it binds. |
+| `byPartition` | `bp` | Accepted for Maya scripts. |
+| `colorJoints` | `cj` | Accepted for Maya scripts. |
+| `delete` | `del` | Remove the skin. |
+| `doNotDescend` | `dnd` | Only the joints named. |
+| `enable` | `en` | Accepted for Maya scripts. |
+| `name` | `n` | The skinCluster's name. |
+| `partition` | `p` | Accepted for Maya scripts. |
+| `toAll` | `ta` | The whole skeleton (the default). |
+| `toSelectedBones` | `tsb` | Only the joints named. |
+| `unbind` | `ub` | Remove the skin. |
+| `unbindKeepHistory` | `ubk` | Stop skinning, keep the node. |
+
 ## birail
 
 A profile along two rails, its ends staying on them: profile, rail, rail. Returns [birailSurface1, singleProfileBirailSurface1].
@@ -511,13 +873,34 @@ Arguments: a profile and two rails (the selection when none)
 
 ## blendShape
 
-Blend shapes: the targets named first, the base mesh last (or selected the same way). Each target gets a weight on the blendShape node, named after it. Returns [blendShape].
+Blend shapes: blendShape target... base. Each target gets an element of .weight under an alias named after it: setAttr blendShape1.pSphere2 0.5. -t base index target weight adds targets, with -ib as in-betweens at that weight. -e -rm -t removes, -e -rtd index item clears deltas. Query -w, -wc, -t, -g, -en, -o, -tc.
 
-Arguments: targets, then the base
+Arguments: targets, then the base; the blendShape with -e and -q
 
 | Flag | Short | Description |
 | --- | --- | --- |
-| `name` | `n` | Name of the blendShape node. |
+| `name` | `n` | Name of the deformer. |
+| `before` | `bf` | Go just above the deformer nearest the mesh. |
+| `after` | `af` | Go nearest the mesh, after the other deformers (the default). |
+| `frontOfChain` | `foc` | Go above every other deformer. |
+| `envelope` | `en` | How much of the deformation applies (1). |
+| `edit` | `e` | Edit mode. |
+| `query` | `q` | Query mode. |
+| `weight` | `w` | index weight, repeatable. Query: all the weights. |
+| `target` | `t` | base index target weight, repeatable. Query: the target shapes. |
+| `inBetween` | `ib` | -t adds an in-between at its weight rather than replacing the target. |
+| `inBetweenType` | `ibt` | absolute (the default), or relative to the full target. |
+| `topologyCheck` | `tc` | Refuse targets with a different number of points (on). |
+| `origin` | `o` | local (the default) or world. |
+| `parallel` | `par` | Work alongside the deformers already there: measured from the original, added to their result. |
+| `remove` | `rm` | With -e -t: remove the target. With -e -g: remove the geometry. |
+| `removeTarget` | `rmt` | With -e: a target's name, to remove it. |
+| `resetTargetDelta` | `rtd` | With -e: target index and item (0 for all), to clear their deltas; a name removes the target. |
+| `geometry` | `g` | With -e: geometry to add or, with -rm, remove. Query: the deformed shapes. |
+| `geometryIndices` | `gi` | Query: the indices of the deformed shapes. |
+| `weightCount` | `wc` | Query: how many targets. |
+| `foreignObject` | `fg` | Targets need not match the base: points are taken by number as far as they go. |
+| `ignoreSelected` | `ie` | Use only the objects named, not the selection. |
 
 ## boundary
 
@@ -535,6 +918,26 @@ Arguments: three or four curves (the selection when none)
 | `range` | `rn` | Accepted for Maya scripts. |
 | `name` | `n` | Name of the new object. |
 | `object` | `o` | Accepted for Maya scripts. |
+
+## boxZoomCtx
+
+A boxZoomCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `zoomScale` | `zs` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
 
 ## bufferCurve
 
@@ -558,6 +961,48 @@ Arguments: objects, plugs or curves (the selection when none)
 | `exists` | `ex` | Whether a curve has a buffer. |
 | `selected` | `sl` | Curves of the keys selectKey selected. |
 | `query` | `q` | With -ex. |
+
+## button
+
+Script UI: button, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `label` | `l` |  |
+| `align` | `al` |  |
+| `command` | `c` |  |
+| `recomputeSize` | `rs` |  |
+| `actOnPress` | `aop` |  |
+| `actionIsSubstitute` | `ais` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
 
 ## camera
 
@@ -583,6 +1028,45 @@ Arguments: a camera, with -q and -e
 | `name` | `n` | Name. |
 | `query` | `q` | Query mode. |
 | `edit` | `e` | Edit mode. |
+
+## canvas
+
+Script UI: canvas, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `rgbValue` | `rgb` |  |
+| `hsvValue` | `hsv` |  |
+| `pressCommand` | `pc` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
 
 ## centerPivot
 
@@ -617,6 +1101,175 @@ Arguments: channels or objects (the selection when none); the character when que
 | `excludeVisibility` | `ev` | Leave out visibility. |
 | `excludeDynamic` | `ed` | Accepted for Maya scripts: objects give their keyable channels. |
 
+## characterMap
+
+Pair two characters' attributes: name them for a map matched by attribute name, -pm for the pairs alone, -ma and -ua with -e to change it. Returns the node; -q the pairs.
+
+Arguments: two characters, or a map
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `mapping` | `m` | The node's name. |
+| `proposedMapping` | `pm` | The pairs it would make. |
+| `mapAttr` | `ma` | Two plugs to pair. |
+| `unmapAttr` | `ua` | Two plugs to part. |
+| `mapMethod` | `mm` | Accepted: by name is what it does. |
+| `mapNode` | `mn` | Accepted for Maya scripts. |
+| `unmapNode` | `un` | Accepted for Maya scripts. |
+
+## checkBox
+
+Script UI: checkBox, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `label` | `l` |  |
+| `value` | `v` |  |
+| `changeCommand` | `cc` |  |
+| `onCommand` | `onc` |  |
+| `offCommand` | `ofc` |  |
+| `align` | `al` |  |
+| `editable` | `ed` |  |
+| `recomputeSize` | `rs` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## checkBoxGrp
+
+Script UI: checkBoxGrp, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `label` | `l` |  |
+| `numberOfCheckBoxes` | `ncb` |  |
+| `label1` | `l1` |  |
+| `label2` | `l2` |  |
+| `label3` | `l3` |  |
+| `label4` | `l4` |  |
+| `labelArray2` | `la2` |  |
+| `labelArray3` | `la3` |  |
+| `labelArray4` | `la4` |  |
+| `value1` | `v1` |  |
+| `value2` | `v2` |  |
+| `value3` | `v3` |  |
+| `value4` | `v4` |  |
+| `valueArray2` | `va2` |  |
+| `valueArray3` | `va3` |  |
+| `valueArray4` | `va4` |  |
+| `changeCommand` | `cc` |  |
+| `changeCommand1` | `cc1` |  |
+| `changeCommand2` | `cc2` |  |
+| `changeCommand3` | `cc3` |  |
+| `changeCommand4` | `cc4` |  |
+| `onCommand` | `onc` |  |
+| `onCommand1` | `on1` |  |
+| `onCommand2` | `on2` |  |
+| `onCommand3` | `on3` |  |
+| `onCommand4` | `on4` |  |
+| `offCommand` | `ofc` |  |
+| `offCommand1` | `of1` |  |
+| `offCommand2` | `of2` |  |
+| `offCommand3` | `of3` |  |
+| `offCommand4` | `of4` |  |
+| `enable1` | `en1` |  |
+| `enable2` | `en2` |  |
+| `enable3` | `en3` |  |
+| `enable4` | `en4` |  |
+| `editable` | `ed` |  |
+| `vertical` | `vr` |  |
+| `columnWidth1` | `cw1` |  |
+| `columnAlign1` | `cl1` |  |
+| `columnAttach1` | `ct1` |  |
+| `columnOffset1` | `co1` |  |
+| `columnWidth2` | `cw2` |  |
+| `columnAlign2` | `cl2` |  |
+| `columnAttach2` | `ct2` |  |
+| `columnOffset2` | `co2` |  |
+| `adjustableColumn2` | `ad2` |  |
+| `columnWidth3` | `cw3` |  |
+| `columnAlign3` | `cl3` |  |
+| `columnAttach3` | `ct3` |  |
+| `columnOffset3` | `co3` |  |
+| `adjustableColumn3` | `ad3` |  |
+| `columnWidth4` | `cw4` |  |
+| `columnAlign4` | `cl4` |  |
+| `columnAttach4` | `ct4` |  |
+| `columnOffset4` | `co4` |  |
+| `adjustableColumn4` | `ad4` |  |
+| `columnWidth5` | `cw5` |  |
+| `columnAlign5` | `cl5` |  |
+| `columnAttach5` | `ct5` |  |
+| `columnOffset5` | `co5` |  |
+| `adjustableColumn5` | `ad5` |  |
+| `columnWidth6` | `cw6` |  |
+| `columnAlign6` | `cl6` |  |
+| `columnAttach6` | `ct6` |  |
+| `columnOffset6` | `co6` |  |
+| `adjustableColumn6` | `ad6` |  |
+| `adjustableColumn` | `adj` |  |
+| `columnWidth` | `cw` |  |
+| `columnAlign` | `cal` |  |
+| `columnAttach` | `cat` |  |
+| `rowAttach` | `rat` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
 ## circle
 
 Create a NURBS circle, with a makeNurbCircle node (-nr normal, -c centre, -r radius, -d degree, -s sections, -sw sweep). Returns [nurbsCircle1, makeNurbCircle1].
@@ -635,6 +1288,27 @@ Create a NURBS circle, with a makeNurbCircle node (-nr normal, -c centre, -r rad
 | `constructionHistory` | `ch` | Keep the node (on by default). |
 | `object` | `o` | Accepted for Maya scripts. |
 | `name` | `n` | Name of the transform. |
+
+## circularFillet
+
+A round fillet between two surfaces: -pr, -sr offsets from each (signed, on their normals). Returns [surface, node].
+
+Arguments: two surfaces
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `radius` | `r` | Both offsets (1). |
+| `primaryRadius` | `pr` | Offset from the first. |
+| `secondaryRadius` | `sr` | Offset from the second. |
+| `curveOnSurface` | `cos` | Accepted for Maya scripts. |
+| `constructionHistory` | `ch` | Keep the node (on by default). |
+| `name` | `n` | The new object's name. |
+| `object` | `o` | Accepted for Maya scripts. |
+| `range` | `rn` | Accepted for Maya scripts. |
+| `caching` | `cch` | Accepted for Maya scripts. |
+| `nodeState` | `nds` | Accepted for Maya scripts. |
+| `tolerance` | `tol` | Accepted for Maya scripts. |
+| `polygon` | `po` | 0 NURBS, 1 polygons. |
 
 ## cleanUpScene
 
@@ -671,6 +1345,19 @@ Arguments: the character (the current one when none)
 | `allClips` | `ac` | Query: the scheduled clips. |
 | `allSourceClips` | `asc` | Query: the source clips. |
 | `remove` | `rm` | Take the clip off the schedule. |
+
+## clipMatching
+
+Line a clip up with another at a frame each: -cs clip frame, -cd clip frame, -mt and -mr which channels (translate by default).
+
+Arguments: character
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `clipSrc` | `cs` | The clip to match and its frame. |
+| `clipDst` | `cd` | The clip to shift and its frame. |
+| `matchTranslation` | `mt` | Match translates (on by default). |
+| `matchRotation` | `mr` | Match rotates. |
 
 ## clipSchedule
 
@@ -742,6 +1429,17 @@ Arguments: surfaces (the selection when none)
 | `object` | `o` | Accepted for Maya scripts. |
 | `polygon` | `po` | Accepted for Maya scripts. |
 
+## closestPointOnMesh
+
+Make a node on a mesh that answers the point on it closest to -ip. Returns the node.
+
+Arguments: mesh
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `inPosition` | `ip` | The position. |
+| `name` | `n` | The node's name. |
+
 ## cluster
 
 Make a cluster of the selected vertices (or whole meshes): a handle they follow. Returns [cluster, handle].
@@ -751,6 +1449,219 @@ Arguments: meshes or vertices (the selection when none)
 | Flag | Short | Description |
 | --- | --- | --- |
 | `name` | `n` | Name of the cluster; its handle takes the name plus Handle. |
+
+## colorIndex
+
+A palette entry's colour: index r g b, 1 to 31, -q asks.
+
+Arguments: index [r g b]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `hueSaturationValue` | `hsv` | Accepted for Maya scripts. |
+| `resetToFactory` | `rf` | Back to the factory colours. |
+| `resetToSaved` | `rs` | Back to the saved colours. |
+
+## colorIndexSliderGrp
+
+Script UI: colorIndexSliderGrp, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `label` | `l` |  |
+| `value` | `v` |  |
+| `minValue` | `min` |  |
+| `maxValue` | `max` |  |
+| `invisible` | `inv` |  |
+| `forceDragRefresh` | `fdr` |  |
+| `extraLabel` | `el` |  |
+| `changeCommand` | `cc` |  |
+| `dragCommand` | `dc` |  |
+| `columnWidth1` | `cw1` |  |
+| `columnAlign1` | `cl1` |  |
+| `columnAttach1` | `ct1` |  |
+| `columnOffset1` | `co1` |  |
+| `columnWidth2` | `cw2` |  |
+| `columnAlign2` | `cl2` |  |
+| `columnAttach2` | `ct2` |  |
+| `columnOffset2` | `co2` |  |
+| `adjustableColumn2` | `ad2` |  |
+| `columnWidth3` | `cw3` |  |
+| `columnAlign3` | `cl3` |  |
+| `columnAttach3` | `ct3` |  |
+| `columnOffset3` | `co3` |  |
+| `adjustableColumn3` | `ad3` |  |
+| `columnWidth4` | `cw4` |  |
+| `columnAlign4` | `cl4` |  |
+| `columnAttach4` | `ct4` |  |
+| `columnOffset4` | `co4` |  |
+| `adjustableColumn4` | `ad4` |  |
+| `columnWidth5` | `cw5` |  |
+| `columnAlign5` | `cl5` |  |
+| `columnAttach5` | `ct5` |  |
+| `columnOffset5` | `co5` |  |
+| `adjustableColumn5` | `ad5` |  |
+| `columnWidth6` | `cw6` |  |
+| `columnAlign6` | `cl6` |  |
+| `columnAttach6` | `ct6` |  |
+| `columnOffset6` | `co6` |  |
+| `adjustableColumn6` | `ad6` |  |
+| `adjustableColumn` | `adj` |  |
+| `columnWidth` | `cw` |  |
+| `columnAlign` | `cal` |  |
+| `columnAttach` | `cat` |  |
+| `rowAttach` | `rat` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## colorSliderGrp
+
+Script UI: colorSliderGrp, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `label` | `l` |  |
+| `rgbValue` | `rgb` |  |
+| `hsvValue` | `hsv` |  |
+| `forceDragRefresh` | `fdr` |  |
+| `changeCommand` | `cc` |  |
+| `dragCommand` | `dc` |  |
+| `columnWidth1` | `cw1` |  |
+| `columnAlign1` | `cl1` |  |
+| `columnAttach1` | `ct1` |  |
+| `columnOffset1` | `co1` |  |
+| `columnWidth2` | `cw2` |  |
+| `columnAlign2` | `cl2` |  |
+| `columnAttach2` | `ct2` |  |
+| `columnOffset2` | `co2` |  |
+| `adjustableColumn2` | `ad2` |  |
+| `columnWidth3` | `cw3` |  |
+| `columnAlign3` | `cl3` |  |
+| `columnAttach3` | `ct3` |  |
+| `columnOffset3` | `co3` |  |
+| `adjustableColumn3` | `ad3` |  |
+| `columnWidth4` | `cw4` |  |
+| `columnAlign4` | `cl4` |  |
+| `columnAttach4` | `ct4` |  |
+| `columnOffset4` | `co4` |  |
+| `adjustableColumn4` | `ad4` |  |
+| `columnWidth5` | `cw5` |  |
+| `columnAlign5` | `cl5` |  |
+| `columnAttach5` | `ct5` |  |
+| `columnOffset5` | `co5` |  |
+| `adjustableColumn5` | `ad5` |  |
+| `columnWidth6` | `cw6` |  |
+| `columnAlign6` | `cl6` |  |
+| `columnAttach6` | `ct6` |  |
+| `columnOffset6` | `co6` |  |
+| `adjustableColumn6` | `ad6` |  |
+| `adjustableColumn` | `adj` |  |
+| `columnWidth` | `cw` |  |
+| `columnAlign` | `cal` |  |
+| `columnAttach` | `cat` |  |
+| `rowAttach` | `rat` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## columnLayout
+
+Script UI: columnLayout, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `adjustableColumn` | `adj` |  |
+| `columnAlign` | `cal` |  |
+| `columnAttach` | `cat` |  |
+| `columnOffset` | `co` |  |
+| `columnWidth` | `cw` |  |
+| `rowSpacing` | `rs` |  |
+| `childArray` | `ca` |  |
+| `numberOfChildren` | `nch` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
 
 ## componentInfo
 
@@ -795,6 +1706,23 @@ Create a NURBS cone with a makeNurbCone node. Returns [nurbsCone1, makeNurbCone1
 | `tolerance` | `tol` | Accepted for Maya scripts. |
 | `heightRatio` | `hr` | Height over radius. |
 
+## confirmDialog
+
+A modal question with buttons. Returns the button pressed, or -dismissString when closed.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `title` | `t` |  |
+| `message` | `m` |  |
+| `messageAlign` | `ma` |  |
+| `button` | `b` |  |
+| `defaultButton` | `db` |  |
+| `cancelButton` | `cb` |  |
+| `dismissString` | `ds` |  |
+| `icon` | `icn` |  |
+| `backgroundColor` | `bgc` |  |
+| `parent` | `p` |  |
+
 ## connectAttr
 
 connectAttr('src.attr', 'dst.attr'). A whole array input ('loft1.sections') gets a new last element. Returns the destination plug.
@@ -804,6 +1732,9 @@ Arguments: src dst
 | Flag | Short | Description |
 | --- | --- | --- |
 | `force` | `f` | Replace an existing input connection. |
+| `nextAvailable` | `na` | The next free element of a multi attribute. |
+| `lock` | `l` | Lock the destination afterwards. |
+| `referenceDest` | `rd` | Accepted for Maya scripts. |
 
 ## connectJoint
 
@@ -816,6 +1747,24 @@ Arguments: the joint to connect, then its new parent
 | `connectMode` | `cm` | Move the first joint to the second. |
 | `parentMode` | `pm` | Keep the first joint where it is. |
 
+## connectionInfo
+
+Facts about a plug's connections.
+
+Arguments: plug
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `sourceFromDestination` | `sfd` | The plug driving this one, or "". |
+| `destinationFromSource` | `dfs` | The plugs this one drives. |
+| `getExactSource` | `ges` | The plug driving exactly this one. |
+| `getExactDestination` | `ged` | The plugs driven by exactly this one. |
+| `isDestination` | `id` | Driven. |
+| `isExactDestination` | `ied` | Driven directly. |
+| `isSource` | `is` | Drives something. |
+| `isExactSource` | `ies` | Drives something directly. |
+| `isLocked` | `il` | Locked. |
+
 ## constructionHistory
 
 Turn construction history on or off for later poly edits, or query it. Returns whether it is on.
@@ -824,6 +1773,102 @@ Turn construction history on or off for later poly edits, or query it. Returns w
 | --- | --- | --- |
 | `toggle` | `tgl` | Turn it on if off, off if on. |
 | `state` | `st` | Turn it on (True) or off (False). |
+
+## container
+
+Group nodes in a container node: -n, -an adds, -rn removes; with -e on an existing one. -q -nl lists, -q -fc finds the one holding a node.
+
+Arguments: container
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `name` | `n` | The container's name. |
+| `addNode` | `an` | Nodes to add. |
+| `add` | `add` | Nodes to add. |
+| `removeNode` | `rn` | Nodes to take out. |
+| `rm` | `rm` | Nodes to take out. |
+| `nodeList` | `nl` | With -q: its nodes. |
+| `findContainer` | `fc` | With -q: the container a node is in. |
+| `isContainer` | `isc` | With -q: whether it's a container. |
+| `asset` | `a` | Marks it an asset. |
+| `force` | `f` | Accepted for Maya scripts. |
+| `type` | `typ` | Accepted for Maya scripts. |
+| `includeHierarchyBelow` | `ihb` | Accepted for Maya scripts. |
+
+## contextInfo
+
+About a tool context: -ex whether it exists, -c its class, -t its title.
+
+Arguments: context
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `exists` | `ex` |  |
+| `class` | `c` |  |
+| `title` | `t` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+
+## control
+
+Edit and query any control.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `childArray` | `ca` |  |
+| `numberOfChildren` | `nch` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## controller
+
+Tag objects as animation controls: controller obj; -p parent makes them its children; -q -p, -q -c read the tree; -ac all; -ic is it one; -up unparents.
+
+Arguments: objects
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `parent` | `p` | The parent control, or with -q ask. |
+| `children` | `c` | With -q: its children. |
+| `allControllers` | `ac` | All the controls. |
+| `isController` | `ic` | Whether the object is a control. |
+| `unparent` | `unp` | Take from its parent. |
+| `group` | `g` | Accepted for Maya scripts. |
+| `index` | `idx` | Accepted for Maya scripts. |
+| `pickWalkDown` | `pwd` | Accepted for Maya scripts. |
+| `pickWalkUp` | `pwu` | Accepted for Maya scripts. |
 
 ## convertSelection
 
@@ -841,6 +1886,50 @@ Arguments: meshes... source
 | --- | --- | --- |
 | `tolerance` |  | Points may differ by this much, object space, cm. |
 | `force` |  | Convert the given meshes even when their geometry differs from the source's. |
+
+## convertUnit
+
+Convert a value between units: convertUnit -f inch -t cm "1". Returns the value with its unit.
+
+Arguments: value
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `fromUnit` | `f` | The unit of the value (centimeters, or as the value spells it). |
+| `toUnit` | `t` | The unit wanted. |
+
+## copyAttr
+
+Copy attributes between nodes: -v values, -ic and -oc move connections (-ksc leaves the source's), -at which attributes.
+
+Arguments: source target
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `attribute` | `at` | Attributes to copy (all that both nodes have). |
+| `values` | `v` | Copy values. |
+| `inConnections` | `ic` | Move incoming connections. |
+| `outConnections` | `oc` | Move outgoing connections. |
+| `keepSourceConnections` | `ksc` | Leave the source its connections. |
+| `containerParentChild` | `cpc` | Accepted for Maya scripts. |
+| `renameTargetContainer` | `rtc` | Accepted for Maya scripts. |
+
+## copyDeformerWeights
+
+Copy a deformer's weights to another by closest point in world space: -sd, -dd, -ss, -ds; -mm XY, XZ or YZ to mirror them.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `sourceDeformer` | `sd` | The deformer to copy from. |
+| `destinationDeformer` | `dd` | The deformer to copy to. |
+| `sourceShape` | `ss` | Its shape. |
+| `destinationShape` | `ds` | Its shape. |
+| `mirrorMode` | `mm` | XY, XZ or YZ. |
+| `mirrorInverse` | `mi` | Accepted for Maya scripts. |
+| `noMirror` | `nm` | Don't mirror. |
+| `smooth` | `sm` | Accepted for Maya scripts. |
+| `surfaceAssociation` | `sa` | Accepted: closest point is what's used. |
+| `uvSpace` | `uv` | Accepted for Maya scripts. |
 
 ## copyKey
 
@@ -879,6 +1968,7 @@ Arguments: source then destination (the selection when none)
 | `surfaceAssociation` | `sa` | closestPoint (default), rayCast or closestComponent. |
 | `influenceAssociation` | `ia` | closestJoint (default), closestBone, oneToOne, label or name, tried in turn. |
 | `normalize` | `nr` | Normalize the copied weights (default on). |
+| `uvSpace` | `uv` | Source and destination UV sets: points read the source at their UV position, between the corners of the face there. Sets beyond map1 aren't kept here. |
 | `sampleSpace` | `spa` | Accepted for Maya scripts. |
 
 ## createDisplayLayer
@@ -914,6 +2004,7 @@ Arguments: type
 | `name` | `n` | Name; made unique among its siblings. |
 | `parent` | `p` | Parent transform. |
 | `skipSelect` | `ss` | Don't select the new node. |
+| `shared` | `s` | Reuse a node of that name when there is one. |
 
 ## createSet
 
@@ -927,6 +2018,16 @@ Arguments: members
 | `quickSelect` | `qs` | Make it a quick select set (Edit > Quick Select Sets). |
 | `empty` | `e` | Make it with no members, whatever is selected. |
 
+## ctxEditMode
+
+Toggle the current tool's edit mode: the pivot, for the move, rotate and scale tools. -q reads it.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` |  |
+| `buttonDown` | `bd` |  |
+| `buttonUp` | `bu` |  |
+
 ## currentCharacters
 
 The characters keys go to when nothing is selected. Names set them, -cl clears them, -q lists them.
@@ -938,6 +2039,15 @@ Arguments: characters
 | `query` | `q` | Return the value of the flags named instead of setting them. |
 | `edit` | `e` | Change the flags named. |
 | `clear` | `cl` | No current character. |
+
+## currentCtx
+
+The name of the current tool context.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` |  |
+| `edit` | `e` |  |
 
 ## currentTime
 
@@ -986,6 +2096,132 @@ Arguments: a curve, with -a or -r
 | `objectSpace` | `os` | Accepted for Maya scripts. |
 | `name` | `n` | Name of the transform. |
 
+## curveCVCtx
+
+A curveCVCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `degree` | `d` |  |
+| `multEndKnots` | `me` |  |
+| `preserveShape` | `ps` |  |
+| `rational` | `r` |  |
+| `refit` | `rf` |  |
+| `uniform` | `un` |  |
+| `bezier` | `bez` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## curveEPCtx
+
+A curveEPCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `degree` | `d` |  |
+| `multEndKnots` | `me` |  |
+| `preserveShape` | `ps` |  |
+| `rational` | `r` |  |
+| `refit` | `rf` |  |
+| `uniform` | `un` |  |
+| `bezier` | `bez` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## curveIntersect
+
+Where two curves cross, as text: "u1 u2 u1 u2 ..." on the first and second. -ud -d flattens along a direction first; -tol how close.
+
+Arguments: two curves
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `tolerance` | `tol` | How close counts (0.001). |
+| `useDirection` | `ud` | Flatten along -d first. |
+| `direction` | `d` | Which way. |
+| `constructionHistory` | `ch` | Accepted for Maya scripts. |
+
+## curveOnSurface
+
+A curve on a surface: -d degree, -uv u v for each point, -k knots, -per periodic. Returns surface->curve.
+
+Arguments: a surface
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `degree` | `d` | The degree (3). |
+| `positionUV` | `uv` | A point. |
+| `knot` | `k` | A knot. |
+| `periodic` | `per` | Closed. |
+| `name` | `n` | The curve's name. |
+| `append` | `a` | Accepted for Maya scripts. |
+| `replace` | `r` | Accepted for Maya scripts. |
+| `positionTolerance` | `pt` | Accepted for Maya scripts. |
+| `tangentTolerance` | `tt` | Accepted for Maya scripts. |
+
+## curveSketchCtx
+
+A curveSketchCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `degree` | `d` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## curveWarp
+
+Curve Warp: lays a mesh along a curve, named by -c or last. Returns [curveWarp1].
+
+Arguments: what to deform, and any target last (the selection when none); the deformer with -e and -q
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `name` | `n` | Name of the deformer. |
+| `before` | `bf` | Go just above the deformer nearest the mesh. |
+| `after` | `af` | Go nearest the mesh, after the other deformers (the default). |
+| `frontOfChain` | `foc` | Go above every other deformer. |
+| `envelope` | `en` | How much of the deformation applies (1). |
+| `edit` | `e` | Edit mode. |
+| `query` | `q` | Query mode. |
+| `curve` | `c` | The curve; or name it last. |
+| `lengthScale` | `ls` | Stretches the mesh along the curve (1). |
+| `offset` | `off` | Slides the mesh along the curve, as a fraction. |
+| `twistRotation` | `tw` | Degrees of twist from end to end. |
+| `rollRotation` | `rr` | Degrees the mesh rolls about the curve. |
+| `alignmentMode` | `am` | 0 auto, 1 X, 2 Y, 3 Z. |
+| `keepLength` | `kl` | Keep the mesh's length, not the curve's. |
+
 ## cutKey
 
 Delete keys in -t (or all of them) from objects or channels. Curves left with no keys are deleted, leaving the channel at its value. -o curve keeps the rest of the curve's shape; curveCollapse, curveConnect and areaCollapse close the gap.
@@ -1006,6 +2242,24 @@ Arguments: objects, plugs or curves (the selection when none)
 | `clear` | `cl` | Delete without copying to the clipboard. |
 | `selected` | `sl` | Delete the keys selectKey selected. |
 | `option` | `o` | keys (the default), curve, curveCollapse, curveConnect or areaCollapse. |
+
+## cycleCheck
+
+Look for dependency cycles: -evaluation on|off the warning, -q asks; objects or -all: true when one is found, -l the plugs on it.
+
+Arguments: objects
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `evaluation` | `ev` | Warn about cycles while evaluating. |
+| `all` | `all` | Look through the whole scene. |
+| `list` | `l` | List the plugs on a cycle. |
+| `firstCycleOnly` | `fco` | Accepted: the first found is what's listed. |
+| `children` | `c` | Accepted for Maya scripts. |
+| `parents` | `p` | Accepted for Maya scripts. |
+| `dag` | `dag` | Accepted for Maya scripts. |
 
 ## cylinder
 
@@ -1045,6 +2299,34 @@ Arguments: joints or a dagPose (the selection when none)
 | `edit` | `e` | Edit mode. |
 | `query` | `q` | Query mode. |
 
+## deferScript
+
+evalDeferred for Python: the callable or source runs at the next idle. -lp last, -en next.
+
+Arguments: script
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `lowestPriority` | `low` |  |
+| `lowPriority` | `lp` |  |
+| `evaluateNext` | `en` |  |
+| `list` | `ls` |  |
+
+## deformableShape
+
+The plugs of a deformable shape: -cog makes the intermediate original if there is none and returns its output, -og returns that output, -ogm the shape's own, -lsi and -lso the local in and out attributes, -wso the world out attribute.
+
+Arguments: a mesh
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `createOriginalGeometry` | `cog` | Make the original shape if there is none. |
+| `originalGeometry` | `og` | The original shape's output plug. |
+| `outputGeometry` | `ogm` | The shape's output plug. |
+| `localShapeInAttr` | `lsi` | The local input attribute. |
+| `localShapeOutAttr` | `lso` | The local output attribute. |
+| `worldShapeOutAttr` | `wso` | The world output attribute. |
+
 ## deformer
 
 Make a deformer: deformer -type ffd [-n name] objects, with ffd, cluster, softMod, deltaMush, tension, wrap, wire or a nonlinear type. Returns [node]. -q -g gives the deformed shapes, -q -gi their indices. -e -g obj adds geometry, -e -rm -g obj takes it off.
@@ -1064,6 +2346,26 @@ Arguments: objects to deform (the selection when none); the deformer with -e and
 | `after` | `af` | Go nearest the mesh (the default). |
 | `frontOfChain` | `foc` | Go above every other deformer. |
 
+## deformerWeights
+
+Export or import a deformer's weights in Maya's layout: deformerWeights name.xml -ex -deformer skinCluster1 -path dir; -im with -method index, nearest, barycentric, bilinear or over. A .json file, or -fm JSON, goes as JSON. Returns the file's path.
+
+Arguments: the file
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `export` | `ex` | Write the file. |
+| `import` | `im` | Read the file. |
+| `deformer` | `df` | The deformers. -shape takes all those on a mesh. |
+| `shape` | `sh` | The deformed shape. |
+| `path` | `p` | The file's folder. |
+| `method` | `m` | index (the default), nearest, barycentric, bilinear or over: over leaves points the file doesn't list. |
+| `defaultValue` | `dv` | The weight of a point the file doesn't list. |
+| `format` | `fm` | XML or JSON. |
+| `weightPrecision` | `wp` | Decimal places in XML (3). |
+| `weightTolerance` | `wt` | Leave out weights at or below this. |
+| `ignoreName` | `ig` | Match deformers and sources by order, not name. |
+
 ## delete
 
 Delete objects (and their children). Defaults to the selection.
@@ -1073,6 +2375,18 @@ Arguments: objects
 | Flag | Short | Description |
 | --- | --- | --- |
 | `constructionHistory` | `ch` | Delete the objects' construction history instead: each mesh keeps what its history makes now. |
+| `channels` | `c` | Animation curves and expressions on the channels. |
+| `expressions` | `e` | Expressions on the channels. |
+| `constraints` | `cn` | Constraints on the object. |
+| `hierarchy` | `hi` | below or both: the objects under it too. |
+| `shape` | `s` | Only the shapes. |
+| `staticChannels` | `sc` | Curves whose keys all hold one value. |
+| `timeAnimationCurves` | `tac` | Curves over time. |
+| `unitlessAnimationCurves` | `uac` | Driven key curves. |
+| `attribute` | `at` | Only on these attributes. |
+| `inputConnectionsAndNodes` | `icn` | Everything feeding the channels. |
+| `controlPoints` | `cp` | Accepted for Maya scripts. |
+| `motionPaths` | `mp` | Accepted for Maya scripts. |
 
 ## deleteAttr
 
@@ -1100,6 +2414,28 @@ Arguments: layers
 Delete sets; their members stay.
 
 Arguments: sets
+
+## deleteUI
+
+Delete windows, layouts, controls, menus: -window -layout -control -menu -menuItem pick the kind.
+
+Arguments: names
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `window` | `wnd` |  |
+| `layout` | `lay` |  |
+| `control` | `ctl` |  |
+| `menu` | `m` |  |
+| `menuItem` | `mi` |  |
+| `panel` | `pnl` |  |
+| `panelConfig` | `pc` |  |
+| `editor` | `ed` |  |
+| `collection` | `cl` |  |
+| `radioMenuItemCollection` | `ric` |  |
+| `uiTemplate` | `uit` |  |
+| `exists` | `ex` |  |
+| `toolContext` | `tc` |  |
 
 ## deltaMush
 
@@ -1154,17 +2490,111 @@ Arguments: a surface (the selection when none)
 | `object` | `o` | Accepted for Maya scripts. |
 | `polygon` | `po` | Accepted for Maya scripts. |
 
+## dgInfo
+
+The dependency graph as text: -nd nodes, -c connections, -nt a type, -d dirty ones, -of a file.
+
+Arguments: objects
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `allNodes` | `all` | Every node. |
+| `nodes` | `nd` | List nodes (what it lists anyway). |
+| `connections` | `c` | List connections. |
+| `dirty` | `d` | Only nodes in this dirty state. |
+| `nonDeletable` | `nod` | Only locked nodes. |
+| `outputFile` | `of` | Write to this file. |
+| `propagation` | `p` | Accepted for Maya scripts. |
+| `short` | `s` | Accepted for Maya scripts. |
+| `subgraph` | `sub` | Accepted for Maya scripts. |
+| `type` | `nt` | Only this type. |
+
+## dgdirty
+
+Marks nodes for recompute: named, or -a every one.
+
+Arguments: objects or plugs
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `allPlugs` | `a` | Every node. |
+| `clean` | `c` | Accepted for Maya scripts. |
+| `verbose` | `v` | Accepted for Maya scripts. |
+
+## dgeval
+
+Brings nodes or plugs up to date.
+
+Arguments: objects or plugs
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `verbose` | `v` | Accepted for Maya scripts. |
+
+## dgtimer
+
+A stub: nothing is timed here. -on, -off, -reset are accepted, every result is 0.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `timerOn` | `on` | Turn the timer on or off. |
+| `timerOff` | `off` | Accepted. |
+| `reset` | `r` | Accepted. |
+| `outputFile` | `o` | Accepted. |
+| `maxDisplay` | `m` | Accepted. |
+| `sortMetric` | `sm` | Accepted. |
+| `sortType` | `st` | Accepted. |
+| `threshold` | `th` | Accepted. |
+| `timerType` | `tt` | Accepted. |
+| `uniqueName` | `un` | Accepted. |
+
 ## disconnectAttr
 
 disconnectAttr('dst.attr'), or (src, dst). A whole array input loses every element, or with src only the ones src drives.
 
 Arguments: [src] dst
 
+| Flag | Short | Description |
+| --- | --- | --- |
+| `nextAvailable` | `na` | Disconnect the next element src drives. |
+
 ## disconnectJoint
 
 Break a skeleton at a joint, deleting handles across the break. Returns the new end joint left on the old parent, then the joint.
 
 Arguments: joint
+
+## displayColor
+
+A display colour's index: name index, -a active or dormant, -q asks, -l lists, -c creates, -rf resets.
+
+Arguments: name [index]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `active` | `a` | The active colour. |
+| `dormant` | `d` | The dormant colour (the default). |
+| `create` | `c` | Create the name. |
+| `list` | `l` | List the names. |
+| `queryIndex` | `qi` | Accepted for Maya scripts. |
+| `resetToFactory` | `rf` | Back to the factory colours. |
+| `resetToSaved` | `rs` | Back to the saved colours. |
+| `userDefined` | `ud` | Accepted for Maya scripts. |
+
+## displayCull
+
+Back face culling per object, kept for scripts that ask: -bfc on or off, -q.
+
+Arguments: objects
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `backFaceCulling` | `bfc` | On or off. |
+| `query` | `q` | Query. |
 
 ## displayLayer
 
@@ -1181,6 +2611,62 @@ Arguments: layer
 | `useColor` | `uc` | Turn the wireframe tint on or off. |
 | `name` | `n` | Rename the layer; made unique. |
 
+## displayLevelOfDetail
+
+Level of detail display, as a setting scripts can read: -lod on|off.
+
+Arguments: on or off
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `levelOfDetail` | `lod` | On or off. |
+
+## displayPref
+
+Viewport display preferences, kept for scripts: each flag sets, -q reads.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `activeObjectPivots` | `aop` | A setting. |
+| `defaultFontSize` | `dfs` | A setting. |
+| `displayAffected` | `da` | A setting. |
+| `displayGradient` | `dgr` | A setting. |
+| `fontSettingMode` | `fm` | A setting. |
+| `lineWidth` | `lw` | A setting. |
+| `materialLoadingMode` | `mld` | A setting. |
+| `maxHardwareTextureResolution` | `mhl` | A setting. |
+| `maxTextureResolution` | `mtr` | A setting. |
+| `purgeExistingTextures` | `pet` | A setting. |
+| `regionOfEffect` | `roe` | A setting. |
+| `shadeTemplates` | `st` | A setting. |
+| `smallFontSize` | `sfs` | A setting. |
+| `textureDrawPixel` | `tdp` | A setting. |
+| `wireframeOnShadedActive` | `wsa` | A setting. |
+| `wireframeOnBackgroundFaces` | `wbf` | A setting. |
+| `workspaceMode` | `wsm` | A setting. |
+| `xrayActiveComponents` | `xac` | A setting. |
+
+## displayRGBColor
+
+A display colour's RGB: name r g b [a], -q asks, -l lists, -c creates.
+
+Arguments: name r g b [a]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `alpha` | `a` | With alpha. |
+| `create` | `c` | Create the name. |
+| `hueSaturationValue` | `hsv` | Accepted for Maya scripts. |
+| `list` | `l` | List the names. |
+| `resetToFactory` | `rf` | Back to the factory colours. |
+| `resetToSaved` | `rs` | Back to the saved colours. |
+
 ## displaySmoothness
 
 How finely surfaces draw: -du -dv isoparms within a span, -pw points to a drawn span, -ps shaded fineness. Acts on the objects named or selected, or every surface with -all.
@@ -1195,6 +2681,138 @@ Arguments: objects (the selection when none)
 | `pointsShaded` | `ps` | Shaded fineness. |
 | `polygonObject` | `po` | Accepted for Maya scripts. |
 | `all` | `all` | Every surface. |
+
+## displayStats
+
+Which statistics a viewport shows, kept for scripts: each flag sets, -q reads.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `frameRate` | `fr` | A setting. |
+| `headsUpDisplay` | `hud` | A setting. |
+| `polyCount` | `pc` | A setting. |
+| `cameraName` | `cn` | A setting. |
+| `viewAxis` | `va` | A setting. |
+| `selectionDetails` | `sd` | A setting. |
+
+## displaySurface
+
+How a surface draws, kept for scripts: -xr X-ray, -tsl two-sided lighting, -fn flip normals. On named or selected objects; -q reads the first.
+
+Arguments: objects
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `xRay` | `xr` | Draw see-through. |
+| `twoSidedLighting` | `tsl` | Light both sides (on by default). |
+| `flipNormals` | `fn` | Flip the normals drawn. |
+
+## distanceDimension
+
+Measure between two points: -sp, -ep, with locators there (made when none is). Returns the shape, whose .distance reads the length.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `startPoint` | `sp` | One end. |
+| `endPoint` | `ep` | The other end. |
+
+## dockControl
+
+Script UI: dockControl, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `area` | `a` |  |
+| `content` | `con` |  |
+| `allowedArea` | `aa` |  |
+| `label` | `l` |  |
+| `floating` | `fl` |  |
+| `retain` | `r` |  |
+| `moveable` | `mov` |  |
+| `sizeable` | `s` |  |
+| `closeCommand` | `cc` |  |
+| `floatChangeCommand` | `fcc` |  |
+| `childArray` | `ca` |  |
+| `numberOfChildren` | `nch` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## dolly
+
+Move a camera along its view: -d how far, positive in; -abs sets the distance to its centre; -os scales an orthographic width.
+
+Arguments: [camera]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `distance` | `d` |  |
+| `absolute` | `abs` |  |
+| `relative` | `rel` |  |
+| `dollyTowardsCenter` | `dtc` |  |
+| `orthoScale` | `os` |  |
+
+## dollyCtx
+
+A dollyCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `scale` | `s` |  |
+| `localDolly` | `ld` |  |
+| `centerOfInterestDolly` | `cd` |  |
+| `boxDollyType` | `bdt` |  |
+| `dollyTowardsCenter` | `dtc` |  |
+| `alternateContext` | `ac` |  |
+| `toolName` | `tn` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## dropoffLocator
+
+Mark a wire's dropoff at a point: dropoff percent wire.u[...]. Returns the locator. The wire's falloff stays as it is.
+
+Arguments: dropoff percent point
 
 ## duplicate
 
@@ -1214,6 +2832,14 @@ Arguments: objects
 | `space` |  | Axes the step is measured along: the world's or each object's own. |
 | `mode` | `m` | What a duplicated mesh shares with its source: copy shares nothing. instance shares the mesh and its whole modifier stack: every copy looks the same and exports as one mesh. reference shares only the base mesh and keeps a modifier stack of its own (same shape, a different bevel). Component edits on a shared mesh reach every copy. |
 | `group` | `g` | Put the copies under a new group. |
+| `returnRootsOnly` | `rr` | Only the top nodes in the result. |
+| `upstreamNodes` | `un` | Copy the nodes feeding it too. |
+| `parentOnly` | `po` | Only the node itself, no children. |
+| `inputConnections` | `ic` | The copy takes the same inputs. |
+| `renameChildren` | `rc` | Give the children new unique names. |
+| `smartTransform` | `st` | Repeat the last duplicate's step. |
+| `transformsOnly` | `to` | Leave out the shapes. |
+| `instanceLeaf` | `ilf` | Accepted for Maya scripts. |
 
 ## duplicateCurve
 
@@ -1234,6 +2860,25 @@ Arguments: an isoparm or a curve (the selection when none)
 Copy a modifier with its settings and insert the copy right after it in the stack. Returns the copy's name.
 
 Arguments: modifier
+
+## duplicateSurface
+
+A copy of a surface or of patches of it, surface.sf[0][1]: -l keeps following it. Returns [surface, node].
+
+Arguments: a surface or patches
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `local` | `l` | Keep following it. |
+| `mergeItems` | `mi` | Accepted for Maya scripts. |
+| `constructionHistory` | `ch` | Keep the node (on by default). |
+| `name` | `n` | The new object's name. |
+| `object` | `o` | Accepted for Maya scripts. |
+| `range` | `rn` | Accepted for Maya scripts. |
+| `caching` | `cch` | Accepted for Maya scripts. |
+| `nodeState` | `nds` | Accepted for Maya scripts. |
+| `tolerance` | `tol` | Accepted for Maya scripts. |
+| `polygon` | `po` | 0 NURBS, 1 polygons. |
 
 ## duplicateWithTransform
 
@@ -1264,6 +2909,41 @@ Edit keys picked by curve and index: -dt/-dv move them, -t/-v set them, -itt/-ot
 | `outTangentType` | `ott` | Tangent out of them. |
 | `breakdown` | `bd` | Make them breakdowns, or normal keys. |
 | `delete` | `del` | Remove them. |
+
+## encodeString
+
+A string with quotes, backslashes and control characters escaped, as MEL would need them.
+
+Arguments: string
+
+## env
+
+Every environment variable, as NAME=value lines.
+
+## evaluationManager
+
+The evaluation mode, as a setting scripts can read: -mode off|serial|parallel|emp. It doesn't change how the graph evaluates.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `mode` | `m` | off, serial, parallel or emp. |
+| `enabled` | `en` | Whether a mode other than off is set. |
+| `invalidate` | `inv` | Accepted for Maya scripts. |
+| `manipulation` | `man` | Accepted for Maya scripts. |
+| `idleBuild` | `ib` | Accepted for Maya scripts. |
+
+## exactWorldBoundingBox
+
+World bounds of objects with what is under them: xmin ymin zmin xmax ymax zmax.
+
+Arguments: objects
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `ignoreInvisible` | `ii` | Leave out hidden shapes. |
+| `calculateExactly` | `ce` | Accepted: bounds are always exact here. |
 
 ## exportObj
 
@@ -1299,6 +2979,25 @@ Arguments: path objects...
 | `binary` |  | Binary STL; off writes ASCII. |
 | `colors` |  | Binary only: the current color set as per-triangle VisCAM colors. |
 
+## expression
+
+Create, edit or query an expression node: expression -s "pCube1.tx = sin(time);" -o pCube1 -ae 1 -uc all -n name. Errors in the source fail the command. Returns the node's name.
+
+Arguments: [expression node, for -q and -e]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query. |
+| `edit` | `e` | Edit. |
+| `string` | `s` | The source. |
+| `object` | `o` | The object bare attribute names (tx, .tx) are on. |
+| `alwaysEvaluate` | `ae` | Evaluate whenever asked (1, the default). |
+| `unitConversion` | `uc` | all, none or angularOnly. With none, angles read and assign in radians. |
+| `name` | `n` | The node's name. |
+| `shortNames` | `sn` | Accepted for Maya scripts. |
+| `safe` | `sf` | Accepted for Maya scripts. |
+| `timeDependent` | `td` | With -q: whether it reads time or frame. |
+
 ## extendCurve
 
 Lengthen a curve along its tangent: -d distance, -s 0 end, 1 start, 2 both. Returns [curve, node].
@@ -1314,6 +3013,30 @@ Arguments: curves (the selection when none)
 | `replaceOriginal` | `rpo` | Change the curve itself (on by default). |
 | `name` | `n` | Name of a new curve. |
 | `object` | `o` | Make an object (accepted for Maya scripts). |
+
+## extendSurface
+
+Lengthen a surface: -d distance, -ed 0 U, 1 V, 2 both, -es 0 start, 1 end, 2 both, -et 0 tangent. Returns [surface, node].
+
+Arguments: surfaces (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `distance` | `d` | How far (1). |
+| `extendDirection` | `ed` | 0 U, 1 V, 2 both. |
+| `extendSide` | `es` | 0 start, 1 end, 2 both. |
+| `extensionType` | `et` | Accepted: tangent lines. |
+| `extendMethod` | `em` | Accepted for Maya scripts. |
+| `join` | `jn` | Accepted for Maya scripts. |
+| `replaceOriginal` | `rpo` | Change the surface itself (on by default). |
+| `constructionHistory` | `ch` | Keep the node (on by default). |
+| `name` | `n` | The new object's name. |
+| `object` | `o` | Accepted for Maya scripts. |
+| `range` | `rn` | Accepted for Maya scripts. |
+| `caching` | `cch` | Accepted for Maya scripts. |
+| `nodeState` | `nds` | Accepted for Maya scripts. |
+| `tolerance` | `tol` | Accepted for Maya scripts. |
+| `polygon` | `po` | 0 NURBS, 1 polygons. |
 
 ## extrude
 
@@ -1361,8 +3084,13 @@ Arguments: the file
 | `shortName` | `shn` | Query: with -sceneName, the file name alone. |
 | `exists` | `ex` | Query: whether the file (or the scene's file) exists. |
 | `modified` | `mf` | Query: whether the scene has edits. |
-| `reference` | `r` | Not supported; refused. |
-| `loadReference` | `lr` | Not supported; refused. |
+| `reference` | `r` | Bring the file in as a reference under -ns. Query: the referenced files. |
+| `loadReference` | `lr` | Load a reference, by its reference node (or the path argument); loaded already, it reloads. |
+| `unloadReference` | `ur` | Unload a reference, by its reference node (or the path argument). |
+| `removeReference` | `rr` | Remove the reference named by the path argument. |
+| `referenceNode` | `rfn` | The reference node's name, or with -q ask for it. |
+| `deferReference` | `dr` | Add the reference unloaded. |
+| `referenceDepthInfo` | `rdi` | Accepted for Maya scripts. |
 | `prompt` | `pmt` | Accepted for Maya scripts. |
 | `ignoreVersion` | `iv` | Accepted for Maya scripts. |
 | `preserveReferences` | `pr` | Accepted for Maya scripts. |
@@ -1372,7 +3100,73 @@ Arguments: the file
 | `expressions` | `exp` | Accepted for Maya scripts. |
 | `shader` | `sh` | Accepted for Maya scripts. |
 | `returnNewNodes` | `rnn` | Accepted for Maya scripts. |
-| `namespace` | `ns` | Accepted for Maya scripts. |
+| `namespace` | `ns` | The namespace a reference goes under. |
+
+## fileDialog
+
+The older file browser: -m 0 read, 1 write, -dm the mask, -t the title, -dfn the default name. Returns a path, or an empty string.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `title` | `t` |  |
+| `mode` | `m` |  |
+| `directoryMask` | `dm` |  |
+| `defaultFileName` | `dfn` |  |
+| `application` | `app` |  |
+
+## fileDialog2
+
+The file browser. -fm 0 any file, 1 an existing file, 2 a folder, 3 a folder only, 4 several files. Returns the paths, or nothing when cancelled.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `caption` | `cap` |  |
+| `fileMode` | `fm` |  |
+| `fileFilter` | `ff` |  |
+| `selectFileFilter` | `sff` |  |
+| `startingDirectory` | `dir` |  |
+| `okCaption` | `okc` |  |
+| `cancelCaption` | `cc` |  |
+| `dialogStyle` | `ds` |  |
+| `hideNameEdit` | `hne` |  |
+| `returnFilter` | `rf` |  |
+| `setProjectBtnEnabled` | `spe` |  |
+| `useManifest` | `um` |  |
+| `fileTypeChanged` | `ftc` |  |
+| `optionsUICreate` | `ocr` |  |
+| `optionsUIInit` | `oin` |  |
+| `optionsUICommit` | `ocm` |  |
+| `optionsUICommit2` | `oc2` |  |
+| `optionsUICancel` | `ocl` |  |
+| `buttonBoxOrientation` | `bbo` |  |
+| `selectionChanged` | `sc` |  |
+
+## filletCurve
+
+A fillet between two curves: -cir circular with -r radius (the default), or -fb free-form with -d, -b; -cp1, -cp2 where. Returns [curve, node].
+
+Arguments: two curves
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `radius` | `r` | The radius (1). |
+| `circular` | `cir` | A circular fillet (the default). |
+| `freeformBlend` | `fb` | A free-form fillet. |
+| `depth` | `d` | How far a free-form fillet reaches. |
+| `bias` | `b` | Which way it leans. |
+| `blendControl` | `bc` | Accepted for Maya scripts. |
+| `curveParameter1` | `cp1` | Where on the first curve. |
+| `curveParameter2` | `cp2` | Where on the second curve. |
+| `join` | `jn` | Trim the curves back too. |
+| `trim` | `t` | Trim the curves back. |
+| `constructionHistory` | `ch` | Keep the node (on by default). |
+| `name` | `n` | The new object's name. |
+| `object` | `o` | Accepted for Maya scripts. |
+| `range` | `rn` | Accepted for Maya scripts. |
+| `caching` | `cch` | Accepted for Maya scripts. |
+| `nodeState` | `nds` | Accepted for Maya scripts. |
+| `tolerance` | `tol` | Accepted for Maya scripts. |
+| `polygon` | `po` | 0 NURBS, 1 polygons. |
 
 ## filterCurve
 
@@ -1444,6 +3238,12 @@ Arguments: [mesh]
 | `fromSelection` | `fs` | Only consider the currently selected components of that kind. |
 | `tolerance` | `t` | Distance counted as on a plane for side=, cm (default scales with the mesh). |
 
+## findDeformers
+
+The deformers on a mesh, nearest the shape first.
+
+Arguments: objects
+
 ## findKeyframe
 
 The frame of the next, previous, first or last key on the objects (the selection when none).
@@ -1461,6 +3261,19 @@ The skinCluster on a mesh or its transform, or an empty string.
 
 Arguments: a mesh or its transform
 
+## findType
+
+Nodes of a type upstream of the objects (-fwd downstream), the nearest unless -d. -e exact type.
+
+Arguments: objects
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `type` | `t` | The type. |
+| `deep` | `d` | Every one, not just the nearest. |
+| `exact` | `e` | This type exactly. |
+| `forward` | `fwd` | Look downstream. |
+
 ## fitBspline
 
 A cubic through the curve's CVs. Returns [curve, node].
@@ -1475,6 +3288,319 @@ Arguments: curves (the selection when none)
 | `name` | `n` | Name of a new curve. |
 | `object` | `o` | Make an object (accepted for Maya scripts). |
 
+## floatField
+
+Script UI: floatField, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `precision` | `pre` |  |
+| `showTrailingZeros` | `tze` |  |
+| `value` | `v` |  |
+| `minValue` | `min` |  |
+| `maxValue` | `max` |  |
+| `step` | `s` |  |
+| `changeCommand` | `cc` |  |
+| `dragCommand` | `dc` |  |
+| `enterCommand` | `ec` |  |
+| `receiveFocusCommand` | `rfc` |  |
+| `editable` | `ed` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## floatFieldGrp
+
+Script UI: floatFieldGrp, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `precision` | `pre` |  |
+| `showTrailingZeros` | `tze` |  |
+| `step` | `s` |  |
+| `label` | `l` |  |
+| `numberOfFields` | `nf` |  |
+| `value` | `v` |  |
+| `value1` | `v1` |  |
+| `value2` | `v2` |  |
+| `value3` | `v3` |  |
+| `value4` | `v4` |  |
+| `extraLabel` | `el` |  |
+| `changeCommand` | `cc` |  |
+| `changeCommand1` | `cc1` |  |
+| `changeCommand2` | `cc2` |  |
+| `changeCommand3` | `cc3` |  |
+| `changeCommand4` | `cc4` |  |
+| `dragCommand` | `dc` |  |
+| `dragCommand1` | `dc1` |  |
+| `dragCommand2` | `dc2` |  |
+| `dragCommand3` | `dc3` |  |
+| `dragCommand4` | `dc4` |  |
+| `enable1` | `en1` |  |
+| `enable2` | `en2` |  |
+| `enable3` | `en3` |  |
+| `enable4` | `en4` |  |
+| `columnWidth1` | `cw1` |  |
+| `columnAlign1` | `cl1` |  |
+| `columnAttach1` | `ct1` |  |
+| `columnOffset1` | `co1` |  |
+| `columnWidth2` | `cw2` |  |
+| `columnAlign2` | `cl2` |  |
+| `columnAttach2` | `ct2` |  |
+| `columnOffset2` | `co2` |  |
+| `adjustableColumn2` | `ad2` |  |
+| `columnWidth3` | `cw3` |  |
+| `columnAlign3` | `cl3` |  |
+| `columnAttach3` | `ct3` |  |
+| `columnOffset3` | `co3` |  |
+| `adjustableColumn3` | `ad3` |  |
+| `columnWidth4` | `cw4` |  |
+| `columnAlign4` | `cl4` |  |
+| `columnAttach4` | `ct4` |  |
+| `columnOffset4` | `co4` |  |
+| `adjustableColumn4` | `ad4` |  |
+| `columnWidth5` | `cw5` |  |
+| `columnAlign5` | `cl5` |  |
+| `columnAttach5` | `ct5` |  |
+| `columnOffset5` | `co5` |  |
+| `adjustableColumn5` | `ad5` |  |
+| `columnWidth6` | `cw6` |  |
+| `columnAlign6` | `cl6` |  |
+| `columnAttach6` | `ct6` |  |
+| `columnOffset6` | `co6` |  |
+| `adjustableColumn6` | `ad6` |  |
+| `adjustableColumn` | `adj` |  |
+| `columnWidth` | `cw` |  |
+| `columnAlign` | `cal` |  |
+| `columnAttach` | `cat` |  |
+| `rowAttach` | `rat` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## floatScrollBar
+
+Script UI: floatScrollBar, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `value` | `v` |  |
+| `minValue` | `min` |  |
+| `maxValue` | `max` |  |
+| `step` | `s` |  |
+| `horizontal` | `hr` |  |
+| `changeCommand` | `cc` |  |
+| `dragCommand` | `dc` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## floatSlider
+
+Script UI: floatSlider, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `value` | `v` |  |
+| `minValue` | `min` |  |
+| `maxValue` | `max` |  |
+| `step` | `s` |  |
+| `horizontal` | `hr` |  |
+| `changeCommand` | `cc` |  |
+| `dragCommand` | `dc` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## floatSliderGrp
+
+Script UI: floatSliderGrp, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `precision` | `pre` |  |
+| `showTrailingZeros` | `tze` |  |
+| `label` | `l` |  |
+| `field` | `f` |  |
+| `value` | `v` |  |
+| `minValue` | `min` |  |
+| `maxValue` | `max` |  |
+| `fieldMinValue` | `fmn` |  |
+| `fieldMaxValue` | `fmx` |  |
+| `sliderStep` | `ss` |  |
+| `step` | `s` |  |
+| `fieldStep` | `fs` |  |
+| `extraLabel` | `el` |  |
+| `changeCommand` | `cc` |  |
+| `dragCommand` | `dc` |  |
+| `columnWidth1` | `cw1` |  |
+| `columnAlign1` | `cl1` |  |
+| `columnAttach1` | `ct1` |  |
+| `columnOffset1` | `co1` |  |
+| `columnWidth2` | `cw2` |  |
+| `columnAlign2` | `cl2` |  |
+| `columnAttach2` | `ct2` |  |
+| `columnOffset2` | `co2` |  |
+| `adjustableColumn2` | `ad2` |  |
+| `columnWidth3` | `cw3` |  |
+| `columnAlign3` | `cl3` |  |
+| `columnAttach3` | `ct3` |  |
+| `columnOffset3` | `co3` |  |
+| `adjustableColumn3` | `ad3` |  |
+| `columnWidth4` | `cw4` |  |
+| `columnAlign4` | `cl4` |  |
+| `columnAttach4` | `ct4` |  |
+| `columnOffset4` | `co4` |  |
+| `adjustableColumn4` | `ad4` |  |
+| `columnWidth5` | `cw5` |  |
+| `columnAlign5` | `cl5` |  |
+| `columnAttach5` | `ct5` |  |
+| `columnOffset5` | `co5` |  |
+| `adjustableColumn5` | `ad5` |  |
+| `columnWidth6` | `cw6` |  |
+| `columnAlign6` | `cl6` |  |
+| `columnAttach6` | `ct6` |  |
+| `columnOffset6` | `co6` |  |
+| `adjustableColumn6` | `ad6` |  |
+| `adjustableColumn` | `adj` |  |
+| `columnWidth` | `cw` |  |
+| `columnAlign` | `cal` |  |
+| `columnAttach` | `cat` |  |
+| `rowAttach` | `rat` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
 ## flow
 
 Deform an object on a motion path through a lattice that travels with it. Needs the lattice deformer.
@@ -1488,6 +3614,51 @@ Arguments: the object (the selection when none)
 | `localDivisions` | `ld` | Accepted for Maya scripts. |
 | `objectCentered` | `oc` | Accepted for Maya scripts. |
 
+## flowLayout
+
+Script UI: flowLayout, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `vertical` | `v` |  |
+| `wrap` | `wr` |  |
+| `columnSpacing` | `cs` |  |
+| `childArray` | `ca` |  |
+| `numberOfChildren` | `nch` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## flushIdleQueue
+
+Runs what waits for idle now: scriptJobs and deferred scripts.
+
 ## flushUndo
 
 Clear undo history. which='past' drops the steps undo would revert, so undo cannot step back past this point; 'future' drops the redo steps; 'all' drops both.
@@ -1495,6 +3666,126 @@ Clear undo history. which='past' drops the steps undo would revert, so undo cann
 | Flag | Short | Description |
 | --- | --- | --- |
 | `which` | `w` | past, future or all. |
+
+## formLayout
+
+Script UI: formLayout, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `numberOfDivisions` | `nd` |  |
+| `attachForm` | `af` |  |
+| `attachControl` | `ac` |  |
+| `attachPosition` | `ap` |  |
+| `attachNone` | `an` |  |
+| `attachOppositeForm` | `aof` |  |
+| `attachOppositeControl` | `aoc` |  |
+| `childArray` | `ca` |  |
+| `numberOfChildren` | `nch` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## frameLayout
+
+Script UI: frameLayout, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `label` | `l` |  |
+| `collapsable` | `cll` |  |
+| `collapse` | `cl` |  |
+| `marginHeight` | `mh` |  |
+| `marginWidth` | `mw` |  |
+| `borderVisible` | `bv` |  |
+| `borderStyle` | `bs` |  |
+| `labelVisible` | `lv` |  |
+| `labelIndent` | `li` |  |
+| `labelWidth` | `lw` |  |
+| `labelAlign` | `la` |  |
+| `font` | `fn` |  |
+| `collapseCommand` | `cc` |  |
+| `expandCommand` | `ec` |  |
+| `preCollapseCommand` | `pcc` |  |
+| `preExpandCommand` | `pec` |  |
+| `childArray` | `ca` |  |
+| `numberOfChildren` | `nch` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## freeFormFillet
+
+A blend between two edges (surface.u[x] or surface.v[x]) leaving each along its surface: -d depth, -bb bias. Returns [surface, node].
+
+Arguments: two edges
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `depth` | `d` | How far the tangents reach (0.5). |
+| `bias` | `bb` | Which way it leans. |
+| `positionTolerance` | `pt` | Accepted for Maya scripts. |
+| `tangentTolerance` | `tt` | Accepted for Maya scripts. |
+| `constructionHistory` | `ch` | Keep the node (on by default). |
+| `name` | `n` | The new object's name. |
+| `object` | `o` | Accepted for Maya scripts. |
+| `range` | `rn` | Accepted for Maya scripts. |
+| `caching` | `cch` | Accepted for Maya scripts. |
+| `nodeState` | `nds` | Accepted for Maya scripts. |
+| `tolerance` | `tol` | Accepted for Maya scripts. |
+| `polygon` | `po` | 0 NURBS, 1 polygons. |
 
 ## freezeTransforms
 
@@ -1504,14 +3795,28 @@ Arguments: objects
 
 | Flag | Short | Description |
 | --- | --- | --- |
-| `apply` |  | Maya's makeIdentity -a: bake the transform into the geometry (always on). |
 | `normal` | `n` | Accepted for Maya scripts. |
 | `preserveNormals` | `pn` | Accepted for Maya scripts. |
+| `hierarchy` |  | Freeze everything parented under the objects too. |
+| `jointOrient` |  | Also line joints' axes up with the world, zeroing their orientation. |
+| `apply` | `a` | On: bake into the geometry. Off, when given: back to identity, the object moving. |
 | `translate` | `t` | Freeze translation. |
 | `rotate` | `r` | Freeze rotation. |
 | `scale` | `s` | Freeze scale. |
-| `hierarchy` |  | Freeze everything parented under the objects too. |
-| `jointOrient` |  | Also line joints' axes up with the world, zeroing their orientation. |
+
+## geomBind
+
+Recomputes a skinCluster's weights following the surface: -bm 3 (the geodesic voxel method, which runs the heat bind here), -mi, -fo.
+
+Arguments: skinCluster or skinned mesh
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `bindMethod` | `bm` | 3 geodesic voxel; 2 heat map; 0 and 1 closest distance and hierarchy. |
+| `falloff` | `fo` | 0 to 1, how far influences reach. |
+| `maxInfluences` | `mi` | Most influences on a point. |
+| `geodesicVoxelParams` | `gvp` | Accepted for Maya scripts. |
+| `postVoxelSmooth` | `pvs` | Accepted for Maya scripts. |
 
 ## geometryConstraint
 
@@ -1549,9 +3854,145 @@ Arguments: plug
 
 | Flag | Short | Description |
 | --- | --- | --- |
-| `lock` | `l` | Return the lock state instead of the value. |
-| `keyable` | `k` | Return whether the channel is keyable instead of the value. |
-| `multiIndices` | `mi` | Return an array's element indices, ascending. |
+| `time` | `t` | The value at this frame. |
+| `type` | `typ` | The attribute's type name. |
+| `keyable` | `k` | Whether it is keyable. |
+| `channelBox` | `cb` | Whether it shows in the channel box without being keyable. |
+| `settable` | `se` | Whether setAttr would take: not locked, not driven, an input. |
+| `size` | `s` | The element count of a multi attribute; 1 otherwise. |
+| `silent` | `sl` | Accepted for Maya scripts. |
+| `asString` | `as` | An enum's label. |
+| `expandEnvironmentVariables` | `x` | Accepted for Maya scripts. |
+| `lock` | `l` | Whether it is locked. |
+| `multiIndices` | `mi` | The element indices of a multi attribute. |
+
+## getClassification
+
+A node type's classification strings: utility/general, and so on.
+
+Arguments: type
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `satisfies` | `sat` | Whether the type's classification satisfies this. |
+
+## getLastError
+
+The text of the last error reported.
+
+## getModifiers
+
+Which modifier keys are down, as bits: none, when a script asks.
+
+## getModulePath
+
+Where a module lives: -mn name, along AZTEK_MODULE_PATH and MAYA_MODULE_PATH.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `moduleName` | `mn` | The module. |
+
+## getPanel
+
+The panels: -wf in focus, -up under the pointer, -wl by label, -typ of a type, -to the type of one, -vis visible, -all.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `withLabel` | `wl` |  |
+| `type` | `typ` |  |
+| `typeOf` | `to` |  |
+| `scriptType` | `sty` |  |
+| `containing` | `con` |  |
+| `configWithLabel` | `cwl` |  |
+| `withFocus` | `wf` |  |
+| `underPointer` | `up` |  |
+| `allPanels` | `all` |  |
+| `visiblePanels` | `vis` |  |
+| `invisiblePanels` | `inv` |  |
+| `allTypes` | `at` |  |
+| `allScriptedTypes` | `ast` |  |
+| `allConfigs` | `ac` |  |
+| `atPosition` | `ap` |  |
+
+## getenv
+
+An environment variable's value, or "".
+
+Arguments: name
+
+## globalStitch
+
+Stitch a whole set of surfaces: every pair of edges within -ms of each other. Returns the surfaces and nodes.
+
+Arguments: surfaces
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `maxSeparation` | `ms` | How far apart edges may be (0.1). |
+| `lockSurface` | `lk` | Accepted for Maya scripts. |
+| `modificationResistance` | `mr` | Accepted for Maya scripts. |
+| `sampling` | `sam` | Accepted for Maya scripts. |
+| `stitchCorners` | `sc` | Accepted for Maya scripts. |
+| `stitchEdges` | `se` | Accepted for Maya scripts. |
+| `stitchPartialEdges` | `spe` | Accepted for Maya scripts. |
+| `stitchSmoothness` | `ss` | Accepted for Maya scripts. |
+| `constructionHistory` | `ch` | Keep the node (on by default). |
+| `name` | `n` | The new object's name. |
+| `object` | `o` | Accepted for Maya scripts. |
+| `range` | `rn` | Accepted for Maya scripts. |
+| `caching` | `cch` | Accepted for Maya scripts. |
+| `nodeState` | `nds` | Accepted for Maya scripts. |
+| `tolerance` | `tol` | Accepted for Maya scripts. |
+| `polygon` | `po` | 0 NURBS, 1 polygons. |
+
+## gridLayout
+
+Script UI: gridLayout, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `numberOfColumns` | `nc` |  |
+| `numberOfRows` | `nr` |  |
+| `numberOfRowsColumns` | `nrc` |  |
+| `cellWidth` | `cw` |  |
+| `cellHeight` | `ch` |  |
+| `cellWidthHeight` | `cwh` |  |
+| `autoGrow` | `ag` |  |
+| `allowEmptyCells` | `aec` |  |
+| `columnsResizable` | `cr` |  |
+| `position` | `pos` |  |
+| `gridOrder` | `go` |  |
+| `childArray` | `ca` |  |
+| `numberOfChildren` | `nch` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
 
 ## group
 
@@ -1564,10 +4005,28 @@ Arguments: objects
 | `name` | `n` | Group name. |
 | `empty` | `em` | Create an empty group. |
 | `parent` | `p` | Parent for the new group. |
+| `world` | `w` | Under the world (the default here). |
+| `absolute` | `a` | Keep world placement (the default). |
+| `relative` | `r` | Keep local placement. |
+| `useAsGroup` | `uag` | Accepted for Maya scripts. |
 
 ## growSelection
 
 Grow the component selection by one ring of neighbours: points to the points of their faces, edges and faces to those sharing a point with the selection.
+
+## hardenPointCurve
+
+Make a curve pass through CVs by raising the knot multiplicity: curve.cv[i], -m how many (-1 up to the degree). Returns [curve, node].
+
+Arguments: CVs (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `multiplicity` | `m` | How many knots, -1 as many as the degree. |
+| `constructionHistory` | `ch` | Keep a history node (on by default). |
+| `replaceOriginal` | `rpo` | Change the curve itself (on by default). |
+| `name` | `n` | Name of a new curve. |
+| `object` | `o` | Make an object (accepted for Maya scripts). |
 
 ## headsUpDisplay
 
@@ -1586,11 +4045,34 @@ Arguments: name
 | `exists` | `ex` | Whether it exists. |
 | `listHeadsUpDisplays` | `lh` | List them. |
 
+## headsUpMessage
+
+A short message over the view. -time how long it stays.
+
+Arguments: message
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `object` | `o` |  |
+| `selection` | `s` |  |
+| `time` | `t` |  |
+| `uvTextureEditor` | `uve` |  |
+| `verticalOffset` | `vo` |  |
+| `horizontalOffset` | `hoo` |  |
+| `viewport` | `vp` |  |
+
 ## hide
 
 Hide objects (visibility off). Defaults to the selection.
 
 Arguments: objects
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `clearSelection` | `cs` | Accepted for Maya scripts. |
+| `returnHidden` | `rh` | Return what was hidden. |
+| `invertComponents` | `ic` | Accepted for Maya scripts. |
+| `testVisibility` | `tv` | Whether they are hidden, changing nothing. |
 
 ## hikBake
 
@@ -1648,6 +4130,24 @@ Drive one character from another, both in matching poses now: hikSetSource targe
 
 Arguments: target, source
 
+## hilite
+
+Hilite objects for component work: named, -r to replace, -u to take away, -tgl.
+
+Arguments: objects
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `replace` | `r` | Replace what is hilited. |
+| `toggle` | `tgl` | Toggle. |
+| `unHilite` | `u` | Take away. |
+
+## hitTest
+
+A stub outside the UI: returns nothing, since panels and their cameras live there.
+
+Arguments: control x y
+
 ## hotkey
 
 Bind a key: -k the key, -alt -ctl -sht modifiers, -n the name command for press, -rn for release.
@@ -1660,6 +4160,166 @@ Bind a key: -k the key, -alt -ctl -sht modifiers, -n the name command for press,
 | `shiftModifier` | `sht` | With Shift. |
 | `name` | `n` | The name command for press. |
 | `releaseName` | `rn` | The name command for release. |
+
+## iconTextButton
+
+Script UI: iconTextButton, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `style` | `st` |  |
+| `image` | `i` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `label` | `l` |  |
+| `command` | `c` |  |
+| `doubleClickCommand` | `dcc` |  |
+| `sourceType` | `stp` |  |
+| `imageOverlayLabel` | `iol` |  |
+| `flat` | `fla` |  |
+| `disabledImage` | `di` |  |
+| `align` | `al` |  |
+| `marginWidth` | `mw` |  |
+| `marginHeight` | `mh` |  |
+| `font` | `fn` |  |
+| `labelOffset` | `lo` |  |
+| `rotation` | `rot` |  |
+| `selectionImage` | `si` |  |
+| `highlightImage` | `hi` |  |
+| `overlayLabelColor` | `olc` |  |
+| `overlayLabelBackColor` | `olb` |  |
+| `scaleIcon` | `sic` |  |
+| `commandRepeatable` | `rpt` |  |
+| `ltVersion` | `lt` |  |
+| `version` | `ver` |  |
+| `useAlpha` | `ua` |  |
+| `flexibleWidthType` | `fwt` |  |
+| `flexibleWidthValue` | `fwv` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## iconTextCheckBox
+
+Script UI: iconTextCheckBox, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `style` | `st` |  |
+| `image` | `i` |  |
+| `image1` | `i1` |  |
+| `label` | `l` |  |
+| `value` | `v` |  |
+| `onCommand` | `onc` |  |
+| `offCommand` | `ofc` |  |
+| `changeCommand` | `cc` |  |
+| `flat` | `fla` |  |
+| `font` | `fn` |  |
+| `align` | `al` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## iconTextRadioButton
+
+Script UI: iconTextRadioButton, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `style` | `st` |  |
+| `image` | `i` |  |
+| `image1` | `i1` |  |
+| `label` | `l` |  |
+| `select` | `sl` |  |
+| `collection` | `cl` |  |
+| `onCommand` | `onc` |  |
+| `offCommand` | `ofc` |  |
+| `changeCommand` | `cc` |  |
+| `flat` | `fla` |  |
+| `font` | `fn` |  |
+| `align` | `al` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
 
 ## ikHandle
 
@@ -1702,6 +4362,43 @@ Arguments: start and end joints (the selection when -sj/-ee are not given), or t
 | `edit` | `e` | Change a handle. |
 | `query` | `q` | Ask about a handle. |
 
+## ikHandleCtx
+
+A ikHandleCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `autoPriorityH` | `apH` |  |
+| `createCurve` | `ccv` |  |
+| `createRootAxis` | `cra` |  |
+| `forceSolverH` | `fsH` |  |
+| `ikFKSwitching` | `ikf` |  |
+| `numSpans` | `ns` |  |
+| `parentCurve` | `pcv` |  |
+| `poWeightH` | `pwH` |  |
+| `priorityH` | `pH` |  |
+| `rootOnCurve` | `roc` |  |
+| `rootTwistMode` | `rtm` |  |
+| `simplifyCurve` | `scv` |  |
+| `snapCurve` | `snc` |  |
+| `snapHandleH` | `snH` |  |
+| `solverTypeH` | `stH` |  |
+| `stickyH` | `sH` |  |
+| `twistType` | `tws` |  |
+| `weightH` | `wH` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## ikSolver
 
 Create a solver node handles can name with -sol. Returns its name.
@@ -1717,6 +4414,42 @@ Arguments: solver (edit and query)
 | `edit` | `e` | Change a solver. |
 | `query` | `q` | Ask about a solver. |
 
+## ikSplineHandleCtx
+
+A ikSplineHandleCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `autoPriorityH` | `apH` |  |
+| `createCurve` | `ccv` |  |
+| `createRootAxis` | `cra` |  |
+| `forceSolverH` | `fsH` |  |
+| `numSpans` | `ns` |  |
+| `parentCurve` | `pcv` |  |
+| `poWeightH` | `pwH` |  |
+| `priorityH` | `pH` |  |
+| `rootOnCurve` | `roc` |  |
+| `rootTwistMode` | `rtm` |  |
+| `simplifyCurve` | `scv` |  |
+| `snapCurve` | `snc` |  |
+| `snapHandleH` | `snH` |  |
+| `solverTypeH` | `stH` |  |
+| `stickyH` | `sH` |  |
+| `twistType` | `tws` |  |
+| `weightH` | `wH` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## ikSystem
 
 Scene wide IK: -e -sol 0 stops every handle solving, -e -sn 0 stops handles snapping to their effectors.
@@ -1728,6 +4461,43 @@ Scene wide IK: -e -sol 0 stops every handle solving, -e -sn 0 stops handles snap
 | `listSolvers` | `ls` | Query: the solver nodes. |
 | `edit` | `e` | Change the settings. |
 | `query` | `q` | Ask about the settings. |
+
+## image
+
+Script UI: image, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `image` | `i` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
 
 ## importObj
 
@@ -1761,11 +4531,92 @@ Arguments: path
 | `weld` |  | Merge identical positions into shared points. |
 | `hardAngle` |  | Edges bent more than this many degrees are hard; -1 leaves all soft. |
 
+## inViewMessage
+
+A message that fades in the view: -amg assist message, -msg, -pos, -fade.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `message` | `msg` |  |
+| `assistMessage` | `amg` |  |
+| `statusMessage` | `smg` |  |
+| `position` | `pos` |  |
+| `fadeInTime` | `fit` |  |
+| `fadeOutTime` | `fot` |  |
+| `fadeStayTime` | `fst` |  |
+| `alpha` | `a` |  |
+| `backColor` | `bkc` |  |
+| `textAlpha` | `ta` |  |
+| `textOffset` | `to` |  |
+| `frameOffset` | `fo` |  |
+| `font` | `fn` |  |
+| `clear` | `clr` |  |
+| `fade` | `f` |  |
+| `dragKill` | `dk` |  |
+| `minimize` | `min` |  |
+| `restore` | `rst` |  |
+| `uvEditor` | `uv` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## inheritTransform
+
+Whether objects follow their parent's transform: toggles, -on sets, -p keeps them where they are; -q reads each.
+
+Arguments: objects
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `toggle` | `tgl` | Toggle (what it does anyway). |
+| `on` | `on` | Set on or off. |
+| `preserve` | `p` | Keep the world position. |
+
 ## insertJoint
 
 Add a joint under the named or selected joint, at its place; its child joints move under the new one. Returns the new joint.
 
 Arguments: joint
+
+## insertJointCtx
+
+A insertJointCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## insertKeyCtx
+
+A insertKeyCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `breakdown` | `bd` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
 
 ## insertKnotCurve
 
@@ -1813,6 +4664,8 @@ Arguments: objects
 | --- | --- | --- |
 | `name` | `n` | Name for a single instance. |
 | `reference` |  | Share only the base mesh and keep a modifier stack of its own (same shape, a different bevel). Off, instances share the modifier stack too, so every copy looks the same and exports as one mesh. |
+| `leaf` | `lf` | Accepted for Maya scripts. |
+| `smartTransform` | `st` | Accepted for Maya scripts. |
 
 ## instanceInfo
 
@@ -1820,22 +4673,409 @@ How a mesh shares data: {kind: none | source | instance | reference, source, mem
 
 Arguments: mesh
 
+## intField
+
+Script UI: intField, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `value` | `v` |  |
+| `minValue` | `min` |  |
+| `maxValue` | `max` |  |
+| `step` | `s` |  |
+| `changeCommand` | `cc` |  |
+| `dragCommand` | `dc` |  |
+| `enterCommand` | `ec` |  |
+| `receiveFocusCommand` | `rfc` |  |
+| `editable` | `ed` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## intFieldGrp
+
+Script UI: intFieldGrp, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `label` | `l` |  |
+| `numberOfFields` | `nf` |  |
+| `value` | `v` |  |
+| `value1` | `v1` |  |
+| `value2` | `v2` |  |
+| `value3` | `v3` |  |
+| `value4` | `v4` |  |
+| `extraLabel` | `el` |  |
+| `changeCommand` | `cc` |  |
+| `changeCommand1` | `cc1` |  |
+| `changeCommand2` | `cc2` |  |
+| `changeCommand3` | `cc3` |  |
+| `changeCommand4` | `cc4` |  |
+| `dragCommand` | `dc` |  |
+| `dragCommand1` | `dc1` |  |
+| `dragCommand2` | `dc2` |  |
+| `dragCommand3` | `dc3` |  |
+| `dragCommand4` | `dc4` |  |
+| `enable1` | `en1` |  |
+| `enable2` | `en2` |  |
+| `enable3` | `en3` |  |
+| `enable4` | `en4` |  |
+| `columnWidth1` | `cw1` |  |
+| `columnAlign1` | `cl1` |  |
+| `columnAttach1` | `ct1` |  |
+| `columnOffset1` | `co1` |  |
+| `columnWidth2` | `cw2` |  |
+| `columnAlign2` | `cl2` |  |
+| `columnAttach2` | `ct2` |  |
+| `columnOffset2` | `co2` |  |
+| `adjustableColumn2` | `ad2` |  |
+| `columnWidth3` | `cw3` |  |
+| `columnAlign3` | `cl3` |  |
+| `columnAttach3` | `ct3` |  |
+| `columnOffset3` | `co3` |  |
+| `adjustableColumn3` | `ad3` |  |
+| `columnWidth4` | `cw4` |  |
+| `columnAlign4` | `cl4` |  |
+| `columnAttach4` | `ct4` |  |
+| `columnOffset4` | `co4` |  |
+| `adjustableColumn4` | `ad4` |  |
+| `columnWidth5` | `cw5` |  |
+| `columnAlign5` | `cl5` |  |
+| `columnAttach5` | `ct5` |  |
+| `columnOffset5` | `co5` |  |
+| `adjustableColumn5` | `ad5` |  |
+| `columnWidth6` | `cw6` |  |
+| `columnAlign6` | `cl6` |  |
+| `columnAttach6` | `ct6` |  |
+| `columnOffset6` | `co6` |  |
+| `adjustableColumn6` | `ad6` |  |
+| `adjustableColumn` | `adj` |  |
+| `columnWidth` | `cw` |  |
+| `columnAlign` | `cal` |  |
+| `columnAttach` | `cat` |  |
+| `rowAttach` | `rat` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## intScrollBar
+
+Script UI: intScrollBar, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `value` | `v` |  |
+| `minValue` | `min` |  |
+| `maxValue` | `max` |  |
+| `step` | `s` |  |
+| `horizontal` | `hr` |  |
+| `changeCommand` | `cc` |  |
+| `dragCommand` | `dc` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## intSlider
+
+Script UI: intSlider, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `value` | `v` |  |
+| `minValue` | `min` |  |
+| `maxValue` | `max` |  |
+| `step` | `s` |  |
+| `horizontal` | `hr` |  |
+| `changeCommand` | `cc` |  |
+| `dragCommand` | `dc` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## intSliderGrp
+
+Script UI: intSliderGrp, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `label` | `l` |  |
+| `field` | `f` |  |
+| `value` | `v` |  |
+| `minValue` | `min` |  |
+| `maxValue` | `max` |  |
+| `fieldMinValue` | `fmn` |  |
+| `fieldMaxValue` | `fmx` |  |
+| `sliderStep` | `ss` |  |
+| `step` | `s` |  |
+| `fieldStep` | `fs` |  |
+| `extraLabel` | `el` |  |
+| `changeCommand` | `cc` |  |
+| `dragCommand` | `dc` |  |
+| `columnWidth1` | `cw1` |  |
+| `columnAlign1` | `cl1` |  |
+| `columnAttach1` | `ct1` |  |
+| `columnOffset1` | `co1` |  |
+| `columnWidth2` | `cw2` |  |
+| `columnAlign2` | `cl2` |  |
+| `columnAttach2` | `ct2` |  |
+| `columnOffset2` | `co2` |  |
+| `adjustableColumn2` | `ad2` |  |
+| `columnWidth3` | `cw3` |  |
+| `columnAlign3` | `cl3` |  |
+| `columnAttach3` | `ct3` |  |
+| `columnOffset3` | `co3` |  |
+| `adjustableColumn3` | `ad3` |  |
+| `columnWidth4` | `cw4` |  |
+| `columnAlign4` | `cl4` |  |
+| `columnAttach4` | `ct4` |  |
+| `columnOffset4` | `co4` |  |
+| `adjustableColumn4` | `ad4` |  |
+| `columnWidth5` | `cw5` |  |
+| `columnAlign5` | `cl5` |  |
+| `columnAttach5` | `ct5` |  |
+| `columnOffset5` | `co5` |  |
+| `adjustableColumn5` | `ad5` |  |
+| `columnWidth6` | `cw6` |  |
+| `columnAlign6` | `cl6` |  |
+| `columnAttach6` | `ct6` |  |
+| `columnOffset6` | `co6` |  |
+| `adjustableColumn6` | `ad6` |  |
+| `adjustableColumn` | `adj` |  |
+| `columnWidth` | `cw` |  |
+| `columnAlign` | `cal` |  |
+| `columnAttach` | `cat` |  |
+| `rowAttach` | `rat` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## intersect
+
+Curves where two surfaces cross, sampled from their tessellation: one object per run, -cos on the first surface. Returns [curves..., node].
+
+Arguments: two surfaces
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `curveOnSurface` | `cos` | As curves on the first surface. |
+| `firstSurface` | `fs` | Accepted for Maya scripts. |
+| `constructionHistory` | `ch` | Keep the node (on by default). |
+| `name` | `n` | The new object's name. |
+| `object` | `o` | Accepted for Maya scripts. |
+| `range` | `rn` | Accepted for Maya scripts. |
+| `caching` | `cch` | Accepted for Maya scripts. |
+| `nodeState` | `nds` | Accepted for Maya scripts. |
+| `tolerance` | `tol` | Accepted for Maya scripts. |
+| `polygon` | `po` | 0 NURBS, 1 polygons. |
+
 ## invertSelection
 
 Invert the selection: the unselected components of the current kind on the hilited meshes, or in object mode every unselected object. An isolated view inverts only what it shows.
 
+## invertShape
+
+invertShape deformed corrected: a new mesh, the shape which as a target in front of the deformers gives the corrected mesh at this pose. Returns its transform.
+
+Arguments: the deformed mesh, then the corrected mesh
+
+## isConnected
+
+isConnected(src, dst): whether src drives dst.
+
+Arguments: src dst
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `ignoreUnitConversion` | `iuc` | Accepted: no conversion nodes are inserted here. |
+
+## isDirty
+
+Whether a plug's node needs evaluating: -c through connections, -d the datablock.
+
+Arguments: plug
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `connection` | `c` | Accepted: dirt is per node here. |
+| `datablock` | `d` | Accepted: dirt is per node here. |
+
+## isTrue
+
+Whether a named condition holds, as scriptJob -conditionTrue reads them.
+
+Arguments: condition
+
 ## isolateSelect
 
-Isolate Select on the active view: -state on or off, -addSelected, -removeSelected, -update.
+Isolate Select on a panel: -state on or off, -addSelected, -removeSelected, -update. -q -state reads it.
 
 Arguments: panel
 
 | Flag | Short | Description |
 | --- | --- | --- |
-| `state` | `s` | On or off. |
-| `addSelected` | `as` | Add the selection. |
-| `removeSelected` | `rs` | Take the selection out. |
-| `update` | `u` | Show the selection. |
+| `query` | `q` |  |
+| `state` | `s` |  |
+| `addSelected` | `as` |  |
+| `removeSelected` | `rs` |  |
+| `update` | `u` |  |
+| `loadSelected` | `ls` |  |
+| `addDagObject` | `ado` |  |
+| `removeDagObject` | `rdo` |  |
+| `viewObjects` | `vo` |  |
+
+## jiggle
+
+Jiggle: points lag and overshoot, a frame at a time from the start frame. Returns [jiggle1].
+
+Arguments: what to deform, and any target last (the selection when none); the deformer with -e and -q
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `name` | `n` | Name of the deformer. |
+| `before` | `bf` | Go just above the deformer nearest the mesh. |
+| `after` | `af` | Go nearest the mesh, after the other deformers (the default). |
+| `frontOfChain` | `foc` | Go above every other deformer. |
+| `envelope` | `en` | How much of the deformation applies (1). |
+| `edit` | `e` | Edit mode. |
+| `query` | `q` | Query mode. |
+| `enable` | `ena` | 0 enable (true), 1 disable (false), 2 only after the start frame. |
+| `startFrame` | `sf` | Up to this frame nothing moves on its own (1). |
+| `stiffness` | `stf` | How hard points are pulled back (0.5). |
+| `damping` | `dmp` | How fast the motion dies (0.5). |
+| `weight` | `wt` | Sets every point's weight. |
+| `jiggleWeight` | `jw` | How much of the lag shows (1). |
+| `motionMultiplier` | `mm` | How much of the motion counts (1). |
+| `forceOnAxis` | `foa` | A steady push per frame, world space. |
 
 ## joint
 
@@ -1880,6 +5120,65 @@ Arguments: joints (edit and query)
 | `stiffnessZ` | `stz` | The stiffness of this axis. |
 | `limitZ` | `lz` | Lower and upper rotate limit of this axis, degrees. |
 | `limitSwitchZ` | `lsz` | Whether the lower and the upper limit of this axis apply. |
+
+## jointCluster
+
+Record a joint's rigid bind settings on a jointCluster node: -j, -ab, -bb, -av, -bv. Returns the node. It softens nothing here.
+
+Arguments: joint
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `joint` | `j` | The joint. |
+| `aboveBound` | `ab` | How far above, percent. |
+| `belowBound` | `bb` | How far below, percent. |
+| `aboveValue` | `av` | Weight above. |
+| `belowValue` | `bv` | Weight below. |
+| `aboveDropoffType` | `adt` | Accepted for Maya scripts. |
+| `belowDropoffType` | `bdt` | Accepted for Maya scripts. |
+| `aboveCluster` | `ac` | Accepted for Maya scripts. |
+| `belowCluster` | `bc` | Accepted for Maya scripts. |
+| `deformerTools` | `dt` | Accepted for Maya scripts. |
+| `name` | `n` | The node's name. |
+
+## jointCtx
+
+A jointCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `autoJointOrient` | `ajo` |  |
+| `jointAutoLimits` | `jal` |  |
+| `jointOrientationPlane` | `jop` |  |
+| `secondaryAxisOrient` | `sao` |  |
+| `orientJoint` | `oj` |  |
+| `scaleJointOrient` | `sjo` |  |
+| `scaleOrientation` | `so` |  |
+| `scaleCompensate` | `sc` |  |
+| `degreeOfFreedomJ` | `dfj` |  |
+| `largeBoneRadius` | `lbr` |  |
+| `largeJointRadius` | `ljr` |  |
+| `smallBoneRadius` | `sbr` |  |
+| `smallJointRadius` | `sjr` |  |
+| `variableBoneSize` | `vbs` |  |
+| `createIKHandle` | `ikh` |  |
+| `ikSolverType` | `ikt` |  |
+| `poleVectorType` | `pvt` |  |
+| `snapHandleH` | `shh` |  |
+| `symmetry` | `sym` |  |
+| `symmetryAxis` | `sa` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
 
 ## keyTangent
 
@@ -1977,6 +5276,43 @@ Arguments: the control's name, accepted for Maya scripts
 | `classicMode` | `cm` | Accepted for Maya scripts. |
 | `animEditor` | `ae` | Accepted for Maya scripts. |
 
+## keyingGroup
+
+A set of objects keyed together: -n, -em empty; -e -add and -rm change it; -q lists it.
+
+Arguments: objects
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `name` | `n` | The set's name. |
+| `empty` | `em` | Make it empty. |
+| `addElement` | `add` | With -e: what to add. |
+| `include` | `in` | With -e: what to add. |
+| `remove` | `rm` | With -e: what to remove. |
+| `minimizeRotation` | `mr` | Accepted for Maya scripts. |
+
+## lassoContext
+
+A lassoContext tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `drawClosed` | `dc` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## lattice
 
 Add a lattice to the selected meshes or vertices: lattice -dv 2 5 2 -oc true. Returns [ffd1, ffd1Lattice, ffd1Base]. Move ffd1Lattice.pt[s][t][u] to deform. With -e on the ffd or lattice: -dv, -ldv, -ol, -ofd, -fm, -remap, -resetLattice. With -q: -dv, -ldv, -ol, -ofd, -fm, -g.
@@ -2007,6 +5343,44 @@ Arguments: meshes or vertices (the selection when none); the ffd or lattice with
 | `removeTweaks` | `rt` | With -e: the same as -resetLattice. |
 | `geometry` | `g` | Query: the deformed shapes. |
 
+## layout
+
+Edit and query any layout.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `childArray` | `ca` |  |
+| `numberOfChildren` | `nch` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
 ## listAttr
 
 Attribute names of a node.
@@ -2015,9 +5389,38 @@ Arguments: object
 
 | Flag | Short | Description |
 | --- | --- | --- |
-| `keyable` | `k` | Only keyable attributes. |
-| `locked` | `l` | Only locked plugs; a Vec3 lists each locked component (translateX). |
-| `userDefined` | `ud` | Only attributes added with addAttr. |
+| `keyable` | `k` | Only keyable. |
+| `unlocked` | `u` | Only unlocked. |
+| `connectable` | `c` | Only connectable. |
+| `settable` | `s` | Only settable. |
+| `multi` | `m` | Only multi attributes, with their elements. |
+| `userDefined` | `ud` | Only added ones. |
+| `locked` | `l` | Only locked. |
+| `channelBox` | `cb` | Only those in the channel box without being keyable. |
+| `read` | `r` | Only readable. |
+| `write` | `w` | Only writable. |
+| `visible` | `v` | Only visible. |
+| `leaf` | `lf` | Only leaves of compounds. |
+| `scalarAndArray` | `sa` | Only scalars and arrays of them. |
+| `scalar` | `sc` | Only scalars. |
+| `shortNames` | `sn` | Short names. |
+| `array` | `a` | Only arrays. |
+| `output` | `o` | Only outputs. |
+| `hasData` | `hd` | Accepted for Maya scripts. |
+| `inUse` | `iu` | Accepted for Maya scripts. |
+| `changedSinceFileOpen` | `cfo` | Accepted for Maya scripts. |
+| `nodeName` | `nn` | Accepted for Maya scripts. |
+| `string` | `st` | Only names matching this pattern, or these. |
+| `category` | `ct` | Accepted for Maya scripts. |
+
+## listCameras
+
+The cameras: -p perspective only, -o orthographic only.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `perspective` | `p` |  |
+| `orthographic` | `o` |  |
 
 ## listConnections
 
@@ -2031,8 +5434,10 @@ Arguments: objects or plugs
 | `destination` | `d` | Include downstream connections (default on). |
 | `plugs` | `p` | Return plugs rather than nodes. |
 | `connections` | `c` | Pair each with the plug on this side. |
+| `exactType` | `et` | With -type: exactly this type, not derived ones. |
+| `shapes` | `sh` | A connected shape is named, not its transform. |
+| `skipConversionNodes` | `scn` | Report what is beyond unitConversion nodes. |
 | `type` | `t` | Only nodes of this type. |
-| `skipConversionNodes` | `scn` | Accepted for Maya scripts. |
 
 ## listDisplayLayers
 
@@ -2047,6 +5452,26 @@ Arguments: objects
 | Flag | Short | Description |
 | --- | --- | --- |
 | `type` | `typ` | Only nodes of this type or a type derived from it (geometryFilter for every deformer). |
+| `pruneDagObjects` | `pdo` | Leave out shapes and transforms: only the history nodes. |
+
+## listLights
+
+Lights in the scene: rendering is out of scope, so none.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `shapes` | `s` | Accepted. |
+| `selection` | `sl` | Accepted. |
+
+## listNodeTypes
+
+Node types of a classification: listNodeTypes "utility/general", -ex leaves one out.
+
+Arguments: classification
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `exclude` | `ex` | A classification to leave out. |
 
 ## listRelatives
 
@@ -2058,7 +5483,13 @@ Arguments: object
 | --- | --- | --- |
 | `parent` | `p` |  |
 | `allDescendents` | `ad` |  |
-| `children` | `c` | The children: what it lists by default. |
+| `children` | `c` | Children (the default). |
+| `shapes` | `s` | Only shapes. |
+| `allParents` | `ap` | Every parent. |
+| `fullPath` | `f` | Full paths. |
+| `path` | `pa` | Shortest unique paths. |
+| `noIntermediate` | `ni` | Leave out intermediate objects. |
+| `type` | `typ` | Only this type or these. |
 
 ## listSets
 
@@ -2079,6 +5510,21 @@ Arguments: plug-in file or name
 | Flag | Short | Description |
 | --- | --- | --- |
 | `quiet` | `qt` | Don't complain when it can't be found. |
+
+## lockNode
+
+Lock nodes against deleting and renaming: -l on or off (on with no flag); -q -l reads each.
+
+Arguments: objects
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `lock` | `l` | On or off. |
+| `lockName` | `ln` | Accepted: a locked node keeps its name anyway. |
+| `lockUnpublished` | `lu` | Accepted for Maya scripts. |
+| `ignoreComponents` | `ic` | Accepted for Maya scripts. |
 
 ## loft
 
@@ -2102,13 +5548,16 @@ Arguments: curves in order (the selection when none)
 
 ## lookThru
 
-Make the active view look through a camera. With no camera, returns the one the view looks through.
+Make a view look through a camera: lookThru camera [panel]. -q gives the camera.
 
-Arguments: camera
+Arguments: camera [panel]
 
 | Flag | Short | Description |
 | --- | --- | --- |
-| `objects` | `o` | The camera. |
+| `query` | `q` |  |
+| `objects` | `o` |  |
+| `nearClip` | `nc` |  |
+| `farClip` | `fc` |  |
 
 ## ls
 
@@ -2144,6 +5593,24 @@ Arguments: names or patterns
 | `showType` | `st` | Each name followed by its type. |
 | `head` | `hd` | Only the first n. |
 | `tail` | `tl` | Only the last n. |
+| `uuid` | `uid` | UUIDs rather than names. |
+
+## makeIdentity
+
+makeIdentity -a 1 bakes translate, rotate and scale into the geometry; without -a they go back to identity and the object moves.
+
+Arguments: objects
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `normal` | `n` | Accepted for Maya scripts. |
+| `preserveNormals` | `pn` | Accepted for Maya scripts. |
+| `hierarchy` |  | Freeze everything parented under the objects too. |
+| `jointOrient` |  | Also line joints' axes up with the world, zeroing their orientation. |
+| `apply` | `a` | On: bake into the geometry. Off, when given: back to identity, the object moving. |
+| `translate` | `t` | Freeze translation. |
+| `rotate` | `r` | Freeze rotation. |
+| `scale` | `s` | Freeze scale. |
 
 ## makeLive
 
@@ -2156,11 +5623,162 @@ Arguments: meshes (the selection when none)
 | `none` | `n` | Clear the live surface. |
 | `query` | `q` | Query mode. |
 
+## makeSingleSurface
+
+Join surfaces meeting edge to edge into one. Returns [surface].
+
+Arguments: surfaces
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `stitchTolerance` | `st` | Accepted for Maya scripts. |
+| `constructionHistory` | `ch` | Keep the node (on by default). |
+| `name` | `n` | The new object's name. |
+| `object` | `o` | Accepted for Maya scripts. |
+| `range` | `rn` | Accepted for Maya scripts. |
+| `caching` | `cch` | Accepted for Maya scripts. |
+| `nodeState` | `nds` | Accepted for Maya scripts. |
+| `tolerance` | `tol` | Accepted for Maya scripts. |
+| `polygon` | `po` | 0 NURBS, 1 polygons. |
+
 ## makeUnique
 
 Give instances and references data of their own, so edits to them stop reaching the other members. An instance gets a live copy of its source's stack, a reference its own base mesh; a source hands its data to its first instance and keeps a copy. Returns the meshes changed.
 
 Arguments: meshes
+
+## manipMoveContext
+
+A manipMoveContext tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `mode` | `m` |  |
+| `snap` | `s` |  |
+| `snapValue` | `sv` |  |
+| `snapRelative` | `sr` |  |
+| `snapComponentsRelative` | `scr` |  |
+| `activeHandle` | `ah` |  |
+| `position` | `p` |  |
+| `orientAxes` | `oa` |  |
+| `orientObject` | `oo` |  |
+| `orientJoint` | `oj` |  |
+| `orientJointEnabled` | `oje` |  |
+| `orientTowards` | `ot` |  |
+| `interactiveUpdate` | `iu` |  |
+| `editPivotMode` | `epm` |  |
+| `editPivotPosition` | `epp` |  |
+| `xformConstraint` | `xc` |  |
+| `xformConstraintAlongNormal` | `xcn` |  |
+| `preventNegativeScale` | `pns` |  |
+| `reflection` | `rfl` |  |
+| `reflectionAboutAxis` | `rab` |  |
+| `reflectionAboutBBox` | `rbb` |  |
+| `reflectionAboutOrigin` | `rao` |  |
+| `reflectionAboutX` | `rax` |  |
+| `reflectionAboutY` | `ray` |  |
+| `reflectionAboutZ` | `raz` |  |
+| `tweakMode` | `twk` |  |
+| `translate` | `tr` |  |
+| `lastMode` | `lm` |  |
+| `alignAlong` | `aa` |  |
+| `pinFaces` | `pf` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## manipRotateContext
+
+A manipRotateContext tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `mode` | `m` |  |
+| `snap` | `s` |  |
+| `snapValue` | `sv` |  |
+| `snapRelative` | `sr` |  |
+| `activeHandle` | `ah` |  |
+| `position` | `p` |  |
+| `rotate` | `ro` |  |
+| `objectSpace` | `os` |  |
+| `orientAxes` | `oa` |  |
+| `orientObject` | `oo` |  |
+| `orientJoint` | `oj` |  |
+| `orientJointEnabled` | `oje` |  |
+| `tweakMode` | `twk` |  |
+| `interactiveUpdate` | `iu` |  |
+| `editPivotMode` | `epm` |  |
+| `editPivotPosition` | `epp` |  |
+| `xformConstraint` | `xc` |  |
+| `modifyTranslation` | `mt` |  |
+| `preserveUV` | `puv` |  |
+| `lastMode` | `lm` |  |
+| `reflection` | `rfl` |  |
+| `centerTrackball` | `ctb` |  |
+| `alignAlong` | `aa` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## manipScaleContext
+
+A manipScaleContext tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `mode` | `m` |  |
+| `snap` | `s` |  |
+| `snapValue` | `sv` |  |
+| `snapRelative` | `sr` |  |
+| `activeHandle` | `ah` |  |
+| `position` | `p` |  |
+| `scale` | `sc` |  |
+| `orientAxes` | `oa` |  |
+| `orientObject` | `oo` |  |
+| `orientJoint` | `oj` |  |
+| `orientJointEnabled` | `oje` |  |
+| `tweakMode` | `twk` |  |
+| `interactiveUpdate` | `iu` |  |
+| `editPivotMode` | `epm` |  |
+| `editPivotPosition` | `epp` |  |
+| `xformConstraint` | `xc` |  |
+| `preserveUV` | `puv` |  |
+| `preventNegativeScale` | `pns` |  |
+| `useManipPivot` | `ump` |  |
+| `useObjectPivot` | `uop` |  |
+| `lastMode` | `lm` |  |
+| `reflection` | `rfl` |  |
+| `alignAlong` | `aa` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
 
 ## matchPivot
 
@@ -2172,6 +5790,184 @@ Arguments: objects (the first is the source)
 | --- | --- | --- |
 | `position` | `p` | Copy the pivot's world position. |
 | `orient` | `o` | Copy the pivot's world axes. |
+
+## matchTransform
+
+Match objects to the last one: -pos, -rot, -scl, -piv; all three transforms when none.
+
+Arguments: objects, then the target
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `position` | `pos` | Line the pivots up. |
+| `rotation` | `rot` | Match rotation. |
+| `scale` | `scl` | Match scale. |
+| `pivots` | `piv` | Match the pivots. |
+| `positionConstraint` | `pcp` | Accepted for Maya scripts. |
+
+## menu
+
+Script UI: menu, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `label` | `l` |  |
+| `tearOff` | `to` |  |
+| `allowOptionBoxes` | `aob` |  |
+| `deleteAllItems` | `dai` |  |
+| `itemArray` | `ia` |  |
+| `numberOfItems` | `ni` |  |
+| `postMenuCommand` | `pmc` |  |
+| `postMenuCommandOnce` | `pmo` |  |
+| `familyImage` | `fi` |  |
+| `mnemonic` | `mn` |  |
+| `ltVersion` | `lt` |  |
+| `version` | `ver` |  |
+| `scrollable` | `scr` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## menuBarLayout
+
+Script UI: menuBarLayout, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `menuBarVisible` | `mbv` |  |
+| `menuArray` | `ma` |  |
+| `menuIndex` | `mi` |  |
+| `numberOfMenus` | `nm` |  |
+| `childArray` | `ca` |  |
+| `numberOfChildren` | `nch` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## menuItem
+
+Script UI: menuItem, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `label` | `l` |  |
+| `command` | `c` |  |
+| `subMenu` | `sm` |  |
+| `tearOff` | `to` |  |
+| `checkBox` | `cb` |  |
+| `radioButton` | `rb` |  |
+| `divider` | `d` |  |
+| `dividerLabel` | `dl` |  |
+| `optionBox` | `ob` |  |
+| `optionBoxIcon` | `obi` |  |
+| `boldFont` | `bld` |  |
+| `italicized` | `itl` |  |
+| `image` | `i` |  |
+| `imageOverlayLabel` | `iol` |  |
+| `insertAfter` | `ia` |  |
+| `collection` | `cl` |  |
+| `data` | `da` |  |
+| `dragMenuCommand` | `dmc` |  |
+| `dragDoubleClickCommand` | `ddc` |  |
+| `echoCommand` | `ec` |  |
+| `radialPosition` | `rp` |  |
+| `mnemonic` | `mn` |  |
+| `keyEquivalent` | `ke` |  |
+| `altModifier` | `alt` |  |
+| `ctrlModifier` | `ctl` |  |
+| `shiftModifier` | `sht` |  |
+| `commandModifier` | `cmd` |  |
+| `sourceType` | `stp` |  |
+| `isOptionBox` | `iob` |  |
+| `isCheckBox` | `icb` |  |
+| `isRadioButton` | `irb` |  |
+| `familyImage` | `fi` |  |
+| `version` | `ver` |  |
+| `ltVersion` | `lt` |  |
+| `allowOptionBoxes` | `aob` |  |
+| `postMenuCommand` | `pmc` |  |
+| `postMenuCommandOnce` | `pmo` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
 
 ## mergeAnimLayers
 
@@ -2235,6 +6031,114 @@ Arguments: joints
 | `mirrorBehavior` | `mb` | Mirror the behaviour, not the orientation. |
 | `searchReplace` | `sr` | Two strings: replace the first with the second in the new names. |
 
+## modelEditor
+
+What a model panel shows: -cam, -da, -wos, -grid, -joints, -nurbsCurves, -polymeshes, -locators, -deformers, -ikHandles, -cameras, -manipulators, -dtx and more; -q and -e.
+
+Arguments: panel
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `activeOnly` | `ao` |  |
+| `activeView` | `av` |  |
+| `allObjects` | `alo` |  |
+| `backfaceCulling` | `bfc` |  |
+| `camera` | `cam` |  |
+| `cameras` | `ca` |  |
+| `clipGhosts` | `cg` |  |
+| `controlVertices` | `cv` |  |
+| `controllers` | `ctrl` |  |
+| `deformers` | `df` |  |
+| `dimensions` | `dim` |  |
+| `displayAppearance` | `da` |  |
+| `displayLights` | `dl` |  |
+| `displayTextures` | `dtx` |  |
+| `dynamicConstraints` | `dc` |  |
+| `dynamics` | `dy` |  |
+| `fluids` | `fl` |  |
+| `follicles` | `fo` |  |
+| `fogging` | `fg` |  |
+| `grid` | `gr` |  |
+| `hairSystems` | `hs` |  |
+| `handles` | `ha` |  |
+| `headsUpDisplay` | `hud` |  |
+| `hulls` | `hu` |  |
+| `ikHandles` | `ikh` |  |
+| `imagePlane` | `imp` |  |
+| `joints` | `j` |  |
+| `jointXray` | `jx` |  |
+| `lights` | `lt` |  |
+| `locators` | `lc` |  |
+| `lockMainConnection` | `lck` |  |
+| `lowQualityLighting` | `lql` |  |
+| `manipulators` | `m` |  |
+| `motionTrails` | `mt` |  |
+| `nCloths` | `ncl` |  |
+| `nParticles` | `npa` |  |
+| `nRigids` | `nr` |  |
+| `nurbsCurves` | `nc` |  |
+| `nurbsSurfaces` | `ns` |  |
+| `objectFilterShowInHUD` | `ofs` |  |
+| `panel` | `pnl` |  |
+| `parent` | `p` |  |
+| `pivots` | `pv` |  |
+| `planes` | `pl` |  |
+| `pluginObjects` | `po` |  |
+| `pluginShapes` | `ps` |  |
+| `polymeshes` | `pm` |  |
+| `rendererName` | `rnm` |  |
+| `selectionHiliteDisplay` | `sel` |  |
+| `shadows` | `sdw` |  |
+| `smoothWireframe` | `swf` |  |
+| `sortTransparent` | `st` |  |
+| `strokes` | `str` |  |
+| `subdivSurfaces` | `sds` |  |
+| `textures` | `tx` |  |
+| `twoSidedLighting` | `tsl` |  |
+| `useDefaultMaterial` | `udm` |  |
+| `viewObjects` | `vo` |  |
+| `viewSelected` | `vs` |  |
+| `wireframeBackingStore` | `wbs` |  |
+| `wireframeOnShaded` | `wos` |  |
+| `xray` | `xr` |  |
+| `activeComponentsXray` | `acx` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## modelPanel
+
+A panel holding a view: -q -cam, -e -cam, -me its editor.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `camera` | `cam` |  |
+| `modelEditor` | `me` |  |
+| `label` | `l` |  |
+| `parent` | `p` |  |
+| `control` | `ctl` |  |
+| `copy` | `cp` |  |
+| `createString` | `cs` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `editString` | `es` |  |
+| `exists` | `ex` |  |
+| `init` | `in` |  |
+| `isUnique` | `iu` |  |
+| `menuBarVisible` | `mbv` |  |
+| `needsInit` | `ni` |  |
+| `popupMenuProcedure` | `pmp` |  |
+| `replacePanel` | `rp` |  |
+| `tearOff` | `to` |  |
+| `tearOffCopy` | `toc` |  |
+| `unParent` | `up` |  |
+| `useTemplate` | `ut` |  |
+| `barLayout` | `bl` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
 ## modifierKinds
 
 Every modifier kind addModifier accepts, including ones extensions registered. docs=True returns {kind: description} instead.
@@ -2254,6 +6158,26 @@ Arguments: mesh
 A mesh's modifier stack, bottom (applied first) to top.
 
 Arguments: mesh
+
+## morph
+
+Morph: points move to the matching points of -morphTarget. Returns [morph1].
+
+Arguments: what to deform, and any target last (the selection when none); the deformer with -e and -q
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `name` | `n` | Name of the deformer. |
+| `before` | `bf` | Go just above the deformer nearest the mesh. |
+| `after` | `af` | Go nearest the mesh, after the other deformers (the default). |
+| `frontOfChain` | `foc` | Go above every other deformer. |
+| `envelope` | `en` | How much of the deformation applies (1). |
+| `edit` | `e` | Edit mode. |
+| `query` | `q` | Query mode. |
+| `morphTarget` | `mt` | The mesh to morph to. |
+| `morphSpace` | `ms` | 0 object, 1 world. |
+| `normalScale` | `nsc` | How much of the morph along the normal applies (1). |
+| `tangentScale` | `tsc` | How much of the morph across the surface applies (1). |
 
 ## motionTrail
 
@@ -2283,10 +6207,34 @@ Arguments: objects
 | --- | --- | --- |
 | `by` |  | Relative offset, cm. |
 | `to` |  | Absolute world position of the pivot, cm. |
-| `x` |  | World X for the pivot, or for every selected point, cm. |
-| `y` |  | World Y, cm. |
-| `z` |  | World Z, cm. |
 | `space` |  | 'world', 'object' or 'parent' for `by`. |
+| `relative` | `r` | The values add to what is there. |
+| `absolute` | `a` | The values replace what is there (the default). |
+| `worldSpace` | `ws` | World axes (the default). |
+| `objectSpace` | `os` | The object's own axes. |
+| `localSpace` | `ls` | The parent's axes. |
+| `parent` | `pa` | The parent's axes. |
+| `worldSpaceDistance` | `wd` | Accepted: distances are in world units already. |
+| `preserveChildPosition` | `pcp` | Children stay where they are in the world. |
+| `preserveGeometryPosition` | `pgp` | Accepted for Maya scripts. |
+| `rotatePivotRelative` | `rpr` | Accepted for Maya scripts. |
+| `scalePivotRelative` | `spr` | Accepted for Maya scripts. |
+| `deletePriorHistory` | `dph` | Accepted for Maya scripts. |
+| `xformConstraint` | `xc` | Accepted for Maya scripts. |
+| `constrainAlongNormal` | `xn` | Accepted for Maya scripts. |
+| `orientJoint` | `oj` | Accepted for Maya scripts. |
+| `secondaryAxisOrient` | `sao` | Accepted for Maya scripts. |
+| `componentSpace` | `cs` | Accepted for Maya scripts. |
+| `x` |  | This axis: a value, or on to read the positional value. |
+| `y` |  | This axis. |
+| `z` |  | This axis. |
+| `moveX` |  | The axes the values are for. |
+| `moveY` |  | The axes the values are for. |
+| `moveZ` |  | The axes the values are for. |
+| `moveXY` | `xy` | The axes the values are for. |
+| `moveXZ` | `xz` | The axes the values are for. |
+| `moveYZ` | `yz` | The axes the values are for. |
+| `moveXYZ` | `xyz` | The axes the values are for. |
 
 ## moveComponents
 
@@ -2298,6 +6246,27 @@ Move the selected components by an offset in world space, or with normal= push e
 | `normal` |  | Distance along the vertex normals, cm. |
 | `uvn` |  | Distances along each point's own U tangent, V tangent and normal, cm. |
 | `onto` |  | Meshes whose surface each moved point then lands on, at its closest point. |
+
+## moveKeyCtx
+
+A moveKeyCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `moveFunction` | `mf` |  |
+| `option` | `o` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
 
 ## moveModifier
 
@@ -2319,6 +6288,21 @@ Arguments: objects
 | --- | --- | --- |
 | `by` | `r` | World offset. |
 | `to` |  | World position. |
+
+## moveVertexAlongDirection
+
+Move vertices along their normal (-n), tangents (-u, -v), or -d with -m. One value per vertex, the last repeating.
+
+Arguments: vertices (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `normalDirection` | `n` | Along the normal. |
+| `uDirection` | `u` | Along the first tangent. |
+| `vDirection` | `v` | Along the second tangent. |
+| `direction` | `d` | A direction. |
+| `magnitude` | `m` | How far along it. |
+| `uvNormalDirection` | `uvn` | u, v and normal at once. |
 
 ## mute
 
@@ -2362,6 +6346,53 @@ Arguments: name
 | `annotation` | `ann` | What it does. |
 | `sourceType` | `stp` | mel or python. |
 
+## namespace
+
+Maya's namespace command: -add, -set, -rm, -ex, -q, -mnr, -dnc, -ren.
+
+Arguments: [namespace]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query. |
+| `addNamespace` | `add` | As in Maya. |
+| `setNamespace` | `set` | As in Maya. |
+| `removeNamespace` | `rm` | As in Maya. |
+| `parent` | `p` | As in Maya. |
+| `exists` | `ex` | As in Maya. |
+| `relativeNames` | `rel` | As in Maya. |
+| `isRootNamespace` | `ir` | As in Maya. |
+| `validateName` | `vn` | As in Maya. |
+| `mergeNamespaceWithRoot` | `mnr` | As in Maya. |
+| `mergeNamespaceWithParent` | `mnp` | As in Maya. |
+| `deleteNamespaceContent` | `dnc` | As in Maya. |
+| `rename` | `ren` | As in Maya. |
+| `moveNamespace` | `mv` | As in Maya. |
+| `force` | `f` | As in Maya. |
+| `recurse` | `r` | As in Maya. |
+| `absoluteName` | `an` | As in Maya. |
+
+## namespaceInfo
+
+What a namespace holds: -cur, -lon, -lod, -ls, -r, -dp, -bn, -p.
+
+Arguments: [namespace]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `currentNamespace` | `cur` | As in Maya. |
+| `listOnlyNamespaces` | `lon` | As in Maya. |
+| `listOnlyDependencyNodes` | `lod` | As in Maya. |
+| `listNamespace` | `ls` | As in Maya. |
+| `recurse` | `r` | As in Maya. |
+| `dagPath` | `dp` | As in Maya. |
+| `fullName` | `fn` | As in Maya. |
+| `absoluteName` | `an` | As in Maya. |
+| `baseName` | `bn` | As in Maya. |
+| `parent` | `p` | As in Maya. |
+| `isRootNamespace` | `ir` | As in Maya. |
+| `shortName` | `sn` | As in Maya. |
+
 ## namingConvention
 
 Naming rules for this workspace (.aztek/naming.json). Query with no flags; check lists violations; fix renames them, whether or not enforcement is on. check and fix cover the given objects and everything under them, or the whole scene; referenced nodes keep their names.
@@ -2376,6 +6407,17 @@ Arguments: [objects]
 | `check` | `c` | Return [[node, expectedName], ...] for names that break the rules. |
 | `fix` | `f` | Rename every node that breaks the rules. |
 
+## nearestPointOnMesh
+
+Make a node on a mesh that answers the point on it closest to -ip. Returns the node.
+
+Arguments: mesh
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `inPosition` | `ip` | The position. |
+| `name` | `n` | The node's name. |
+
 ## newScene
 
 Clear the scene. Not undoable.
@@ -2385,6 +6427,13 @@ Clear the scene. Not undoable.
 Type name of a node.
 
 Arguments: object
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `inherited` | `i` | Its types, base first. |
+| `apiType` | `api` | The API type name. |
+| `derived` | `d` | Types derived from it. |
+| `isTypeName` | `itn` | The argument is a type, not a node. |
 
 ## nonLinear
 
@@ -2431,6 +6480,20 @@ Arguments: targets, then the object to drive or the constraint
 | `edit` | `e` | Change the constraint. |
 | `query` | `q` | Ask about the constraint. |
 
+## nurbsBoolean
+
+A boolean of two surfaces, as a polygon mesh: there are no NURBS solids to trim back. -op 0 union, 1 difference, 2 intersection.
+
+Arguments: two surfaces
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `operation` | `op` | 0 union, 1 difference, 2 intersection. |
+| `smartConnection` | `sc` | Accepted for Maya scripts. |
+| `constructionHistory` | `ch` | Accepted for Maya scripts. |
+| `nsrfsInFirstShell` | `nsf` | Accepted for Maya scripts. |
+| `name` | `n` | Accepted for Maya scripts. |
+
 ## nurbsCube
 
 Create a cube of six NURBS patches under a group, with a makeNurbCube node. Returns [nurbsCube1, makeNurbCube1].
@@ -2467,6 +6530,22 @@ Create a NURBS plane with a makeNurbPlane node. Returns [nurbsPlane1, makeNurbPl
 | `degree` | `d` | The degree (3). |
 | `patchesU` | `u` | Patches along U (1). |
 | `patchesV` | `v` | Patches along V (1). |
+
+## nurbsSelect
+
+Pick a surface's CVs: -bs the border, -lb -rb -tb -bb one side, -gs -ss grow or shrink what's picked.
+
+Arguments: surfaces (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `borderSelection` | `bs` | The whole border. |
+| `leftBorder` | `lb` | The first row in U. |
+| `rightBorder` | `rb` | The last row in U. |
+| `bottomBorder` | `bb` | The first row in V. |
+| `topBorder` | `tb` | The last row in V. |
+| `growSelection` | `gs` | Rings to add. |
+| `shrinkSelection` | `ss` | Rings to take off. |
 
 ## nurbsSquare
 
@@ -2515,6 +6594,20 @@ True if a node with this name or path exists.
 
 Arguments: name
 
+## objectCenter
+
+An object's bounding box centre: world (-gl, the default) or -l its own space; -x -y -z one value.
+
+Arguments: object
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `gl` | `gl` | World space (the default). |
+| `local` | `l` | The object's space. |
+| `x` | `x` | X alone. |
+| `y` | `y` | Y alone. |
+| `z` | `z` | Z alone. |
+
 ## objectType
 
 The node type of an object (objectType -isType checks one).
@@ -2523,7 +6616,20 @@ Arguments: object
 
 | Flag | Short | Description |
 | --- | --- | --- |
-| `isType` | `i` | Whether it is of this type. |
+| `isAType` | `isa` | Whether it is this type or derived from it. |
+| `isType` | `i` | Whether it is exactly this type. |
+
+## objectTypeUI
+
+The type of an interface element by name; -isType tests it, -listAll lists the types.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `isType` | `i` |  |
+| `listAll` | `la` |  |
+| `superClasses` | `sc` |  |
 
 ## offsetCurve
 
@@ -2537,6 +6643,20 @@ Arguments: curves (the selection when none)
 | `normal` | `nr` | The plane's normal. |
 | `useGivenNormal` | `ugn` | Accepted for Maya scripts. |
 | `tolerance` | `tol` | Accepted for Maya scripts. |
+| `constructionHistory` | `ch` | Keep a history node (on by default). |
+| `replaceOriginal` | `rpo` | Change the curve itself (on by default). |
+| `name` | `n` | Name of a new curve. |
+| `object` | `o` | Make an object (accepted for Maya scripts). |
+
+## offsetCurveOnSurface
+
+A curve on a surface offset sideways: -d distance in parameter space. Returns [surface->curve, node].
+
+Arguments: a curve on a surface
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `distance` | `d` | How far. |
 | `constructionHistory` | `ch` | Keep a history node (on by default). |
 | `replaceOriginal` | `rpo` | Change the curve itself (on by default). |
 | `name` | `n` | Name of a new curve. |
@@ -2558,22 +6678,165 @@ Arguments: surfaces (the selection when none)
 | `object` | `o` | Accepted for Maya scripts. |
 | `polygon` | `po` | Accepted for Maya scripts. |
 
-## optionVar
+## optionMenu
 
-Named preference values kept between sessions. -iv, -fv, -sv set; -q reads; -ex tests; -rm removes.
+Script UI: optionMenu, with create, edit and query as in Maya's command.
 
 Arguments: name
 
 | Flag | Short | Description |
 | --- | --- | --- |
-| `query` | `q` | Read the value named. |
-| `intValue` | `iv` | Name and integer value. |
-| `floatValue` | `fv` | Name and float value. |
-| `stringValue` | `sv` | Name and string value. |
-| `stringValueAppend` | `sva` | Name and a string to add to its array. |
-| `exists` | `ex` | Whether the name is set. |
-| `remove` | `rm` | Remove the name. |
+| `label` | `l` |  |
+| `value` | `v` |  |
+| `select` | `sl` |  |
+| `numberOfItems` | `ni` |  |
+| `itemListLong` | `ill` |  |
+| `itemListShort` | `ils` |  |
+| `changeCommand` | `cc` |  |
+| `alwaysCallChangeCommand` | `acc` |  |
+| `deleteAllItems` | `dai` |  |
+| `beforeShowPopup` | `bsp` |  |
+| `postMenuCommand` | `pmc` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## optionMenuGrp
+
+Script UI: optionMenuGrp, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `label` | `l` |  |
+| `extraLabel` | `el` |  |
+| `value` | `v` |  |
+| `select` | `sl` |  |
+| `numberOfItems` | `ni` |  |
+| `itemListLong` | `ill` |  |
+| `itemListShort` | `ils` |  |
+| `changeCommand` | `cc` |  |
+| `alwaysCallChangeCommand` | `acc` |  |
+| `deleteAllItems` | `dai` |  |
+| `columnWidth1` | `cw1` |  |
+| `columnAlign1` | `cl1` |  |
+| `columnAttach1` | `ct1` |  |
+| `columnOffset1` | `co1` |  |
+| `columnWidth2` | `cw2` |  |
+| `columnAlign2` | `cl2` |  |
+| `columnAttach2` | `ct2` |  |
+| `columnOffset2` | `co2` |  |
+| `adjustableColumn2` | `ad2` |  |
+| `columnWidth3` | `cw3` |  |
+| `columnAlign3` | `cl3` |  |
+| `columnAttach3` | `ct3` |  |
+| `columnOffset3` | `co3` |  |
+| `adjustableColumn3` | `ad3` |  |
+| `columnWidth4` | `cw4` |  |
+| `columnAlign4` | `cl4` |  |
+| `columnAttach4` | `ct4` |  |
+| `columnOffset4` | `co4` |  |
+| `adjustableColumn4` | `ad4` |  |
+| `columnWidth5` | `cw5` |  |
+| `columnAlign5` | `cl5` |  |
+| `columnAttach5` | `ct5` |  |
+| `columnOffset5` | `co5` |  |
+| `adjustableColumn5` | `ad5` |  |
+| `columnWidth6` | `cw6` |  |
+| `columnAlign6` | `cl6` |  |
+| `columnAttach6` | `ct6` |  |
+| `columnOffset6` | `co6` |  |
+| `adjustableColumn6` | `ad6` |  |
+| `adjustableColumn` | `adj` |  |
+| `columnWidth` | `cw` |  |
+| `columnAlign` | `cal` |  |
+| `columnAttach` | `cat` |  |
+| `rowAttach` | `rat` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## optionVar
+
+Named values that last the session: -iv, -fv, -sv, -q, -ex, -rm.
+
+Arguments: a name with -q; a value in MEL
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | The value of the name given. |
+| `exists` | `ex` | Whether this name is set. |
+| `remove` | `rm` | Unset this name. |
+| `clearArray` | `ca` | Empty this array. |
 | `list` | `l` | Every name. |
+| `intValue` | `iv` | Name and value. |
+| `floatValue` | `fv` | Name and value. |
+| `stringValue` | `sv` | Name and value. |
+| `intValueAppend` | `iva` | Name and value. |
+| `floatValueAppend` | `fva` | Name and value. |
+| `stringValueAppend` | `sva` | Name and value. |
+
+## orbit
+
+Turn a camera about its centre: -rv right and up degrees, -ha -va, -pv the point to turn about.
+
+Arguments: [camera]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `rotationAngles` | `ra` |  |
+| `horizontalAngle` | `ha` |  |
+| `verticalAngle` | `va` |  |
+| `pivotPoint` | `pp` |  |
 
 ## orientConstraint
 
@@ -2615,6 +6878,111 @@ Arguments: order (xyz), then joints
 | `zeroScaleOrient` | `zso` | Set rotateAxis to zero; jointOrient takes the change. |
 | `children` | `ch` | The joints below too (default on). |
 
+## pairBlend
+
+Put a pairBlend on translates or rotates: -nd node -at attr. What drove the attribute feeds input 1. Returns the node; -q -in1 -in2 -at read its connections.
+
+Arguments: pairBlend, with -q
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `node` | `nd` | The node driven. |
+| `attribute` | `at` | The attributes. |
+| `input1` | `i1` | With -q: what feeds the first pair. |
+| `input2` | `i2` | With -q: what feeds the second pair. |
+| `name` | `n` | The node's name. |
+
+## paneLayout
+
+Script UI: paneLayout, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `configuration` | `cn` |  |
+| `paneSize` | `ps` |  |
+| `separatorThickness` | `st` |  |
+| `separatorMovedCommand` | `smc` |  |
+| `setPane` | `sp` |  |
+| `activePane` | `ap` |  |
+| `activePaneIndex` | `api` |  |
+| `numberOfVisiblePanes` | `nvp` |  |
+| `staticWidthPane` | `swp` |  |
+| `staticHeightPane` | `shp` |  |
+| `paneUnderPointer` | `pup` |  |
+| `pane1` | `p1` |  |
+| `pane2` | `p2` |  |
+| `pane3` | `p3` |  |
+| `pane4` | `p4` |  |
+| `childArray` | `ca` |  |
+| `numberOfChildren` | `nch` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## panel
+
+Any panel: -ex, -l, -ctl, -p.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `label` | `l` |  |
+| `parent` | `p` |  |
+| `control` | `ctl` |  |
+| `copy` | `cp` |  |
+| `createString` | `cs` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `editString` | `es` |  |
+| `exists` | `ex` |  |
+| `init` | `in` |  |
+| `isUnique` | `iu` |  |
+| `menuBarVisible` | `mbv` |  |
+| `needsInit` | `ni` |  |
+| `popupMenuProcedure` | `pmp` |  |
+| `replacePanel` | `rp` |  |
+| `tearOff` | `to` |  |
+| `tearOffCopy` | `toc` |  |
+| `unParent` | `up` |  |
+| `useTemplate` | `ut` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## paramDimension
+
+Label a point with its parameter: curve1.u[0.5] or surface1.uv[0.5][0.5]. Returns the shape.
+
+Arguments: point
+
 ## parent
 
 parent(child..., parent), or parent(child..., world=True). Keeps world transforms unless relative=True. chain=True parents each object under the next one, in order: (a, b, c) puts a under b and b under c. index=N places the objects, in order, at position N among the parent's children (0 is first), which also reorders objects already under that parent. Leaves the moved objects selected.
@@ -2627,6 +6995,12 @@ Arguments: objects... parent
 | `relative` | `r` | Keep local transforms instead of world. |
 | `chain` | `ch` | Parent in selection order, each under the next. |
 | `index` | `i` | Position among the parent's children, counted without the moved objects. |
+| `absolute` | `a` | Keep world placement (the default). |
+| `addObject` | `add` | Add as an instance under the parent. |
+| `removeObject` | `rm` | Remove this instance. |
+| `shape` | `s` | Move the shapes, not the transforms. |
+| `noConnections` | `nc` | Accepted for Maya scripts. |
+| `noInvScale` | `nis` | Accepted for Maya scripts. |
 
 ## parentConstraint
 
@@ -2723,7 +7097,46 @@ Walk the selection through the hierarchy like the arrow keys: up to the parent, 
 
 | Flag | Short | Description |
 | --- | --- | --- |
-| `direction` |  | up, down, left or right. |
+| `direction` | `d` | up, down, left or right. |
+| `type` | `typ` | Accepted for Maya scripts. |
+
+## picture
+
+Script UI: picture, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `image` | `i` |  |
+| `tile` | `tl` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
 
 ## pivot
 
@@ -2733,7 +7146,7 @@ Arguments: object
 
 ## planar
 
-A surface filling a closed curve. Trims aren't modelled: a rectangle makes an untrimmed surface, anything else a polygon face with a warning, as does -po 1. Returns [planarTrimmedSurface1, planarTrim1].
+A surface filling a closed curve: a rectangle makes a plain patch, anything else a plane trimmed to it; -po 1 a polygon face. Returns [planarTrimmedSurface1, planarTrim1].
 
 Arguments: a closed curve (the selection when none)
 
@@ -2745,6 +7158,34 @@ Arguments: a closed curve (the selection when none)
 | `constructionHistory` | `ch` | Keep the node (on by default). |
 | `range` | `rn` | Accepted for Maya scripts. |
 | `name` | `n` | Name of the new object. |
+
+## planarSrf
+
+A trimmed plane in a closed curve: planar under its node's name.
+
+Arguments: a closed curve (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `degree` | `d` | Accepted for Maya scripts. |
+| `tolerance` | `tol` | Accepted for Maya scripts. |
+| `polygon` | `po` | 0 NURBS (the default), 1 polygons. |
+| `constructionHistory` | `ch` | Keep the node (on by default). |
+| `range` | `rn` | Accepted for Maya scripts. |
+| `name` | `n` | Name of the new object. |
+
+## plane
+
+A construction plane: -s size, -w -lr each way, -p where, -r rotation. Returns its transform.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `size` | `s` | Its size (1). |
+| `width` | `w` | Its width. |
+| `length` | `l` | Its length. |
+| `position` | `p` | Where. |
+| `rotation` | `r` | How turned, degrees. |
+| `name` | `n` | Its name. |
 
 ## play
 
@@ -2779,6 +7220,40 @@ The playback range (min/max), the whole animation range (ast/aet), looping and s
 | `by` | `by` | Frames between played frames. |
 | `view` | `v` | Which views update during playback: all or active. |
 | `preroll` | `pp` | Stored for scripts that set it. |
+
+## playblast
+
+Write the view's frames as an image sequence: -f name, -fmt image, -st -et or -fr, -wh, -p percent, -fp padding, -fo overwrite, -c png jpg bmp tif. Returns the file pattern.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `filename` | `f` |  |
+| `format` | `fmt` |  |
+| `startTime` | `st` |  |
+| `endTime` | `et` |  |
+| `widthHeight` | `wh` |  |
+| `width` | `w` |  |
+| `height` | `h` |  |
+| `framePadding` | `fp` |  |
+| `percent` | `p` |  |
+| `compression` | `c` |  |
+| `quality` | `qlt` |  |
+| `frame` | `fr` |  |
+| `editorPanelName` | `epn` |  |
+| `sound` | `s` |  |
+| `sequenceTime` | `sqt` |  |
+| `completeFilename` | `cf` |  |
+| `indexFromZero` | `ifz` |  |
+| `viewer` | `v` |  |
+| `forceOverwrite` | `fo` |  |
+| `clearCache` | `cc` |  |
+| `showOrnaments` | `orn` |  |
+| `offScreen` | `os` |  |
+| `offScreenViewportUpdate` | `ofv` |  |
+| `activeEditor` | `ae` |  |
+| `rawFrameNumbers` | `rfn` |  |
+| `saveFilmGate` | `sfg` |  |
+| `query` | `q` |  |
 
 ## pluginInfo
 
@@ -2829,6 +7304,22 @@ Arguments: targets, then the object to drive or the constraint
 | `edit` | `e` | Change the constraint. |
 | `query` | `q` | Ask about the constraint. |
 
+## pointCurveConstraint
+
+Make a curve pass through a point at curve.u[x] or curve.ep[i]: -p position (where it is now), -w weight. Returns [curve, node].
+
+Arguments: a point on a curve
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `position` | `p` | Where it goes. |
+| `weight` | `w` | How much (1). |
+| `pointWeight` | `pw` | Accepted for Maya scripts. |
+| `constructionHistory` | `ch` | Keep the node (on by default). |
+| `replaceOriginal` | `rpo` | Accepted: the curve itself changes. |
+| `name` | `n` | Accepted for Maya scripts. |
+| `object` | `o` | Accepted for Maya scripts. |
+
 ## pointOnCurve
 
 Facts at a parameter of a curve: -pr parameter (-top a fraction of its length), asking -p position, -t tangent, -nt unit tangent (position when none).
@@ -2843,6 +7334,25 @@ Arguments: a curve (the selection when none)
 | `tangent` | `t` | Ask for the tangent. |
 | `normalizedTangent` | `nt` | Ask for the unit tangent. |
 | `constructionHistory` | `ch` | Accepted for Maya scripts. |
+
+## pointOnCurveDeformer
+
+Point on Curve: points go with one place on a curve, by how far it has moved. Returns [pointOnCurve1].
+
+Arguments: what to deform, and any target last (the selection when none); the deformer with -e and -q
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `name` | `n` | Name of the deformer. |
+| `before` | `bf` | Go just above the deformer nearest the mesh. |
+| `after` | `af` | Go nearest the mesh, after the other deformers (the default). |
+| `frontOfChain` | `foc` | Go above every other deformer. |
+| `envelope` | `en` | How much of the deformation applies (1). |
+| `edit` | `e` | Edit mode. |
+| `query` | `q` | Query mode. |
+| `curve` | `c` | The curve; or name it last. |
+| `parameter` | `pr` | The place on the curve. |
+| `turnOnPercentage` | `top` | The parameter is a fraction of the length. |
 
 ## pointOnPolyConstraint
 
@@ -2951,6 +7461,32 @@ Arguments: components or meshes (the selection when none)
 | `nodeState` | `nds` | Accepted; see the command reference. |
 | `frozen` | `fzn` | Accepted; see the command reference. |
 
+## polyAppendFacetCtx
+
+A polyAppendFacetCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `append` | `ap` |  |
+| `maximumNumberOfPoints` | `mnp` |  |
+| `planarConstraint` | `pc` |  |
+| `rotate` | `ro` |  |
+| `subdivision` | `s` |  |
+| `texture` | `tx` |  |
+| `twist` | `tw` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## polyAppendVertex
 
 Add a face to a mesh from existing vertices and new points: -a vertex (repeat), -p x y z (repeat), or -items [{vertex:}, {position:}] in order. With no mesh named or selected and only points, makes a new mesh. Returns the new face and the mesh.
@@ -2981,8 +7517,34 @@ Arguments: faces or meshes
 | Flag | Short | Description |
 | --- | --- | --- |
 | `percentageSpace` | `ps` | Space between shells, percent of the square. |
-| `layout` | `lm` | Accepted for Maya scripts. |
+| `layoutMethod` | `lm` | Accepted for Maya scripts. |
+| `layout` | `l` | Accepted for Maya scripts. |
+| `percentageSpaceLegacy` | `pb` | Accepted for Maya scripts. |
+| `insertBeforeDeformers` | `ibd` | Accepted for Maya scripts. |
+| `createNewMap` | `cm` | Accepted for Maya scripts. |
+| `scaleMode` | `sc` | Accepted for Maya scripts. |
+| `optimize` | `o` | Accepted for Maya scripts. |
+| `worldSpace` | `ws` | Accepted for Maya scripts. |
+| `uvSetName` | `uvs` | Accepted for Maya scripts. |
+| `constructionHistory` | `ch` | Accepted for Maya scripts. |
+| `name` | `n` | Accepted for Maya scripts. |
 | `planes` | `p` | Accepted for Maya scripts (six planes). |
+
+## polyAverageColor
+
+Average vertices' colours with their neighbours': -i passes. Returns the node.
+
+Arguments: components or meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `constructionHistory` | `ch` | Accepted; see the command reference. |
+| `name` | `n` | Accepted; see the command reference. |
+| `caching` | `cch` | Accepted; see the command reference. |
+| `nodeState` | `nds` | Accepted; see the command reference. |
+| `frozen` | `fzn` | Accepted; see the command reference. |
+| `baseColorName` | `bcn` | The colour set (the current one). |
+| `iterations` | `i` | How many passes. |
 
 ## polyAverageNormal
 
@@ -3063,6 +7625,57 @@ Arguments: components or meshes (the selection when none)
 | `caching` | `cch` | Accepted; see the command reference. |
 | `nodeState` | `nds` | Accepted; see the command reference. |
 | `frozen` | `fzn` | Accepted; see the command reference. |
+
+## polyBlendColor
+
+Blend two colour sets into -dst: -bcn, -src, -bfn (0 by weights -bwa -bwb, 1 add, 2 subtract, 3 multiply, 4 average, 5 replace). Returns the node.
+
+Arguments: components or meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `constructionHistory` | `ch` | Accepted; see the command reference. |
+| `name` | `n` | Accepted; see the command reference. |
+| `caching` | `cch` | Accepted; see the command reference. |
+| `nodeState` | `nds` | Accepted; see the command reference. |
+| `frozen` | `fzn` | Accepted; see the command reference. |
+| `baseColorName` | `bcn` | One set. |
+| `srcColorName` | `src` | The other set. |
+| `dstColorName` | `dst` | Where it goes. |
+| `blendFunc` | `bfn` | How they combine. |
+| `blendWeightA` | `bwa` | Weight of the first. |
+| `blendWeightB` | `bwb` | Weight of the second. |
+| `blendWeightC` | `bwc` | Alpha weight of the first. |
+| `blendWeightD` | `bwd` | Alpha weight of the second. |
+
+## polyBlindData
+
+Store a number on components: -id, -at face|vertex|edge, -ldn name, -dbd, -ind or -bd; -rst removes it. Returns the node.
+
+Arguments: components or meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `constructionHistory` | `ch` | Accepted; see the command reference. |
+| `name` | `n` | Accepted; see the command reference. |
+| `caching` | `cch` | Accepted; see the command reference. |
+| `nodeState` | `nds` | Accepted; see the command reference. |
+| `frozen` | `fzn` | Accepted; see the command reference. |
+| `typeId` | `id` | The data's type id. |
+| `associationType` | `at` | face, vertex or edge. |
+| `longDataName` | `ldn` | The name. |
+| `shortDataName` | `sdn` | The short name. |
+| `doubleData` | `dbd` | A number. |
+| `intData` | `ind` | A whole number. |
+| `int64Data` | `lng` | A whole number. |
+| `booleanData` | `bd` | On or off. |
+| `stringData` | `sd` | Refused: numbers only. |
+| `binaryData` | `bnd` | Refused: numbers only. |
+| `reset` | `rst` | Remove the data. |
+| `rescale` | `rs` | Accepted for Maya scripts. |
+| `shape` | `sh` | Accepted for Maya scripts. |
+| `blindIds` |  | The components, worked out from the arguments. |
+| `blindValue` |  | The value, worked out from the arguments. |
 
 ## polyBoolOp
 
@@ -3250,6 +7863,19 @@ Arguments: history, width, delete face, then vertices
 | `constructionHistory` | `ch` | Off: no history node. |
 | `name` | `n` | Name of the node. |
 
+## polyCheck
+
+Check a mesh's insides: returns how many problems, each logged; -of writes them to a file.
+
+Arguments: meshes
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `openFile` | `of` | Write the problems here. |
+| `edge` | `e` | Accepted: every check runs. |
+| `face` | `f` | Accepted: every check runs. |
+| `faceOffset` | `fo` | Accepted: every check runs. |
+
 ## polyChipOff
 
 Chip faces off into their own shell of the mesh, moved by -ltz -t and the rest. -dup 0 removes them from where they were. Returns the node.
@@ -3338,6 +7964,24 @@ Arguments: components or meshes (the selection when none)
 | `caching` | `cch` | Accepted; see the command reference. |
 | `nodeState` | `nds` | Accepted; see the command reference. |
 | `frozen` | `fzn` | Accepted; see the command reference. |
+
+## polyClean
+
+Remove edges and vertices no face uses: -ce, -cv, -cuv, -cpm (each on by default). Returns the node.
+
+Arguments: components or meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `constructionHistory` | `ch` | Accepted; see the command reference. |
+| `name` | `n` | Accepted; see the command reference. |
+| `caching` | `cch` | Accepted; see the command reference. |
+| `nodeState` | `nds` | Accepted; see the command reference. |
+| `frozen` | `fzn` | Accepted; see the command reference. |
+| `cleanEdges` | `ce` | Loose edges. |
+| `cleanVertices` | `cv` | Loose vertices. |
+| `cleanUVs` | `cuv` | Accepted: UVs belong to corners here, so none are loose. |
+| `cleanPartialUVMapping` | `cpm` | UVs that aren't numbers go to 0. |
 
 ## polyCleanup
 
@@ -3436,6 +8080,66 @@ Arguments: components or meshes (the selection when none)
 | `nodeState` | `nds` | Accepted; see the command reference. |
 | `frozen` | `fzn` | Accepted; see the command reference. |
 
+## polyColorBlindData
+
+Show blind data as colours in the set "blindData": -id, -at, -ldn, -m 0 binary or shaded between -mnv and -mxv; -cr -cg -cb and -ncr -ncg -ncb the colours. Returns the node.
+
+Arguments: components or meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `constructionHistory` | `ch` | Accepted; see the command reference. |
+| `name` | `n` | Accepted; see the command reference. |
+| `caching` | `cch` | Accepted; see the command reference. |
+| `nodeState` | `nds` | Accepted; see the command reference. |
+| `frozen` | `fzn` | Accepted; see the command reference. |
+| `typeId` | `id` | The data's type id. |
+| `associationType` | `at` | face, vertex or edge. |
+| `longDataName` | `ldn` | The name. |
+| `shortDataName` | `sdn` | The short name. |
+| `mode` | `m` | 0 binary, others shaded. |
+| `colorRed` | `cr` | The colour. |
+| `colorGreen` | `cg` | The colour. |
+| `colorBlue` | `cb` | The colour. |
+| `noColorRed` | `ncr` | Where there's no data. |
+| `noColorGreen` | `ncg` | Where there's no data. |
+| `noColorBlue` | `ncb` | Where there's no data. |
+| `minValue` | `mnv` | Lowest of the shading. |
+| `maxValue` | `mxv` | Highest of the shading. |
+
+## polyColorDel
+
+Remove a colour set: -cn (the current one). Returns the node.
+
+Arguments: components or meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `constructionHistory` | `ch` | Accepted; see the command reference. |
+| `name` | `n` | Accepted; see the command reference. |
+| `caching` | `cch` | Accepted; see the command reference. |
+| `nodeState` | `nds` | Accepted; see the command reference. |
+| `frozen` | `fzn` | Accepted; see the command reference. |
+| `colorSetName` | `cn` | The set. |
+
+## polyColorMod
+
+Change colours: -hv adds to hue, -sv and -v scale saturation and value. Returns the node.
+
+Arguments: components or meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `constructionHistory` | `ch` | Accepted; see the command reference. |
+| `name` | `n` | Accepted; see the command reference. |
+| `caching` | `cch` | Accepted; see the command reference. |
+| `nodeState` | `nds` | Accepted; see the command reference. |
+| `frozen` | `fzn` | Accepted; see the command reference. |
+| `baseColorName` | `bcn` | The colour set (the current one). |
+| `huev` | `hv` | Degrees of hue. |
+| `satv` | `sv` | Saturation scale. |
+| `value` | `v` | Value scale. |
+
 ## polyColorPerVertex
 
 Set vertex colours: -r -g -b -a or -rgb, -rel adds, -rem removes the set's colours. -cdo shows them. -q -r -g -b -a -rgb reads each in turn. Works on vtx and vtxFace. Returns the node.
@@ -3503,6 +8207,23 @@ Arguments: objects
 | Flag | Short | Description |
 | --- | --- | --- |
 | `name` |  | Name of the combined mesh. |
+
+## polyCompare
+
+Compare two meshes: 0 when alike, else the bits of what differs: 1 vertices, 2 edges, 4 faces, 8 UV sets, 16 UV indices, 32 colour sets, 64 colour values.
+
+Arguments: two meshes
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `vertices` | `v` | Compare vertices. |
+| `edges` | `e` | Compare edges. |
+| `faceDesc` | `fd` | Compare faces. |
+| `uvSets` | `uv` | Compare UVs. |
+| `uvSetIndices` | `iuv` | Compare how UVs are shared. |
+| `colorSets` | `c` | Compare colour sets. |
+| `colorSetIndices` | `ic` | Compare colour values. |
+| `userNormals` | `un` | Accepted for Maya scripts. |
 
 ## polyCone
 
@@ -3674,6 +8395,31 @@ Arguments: components or meshes (the selection when none)
 | `nodeState` | `nds` | Accepted; see the command reference. |
 | `frozen` | `fzn` | Accepted; see the command reference. |
 
+## polyCreateFacetCtx
+
+A polyCreateFacetCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `append` | `ap` |  |
+| `exists2` | `ex2` |  |
+| `maximumNumberOfPoints` | `mnp` |  |
+| `planarConstraint` | `pc` |  |
+| `subdivision` | `s` |  |
+| `texture` | `tx` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## polyCube
 
 Create a Cube mesh. Returns [mesh, generator] (generator is None with generator=False).
@@ -3703,6 +8449,52 @@ Create a Cube mesh. Returns [mesh, generator] (generator is None with generator=
 | `subdivisionsY` | `sy` | Another name for the attribute it sets. |
 | `subdivisionsZ` | `sz` | Another name for the attribute it sets. |
 | `upAxis` |  | Direction the primitive's up points: x, y, z, -x, -y or -z (or a vector, as Maya's -ax 1 0 0); the scene up axis when left out. |
+
+## polyCut
+
+Cut Faces: -pc the plane's centre, -ro its rotation (world), -df deletes the side its normal points to, -ef pulls that side off by -eo. Returns the node.
+
+Arguments: components or meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `constructionHistory` | `ch` | Accepted; see the command reference. |
+| `name` | `n` | Accepted; see the command reference. |
+| `caching` | `cch` | Accepted; see the command reference. |
+| `nodeState` | `nds` | Accepted; see the command reference. |
+| `frozen` | `fzn` | Accepted; see the command reference. |
+| `cutPlaneCenter` | `pc` | The plane's centre. |
+| `cutPlaneRotate` | `ro` | The plane's rotation. |
+| `cutPlaneWidth` | `pw` | Accepted: the plane has no edge here. |
+| `cutPlaneHeight` | `ph` | Accepted: the plane has no edge here. |
+| `deleteFaces` | `df` | Delete the side the normal points to. |
+| `extractFaces` | `ef` | Pull that side off. |
+| `extractOffset` | `eo` | How far. |
+| `onObject` | `oo` | Accepted for Maya scripts. |
+| `worldSpace` | `ws` | The plane is in world space (always). |
+| `worldInverse` |  | The object's inverse world matrix when the edit was made. |
+
+## polyCutCtx
+
+A polyCutCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `deleteFaces` | `df` |  |
+| `extractFaces` | `ef` |  |
+| `extractOffset` | `eo` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
 
 ## polyCylinder
 
@@ -3826,6 +8618,17 @@ Create a Disc mesh. Returns [mesh, generator] (generator is None with generator=
 
 Remove selected edges or vertices by merging the faces around them, cleanly.
 
+## polyDuplicateAndConnect
+
+Duplicate a mesh with its inMesh fed by the original's outMesh, so edits to the first show on the second. Returns the new objects.
+
+Arguments: meshes
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `removeOriginalFromShaders` | `ros` | Accepted for Maya scripts. |
+| `renameChildren` | `rc` | Accepted for Maya scripts. |
+
 ## polyDuplicateEdge
 
 Offset Edge Loop's node: insert a loop either side of edges, -of along each crossing edge. -de also removes the edges. Returns the node.
@@ -3889,6 +8692,30 @@ Arguments: UVs (pCube1.map[0:3]), faces or meshes
 | `relative` | `r` | Offsets (default) or values. |
 | `query` | `q` | Return u, v of each UV. |
 
+## polyEditUVShell
+
+Move whole shells of the UVs named: -u -v, -su -sv, -a degrees, about -pu -pv or each shell's middle. -r 0 puts a shell's middle at -u -v. Returns the node.
+
+Arguments: UVs, faces or meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `constructionHistory` | `ch` | Accepted: a node is made while history is on. |
+| `name` | `n` | Accepted for Maya scripts. |
+| `caching` | `cch` | Accepted for Maya scripts. |
+| `nodeState` | `nds` | Accepted for Maya scripts. |
+| `uValue` | `u` | U offset, or value with -r 0. |
+| `vValue` | `v` | V offset, or value with -r 0. |
+| `scaleU` | `su` | U scale. |
+| `scaleV` | `sv` | V scale. |
+| `rotateRatio` | `rr` | Accepted: the same as -a. |
+| `angle` | `a` | Turn, degrees. |
+| `pivotU` | `pu` | Pivot U. |
+| `pivotV` | `pv` | Pivot V. |
+| `relative` | `r` | Offsets (the default) or values. |
+| `rotation` | `rot` | Accepted for Maya scripts. |
+| `query` | `q` | Return u, v of each UV. |
+
 ## polyEvaluate
 
 Counts on meshes or components: -v vertices, -e edges, -f faces, -t triangles, -uv UVs, -s shells, -b bounding box. With no flag, a dictionary of the counts.
@@ -3904,6 +8731,19 @@ Arguments: meshes or components (the selection when none)
 | `uvcoord` | `uv` | UV count. |
 | `shell` | `s` | Shell count (UV shells). |
 | `boundingBox` | `b` | World bounding box ((xmin, xmax), (ymin, ymax), (zmin, zmax)). |
+| `area` | `a` | Area, object space. |
+| `worldArea` | `wa` | Area, world space. |
+| `boundingBoxComponent` | `bc` | World bounds of the selected components. |
+| `format` | `fmt` | The counts as text. |
+| `accurateEvaluation` | `ae` | Accepted: counts are always exact here. |
+| `ac` | `ac` | Accepted for Maya scripts. |
+| `triangleComponent` | `tc` | Triangle count of the selected components. |
+| `usu` | `usu` | Accepted for Maya scripts. |
+| `vertexComponent` | `vc` | Selected vertex count. |
+| `edgeComponent` | `ec` | Selected edge count. |
+| `faceComponent` | `fc` | Selected face count. |
+| `boundingBox2d` | `b2` | UV bounds: [[umin, umax], [vmin, vmax]]. |
+| `boundingBoxComponent2d` | `bc2` | UV bounds of the components named. |
 
 ## polyExtract
 
@@ -4153,6 +8993,26 @@ Arguments: components or meshes (the selection when none)
 | `nodeState` | `nds` | Accepted; see the command reference. |
 | `frozen` | `fzn` | Accepted; see the command reference. |
 
+## polyGeoSampler
+
+Fill a colour set from the mesh's own colours, scaled by -sf and clamped; there are no lights to sample here. Returns the node.
+
+Arguments: components or meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `constructionHistory` | `ch` | Accepted; see the command reference. |
+| `name` | `n` | Accepted; see the command reference. |
+| `caching` | `cch` | Accepted; see the command reference. |
+| `nodeState` | `nds` | Accepted; see the command reference. |
+| `frozen` | `fzn` | Accepted; see the command reference. |
+| `baseColorName` | `bcn` | The colour set (the current one). |
+| `scaleFactor` | `sf` | Scale. |
+| `clampMin` | `cmn` | Lowest value. |
+| `clampMax` | `cmx` | Highest value. |
+| `computeShadows` | `cs` | Accepted for Maya scripts. |
+| `sampleByFace` | `sbf` | Accepted for Maya scripts. |
+
 ## polyGridFill
 
 Rebuild triangle fans and other patches as a quad grid inside a ring of quads: select the fans' centre vertices or the faces. With edges selected, fills the holes they border the same way.
@@ -4358,6 +9218,19 @@ Store the current shading normals of the selected meshes as split normals, so la
 Cut UVs along the selected edges: each side gets its own UVs, splitting shells.
 
 Arguments: edges
+
+## polyMapDel
+
+Delete UVs of faces. Corners always hold a UV here: they go to 0, joined. Returns the node.
+
+Arguments: UVs, faces or meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `constructionHistory` | `ch` | Accepted: a node is made while history is on. |
+| `name` | `n` | Accepted for Maya scripts. |
+| `caching` | `cch` | Accepted for Maya scripts. |
+| `nodeState` | `nds` | Accepted for Maya scripts. |
 
 ## polyMapSew
 
@@ -4638,6 +9511,34 @@ Arguments: components or meshes (the selection when none)
 | `nodeState` | `nds` | Accepted; see the command reference. |
 | `frozen` | `fzn` | Accepted; see the command reference. |
 
+## polyMoveFacetUV
+
+Move UVs of faces: polyMoveUV under its other name.
+
+Arguments: components or meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `translate` | `t` | U and V offset. |
+| `scale` | `s` | U and V scale. |
+| `pivot` | `pvt` | U and V pivot. |
+| `axisLen` | `l` | See the command reference. |
+| `axisLenX` | `lx` | See the command reference. |
+| `axisLenY` | `ly` | See the command reference. |
+| `pivotU` | `pvu` | See the command reference. |
+| `pivotV` | `pvv` | See the command reference. |
+| `random` | `ran` | See the command reference. |
+| `rotationAngle` | `ra` | See the command reference. |
+| `scaleU` | `su` | See the command reference. |
+| `scaleV` | `sv` | See the command reference. |
+| `translateU` | `tu` | See the command reference. |
+| `translateV` | `tv` | See the command reference. |
+| `constructionHistory` | `ch` | Accepted; see the command reference. |
+| `name` | `n` | Accepted; see the command reference. |
+| `caching` | `cch` | Accepted; see the command reference. |
+| `nodeState` | `nds` | Accepted; see the command reference. |
+| `frozen` | `fzn` | Accepted; see the command reference. |
+
 ## polyMoveUV
 
 Move UVs: -t -tu -tv, -ra degrees, -s -su -sv, about -pvt. Returns the node.
@@ -4772,6 +9673,30 @@ Insert an edge loop either side of the selected edges, parallel to them (Maya's 
 | `ends` |  | Open ends inside the mesh: converge (meet at the end vertex) or wrap (round it). |
 | `deleteEdge` |  | Dissolve the selected edges afterward, leaving the two new loops. |
 
+## polyOptUvs
+
+Relax UVs: flattens each shell again, keeping its place and size. Returns the node.
+
+Arguments: UVs, faces or meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `constructionHistory` | `ch` | Accepted: a node is made while history is on. |
+| `name` | `n` | Accepted for Maya scripts. |
+| `caching` | `cch` | Accepted for Maya scripts. |
+| `nodeState` | `nds` | Accepted for Maya scripts. |
+| `iterations` | `i` | Accepted: the solver decides. |
+| `stoppingThreshold` | `ss` | Accepted: the solver decides. |
+| `useScale` | `us` | Accepted for Maya scripts. |
+| `scale` | `s` | Accepted for Maya scripts. |
+| `areaWeight` | `aw` | Accepted for Maya scripts. |
+| `globalBlend` | `gb` | Accepted for Maya scripts. |
+| `globalMethodBlend` | `gmb` | Accepted for Maya scripts. |
+| `optimizeAxis` | `oa` | Accepted for Maya scripts. |
+| `pinSelected` | `ps` | Accepted for Maya scripts. |
+| `pinUvBorder` | `pub` | Accepted for Maya scripts. |
+| `applyToShell` | `as` | Accepted: shells are what it works on. |
+
 ## polyOptions
 
 Display options for meshes: -bc -dn -sn -ds -dt -dv -dce and the rest are remembered and read back with -q. They set state for scripts; most don't change the viewport.
@@ -4834,6 +9759,26 @@ Arguments: components or meshes (the selection when none)
 | `caching` | `cch` | Accepted; see the command reference. |
 | `nodeState` | `nds` | Accepted; see the command reference. |
 | `frozen` | `fzn` | Accepted; see the command reference. |
+
+## polyOutput
+
+A mesh's description as text: -v, -ed, -f, -fn; -a all, the default; -of a file.
+
+Arguments: meshes
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `allValues` | `a` | Everything. |
+| `vert` | `v` | Vertices. |
+| `edge` | `ed` | Edges. |
+| `face` | `f` | Faces. |
+| `faceNorm` | `fn` | Face normals. |
+| `vertNorm` | `vn` | Accepted for Maya scripts. |
+| `triangle` | `t` | Accepted for Maya scripts. |
+| `uvValue` | `uv` | Accepted for Maya scripts. |
+| `color` | `c` | Accepted for Maya scripts. |
+| `group` | `g` | Accepted for Maya scripts. |
+| `outputFile` | `of` | Write here. |
 
 ## polyPasteFace
 
@@ -5126,6 +10071,21 @@ Join neighbouring triangles into quads.
 | --- | --- | --- |
 | `maxAngle` |  | Largest angle between the two triangles, degrees. |
 
+## polyQueryBlindData
+
+Read blind data back: -id, -at, -ldn or -ss a part of the name, -sc lists each component before its value.
+
+Arguments: components or meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `typeId` | `id` | The data's type id. |
+| `associationType` | `at` | face, vertex or edge. |
+| `longDataName` | `ldn` | The name. |
+| `shortDataName` | `sdn` | The short name. |
+| `subString` | `ss` | A part of the name. |
+| `showComp` | `sc` | List the components too. |
+
 ## polyReduce
 
 Reduce the polygon count of whole meshes while keeping their shape, silhouette, UVs and normals. The result is triangles (or quads with quads=True). A mesh with modifiers gets a decimate modifier on top instead. Honours the mesh's symmetry: one half (or one radial wedge) is reduced and mirrored (or repeated).
@@ -5340,6 +10300,38 @@ Arguments: components or meshes (the selection when none)
 | `nodeState` | `nds` | Accepted; see the command reference. |
 | `frozen` | `fzn` | Accepted; see the command reference. |
 
+## polySelectEditCtx
+
+A polySelectEditCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `mode` | `m` |  |
+| `insertWithEdgeFlow` | `ief` |  |
+| `insertWithEdgeFlowEdge` | `ife` |  |
+| `relativeInsert` | `r` |  |
+| `splitType` | `stp` |  |
+| `divisions` | `div` |  |
+| `absoluteOffset` | `ao` |  |
+| `autoComplete` | `ac` |  |
+| `fixQuads` | `fq` |  |
+| `smoothingAngle` | `sma` |  |
+| `useEqualMultiplier` | `uem` |  |
+| `deleteEdge` | `de` |  |
+| `adjustEdgeFlow` | `aef` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## polySelectSp
 
 Select from what is selected: -loop extends to edge loops, -ring to rings. Returns what was selected.
@@ -5383,6 +10375,43 @@ Arguments: components or meshes (the selection when none)
 | `nodeState` | `nds` | Accepted; see the command reference. |
 | `frozen` | `fzn` | Accepted; see the command reference. |
 
+## polySewEdge
+
+Sew border edges together where their ends are within -tx. Returns the node.
+
+Arguments: components or meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `constructionHistory` | `ch` | Accepted; see the command reference. |
+| `name` | `n` | Accepted; see the command reference. |
+| `caching` | `cch` | Accepted; see the command reference. |
+| `nodeState` | `nds` | Accepted; see the command reference. |
+| `frozen` | `fzn` | Accepted; see the command reference. |
+| `tolerance` | `tx` | How close the ends must be. |
+| `texture` | `tx2` | Accepted for Maya scripts. |
+| `worldSpace` | `ws` | Accepted for Maya scripts. |
+
+## polyShortestPathCtx
+
+A polyShortestPathCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `pathOnEdge` | `poe` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## polySlideEdge
 
 Slide the selected edges within the faces beside them: -v -1 to 1, a fraction of the way along the neighbouring edges to one side or the other.
@@ -5394,6 +10423,39 @@ Slide the selected edges within the faces beside them: -v -1 to 1, a fraction of
 | `direction` | `d` | Accepted for Maya scripts. |
 | `edgeFlow` | `ef` | Accepted for Maya scripts. |
 | `symmetry` | `sym` | Accepted for Maya scripts. |
+
+## polySmartBevel
+
+Bevel: polyBevel3 under its other name.
+
+Arguments: components or meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `profile` |  | Also accepted under this command's other name. |
+| `clamp` |  | Also accepted under this command's other name. |
+| `angleTolerance` | `at` | See the command reference. |
+| `autoFit` | `af` | See the command reference. |
+| `chamfer` | `c` | See the command reference. |
+| `depth` | `d` | See the command reference. |
+| `fillNgons` | `fn` | See the command reference. |
+| `mergeVertexTolerance` | `mvt` | See the command reference. |
+| `mergeVertices` | `mv` | See the command reference. |
+| `miterAlong` | `mia` | See the command reference. |
+| `mitering` | `m` | See the command reference. |
+| `miteringAngle` | `ma` | See the command reference. |
+| `offset` | `o` | See the command reference. |
+| `offsetAsFraction` | `oaf` | See the command reference. |
+| `roundness` | `r` | See the command reference. |
+| `segments` | `sg` | See the command reference. |
+| `smoothingAngle` | `sa` | See the command reference. |
+| `uvAssignment` | `ua` | See the command reference. |
+| `worldSpace` | `ws` | See the command reference. |
+| `constructionHistory` | `ch` | Accepted; see the command reference. |
+| `name` | `n` | Accepted; see the command reference. |
+| `caching` | `cch` | Accepted; see the command reference. |
+| `nodeState` | `nds` | Accepted; see the command reference. |
+| `frozen` | `fzn` | Accepted; see the command reference. |
 
 ## polySmooth
 
@@ -5547,6 +10609,31 @@ Arguments: components or meshes (the selection when none)
 | `nodeState` | `nds` | Accepted; see the command reference. |
 | `frozen` | `fzn` | Accepted; see the command reference. |
 
+## polySplitCtx
+
+A polySplitCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `precsnap` | `ps` |  |
+| `enablesnap` | `es` |  |
+| `magnetsnap` | `ms` |  |
+| `snaptoedge` | `ste` |  |
+| `smoothingangle` | `sma` |  |
+| `subdivision` | `s` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## polySplitEdge
 
 Part the faces along edges, wherever the edges divide them at a vertex. Returns the node.
@@ -5664,6 +10751,23 @@ Straighten the selected edge chains (or chains of selected vertices) into lines 
 | `spacing` |  | keep (relative distances along the chain), even or project (straight across). |
 | `fitLine` |  | Use the line through all of a chain's points instead of its ends. |
 | `strength` |  | How far toward the shape, 0 to 1; soft selection fades it further. |
+
+## polyStraightenUVBorder
+
+Straighten a run of border UVs between its ends: -bo blends back to where they were, -cur bows the line, -pl keeps their spacing. Whole borders without maps picked. Returns the node.
+
+Arguments: UVs, faces or meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `constructionHistory` | `ch` | Accepted: a node is made while history is on. |
+| `name` | `n` | Accepted for Maya scripts. |
+| `caching` | `cch` | Accepted for Maya scripts. |
+| `nodeState` | `nds` | Accepted for Maya scripts. |
+| `blendOriginal` | `bo` | 0 straight, 1 as it was. |
+| `curvature` | `c` | How much to bow. |
+| `preserveLength` | `pl` | 1 keeps spacing, 0 evens it. |
+| `gapTolerance` | `gt` | Accepted for Maya scripts. |
 
 ## polySubdivide
 
@@ -5845,6 +10949,40 @@ Arguments: components or meshes (the selection when none)
 | `nodeState` | `nds` | Accepted; see the command reference. |
 | `frozen` | `fzn` | Accepted; see the command reference. |
 
+## polyUVCoverage
+
+How much of a UV range each mesh's faces cover, 0 to 1: -ur u0 v0 u1 v1 (0 0 1 1).
+
+Arguments: faces or meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `uvRange` | `ur` | The range. |
+
+## polyUVOverlap
+
+Faces whose UVs overlap another's, among those named: -oc; -noc those that don't.
+
+Arguments: faces or meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `overlappingComponents` | `oc` | The overlapping faces (the default). |
+| `nonOverlappingComponents` | `noc` | The ones that don't overlap. |
+
+## polyUVRectangle
+
+Square a shell's UVs: its border onto its bounding box, the inside evened between. Returns the node.
+
+Arguments: UVs, faces or meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `constructionHistory` | `ch` | Accepted: a node is made while history is on. |
+| `name` | `n` | Accepted for Maya scripts. |
+| `caching` | `cch` | Accepted for Maya scripts. |
+| `nodeState` | `nds` | Accepted for Maya scripts. |
+
 ## polyUVSet
 
 UV sets: -cr -d -rn -cp with -uvs and -nuv, -cuv -uvs makes one current. -q -auv lists them, -q -cuv names the current one.
@@ -5878,6 +11016,21 @@ Arguments: components or meshes (the selection when none)
 | `caching` | `cch` | Accepted; see the command reference. |
 | `nodeState` | `nds` | Accepted; see the command reference. |
 | `frozen` | `fzn` | Accepted; see the command reference. |
+
+## polyUVStackSimilarShells
+
+Stack shells that are alike (same counts, same 3D area within -tol) on the first of each kind, by their middles. Returns the node.
+
+Arguments: UVs, faces or meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `constructionHistory` | `ch` | Accepted: a node is made while history is on. |
+| `name` | `n` | Accepted for Maya scripts. |
+| `caching` | `cch` | Accepted for Maya scripts. |
+| `nodeState` | `nds` | Accepted for Maya scripts. |
+| `tolerance` | `tol` | How close the areas must be, as a fraction. |
+| `onlyMatch` | `om` | Accepted for Maya scripts. |
 
 ## polyUnite
 
@@ -5931,6 +11084,53 @@ Face-weighted normals on the selected faces (whole meshes in object mode): each 
 | `keepSharp` | `ks` | Keep hard edges split. |
 | `faceStrength` | `fs` | Only the faces with the highest face int faceStrength count, when the mesh has it. |
 
+## popupMenu
+
+Script UI: popupMenu, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `button` | `b` |  |
+| `ctrlModifier` | `ctl` |  |
+| `altModifier` | `alt` |  |
+| `shiftModifier` | `sht` |  |
+| `markingMenu` | `mm` |  |
+| `allowOptionBoxes` | `aob` |  |
+| `deleteAllItems` | `dai` |  |
+| `itemArray` | `ia` |  |
+| `numberOfItems` | `ni` |  |
+| `postMenuCommand` | `pmc` |  |
+| `postMenuCommandOnce` | `pmo` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
 ## pose
 
 Keep a character's current values as a pose (-n names it), or apply one (-a -n). -q -ap lists them. Returns the pose's name.
@@ -5944,6 +11144,353 @@ Arguments: the character (the current one when none)
 | `name` | `n` | The pose. |
 | `apply` | `a` | Apply the pose. |
 | `allPoses` | `ap` | Query: all poses. |
+
+## prefixHierarchy
+
+prefixHierarchy(root, prefix): puts prefix in front of the name of root and all under it.
+
+Arguments: root prefix
+
+## progressBar
+
+Script UI: progressBar, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `progress` | `pr` |  |
+| `minValue` | `min` |  |
+| `maxValue` | `max` |  |
+| `step` | `s` |  |
+| `status` | `st` |  |
+| `isInterruptable` | `ii` |  |
+| `isCancelled` | `ic` |  |
+| `isMainProgressBar` | `imp` |  |
+| `beginProgress` | `bp` |  |
+| `endProgress` | `ep` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## progressWindow
+
+A progress window: -t -pr -st -min -max -ii, -e to update, -q -ic asks whether it was cancelled, -ep ends it.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `title` | `t` |  |
+| `progress` | `pr` |  |
+| `status` | `st` |  |
+| `minValue` | `min` |  |
+| `maxValue` | `max` |  |
+| `step` | `s` |  |
+| `isInterruptable` | `ii` |  |
+| `isCancelled` | `ic` |  |
+| `endProgress` | `ep` |  |
+
+## projectCurve
+
+A curve's shadow on a surface as a curve on it: -d the way (0 0 1), -un along the normal. Returns [surface->curve, node].
+
+Arguments: a curve and a surface
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `direction` | `d` | Which way. |
+| `useNormal` | `un` | Along the surface's normal. |
+| `curveSamples` | `cs` | How many samples (50). |
+| `constructionHistory` | `ch` | Keep the node (on by default). |
+| `name` | `n` | The new object's name. |
+| `object` | `o` | Accepted for Maya scripts. |
+| `range` | `rn` | Accepted for Maya scripts. |
+| `caching` | `cch` | Accepted for Maya scripts. |
+| `nodeState` | `nds` | Accepted for Maya scripts. |
+| `tolerance` | `tol` | Accepted for Maya scripts. |
+| `polygon` | `po` | 0 NURBS, 1 polygons. |
+
+## projectTangent
+
+Turn a curve's end to follow what it meets: another curve or a surface. -ts scale, -ro rotate, -rt reverse, -td 1 U or 2 V. Returns [curve, node].
+
+Arguments: a curve and what to follow
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `tangentScale` | `tsc` | How far the next CV goes (1). |
+| `rotate` | `ro` | Degrees. |
+| `reverseTangent` | `rt` | The other way. |
+| `tangentDirection` | `td` | 1 U or 2 V. |
+| `curvature` | `cvt` | Accepted for Maya scripts. |
+| `ignoreEdges` | `ie` | Accepted for Maya scripts. |
+| `constructionHistory` | `ch` | Keep a history node (on by default). |
+| `replaceOriginal` | `rpo` | Change the curve itself (on by default). |
+| `name` | `n` | Name of a new curve. |
+| `object` | `o` | Make an object (accepted for Maya scripts). |
+
+## promptDialog
+
+A modal question with a text field. Returns the button pressed; -q -tx gives the text.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` |  |
+| `title` | `t` |  |
+| `message` | `m` |  |
+| `messageAlign` | `ma` |  |
+| `text` | `tx` |  |
+| `button` | `b` |  |
+| `defaultButton` | `db` |  |
+| `cancelButton` | `cb` |  |
+| `dismissString` | `ds` |  |
+| `style` | `st` |  |
+| `scrollableField` | `sf` |  |
+| `backgroundColor` | `bgc` |  |
+| `parent` | `p` |  |
+
+## proximityWrap
+
+Proximity Wrap: points follow the nearest points of driver meshes. proximityWrap -drivers d obj; -e -addDrivers d; -q -drivers. Returns [proximityWrap1].
+
+Arguments: what to deform, and any target last (the selection when none); the deformer with -e and -q
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `name` | `n` | Name of the deformer. |
+| `before` | `bf` | Go just above the deformer nearest the mesh. |
+| `after` | `af` | Go nearest the mesh, after the other deformers (the default). |
+| `frontOfChain` | `foc` | Go above every other deformer. |
+| `envelope` | `en` | How much of the deformation applies (1). |
+| `edit` | `e` | Edit mode. |
+| `query` | `q` | Query mode. |
+| `drivers` | `drv` | The driver meshes. Query: them. |
+| `addDrivers` | `ad` | With -e: a driver to add. |
+| `wrapMode` | `wm` | 0 offset, 1 surface, 2 snap. |
+| `maxDrivers` | `md` | How many driver points each point follows (4). |
+| `falloffScale` | `fsc` | How far each binding reaches (1). |
+| `dropoffRateScale` | `drs` | How fast a binding's weight falls with distance (1). |
+
+## putenv
+
+Sets an environment variable for this process.
+
+Arguments: name value
+
+## radioButton
+
+Script UI: radioButton, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `label` | `l` |  |
+| `select` | `sl` |  |
+| `collection` | `cl` |  |
+| `changeCommand` | `cc` |  |
+| `onCommand` | `onc` |  |
+| `offCommand` | `ofc` |  |
+| `align` | `al` |  |
+| `editable` | `ed` |  |
+| `data` | `da` |  |
+| `recomputeSize` | `rs` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## radioButtonGrp
+
+Script UI: radioButtonGrp, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `label` | `l` |  |
+| `numberOfRadioButtons` | `nrb` |  |
+| `label1` | `l1` |  |
+| `label2` | `l2` |  |
+| `label3` | `l3` |  |
+| `label4` | `l4` |  |
+| `labelArray2` | `la2` |  |
+| `labelArray3` | `la3` |  |
+| `labelArray4` | `la4` |  |
+| `select` | `sl` |  |
+| `shareCollection` | `scl` |  |
+| `changeCommand` | `cc` |  |
+| `changeCommand1` | `cc1` |  |
+| `changeCommand2` | `cc2` |  |
+| `changeCommand3` | `cc3` |  |
+| `changeCommand4` | `cc4` |  |
+| `onCommand` | `onc` |  |
+| `onCommand1` | `on1` |  |
+| `onCommand2` | `on2` |  |
+| `onCommand3` | `on3` |  |
+| `onCommand4` | `on4` |  |
+| `offCommand` | `ofc` |  |
+| `offCommand1` | `of1` |  |
+| `offCommand2` | `of2` |  |
+| `offCommand3` | `of3` |  |
+| `offCommand4` | `of4` |  |
+| `enable1` | `en1` |  |
+| `enable2` | `en2` |  |
+| `enable3` | `en3` |  |
+| `enable4` | `en4` |  |
+| `data1` | `da1` |  |
+| `data2` | `da2` |  |
+| `data3` | `da3` |  |
+| `data4` | `da4` |  |
+| `editable` | `ed` |  |
+| `vertical` | `vr` |  |
+| `columnWidth1` | `cw1` |  |
+| `columnAlign1` | `cl1` |  |
+| `columnAttach1` | `ct1` |  |
+| `columnOffset1` | `co1` |  |
+| `columnWidth2` | `cw2` |  |
+| `columnAlign2` | `cl2` |  |
+| `columnAttach2` | `ct2` |  |
+| `columnOffset2` | `co2` |  |
+| `adjustableColumn2` | `ad2` |  |
+| `columnWidth3` | `cw3` |  |
+| `columnAlign3` | `cl3` |  |
+| `columnAttach3` | `ct3` |  |
+| `columnOffset3` | `co3` |  |
+| `adjustableColumn3` | `ad3` |  |
+| `columnWidth4` | `cw4` |  |
+| `columnAlign4` | `cl4` |  |
+| `columnAttach4` | `ct4` |  |
+| `columnOffset4` | `co4` |  |
+| `adjustableColumn4` | `ad4` |  |
+| `columnWidth5` | `cw5` |  |
+| `columnAlign5` | `cl5` |  |
+| `columnAttach5` | `ct5` |  |
+| `columnOffset5` | `co5` |  |
+| `adjustableColumn5` | `ad5` |  |
+| `columnWidth6` | `cw6` |  |
+| `columnAlign6` | `cl6` |  |
+| `columnAttach6` | `ct6` |  |
+| `columnOffset6` | `co6` |  |
+| `adjustableColumn6` | `ad6` |  |
+| `adjustableColumn` | `adj` |  |
+| `columnWidth` | `cw` |  |
+| `columnAlign` | `cal` |  |
+| `columnAttach` | `cat` |  |
+| `rowAttach` | `rat` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## radioCollection
+
+A set of radio items, one selected.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `select` | `sl` |  |
+| `collectionItemArray` | `cia` |  |
+| `numberOfCollectionItems` | `nci` |  |
+| `global` | `gl` |  |
+| `parent` | `p` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `defineTemplate` | `dt` |  |
+| `useTemplate` | `ut` |  |
+
+## radioMenuItemCollection
+
+A set of radio items, one selected.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `select` | `sl` |  |
+| `collectionItemArray` | `cia` |  |
+| `numberOfCollectionItems` | `nci` |  |
+| `global` | `gl` |  |
+| `parent` | `p` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `defineTemplate` | `dt` |  |
+| `useTemplate` | `ut` |  |
 
 ## rebuildCurve
 
@@ -5993,9 +11540,74 @@ Arguments: surfaces (the selection when none)
 | `object` | `o` | Accepted for Maya scripts. |
 | `polygon` | `po` | Accepted for Maya scripts. |
 
+## recordAttr
+
+Mark attributes for recording, kept for scripts: -at names them, all keyable ones when none; -d takes them off; -q lists them.
+
+Arguments: objects or plugs
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `attribute` | `at` | The attributes. |
+| `delete` | `d` | Take them off. |
+
 ## redo
 
 Redo the last undone command.
+
+## reference
+
+File references: -f path -ns namespace brings one in; -ur, -lr, -rr unload, load and remove; -q -f lists the files.
+
+Arguments: file
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `filename` | `f` | The file to reference. |
+| `reference` | `r` | With -q: the referenced files. |
+| `namespace` | `ns` | The namespace to put it under. |
+| `referenceNode` | `rfn` | The reference node's name. |
+| `deferReference` | `dr` | Add it unloaded. |
+| `loadReference` | `lr` | Load this one. |
+| `unloadReference` | `ur` | Unload this one. |
+| `removeReference` | `rr` | Remove this one. |
+
+## referenceQuery
+
+Ask about references, given a node, a reference node or a file: -inr isNodeReferenced, -f the file, -n nodes, -ns namespace, -rfn reference node, -il loaded.
+
+Arguments: node, reference node or file
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `isNodeReferenced` | `inr` | Whether the node comes from a reference. |
+| `filename` | `f` | The file. |
+| `nodes` | `n` | The nodes it brought in. |
+| `namespace` | `ns` | Its namespace. |
+| `referenceNode` | `rfn` | Its reference node. |
+| `isLoaded` | `il` | Whether it's loaded. |
+| `shortName` | `shn` | The file's name without its folder, or the namespace without its colon. |
+| `withoutCopyNumber` | `wcn` | The file without its {n}. |
+| `dagPath` | `dp` | Full paths from -n. |
+| `parent` | `p` | The reference above it: none, since references are flat here. |
+| `topReference` | `tr` | The top reference: itself, since references are flat here. |
+| `editStrings` | `es` | Its edits, as text. |
+| `editNodes` | `en` | Its edits, as text. |
+| `editAttrs` | `ea` | Its edits, as text. |
+
+## refresh
+
+Brings the scene up to date; the viewports draw on their own.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `force` | `f` | Accepted for Maya scripts. |
+| `suspend` | `su` | Accepted for Maya scripts. |
+| `currentView` | `cv` | Accepted for Maya scripts. |
 
 ## removeFromDisplayLayer
 
@@ -6027,11 +11639,40 @@ Remove array elements with their connections and values: 'node.attr[3]', or 'nod
 
 Arguments: plugs
 
+## removeUnusedInfluences
+
+Takes influences holding no weight off a skin. Returns those taken off.
+
+Arguments: skinned meshes or skinClusters (the selection when none)
+
 ## rename
 
 rename(old, new) or rename(new) for the single selected object. Returns the renamed node's path.
 
 Arguments: [object] newName
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `ignoreShape` | `is` | Leave the shape's name alone. |
+| `uuid` | `uid` | The first argument is a uuid. |
+
+## renameAttr
+
+renameAttr('node.attr', 'newName'): renames an attribute added with addAttr.
+
+Arguments: plug newName
+
+## reorder
+
+Moves objects among their siblings: -f front, -b back, -r n places.
+
+Arguments: objects
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `front` | `f` | First among its siblings. |
+| `back` | `b` | Last among its siblings. |
+| `relative` | `r` | This many places along. |
 
 ## reorderDeformers
 
@@ -6060,6 +11701,12 @@ Arguments: joint
 Put the pivots back at the object's origin, keeping the object where it is.
 
 Arguments: objects
+
+## resetTool
+
+Put a tool context back to its default settings.
+
+Arguments: [context]
 
 ## resetTransforms
 
@@ -6117,6 +11764,60 @@ Arguments: a curve (the selection when none)
 | `range` | `rn` | Accepted for Maya scripts. |
 | `name` | `n` | Name of the new object. |
 
+## rigidBind
+
+Rigid bind: each point follows one joint, a skinCluster of 1.0 weights. -tsb only the bones named, -ub unbinds, -ubk keeps history. Returns 1.
+
+Arguments: skeleton and geometry
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `byClosestPoint` | `bcp` | Accepted: closest point is how it binds. |
+| `byPartition` | `bp` | Accepted for Maya scripts. |
+| `colorJoints` | `cj` | Accepted for Maya scripts. |
+| `delete` | `del` | Remove the skin. |
+| `doNotDescend` | `dnd` | Only the joints named. |
+| `enable` | `en` | Accepted for Maya scripts. |
+| `name` | `n` | The skinCluster's name. |
+| `partition` | `p` | Accepted for Maya scripts. |
+| `toAll` | `ta` | The whole skeleton (the default). |
+| `toSelectedBones` | `tsb` | Only the joints named. |
+| `unbind` | `ub` | Remove the skin. |
+| `unbindKeepHistory` | `ubk` | Stop skinning, keep the node. |
+
+## roll
+
+Roll a camera about its view: -d degrees; -abs sets the roll.
+
+Arguments: [camera]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `degree` | `d` |  |
+| `absolute` | `abs` |  |
+| `relative` | `rel` |  |
+
+## rollCtx
+
+A rollCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `rollScale` | `rs` |  |
+| `alternateContext` | `ac` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## rotate
 
 Rotate objects about their pivots. rotate(by=(x, y, z)) adds a rotation (degrees, XYZ order) in `space`; rotate(to=(x, y, z)) sets the local Euler angles. rotate(x=90) sets one local angle and leaves the others. With components selected it turns them that far about the world axis through their centre instead.
@@ -6127,10 +11828,38 @@ Arguments: objects
 | --- | --- | --- |
 | `by` |  | Relative rotation, degrees. |
 | `to` |  | Absolute local rotation, degrees. |
-| `x` |  | Local X rotation, degrees; on components, a turn about world X. |
-| `y` |  | Local Y rotation, degrees. |
-| `z` |  | Local Z rotation, degrees. |
 | `space` |  | 'world', 'object' or 'parent' for `by`. |
+| `relative` | `r` | The values add to what is there. |
+| `absolute` | `a` | The values replace what is there (the default). |
+| `worldSpace` | `ws` | World axes (the default). |
+| `objectSpace` | `os` | The object's own axes. |
+| `localSpace` | `ls` | The parent's axes. |
+| `parent` | `pa` | The parent's axes. |
+| `worldSpaceDistance` | `wd` | Accepted: distances are in world units already. |
+| `preserveChildPosition` | `pcp` | Children stay where they are in the world. |
+| `preserveGeometryPosition` | `pgp` | Accepted for Maya scripts. |
+| `rotatePivotRelative` | `rpr` | Accepted for Maya scripts. |
+| `scalePivotRelative` | `spr` | Accepted for Maya scripts. |
+| `deletePriorHistory` | `dph` | Accepted for Maya scripts. |
+| `xformConstraint` | `xc` | Accepted for Maya scripts. |
+| `constrainAlongNormal` | `xn` | Accepted for Maya scripts. |
+| `orientJoint` | `oj` | Accepted for Maya scripts. |
+| `secondaryAxisOrient` | `sao` | Accepted for Maya scripts. |
+| `componentSpace` | `cs` | Accepted for Maya scripts. |
+| `x` |  | This axis: a value, or on to read the positional value. |
+| `y` |  | This axis. |
+| `z` |  | This axis. |
+| `rotateX` |  | The axes the values are for. |
+| `rotateY` |  | The axes the values are for. |
+| `rotateZ` |  | The axes the values are for. |
+| `rotateXY` | `xy` | The axes the values are for. |
+| `rotateXZ` | `xz` | The axes the values are for. |
+| `rotateYZ` | `yz` | The axes the values are for. |
+| `rotateXYZ` | `xyz` | The axes the values are for. |
+| `pivot` | `p` | The world point to turn about. |
+| `euler` | `eu` | Accepted for Maya scripts. |
+| `forceOrderXYZ` | `fo` | Accepted for Maya scripts. |
+| `objectCenterPivot` | `ocp` | Accepted for Maya scripts. |
 
 ## rotateComponents
 
@@ -6162,6 +11891,133 @@ Arguments: curves, objects or rotate plugs (the selection when none)
 | `animation` | `an` | objects (the default), keys or keysOrObjects: keys means the selected keys. |
 | `convert` | `c` | The interpolation to convert to. |
 
+## rowColumnLayout
+
+Script UI: rowColumnLayout, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `numberOfColumns` | `nc` |  |
+| `numberOfRows` | `nr` |  |
+| `numberOfRowsColumns` | `nrc` |  |
+| `adjustableColumn` | `adj` |  |
+| `adjustableRow` | `ar` |  |
+| `columnAlign` | `cal` |  |
+| `columnAttach` | `cat` |  |
+| `columnOffset` | `co` |  |
+| `columnSpacing` | `cs` |  |
+| `columnWidth` | `cw` |  |
+| `rowAlign` | `ral` |  |
+| `rowAttach` | `rat` |  |
+| `rowHeight` | `rh` |  |
+| `rowOffset` | `ro` |  |
+| `rowSpacing` | `rs` |  |
+| `childArray` | `ca` |  |
+| `numberOfChildren` | `nch` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## rowLayout
+
+Script UI: rowLayout, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `numberOfColumns` | `nc` |  |
+| `adjustableColumn` | `adj` |  |
+| `rowAttach` | `rat` |  |
+| `columnAlign` | `cal` |  |
+| `columnAttach` | `cat` |  |
+| `columnWidth` | `cw` |  |
+| `columnOffset` | `co` |  |
+| `columnWidth1` | `cw1` |  |
+| `columnAlign1` | `cl1` |  |
+| `columnAttach1` | `ct1` |  |
+| `columnOffset1` | `co1` |  |
+| `columnWidth2` | `cw2` |  |
+| `columnAlign2` | `cl2` |  |
+| `columnAttach2` | `ct2` |  |
+| `columnOffset2` | `co2` |  |
+| `adjustableColumn2` | `ad2` |  |
+| `columnWidth3` | `cw3` |  |
+| `columnAlign3` | `cl3` |  |
+| `columnAttach3` | `ct3` |  |
+| `columnOffset3` | `co3` |  |
+| `adjustableColumn3` | `ad3` |  |
+| `columnWidth4` | `cw4` |  |
+| `columnAlign4` | `cl4` |  |
+| `columnAttach4` | `ct4` |  |
+| `columnOffset4` | `co4` |  |
+| `adjustableColumn4` | `ad4` |  |
+| `columnWidth5` | `cw5` |  |
+| `columnAlign5` | `cl5` |  |
+| `columnAttach5` | `ct5` |  |
+| `columnOffset5` | `co5` |  |
+| `adjustableColumn5` | `ad5` |  |
+| `columnWidth6` | `cw6` |  |
+| `columnAlign6` | `cl6` |  |
+| `columnAttach6` | `ct6` |  |
+| `columnOffset6` | `co6` |  |
+| `adjustableColumn6` | `ad6` |  |
+| `childArray` | `ca` |  |
+| `numberOfChildren` | `nch` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
 ## runTimeCommand
 
 Create a named command that runs a script: -c the script, -ann its annotation, -cat its category, -cl mel or python.
@@ -6190,9 +12046,36 @@ Arguments: objects
 | --- | --- | --- |
 | `by` |  | Factor per axis. |
 | `to` |  | Absolute scale. |
-| `x` |  | Local X scale; on components, a factor along world X. |
-| `y` |  | Local Y scale. |
-| `z` |  | Local Z scale. |
+| `relative` | `r` | The values add to what is there. |
+| `absolute` | `a` | The values replace what is there (the default). |
+| `worldSpace` | `ws` | World axes (the default). |
+| `objectSpace` | `os` | The object's own axes. |
+| `localSpace` | `ls` | The parent's axes. |
+| `parent` | `pa` | The parent's axes. |
+| `worldSpaceDistance` | `wd` | Accepted: distances are in world units already. |
+| `preserveChildPosition` | `pcp` | Children stay where they are in the world. |
+| `preserveGeometryPosition` | `pgp` | Accepted for Maya scripts. |
+| `rotatePivotRelative` | `rpr` | Accepted for Maya scripts. |
+| `scalePivotRelative` | `spr` | Accepted for Maya scripts. |
+| `deletePriorHistory` | `dph` | Accepted for Maya scripts. |
+| `xformConstraint` | `xc` | Accepted for Maya scripts. |
+| `constrainAlongNormal` | `xn` | Accepted for Maya scripts. |
+| `orientJoint` | `oj` | Accepted for Maya scripts. |
+| `secondaryAxisOrient` | `sao` | Accepted for Maya scripts. |
+| `componentSpace` | `cs` | Accepted for Maya scripts. |
+| `x` |  | This axis: a value, or on to read the positional value. |
+| `y` |  | This axis. |
+| `z` |  | This axis. |
+| `scaleX` |  | The axes the values are for. |
+| `scaleY` |  | The axes the values are for. |
+| `scaleZ` |  | The axes the values are for. |
+| `scaleXY` | `xy` | The axes the values are for. |
+| `scaleXZ` | `xz` | The axes the values are for. |
+| `scaleYZ` | `yz` | The axes the values are for. |
+| `scaleXYZ` | `xyz` | The axes the values are for. |
+| `pivot` | `p` | The world point to scale about. |
+| `distanceOnly` | `dso` | Accepted for Maya scripts. |
+| `objectCenterPivot` | `ocp` | Accepted for Maya scripts. |
 
 ## scaleComponents
 
@@ -6255,6 +12138,260 @@ Arguments: objects, plugs or curves (the selection when none)
 | `valueScale` | `vs` | Value scale. |
 | `valuePivot` | `vp` | Value pivot. |
 
+## scaleKeyCtx
+
+A scaleKeyCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `scaleSpecifiedKeys` | `ssk` |  |
+| `type` | `typ` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## scriptJob
+
+Run a script when something happens: -e event script, -ct -cf -cc condition script, -ac attribute script, -nd node script, -uid control script, -tc script, -ie script. -ro once, -kws with the scene, -p with a control, -k -ka kill, -lj list. Returns the job number.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `event` | `e` |  |
+| `conditionTrue` | `ct` |  |
+| `conditionFalse` | `cf` |  |
+| `conditionChange` | `cc` |  |
+| `attributeChange` | `ac` |  |
+| `attributeDeleted` | `ad` |  |
+| `attributeAdded` | `aa` |  |
+| `connectionChange` | `con` |  |
+| `nodeDeleted` | `nd` |  |
+| `nodeNameChanged` | `nnc` |  |
+| `uiDeleted` | `uid` |  |
+| `timeChange` | `tc` |  |
+| `idleEvent` | `ie` |  |
+| `kill` | `k` |  |
+| `exists` | `ex` |  |
+| `parent` | `p` |  |
+| `killAll` | `ka` |  |
+| `force` | `f` |  |
+| `listJobs` | `lj` |  |
+| `list` | `l` |  |
+| `listEvents` | `le` |  |
+| `listConditions` | `lc` |  |
+| `runOnce` | `ro` |  |
+| `killWithScene` | `kws` |  |
+| `protected` | `pro` |  |
+| `permanent` | `per` |  |
+| `replacePrevious` | `rp` |  |
+| `compressUndo` | `cu` |  |
+| `disregardIndex` | `di` |  |
+| `allChildren` | `alc` |  |
+
+## scriptNode
+
+A node holding scripts saved with the scene: -bs before, -as after, -st 0 demand, 1 open and close, 2 GUI open and close, 7 time changed, -stp mel or python, -eb -ea run them.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `beforeScript` | `bs` |  |
+| `afterScript` | `as` |  |
+| `scriptType` | `st` |  |
+| `sourceType` | `stp` |  |
+| `executeBefore` | `eb` |  |
+| `executeAfter` | `ea` |  |
+| `ignoreReferenceEdit` | `ire` |  |
+
+## scriptedPanel
+
+A panel of a scripted type: -typ the type, -l, -p. The type's callbacks build it.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `type` | `typ` |  |
+| `label` | `l` |  |
+| `parent` | `p` |  |
+| `control` | `ctl` |  |
+| `copy` | `cp` |  |
+| `createString` | `cs` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `editString` | `es` |  |
+| `exists` | `ex` |  |
+| `init` | `in` |  |
+| `isUnique` | `iu` |  |
+| `menuBarVisible` | `mbv` |  |
+| `needsInit` | `ni` |  |
+| `popupMenuProcedure` | `pmp` |  |
+| `replacePanel` | `rp` |  |
+| `tearOff` | `to` |  |
+| `tearOffCopy` | `toc` |  |
+| `unParent` | `up` |  |
+| `useTemplate` | `ut` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## scriptedPanelType
+
+Declare a scripted panel type: -ccb -icb -acb -rcb -dcb -scb the procedures that build and keep it.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `createCallback` | `ccb` |  |
+| `initCallback` | `icb` |  |
+| `addCallback` | `acb` |  |
+| `removeCallback` | `rcb` |  |
+| `deleteCallback` | `dcb` |  |
+| `saveStateCallback` | `scb` |  |
+| `hotkeyCtxCallback` | `hcb` |  |
+| `customView` | `cv` |  |
+| `defineTemplate` | `dt` |  |
+| `exists` | `ex` |  |
+| `label` | `l` |  |
+| `obsolete` | `o` |  |
+| `retainOnFileOpen` | `rfo` |  |
+| `unique` | `u` |  |
+| `useTemplate` | `ut` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## scrollField
+
+Script UI: scrollField, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `text` | `tx` |  |
+| `editable` | `ed` |  |
+| `wordWrap` | `ww` |  |
+| `changeCommand` | `cc` |  |
+| `enterCommand` | `ec` |  |
+| `keyPressCommand` | `kpc` |  |
+| `font` | `fn` |  |
+| `numberOfLines` | `nl` |  |
+| `insertText` | `it` |  |
+| `insertionPosition` | `ip` |  |
+| `clear` | `cl` |  |
+| `selection` | `sl` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## scrollLayout
+
+Script UI: scrollLayout, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `horizontalScrollBarThickness` | `hst` |  |
+| `verticalScrollBarThickness` | `vst` |  |
+| `childResizable` | `cr` |  |
+| `resizeCommand` | `rc` |  |
+| `scrollAreaHeight` | `sah` |  |
+| `scrollAreaWidth` | `saw` |  |
+| `scrollAreaValue` | `sav` |  |
+| `scrollByPixel` | `sbp` |  |
+| `scrollPage` | `sp` |  |
+| `minChildWidth` | `mcw` |  |
+| `verticalScrollBarAlwaysVisible` | `vsb` |  |
+| `panEnabled` | `pe` |  |
+| `childArray` | `ca` |  |
+| `numberOfChildren` | `nch` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## sculpt
+
+Sculpt Deformer: a sphere that pushes points. Returns [sculpt1, sculptor1, sculpt1StretchOrigin]. -mode flip, project or stretch, -mxd the most a point moves, -dds and -dt how it fades past the surface, -st an object to use as the sphere.
+
+Arguments: what to deform, and any target last (the selection when none); the deformer with -e and -q
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `name` | `n` | Name of the deformer. |
+| `before` | `bf` | Go just above the deformer nearest the mesh. |
+| `after` | `af` | Go nearest the mesh, after the other deformers (the default). |
+| `frontOfChain` | `foc` | Go above every other deformer. |
+| `envelope` | `en` | How much of the deformation applies (1). |
+| `edit` | `e` | Edit mode. |
+| `query` | `q` | Query mode. |
+| `mode` | `m` | flip, project or stretch (the default). |
+| `insideMode` | `im` | ring or even (the default). |
+| `maxDisplacement` | `mxd` | The most a point moves (0.1). |
+| `dropoffType` | `dt` | none or linear (the default). |
+| `dropoffDistance` | `dds` | How far past the surface it fades (1). |
+| `sculptTool` | `st` | An object to use as the sphere. |
+
 ## sculptMeshCacheCtx
 
 The sculpting tools' settings. -st the brush (sculpt, smooth, relax, grab, pinch, flatten, foamy, spray, repeat, imprint, wax, scrape, fill, knife, smear, bulge, amplify, freeze), -sz size, -str strength, -inv invert, -sym symmetry, -q to ask. -cf clears the freeze.
@@ -6286,6 +12423,26 @@ Arguments: a mesh
 | `invert` | `inv` | As Ctrl. |
 | `smooth` | `sm` | As Shift. |
 
+## sculptTarget
+
+Edit a blend shape target through the base: sculptTarget -e -t 0 blendShape1 starts, and edits of the base go into target 0 when -t -1 ends it. -e -r -t 0 makes the target's shape again, live, and returns it. -q gives the target being edited.
+
+Arguments: a blendShape
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `edit` | `e` | Edit mode. |
+| `query` | `q` | Query mode. |
+| `target` | `t` | The target to edit, -1 for none. |
+| `inbetweenWeight` | `ibw` | Which in-between of the target. |
+| `regenerate` | `r` | Make the target's shape again. |
+
+## searchReplaceNames
+
+searchReplaceNames(search, replace, 'all'|'hierarchy'|'selected'): renames what holds search. Returns how many.
+
+Arguments: search replace scope
+
 ## select
 
 Select objects. Replaces the selection unless add/deselect/toggle.
@@ -6298,6 +12455,16 @@ Arguments: objects
 | `deselect` | `d` |  |
 | `toggle` | `tgl` |  |
 | `clear` | `cl` | Select nothing. |
+| `replace` | `r` | Replace the selection (the default). |
+| `noExpand` | `ne` | A set itself, not its members. |
+| `hierarchy` | `hi` | Everything below too. |
+| `addFirst` | `af` | Add at the front of the list. |
+| `allDagObjects` | `ado` | Every top level object. |
+| `allDependencyNodes` | `adn` | Every node. |
+| `visible` | `vis` | Only visible objects. |
+| `all` | `all` | Every object. |
+| `symmetry` | `sym` | Accepted for Maya scripts. |
+| `symmetrySide` | `sys` | Accepted for Maya scripts. |
 
 ## selectAllComponents
 
@@ -6456,6 +12623,56 @@ Arguments: objects, plugs or curves (the selection when none)
 | `query` | `q` | Query mode. |
 | `edit` | `e` | Edit mode. |
 
+## selectKeyCtx
+
+A selectKeyCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## selectKeyframe
+
+Select keys, as selectKey.
+
+Arguments: objects, plugs or curves (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `attribute` | `at` | Channel name(s). |
+| `time` | `t` | A frame or range "10:20". |
+| `float` | `f` | A range of driver values on driven key curves, as -t is for time. |
+| `index` | `in` | Key index(es) on each curve, or a range "0:2". |
+| `includeUpperBound` | `iub` | Whether a range's end counts (on by default). |
+| `hierarchy` | `hi` | none, below, above or both. |
+| `controlPoints` | `cp` | Accepted for Maya scripts: control points have no channels of their own here. |
+| `shape` | `s` | Include the channels of the objects' shapes. |
+| `animation` | `an` | objects (the default), keys or keysOrObjects: keys means the selected keys. |
+| `addTo` | `add` | Add to the selection. |
+| `remove` | `rm` | Remove from the selection. |
+| `toggle` | `tgl` | Toggle in the selection. |
+| `replace` | `r` | Replace the selection (the default). |
+| `clear` | `cl` | Clear the selection. |
+| `keyframe` | `k` | Select the keys themselves (the default). |
+| `inTangent` | `it` | Accepted for Maya scripts: selects the keys. |
+| `outTangent` | `ot` | Accepted for Maya scripts: selects the keys. |
+| `unsnappedKeys` | `uk` | Only keys not on a multiple of this time (1 when 0). |
+| `selected` | `sl` | Work on the keys already selected. |
+| `keyframeCount` | `kc` | Query: how many selected. |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+
 ## selectLoop
 
 Extend the selection to full loops (or rings with ring=True): edges along their own loops, vertices along the loops of the edges joining them, faces along the face loops crossing the edges they share.
@@ -6486,6 +12703,17 @@ Switch between object, vertex, edge and face selection. With no argument, return
 
 Arguments: [mode]
 
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query. |
+| `object` | `o` | Object mode. |
+| `component` | `co` | Component mode. |
+| `hierarchical` | `h` | Hierarchy mode: objects here. |
+| `preset` | `p` | Accepted for Maya scripts. |
+| `root` | `r` | Accepted for Maya scripts. |
+| `leaf` | `l` | Accepted for Maya scripts. |
+| `template` | `t` | Accepted for Maya scripts. |
+
 ## selectPathBetween
 
 Select the components between two of a mesh's vertices, edges or faces: the shorter way along a loop or ring they share, else the shortest path across the surface. Neighbours (vertices on one edge, edges along a loop or across a quad, faces sharing an edge) select the whole loop or ring through both instead. Adds to the selection unless replace or deselect. Returns the ids in order.
@@ -6515,6 +12743,88 @@ Selection preferences: -clickDrag, -trackSelectionOrder, -preSelectHilite, -xfor
 | `useDepth` | `ud` | Marquee only picks what's visible. |
 | `affectsActive` | `aa` | Selection affects the active list. |
 | `lockSelection` | `lck` | The selection doesn't change on a click. |
+
+## selectPriority
+
+Selection priorities by component and object type: -cv 5, -q -cv. Kept for scripts.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `allComponents` | `alc` | The priority. |
+| `allObjects` | `alo` | The priority. |
+| `animBreakdown` | `abd` | The priority. |
+| `animCurve` | `ac` | The priority. |
+| `animInTangent` | `ait` | The priority. |
+| `animKeyframe` | `ak` | The priority. |
+| `animOutTangent` | `aot` | The priority. |
+| `byName` | `bn` | The priority. |
+| `camera` | `ca` | The priority. |
+| `cluster` | `cl` | The priority. |
+| `collisionModel` | `clm` | The priority. |
+| `controlVertex` | `cv` | The priority. |
+| `curve` | `c` | The priority. |
+| `curveKnot` | `ck` | The priority. |
+| `curveOnSurface` | `cos` | The priority. |
+| `curveParameterPoint` | `cpp` | The priority. |
+| `dimension` | `dim` | The priority. |
+| `dynamicConstraint` | `dc` | The priority. |
+| `edge` | `eg` | The priority. |
+| `editPoint` | `ep` | The priority. |
+| `emitter` | `em` | The priority. |
+| `facet` | `fc` | The priority. |
+| `field` | `fi` | The priority. |
+| `flexor` | `fl` | The priority. |
+| `hull` | `hl` | The priority. |
+| `ikEndEffector` | `iee` | The priority. |
+| `ikHandle` | `ikh` | The priority. |
+| `imagePlane` | `ip` | The priority. |
+| `implicitGeometry` | `ig` | The priority. |
+| `isoparm` | `iso` | The priority. |
+| `joint` | `j` | The priority. |
+| `jointPivot` | `jp` | The priority. |
+| `lattice` | `la` | The priority. |
+| `latticePoint` | `lp` | The priority. |
+| `light` | `lt` | The priority. |
+| `localRotationAxis` | `ra` | The priority. |
+| `locator` | `lc` | The priority. |
+| `locatorUV` | `luv` | The priority. |
+| `locatorXYZ` | `lxyz` | The priority. |
+| `nCloth` | `ncl` | The priority. |
+| `nParticle` | `npr` | The priority. |
+| `nRigid` | `nr` | The priority. |
+| `nurbsCurve` | `nc` | The priority. |
+| `nurbsSurface` | `ns` | The priority. |
+| `orientationLocator` | `ol` | The priority. |
+| `particle` | `pr` | The priority. |
+| `plane` | `pl` | The priority. |
+| `polymesh` | `p` | The priority. |
+| `polymeshEdge` | `pe` | The priority. |
+| `polymeshFace` | `pf` | The priority. |
+| `polymeshFreeEdge` | `pfe` | The priority. |
+| `polymeshUV` | `puv` | The priority. |
+| `polymeshVertex` | `pv` | The priority. |
+| `polymeshVtxFace` | `pvf` | The priority. |
+| `queueTangent` | `qt` | The priority. |
+| `rigidBody` | `rb` | The priority. |
+| `rigidConstraint` | `rc` | The priority. |
+| `rotatePivot` | `rp` | The priority. |
+| `scalePivot` | `sp` | The priority. |
+| `sculpt` | `sc` | The priority. |
+| `selectHandle` | `sh` | The priority. |
+| `spring` | `spr` | The priority. |
+| `springComponent` | `spc` | The priority. |
+| `stroke` | `str` | The priority. |
+| `subdiv` | `sd` | The priority. |
+| `surfaceEdge` | `se` | The priority. |
+| `surfaceFace` | `sf` | The priority. |
+| `surfaceKnot` | `skn` | The priority. |
+| `surfaceParameterPoint` | `spp` | The priority. |
+| `surfaceRange` | `srn` | The priority. |
+| `surfaceUV` | `suv` | The priority. |
+| `texture` | `tx` | The priority. |
+| `vertex` | `v` | The priority. |
 
 ## selectScope
 
@@ -6557,6 +12867,56 @@ Selection masks: -polymesh, -joint, -nurbsCurve, -ikHandle, -locator, -cluster, 
 | `polymeshEdge` | `pe` | Mesh edges. |
 | `polymeshFace` | `pf` | Mesh faces. |
 
+## selected
+
+The selection: objects, or components in a component mode.
+
+## selectedNodes
+
+The selection as full paths: -do leaves out what isn't in the DAG.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `dagObjects` | `do` | Only DAG objects. |
+
+## separator
+
+Script UI: separator, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `style` | `st` |  |
+| `horizontal` | `hr` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
 ## setAttr
 
 setAttr('node.attr', value). Vec3 takes a list or three numbers. lock=True/False locks or unlocks the plug, with or without a value: a locked plug can't be changed until it is unlocked.
@@ -6565,9 +12925,14 @@ Arguments: plug [value]
 
 | Flag | Short | Description |
 | --- | --- | --- |
-| `lock` | `l` | Lock (True) or unlock (False) the plug. |
-| `keyable` | `k` | Make the channel keyable, or not: it shows in the channel box and S keys it. |
-| `channelBox` | `cb` | As -k: the channel box shows keyable channels. |
+| `keyable` | `k` | Make the plug keyable or not. |
+| `channelBox` | `cb` | Show the plug in the channel box without keying. |
+| `lock` | `l` | Lock or unlock the plug. |
+| `type` | `typ` | double3, string, matrix, stringArray, doubleArray and so on. |
+| `clamp` | `c` | Accepted: values are always held inside an attribute's limits. |
+| `size` | `s` | Accepted for Maya scripts. |
+| `alteredValue` | `av` | Accepted for Maya scripts. |
+| `caching` | `ca` | Accepted for Maya scripts. |
 
 ## setCharacterObject
 
@@ -6604,6 +12969,12 @@ Arguments: the driven object or channels (the selection when none)
 | `query` | `q` | Query mode. |
 | `edit` | `e` | Edit mode. |
 
+## setFocus
+
+Give a panel or control the focus.
+
+Arguments: name
+
 ## setInfinity
 
 What curves do before and after their keys: -pri and -poi constant, linear, cycle, cycleRelative or oscillate.
@@ -6617,6 +12988,32 @@ Arguments: objects, plugs or curves (the selection when none)
 | `postInfinite` | `poi` | After the last key. |
 | `query` | `q` | Query mode. |
 | `edit` | `e` | Edit mode. |
+
+## setKeyCtx
+
+A setKeyCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `breakdown` | `bd` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## setKeyPath
+
+Key an object's position on a motion path at the current time: makes the path and curve the first time, adds a point after that. Returns [curve, motionPath].
+
+Arguments: objects
 
 ## setKeyframe
 
@@ -6676,6 +13073,22 @@ Arguments: a mesh
 | `u` |  | U per face corner. |
 | `v` |  | V per face corner. |
 
+## setParent
+
+The parent new controls go under: a name, .. for one level up, -top the window, -menu the menu parent instead. -q reads it.
+
+Arguments: [name or ..]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `menu` | `m` |  |
+| `topLevel` | `top` |  |
+| `upLevel` | `u` |  |
+| `defineTemplate` | `dt` |  |
+| `useTemplate` | `ut` |  |
+
 ## setPivot
 
 Move the rotate and scale pivots to a world position, or orient the pivot, without moving the objects. A joint's pivot is the joint itself: position= moves the joint and orient= sets its jointOrient, leaving its children where they are.
@@ -6712,6 +13125,185 @@ Arguments: objects
 | --- | --- | --- |
 | `pivot` |  | Put the plane (or radial axis) back through the pivot. |
 
+## setToolTo
+
+Make a tool context current, by name.
+
+Arguments: context
+
+## setUITemplate
+
+Make a template current: -pushTemplate, -popTemplate. Returns the current one.
+
+Arguments: [template]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `pushTemplate` | `pst` |  |
+| `popTemplate` | `ppt` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## sets
+
+Maya's object set command: create, add to, take from, list and combine sets.
+
+Arguments: items, or a set with -q
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | List a set's members. |
+| `edit` | `e` | Edit. |
+| `name` | `n` | The new set's name. |
+| `empty` | `em` | Hold nothing. |
+| `addElement` | `add` | Add the items to this set. |
+| `forceElement` | `fe` | Add the items to this set. |
+| `include` | `in` | Add the items to this set. |
+| `remove` | `rm` | Take the items out of this set. |
+| `clear` | `cl` | Empty this set. |
+| `isMember` | `im` | Whether the items are in this set. |
+| `isIntersecting` | `ii` | Whether this set and the others share members. |
+| `union` | `un` | This set's members and the others'. |
+| `intersection` | `int` | What this set shares with the others. |
+| `subtract` | `sub` | This set less the others. |
+| `size` | `s` | With -q: how many. |
+| `flatten` | `fl` | Accepted for Maya scripts. |
+| `noWarnings` | `nw` | Accepted for Maya scripts. |
+| `renderable` | `r` | Accepted for Maya scripts. |
+| `vertices` | `v` | Accepted for Maya scripts. |
+| `edges` | `ed` | Accepted for Maya scripts. |
+| `facets` | `fc` | Accepted for Maya scripts. |
+| `text` | `t` | Accepted for Maya scripts. |
+
+## shadingNode
+
+Create a rendering or utility node: shadingNode -asUtility multiplyDivide -n name.
+
+Arguments: type
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `asUtility` | `au` | A utility. |
+| `asShader` | `as` | A shader. |
+| `asTexture` | `at` | A texture. |
+| `asLight` | `al` | A light. |
+| `asPostProcess` | `app` | A post process. |
+| `asRendering` | `ar` | A rendering node. |
+| `name` | `n` | Its name. |
+| `shared` | `s` | Reuse a node of that name. |
+| `skipSelect` | `ss` | Accepted: shading nodes don't change the selection. |
+
+## shelfButton
+
+Script UI: shelfButton, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `style` | `st` |  |
+| `image` | `i` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `label` | `l` |  |
+| `command` | `c` |  |
+| `doubleClickCommand` | `dcc` |  |
+| `sourceType` | `stp` |  |
+| `imageOverlayLabel` | `iol` |  |
+| `flat` | `fla` |  |
+| `disabledImage` | `di` |  |
+| `align` | `al` |  |
+| `marginWidth` | `mw` |  |
+| `marginHeight` | `mh` |  |
+| `font` | `fn` |  |
+| `labelOffset` | `lo` |  |
+| `rotation` | `rot` |  |
+| `selectionImage` | `si` |  |
+| `highlightImage` | `hi` |  |
+| `overlayLabelColor` | `olc` |  |
+| `overlayLabelBackColor` | `olb` |  |
+| `scaleIcon` | `sic` |  |
+| `commandRepeatable` | `rpt` |  |
+| `ltVersion` | `lt` |  |
+| `version` | `ver` |  |
+| `useAlpha` | `ua` |  |
+| `flexibleWidthType` | `fwt` |  |
+| `flexibleWidthValue` | `fwv` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## shelfLayout
+
+Script UI: shelfLayout, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `cellWidth` | `cwd` |  |
+| `cellHeight` | `ch` |  |
+| `cellWidthHeight` | `cwh` |  |
+| `spacing` | `spa` |  |
+| `alignment` | `aln` |  |
+| `position` | `pos` |  |
+| `style` | `st` |  |
+| `version` | `ver` |  |
+| `childArray` | `ca` |  |
+| `numberOfChildren` | `nch` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
 ## show
 
 Show objects. all=True shows every hidden object.
@@ -6722,13 +13314,57 @@ Arguments: objects
 | --- | --- | --- |
 | `all` |  | Show everything. |
 
+## showHidden
+
+Show objects: named, -a every one, -b those below the named.
+
+Arguments: objects
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `all` | `a` | Every hidden object. |
+| `below` | `b` | The objects under those named. |
+| `above` | `ab` | The objects above those named. |
+
 ## showLastHidden
 
 Show the objects the last hide (or hiding toggle) hid. Returns them.
 
+## showWindow
+
+Show a window; with no name, the one being built.
+
+Arguments: [window]
+
 ## shrinkSelection
 
 Shrink the component selection by dropping what lies on its border.
+
+## shrinkWrap
+
+Shrink Wrap: moves points onto a target mesh, named by -t or last. Returns [shrinkWrap1].
+
+Arguments: what to deform, and any target last (the selection when none); the deformer with -e and -q
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `name` | `n` | Name of the deformer. |
+| `before` | `bf` | Go just above the deformer nearest the mesh. |
+| `after` | `af` | Go nearest the mesh, after the other deformers (the default). |
+| `frontOfChain` | `foc` | Go above every other deformer. |
+| `envelope` | `en` | How much of the deformation applies (1). |
+| `edit` | `e` | Edit mode. |
+| `query` | `q` | Query mode. |
+| `target` | `t` | The mesh to shrink onto. |
+| `projection` | `prj` | 0 off, 1 towards inner surface, 2 towards center, 3 parallel to axes, 4 vertex normals (the default), 5 closest point. |
+| `closestIfNoIntersection` | `cin` | A point whose ray hits nothing goes to the closest point. |
+| `bidirectional` | `bd` | Cast each way, taking the nearer hit. |
+| `targetInflation` | `ti` | Push the target's surface out by this. |
+| `offset` | `off` | Hold points this far off the surface. |
+| `reverse` | `rev` | Cast the opposite way. |
+| `alongX` | `ax` | Parallel to axes: along X (on). |
+| `alongY` | `ay` | Parallel to axes: along Y (on). |
+| `alongZ` | `az` | Parallel to axes: along Z (on). |
 
 ## simplify
 
@@ -6767,6 +13403,34 @@ Arguments: a profile and two rails (the selection when none)
 | `name` | `n` | Name of the new object. |
 | `object` | `o` | Accepted for Maya scripts. |
 
+## skinBindCtx
+
+A skinBindCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `about` | `a` |  |
+| `axis` | `ax` |  |
+| `colorRamp` | `cr` |  |
+| `currentInfluence` | `ci` |  |
+| `displayInactiveMode` | `dim` |  |
+| `displayNormalized` | `dn` |  |
+| `falloffCurve` | `fc` |  |
+| `symmetry` | `sym` |  |
+| `tolerance` | `tol` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## skinCluster
 
 Bind skin: the mesh named last (or selected last) follows the joints, weighted by closest distance. -mi caps the influences per point, -dr sets the falloff, -bm the bind method, -sm the skinning method, -tsb binds to only the joints given. Edit: -ub unbinds, -ubk unbinds keeping history, -ai and -ri add and remove influences, -lw with -inf locks weights, -fnw normalizes, -sw smooths the selected points. Query: -inf, -wi, -g, -mi, -dr, -sm, -lw.
@@ -6779,8 +13443,13 @@ Arguments: joints, then the mesh (the selection when none); a skinCluster or ski
 | `maximumInfluences` | `mi` | Most joints per point (5). |
 | `obeyMaxInfluences` | `omi` | Hold points to maximumInfluences while weights are edited. |
 | `dropoffRate` | `dr` | Falloff with distance (4). |
+| `heatmapFalloff` | `hmf` | Heat map bind: 1 keeps the heat as solved, less tightens it (0.68). |
+| `moveJointsMode` | `mjm` | With -e: on, joints move without moving the mesh; off, where they are becomes the bind pose. |
+| `useGeometry` | `ug` | With -ai: the influence is a mesh, and points take weight by their distance from its surface. |
+| `baseShape` | `bsh` | Accepted for Maya scripts. |
+| `polySmoothness` | `ps` | Accepted for Maya scripts. |
 | `bindMethod` | `bm` | 0 closest distance, 1 closest in hierarchy, 2 heat map, 3 geodesic voxel. |
-| `skinMethod` | `sm` | 0 classic linear, 1 dual quaternion. |
+| `skinMethod` | `sm` | 0 classic linear, 1 dual quaternion, 2 blended point by point by .blendWeights. |
 | `normalizeWeights` | `nw` | 0 none, 1 interactive, 2 post. |
 | `weightDistribution` | `wd` | Accepted for Maya scripts. |
 | `includeHiddenSelections` | `ihs` | Accepted for Maya scripts. |
@@ -6823,6 +13492,7 @@ Arguments: skinCluster, then points or components (the selection when none)
 | Flag | Short | Description |
 | --- | --- | --- |
 | `transformValue` | `tv` | joint weight pairs. |
+| `dqBlendWeight` | `dqb` | The points' blend between linear and dual quaternion, for skinningMethod 2. |
 | `transformMoveWeights` | `tmw` | from to pairs: moves the weight of one influence to another. |
 | `relative` | `r` | -tv adds to the current weight. |
 | `zeroRemainingInfluences` | `zri` | -tv zeroes the influences it doesn't name. |
@@ -6860,6 +13530,23 @@ Arguments: objects
 | --- | --- | --- |
 | `level` |  | Subdivision levels to display (0 to 3). |
 
+## smoothTangentSurface
+
+Line a surface's CVs up across the knot at -p so it's smooth there: -d 1 U, 0 V. Returns [surface, node].
+
+Arguments: surfaces (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `parameter` | `p` | Which isoparm. |
+| `direction` | `d` | 1 U, 0 V. |
+| `smoothness` | `s` | Accepted for Maya scripts. |
+| `constructionHistory` | `ch` | Keep a history node (on by default). |
+| `replaceOriginal` | `rpo` | Change the surface itself (on by default). |
+| `name` | `n` | Name of a new surface. |
+| `object` | `o` | Accepted for Maya scripts. |
+| `polygon` | `po` | Accepted for Maya scripts. |
+
 ## snapKey
 
 Move keys to whole multiples of -tm (1 by default), and to multiples of -vm if given.
@@ -6880,6 +13567,20 @@ Arguments: objects, plugs or curves (the selection when none)
 | `selected` | `sl` | Snap the keys selectKey selected. |
 | `timeMultiple` | `tm` | Snap time to multiples of this. |
 | `valueMultiple` | `vm` | Snap value to multiples of this. |
+
+## snapMode
+
+Move snapping switches: -grid, -point, -curve; -q to ask.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `grid` | `gr` | This snap. |
+| `point` | `p` | This snap. |
+| `curve` | `c` | This snap. |
+| `liveFace` | `lf` | This snap. |
+| `viewPlane` | `vp` | This snap. |
+| `meshCenter` | `mc` | This snap. |
+| `query` | `q` | Query. |
 
 ## snapshot
 
@@ -6919,6 +13620,27 @@ Arguments: vertices or meshes (the selection when none); the softMod with -e and
 | `falloffAroundSelection` | `fas` | Fall off around the selected points rather than the centre (on). |
 | `relative` | `rel` | Only the handle's own transform counts, not its parents'. |
 
+## softModContext
+
+A softModContext tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `falloffMode` | `fm` |  |
+| `falloffRadius` | `fr` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## softSelect
 
 Soft selection (B): -sse 1 turns it on, -ssd sets the falloff radius. -q -sse / -q -ssd query them.
@@ -6944,6 +13666,23 @@ Set or query the soft select falloff curve (weight against distance from the sel
 | `rename` |  | User preset to rename; the new name goes in to. |
 | `to` |  | New name for rename. |
 
+## solidify
+
+Solidify: the mesh keeps its rest shape, fitted to what comes in. Returns [solidify1].
+
+Arguments: what to deform, and any target last (the selection when none); the deformer with -e and -q
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `name` | `n` | Name of the deformer. |
+| `before` | `bf` | Go just above the deformer nearest the mesh. |
+| `after` | `af` | Go nearest the mesh, after the other deformers (the default). |
+| `frontOfChain` | `foc` | Go above every other deformer. |
+| `envelope` | `en` | How much of the deformation applies (1). |
+| `edit` | `e` | Edit mode. |
+| `query` | `q` | Query mode. |
+| `scaleEnvelope` | `se` | How much of the size change comes through (1). |
+
 ## spaceLocator
 
 Create a locator: a transform with a locator shape under it. Returns [transform].
@@ -6952,6 +13691,8 @@ Create a locator: a transform with a locator shape under it. Returns [transform]
 | --- | --- | --- |
 | `name` | `n` | Name; made unique among its siblings. |
 | `position` | `p` | Where the locator shape sits in its transform's space (localPosition). |
+| `absolute` | `a` | The position is world, with the pivots at it. |
+| `relative` | `r` | The position is local (the default). |
 
 ## sphere
 
@@ -7011,6 +13752,107 @@ Arguments: four curves (the selection when none)
 | `name` | `n` | Name of the new object. |
 | `object` | `o` | Accepted for Maya scripts. |
 
+## squareSurface
+
+A surface from four curves in order round its edge: square under its other name.
+
+Arguments: four curves (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `degree` | `d` | Accepted for Maya scripts. |
+| `continuityType1` | `cp` | Accepted for Maya scripts. |
+| `endPointTolerance` | `ept` | Accepted for Maya scripts. |
+| `rebuildCurve1` | `rc1` | Accepted for Maya scripts. |
+| `constructionHistory` | `ch` | Keep the node (on by default). |
+| `polygon` | `po` | 0 NURBS, 1 polygons. |
+| `range` | `rn` | Accepted for Maya scripts. |
+| `name` | `n` | Name of the new object. |
+| `object` | `o` | Accepted for Maya scripts. |
+
+## stackTrace
+
+Whether errors show the procedure stack: -state on or off, -q reads it. -dump writes the stack to the history.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `state` | `st` |  |
+| `query` | `q` |  |
+| `dump` | `d` |  |
+
+## stitchSurface
+
+Close the gap between two surfaces' edges (surface.u[x] or the nearest): -b 0.5 meets halfway, 0 moves only the second, 1 only the first. Returns the surfaces and nodes.
+
+Arguments: two surfaces or edges
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `bias` | `b` | Which moves (0.5). |
+| `cascade` | `c` | Accepted for Maya scripts. |
+| `keepG0Continuity` | `kg0` | Accepted for Maya scripts. |
+| `keepG1Continuity` | `kg1` | Accepted for Maya scripts. |
+| `numberOfSamples` | `ns` | Accepted for Maya scripts. |
+| `stepCount` | `sc` | Accepted for Maya scripts. |
+| `fixBoundary` | `fb` | Accepted for Maya scripts. |
+| `replaceOriginal` | `rpo` | Accepted: the surfaces themselves change. |
+| `constructionHistory` | `ch` | Keep the node (on by default). |
+| `name` | `n` | The new object's name. |
+| `object` | `o` | Accepted for Maya scripts. |
+| `range` | `rn` | Accepted for Maya scripts. |
+| `caching` | `cch` | Accepted for Maya scripts. |
+| `nodeState` | `nds` | Accepted for Maya scripts. |
+| `tolerance` | `tol` | Accepted for Maya scripts. |
+| `polygon` | `po` | 0 NURBS, 1 polygons. |
+
+## stitchSurfacePoints
+
+Move CVs to one place: their mean, or -ew 0 the first. Returns them.
+
+Arguments: CVs
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `equalWeight` | `ew` | Their mean (the default), or the first. |
+| `bias` | `b` | Accepted for Maya scripts. |
+| `constructionHistory` | `ch` | Accepted for Maya scripts. |
+| `cascade` | `c` | Accepted for Maya scripts. |
+| `keepG0Continuity` | `kg0` | Accepted for Maya scripts. |
+| `keepG1Continuity` | `kg1` | Accepted for Maya scripts. |
+| `replaceOriginal` | `rpo` | Accepted: they change in place. |
+| `stepCount` | `sc` | Accepted for Maya scripts. |
+| `tolerance` | `tol` | Accepted for Maya scripts. |
+
+## substituteGeometry
+
+Substitute Geometry: the second mesh takes over from the skinned first, with its influences and weights. The old mesh goes unless -rog. Returns the new skinCluster.
+
+Arguments: the skinned mesh, then its replacement (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `oldGeometry` | `og` | The skinned mesh. |
+| `newGeometry` | `ng` | Its replacement. |
+| `retainOldGeometry` | `rog` | Keep the old mesh. |
+
+## surface
+
+A surface from raw data: -du -dv degrees, -fu -fv open, closed or periodic, -ku -kv one knot each, -p x y z one point each (or -pw with a weight), V running fastest.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `degreeU` | `du` | Degree in U. |
+| `degreeV` | `dv` | Degree in V. |
+| `formU` | `fu` | open, closed or periodic. |
+| `formV` | `fv` | open, closed or periodic. |
+| `knotU` | `ku` | A knot in U. |
+| `knotV` | `kv` | A knot in V. |
+| `point` | `p` | A CV. |
+| `pointWeight` | `pw` | A CV with a weight, dropped: surfaces aren't rational here. |
+| `name` | `n` | The surface's name. |
+| `objectSpace` | `ob` | Accepted for Maya scripts. |
+| `worldSpace` | `ws` | Accepted for Maya scripts. |
+
 ## sweepMeshFromCurve
 
 A tube along a curve with a sweepMeshCreator node: -scaleProfileX radius, -profilePolySides, -interpolationSteps, -taper, -twist. Returns [sweep1, sweepMeshCreator1].
@@ -7028,6 +13870,106 @@ Arguments: a curve (the selection when none)
 | `constructionHistory` | `ch` | Keep the node (on by default). |
 | `range` | `rn` | Accepted for Maya scripts. |
 | `name` | `n` | Name of the new object. |
+
+## symbolButton
+
+Script UI: symbolButton, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `image` | `i` |  |
+| `command` | `c` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## symbolCheckBox
+
+Script UI: symbolCheckBox, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `image` | `i` |  |
+| `onImage` | `oni` |  |
+| `offImage` | `ofi` |  |
+| `value` | `v` |  |
+| `onCommand` | `onc` |  |
+| `offCommand` | `ofc` |  |
+| `changeCommand` | `cc` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## symmetricModelling
+
+Symmetry for component edits: -e -s on, -ax x|y|z, -ab world|object|topo, -ts on from the selected seam edge. On the selected meshes, or all. -q reads each.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `symmetry` | `s` | On or off. |
+| `axis` | `ax` | x, y or z. |
+| `about` | `ab` | world, object or topo. All mirror in the object's axes here; topo pairs by topology. |
+| `topoSymmetry` | `ts` | Pair by topology from the selected seam edge. |
+| `worldSpace` | `ws` | About world. |
+| `tolerance` | `tol` | How close a pair must be. |
+| `reset` | `r` | Back to the defaults. |
+| `allowPartial` | `ap` | Accepted for Maya scripts. |
+| `preserveSeam` | `ps` | Accepted for Maya scripts. |
+| `seamTolerance` | `st` | Accepted for Maya scripts. |
 
 ## symmetrize
 
@@ -7081,6 +14023,67 @@ Arguments: objects
 | `topological` |  | With pairsOnly: match by topology from the selected edge. |
 | `tolerance` |  | Weld or match distance, cm (0: scaled to the mesh). |
 
+## tabLayout
+
+Script UI: tabLayout, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `tabLabel` | `tl` |  |
+| `tabLabelIndex` | `tli` |  |
+| `selectTabIndex` | `sti` |  |
+| `selectTab` | `st` |  |
+| `changeCommand` | `cc` |  |
+| `selectCommand` | `sc` |  |
+| `preSelectCommand` | `psc` |  |
+| `doubleClickCommand` | `dcc` |  |
+| `tabsVisible` | `tv` |  |
+| `innerMarginWidth` | `imw` |  |
+| `innerMarginHeight` | `imh` |  |
+| `scrollable` | `scr` |  |
+| `childResizable` | `cr` |  |
+| `horizontalScrollBarThickness` | `hst` |  |
+| `verticalScrollBarThickness` | `vst` |  |
+| `moveTab` | `mt` |  |
+| `newTabCommand` | `ntc` |  |
+| `showNewTab` | `snt` |  |
+| `tabPosition` | `tp` |  |
+| `tabTooltip` | `tt` |  |
+| `tabsClosable` | `tc` |  |
+| `closeTabCommand` | `ctc` |  |
+| `minChildWidth` | `mcw` |  |
+| `childArray` | `ca` |  |
+| `numberOfChildren` | `nch` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
 ## tangentConstraint
 
 Constrain the object named (or selected) last to the targets before it; a second call adds targets. -mo keeps the current offset; -w sets the targets' weight; -e and -q work on the constraint or the object it drives. Returns [constraint].
@@ -7109,6 +14112,27 @@ Arguments: targets, then the object to drive or the constraint
 | `edit` | `e` | Change the constraint. |
 | `query` | `q` | Ask about the constraint. |
 
+## targetWeldCtx
+
+A targetWeldCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `mergeToCenter` | `mtc` |  |
+| `preserveUV` | `puv` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## tension
 
 Add a tension deformer: edges pull back towards their lengths in the mesh as it is now. Returns [tension1].
@@ -7133,6 +14157,399 @@ Arguments: meshes or vertices (the selection when none); the deformer with -e an
 | `squashConstraint` | `sqc` | Stops squashed edges relaxing: 0 free, 1 not at all. |
 | `stretchConstraint` | `stc` | Stops stretched edges relaxing: 0 free, 1 not at all. |
 
+## text
+
+Script UI: text, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `label` | `l` |  |
+| `align` | `al` |  |
+| `font` | `fn` |  |
+| `recomputeSize` | `rs` |  |
+| `wordWrap` | `ww` |  |
+| `hyperlink` | `hl` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## textCurves
+
+Text as curves: -t words, -f font accepted (one stroke font). A group, a transform per letter, a curve per stroke. Returns [group, node].
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `text` | `t` | The words. |
+| `font` | `f` | Accepted: one stroke font here. |
+| `name` | `n` | The group's name. |
+| `object` | `o` | Accepted for Maya scripts. |
+
+## textField
+
+Script UI: textField, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `text` | `tx` |  |
+| `placeholderText` | `pht` |  |
+| `editable` | `ed` |  |
+| `changeCommand` | `cc` |  |
+| `textChangedCommand` | `tcc` |  |
+| `enterCommand` | `ec` |  |
+| `alwaysInvokeEnterCommandOnReturn` | `aie` |  |
+| `receiveFocusCommand` | `rfc` |  |
+| `insertText` | `it` |  |
+| `insertionPosition` | `ip` |  |
+| `fileName` | `fi` |  |
+| `font` | `fn` |  |
+| `searchField` | `sf` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## textFieldButtonGrp
+
+Script UI: textFieldButtonGrp, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `label` | `l` |  |
+| `text` | `tx` |  |
+| `placeholderText` | `pht` |  |
+| `editable` | `ed` |  |
+| `changeCommand` | `cc` |  |
+| `textChangedCommand` | `tcc` |  |
+| `forceChangeCommand` | `fcc` |  |
+| `fileName` | `fi` |  |
+| `insertText` | `it` |  |
+| `insertionPosition` | `ip` |  |
+| `buttonLabel` | `bl` |  |
+| `buttonCommand` | `bc` |  |
+| `enableButton` | `eb` |  |
+| `columnWidth1` | `cw1` |  |
+| `columnAlign1` | `cl1` |  |
+| `columnAttach1` | `ct1` |  |
+| `columnOffset1` | `co1` |  |
+| `columnWidth2` | `cw2` |  |
+| `columnAlign2` | `cl2` |  |
+| `columnAttach2` | `ct2` |  |
+| `columnOffset2` | `co2` |  |
+| `adjustableColumn2` | `ad2` |  |
+| `columnWidth3` | `cw3` |  |
+| `columnAlign3` | `cl3` |  |
+| `columnAttach3` | `ct3` |  |
+| `columnOffset3` | `co3` |  |
+| `adjustableColumn3` | `ad3` |  |
+| `columnWidth4` | `cw4` |  |
+| `columnAlign4` | `cl4` |  |
+| `columnAttach4` | `ct4` |  |
+| `columnOffset4` | `co4` |  |
+| `adjustableColumn4` | `ad4` |  |
+| `columnWidth5` | `cw5` |  |
+| `columnAlign5` | `cl5` |  |
+| `columnAttach5` | `ct5` |  |
+| `columnOffset5` | `co5` |  |
+| `adjustableColumn5` | `ad5` |  |
+| `columnWidth6` | `cw6` |  |
+| `columnAlign6` | `cl6` |  |
+| `columnAttach6` | `ct6` |  |
+| `columnOffset6` | `co6` |  |
+| `adjustableColumn6` | `ad6` |  |
+| `adjustableColumn` | `adj` |  |
+| `columnWidth` | `cw` |  |
+| `columnAlign` | `cal` |  |
+| `columnAttach` | `cat` |  |
+| `rowAttach` | `rat` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## textFieldGrp
+
+Script UI: textFieldGrp, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `label` | `l` |  |
+| `text` | `tx` |  |
+| `placeholderText` | `pht` |  |
+| `editable` | `ed` |  |
+| `changeCommand` | `cc` |  |
+| `textChangedCommand` | `tcc` |  |
+| `forceChangeCommand` | `fcc` |  |
+| `fileName` | `fi` |  |
+| `insertText` | `it` |  |
+| `insertionPosition` | `ip` |  |
+| `columnWidth1` | `cw1` |  |
+| `columnAlign1` | `cl1` |  |
+| `columnAttach1` | `ct1` |  |
+| `columnOffset1` | `co1` |  |
+| `columnWidth2` | `cw2` |  |
+| `columnAlign2` | `cl2` |  |
+| `columnAttach2` | `ct2` |  |
+| `columnOffset2` | `co2` |  |
+| `adjustableColumn2` | `ad2` |  |
+| `columnWidth3` | `cw3` |  |
+| `columnAlign3` | `cl3` |  |
+| `columnAttach3` | `ct3` |  |
+| `columnOffset3` | `co3` |  |
+| `adjustableColumn3` | `ad3` |  |
+| `columnWidth4` | `cw4` |  |
+| `columnAlign4` | `cl4` |  |
+| `columnAttach4` | `ct4` |  |
+| `columnOffset4` | `co4` |  |
+| `adjustableColumn4` | `ad4` |  |
+| `columnWidth5` | `cw5` |  |
+| `columnAlign5` | `cl5` |  |
+| `columnAttach5` | `ct5` |  |
+| `columnOffset5` | `co5` |  |
+| `adjustableColumn5` | `ad5` |  |
+| `columnWidth6` | `cw6` |  |
+| `columnAlign6` | `cl6` |  |
+| `columnAttach6` | `ct6` |  |
+| `columnOffset6` | `co6` |  |
+| `adjustableColumn6` | `ad6` |  |
+| `adjustableColumn` | `adj` |  |
+| `columnWidth` | `cw` |  |
+| `columnAlign` | `cal` |  |
+| `columnAttach` | `cat` |  |
+| `rowAttach` | `rat` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## textScrollList
+
+Script UI: textScrollList, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `append` | `a` |  |
+| `appendPosition` | `ap` |  |
+| `removeItem` | `ri` |  |
+| `removeIndexedItem` | `rii` |  |
+| `removeAll` | `ra` |  |
+| `selectItem` | `si` |  |
+| `selectIndexedItem` | `sii` |  |
+| `deselectAll` | `da` |  |
+| `deselectItem` | `di` |  |
+| `deselectIndexedItem` | `dii` |  |
+| `allowMultiSelection` | `ams` |  |
+| `numberOfRows` | `nr` |  |
+| `allItems` | `ai` |  |
+| `numberOfItems` | `ni` |  |
+| `numberOfSelectedItems` | `nsi` |  |
+| `showIndexedItem` | `shi` |  |
+| `selectCommand` | `sc` |  |
+| `doubleClickCommand` | `dcc` |  |
+| `deleteKeyCommand` | `dkc` |  |
+| `lineFont` | `lf` |  |
+| `font` | `fn` |  |
+| `allowAutomaticSelection` | `aas` |  |
+| `uniqueTag` | `utg` |  |
+| `selectUniqueTagItem` | `sut` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## textureDeformer
+
+Texture Deformer: displaces points by a procedural value plus whatever is connected to .texture. Returns [textureDeformer1].
+
+Arguments: what to deform, and any target last (the selection when none); the deformer with -e and -q
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `name` | `n` | Name of the deformer. |
+| `before` | `bf` | Go just above the deformer nearest the mesh. |
+| `after` | `af` | Go nearest the mesh, after the other deformers (the default). |
+| `frontOfChain` | `foc` | Go above every other deformer. |
+| `envelope` | `en` | How much of the deformation applies (1). |
+| `edit` | `e` | Edit mode. |
+| `query` | `q` | Query mode. |
+| `strength` | `str` | Multiplies the texture (1). |
+| `offset` | `off` | Added to the displacement. |
+| `direction` | `dir` | 0 normal, 1 vector. |
+| `vectorStrength` | `vs` | With direction vector: on each axis. |
+| `vectorOffset` | `vo` | With direction vector: added on each axis. |
+| `noiseFrequency` | `nf` | How fine the procedural texture is (1). |
+| `noiseAmplitude` | `na` | How strong the procedural texture is (1). |
+| `pointSpace` | `ps` | 0 world, 1 local. |
+
+## threadCount
+
+Threads to evaluate with, kept for scripts: -n count, 0 for the machine's; -q -n asks.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `numberOfThreads` | `n` | How many. |
+
+## threePointArc
+
+A circular arc through -p1 -p2 -p3: -d degree, -s sections. Returns [curve, node]. -q -c, -q -r on the node read centre and radius.
+
+Arguments: the node, with -q
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `point1` | `p1` | Start. |
+| `point2` | `p2` | Middle. |
+| `point3` | `p3` | End. |
+| `degree` | `d` | The degree (3). |
+| `sections` | `s` | The sections (8). |
+| `center` | `c` | With -q: the centre. |
+| `normal` | `nr` | With -q: the normal. |
+| `constructionHistory` | `ch` | Keep the node (on by default). |
+| `name` | `n` | The curve's name. |
+| `object` | `o` | Accepted for Maya scripts. |
+| `spans` | `sp` | Accepted for Maya scripts. |
+| `radius` | `r` | With -q: the radius. |
+
+## tickDrawSpecial
+
+Draw keys' ticks in the special colour on the time slider: -sp on or off (on), -t which keys.
+
+Arguments: objects or plugs (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `special` | `sp` | On or off. |
+| `time` | `t` | Which keys. |
+
 ## timeControl
 
 The time slider's state: the range selected on it (-q -ra, -q -rng, -q -rv), its key display and snapping.
@@ -7155,21 +14572,49 @@ Arguments: the slider's name, accepted for Maya scripts
 | `endScrub` | `es` | Accepted for Maya scripts. |
 | `forceRedraw` | `fr` | Accepted for Maya scripts. |
 
+## timeWarp
+
+Warp time for animation curves: names objects or curves, -f the frames to warp at (the playback range by default), -g every curve. With -e: -mf index frame moves one, -df index removes one. -q -f reads them. Returns the node.
+
+Arguments: objects or curves, or the node with -e
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `frame` | `f` | Frames to warp at, or with -q ask. |
+| `moveFrame` | `mf` | A warp frame's index and where it goes. |
+| `deleteFrame` | `df` | A warp frame's index to remove. |
+| `global` | `g` | Warp every curve in the scene. |
+| `interpType` | `it` | Accepted: warps interpolate linearly here. |
+| `name` | `n` | The node's name. |
+
+## timer
+
+A stopwatch: -s starts, -lap gives seconds so far, -e ends and gives seconds. -n names one.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `startTimer` | `s` |  |
+| `endTimer` | `e` |  |
+| `lapTime` | `lap` |  |
+| `name` | `n` |  |
+
 ## toggle
 
-Switch a display toggle on the selection: -localAxis, -rotatePivot, -scalePivot, -selectHandle, -template, with -state to set it.
+Turns display switches on the objects on and off: -la, -rp, -sp, -sh, -te; -st for a value, -q to ask.
 
 Arguments: objects
 
 | Flag | Short | Description |
 | --- | --- | --- |
-| `localAxis` | `la` | The local axes. |
-| `rotatePivot` | `rp` | The rotate pivot. |
-| `scalePivot` | `sp` | The scale pivot. |
-| `selectHandle` | `sh` | The selection handle. |
-| `boundingBox` | `bb` | Draw as a box. |
-| `template` | `te` | Template display. |
-| `state` | `st` | On or off rather than a switch. |
+| `localAxis` | `la` | What to switch. |
+| `rotatePivot` | `rp` | What to switch. |
+| `scalePivot` | `sp` | What to switch. |
+| `selectHandle` | `sh` | What to switch. |
+| `template` | `te` | What to switch. |
+| `state` | `st` | On or off, rather than the other way round. |
+| `query` | `q` | Query. |
 
 ## toggleSymmetry
 
@@ -7209,6 +14654,41 @@ Create a NURBS torus with a makeNurbTorus node. Returns [nurbsTorus1, makeNurbTo
 | `tolerance` | `tol` | Accepted for Maya scripts. |
 | `heightRatio` | `hr` | Height over radius. |
 | `minorSweep` | `msw` | Degrees of the tube's section (360). |
+
+## track
+
+Slide a camera sideways: -l left, -r right, -u up, -d down, in units.
+
+Arguments: [camera]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `left` | `l` |  |
+| `right` | `r` |  |
+| `up` | `u` |  |
+| `down` | `d` |  |
+
+## trackCtx
+
+A trackCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `trackScale` | `ts` |  |
+| `trackGeometry` | `tg` |  |
+| `alternateContext` | `ac` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
 
 ## transferAttributes
 
@@ -7259,6 +14739,144 @@ Arguments: components or meshes (the selection when none)
 | `nodeState` | `nds` | Accepted; see the command reference. |
 | `frozen` | `fzn` | Accepted; see the command reference. |
 
+## transferBetweenInfluences
+
+Moves weight from one influence to another on the points named or selected: transferBetweenInfluences skinCluster1 -src joint1 -dst joint2 -v 0.5.
+
+Arguments: the skinCluster, then points
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `source` | `src` | The influence giving weight. |
+| `destination` | `dst` | The influence taking it. |
+| `value` | `v` | How much of it moves (1). |
+
+## transformCompare
+
+0 when two transforms match, with what's under them, 1 otherwise. -r the root alone.
+
+Arguments: two transforms
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `root` | `r` | Only the root. |
+
+## transformLimits
+
+Set or query the limits of translate, rotate and scale: -tx lo hi, -etx onLo onHi.
+
+Arguments: objects
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query. |
+| `edit` | `e` | Edit. |
+| `remove` | `rm` | Turn every limit off. |
+| `translation` | `t` | Low and high values, or whether each is on. |
+| `enableTranslation` | `et` | Low and high values, or whether each is on. |
+| `translationX` | `tx` | Low and high values, or whether each is on. |
+| `enableTranslationX` | `etx` | Low and high values, or whether each is on. |
+| `translationY` | `ty` | Low and high values, or whether each is on. |
+| `enableTranslationY` | `ety` | Low and high values, or whether each is on. |
+| `translationZ` | `tz` | Low and high values, or whether each is on. |
+| `enableTranslationZ` | `etz` | Low and high values, or whether each is on. |
+| `rotation` | `r` | Low and high values, or whether each is on. |
+| `enableRotation` | `er` | Low and high values, or whether each is on. |
+| `rotationX` | `rx` | Low and high values, or whether each is on. |
+| `enableRotationX` | `erx` | Low and high values, or whether each is on. |
+| `rotationY` | `ry` | Low and high values, or whether each is on. |
+| `enableRotationY` | `ery` | Low and high values, or whether each is on. |
+| `rotationZ` | `rz` | Low and high values, or whether each is on. |
+| `enableRotationZ` | `erz` | Low and high values, or whether each is on. |
+| `scale` | `s` | Low and high values, or whether each is on. |
+| `enableScale` | `es` | Low and high values, or whether each is on. |
+| `scaleX` | `sx` | Low and high values, or whether each is on. |
+| `enableScaleX` | `esx` | Low and high values, or whether each is on. |
+| `scaleY` | `sy` | Low and high values, or whether each is on. |
+| `enableScaleY` | `esy` | Low and high values, or whether each is on. |
+| `scaleZ` | `sz` | Low and high values, or whether each is on. |
+| `enableScaleZ` | `esz` | Low and high values, or whether each is on. |
+
+## trim
+
+Trim a surface along closed curves on it: the region holding -lu -lv (0 to 1, the middle by default) stays, or with -sl 1 goes. Returns [surface, node].
+
+Arguments: a surface, then curves on it
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `locatorU` | `lu` | Where, in U (0.5). |
+| `locatorV` | `lv` | Where, in V (0.5). |
+| `selected` | `sl` | 0 keeps that region, 1 throws it away. |
+| `shrink` | `sh` | Accepted for Maya scripts. |
+| `constructionHistory` | `ch` | Keep the node (on by default). |
+| `name` | `n` | The new object's name. |
+| `object` | `o` | Accepted for Maya scripts. |
+| `range` | `rn` | Accepted for Maya scripts. |
+| `caching` | `cch` | Accepted for Maya scripts. |
+| `nodeState` | `nds` | Accepted for Maya scripts. |
+| `tolerance` | `tol` | Accepted for Maya scripts. |
+| `polygon` | `po` | 0 NURBS, 1 polygons. |
+
+## tumbleCtx
+
+A tumbleCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `autoOrthoConstrain` | `aoc` |  |
+| `autoSetPivot` | `asp` |  |
+| `localTumble` | `lt` |  |
+| `objectTumble` | `ot` |  |
+| `orthoLock` | `ol` |  |
+| `orthoStep` | `os` |  |
+| `tumbleScale` | `ts` |  |
+| `alternateContext` | `ac` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## twoPointArc
+
+A circular arc between -p1 and -p2 with radius -r on the side -dv's normal gives: -tac the long way round, -d degree, -s sections. Returns [curve, node].
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `point1` | `p1` | Start. |
+| `point2` | `p2` | End. |
+| `directionVector` | `dv` | The arc's normal. |
+| `radius` | `r` | The radius (1). |
+| `toggleArc` | `tac` | The long way round. |
+| `degree` | `d` | The degree (3). |
+| `sections` | `s` | The sections (8). |
+| `constructionHistory` | `ch` | Keep the node (on by default). |
+| `name` | `n` | The curve's name. |
+| `object` | `o` | Accepted for Maya scripts. |
+
+## u3dAutoSeam
+
+Cut seams where faces meet sharply: -s 0 to 1 how readily (90 to 30 degrees). Returns the node.
+
+Arguments: UVs, faces or meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `constructionHistory` | `ch` | Accepted: a node is made while history is on. |
+| `name` | `n` | Accepted for Maya scripts. |
+| `caching` | `cch` | Accepted for Maya scripts. |
+| `nodeState` | `nds` | Accepted for Maya scripts. |
+| `splitShells` | `s` | How readily. |
+| `cutPipes` | `p` | Accepted for Maya scripts. |
+
 ## u3dLayout
 
 Layout: pack the UV shells of the selection into 0 to 1, each scaled to its size in 3D and turned to fit.
@@ -7270,6 +14888,26 @@ Arguments: faces, UVs or meshes
 | `shellSpacing` | `spc` | Space between shells, in UV units. |
 | `rotateStep` | `rst` | 0 keeps shells unturned. |
 | `resolution` | `res` | Accepted for Maya scripts. |
+
+## u3dOptimize
+
+Relax UVs, reducing distortion: each shell flattened again, keeping its place and size. Returns the node.
+
+Arguments: UVs, faces or meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `constructionHistory` | `ch` | Accepted: a node is made while history is on. |
+| `name` | `n` | Accepted for Maya scripts. |
+| `caching` | `cch` | Accepted for Maya scripts. |
+| `nodeState` | `nds` | Accepted for Maya scripts. |
+| `iterations` | `ite` | Accepted: the solver decides. |
+| `power` | `pow` | Accepted for Maya scripts. |
+| `surfangle` | `sa` | Accepted for Maya scripts. |
+| `borderintersection` | `bi` | Accepted for Maya scripts. |
+| `triangleflip` | `tf` | Accepted for Maya scripts. |
+| `mapsize` | `ms` | Accepted for Maya scripts. |
+| `roomspace` | `rs` | Accepted for Maya scripts. |
 
 ## u3dUnfold
 
@@ -7290,6 +14928,18 @@ An interface setting the views read: uiPref name value. No value returns it.
 
 Arguments: name value
 
+## uiTemplate
+
+A named set of flag defaults, filled by the -defineTemplate flag of each control command.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `exists` | `ex` |  |
+| `defineTemplate` | `dt` |  |
+| `useTemplate` | `ut` |  |
+
 ## undo
 
 Undo the last command.
@@ -7303,10 +14953,19 @@ Query or control the undo queue. openChunk/closeChunk group everything in betwee
 | `openChunk` | `ock` | Start a chunk. |
 | `closeChunk` | `cck` | End a chunk. |
 | `chunkName` | `cn` | Label for openChunk. |
-| `state` | `st` | Turn undo recording on or off. |
 | `limit` | `l` | Max undo steps, 0 for infinite. |
 | `memoryBudget` | `mb` | Drop the oldest steps past this many MB, 0 for unlimited. |
 | `history` | `h` | Also return every step's label, oldest first, and the current position. |
+| `query` | `q` | Query. |
+| `state` | `st` | Turn undo on or off; off flushes the queue, as in Maya. |
+| `stateWithoutFlush` | `swf` | Turn undo on or off, keeping the queue. |
+| `undoName` | `un` | With -q: what undo would undo. |
+| `redoName` | `rn` | With -q: what redo would redo. |
+| `undoQueueEmpty` | `uqe` | With -q: whether there is nothing to undo. |
+| `redoQueueEmpty` | `rqe` | With -q: whether there is nothing to redo. |
+| `length` | `l` | How many steps to keep. |
+| `infinity` | `infinity` | Keep every step. |
+| `printQueue` | `pq` | Accepted for Maya scripts. |
 
 ## undoJump
 
@@ -7339,6 +14998,13 @@ Move each group's children up to the group's parent, keeping where they are, the
 
 Arguments: groups
 
+| Flag | Short | Description |
+| --- | --- | --- |
+| `world` | `w` | Move the children to the world. |
+| `parent` | `p` | Move the children here. |
+| `absolute` | `a` | Keep world placement (the default). |
+| `relative` | `r` | Keep local placement. |
+
 ## unloadPlugin
 
 Unload a plug-in: its uninitializePlugin runs and its commands and node types go.
@@ -7348,6 +15014,288 @@ Arguments: plug-in name
 | Flag | Short | Description |
 | --- | --- | --- |
 | `force` | `f` | Accepted for scripts. |
+
+## untangleUV
+
+Untangle a shell: -mb circular or square maps its border to that shape, the inside evened so nothing folds. Returns the node.
+
+Arguments: UVs, faces or meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `constructionHistory` | `ch` | Accepted: a node is made while history is on. |
+| `name` | `n` | Accepted for Maya scripts. |
+| `caching` | `cch` | Accepted for Maya scripts. |
+| `nodeState` | `nds` | Accepted for Maya scripts. |
+| `mapBorder` | `mb` | circular, square or none. |
+| `pinSelected` | `ps` | Hold the UVs named. |
+| `pinBorder` | `pb` | Accepted: the border holds unless -mb moves it. |
+| `pinUnselected` | `pu` | Accepted for Maya scripts. |
+| `relax` | `r` | Accepted: the inside is evened uniformly. |
+| `maxRelaxIterations` | `mri` | Accepted for Maya scripts. |
+| `relaxTolerance` | `rt` | Accepted for Maya scripts. |
+| `shapeDetail` | `sd` | Accepted for Maya scripts. |
+
+## untrim
+
+Take a surface's trims off. Returns [surface, node].
+
+Arguments: surfaces (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `curveOnSurface` | `cos` | Accepted for Maya scripts. |
+| `noChanges` | `nc` | Accepted for Maya scripts. |
+| `constructionHistory` | `ch` | Keep a history node (on by default). |
+| `replaceOriginal` | `rpo` | Change the surface itself (on by default). |
+| `name` | `n` | Name of a new surface. |
+| `object` | `o` | Accepted for Maya scripts. |
+| `polygon` | `po` | Accepted for Maya scripts. |
+
+## upAxis
+
+The scene's up axis: -ax y or z, -rv moves the default cameras with it (on by default). -q -ax asks.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `axis` | `ax` | y or z. |
+| `rotateView` | `rv` | Turn the default cameras too. |
+
+## uvSnapshot
+
+Write the UV wireframe to an image: -n file, -xr -yr, -r -g -b the line colour, -um -uM -vm -vM the range, -o overwrites. PNG, or PPM with -ff ppm.
+
+Arguments: faces or meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `name` | `n` | The file. |
+| `xResolution` | `xr` | Width (512). |
+| `yResolution` | `yr` | Height (512). |
+| `redColor` | `r` | 0 to 255. |
+| `greenColor` | `g` | 0 to 255. |
+| `blueColor` | `b` | 0 to 255. |
+| `uMin` | `umn` | Range. |
+| `uMax` | `umx` | Range. |
+| `vMin` | `vmn` | Range. |
+| `vMax` | `vmx` | Range. |
+| `overwrite` | `o` | Replace the file. |
+| `fileFormat` | `ff` | png, or ppm. |
+| `antiAliased` | `aa` | Accepted for Maya scripts. |
+| `entireUVRange` | `euv` | Accepted for Maya scripts. |
+
+## viewCamera
+
+Put a camera square on to another: -m the camera to move, -t on its top, -s on its side.
+
+Arguments: [camera]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `move` | `m` |  |
+| `topView` | `t` |  |
+| `sideView` | `s` |  |
+
+## viewClipPlane
+
+A camera's clip planes: -ncp near, -fcp far, -acp set from the scene. -q reads.
+
+Arguments: [camera]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `nearClipPlane` | `ncp` |  |
+| `farClipPlane` | `fcp` |  |
+| `autoClipPlane` | `acp` |  |
+| `surfacesOnly` | `so` |  |
+
+## viewFit
+
+Frame the selection, or -all, in a camera: -f the fraction of the view to fill.
+
+Arguments: [camera]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `allObjects` | `all` |  |
+| `fitFactor` | `f` |  |
+| `animate` | `an` |  |
+| `center` | `c` |  |
+| `namespace` | `ns` |  |
+| `panel` | `p` |  |
+
+## viewHeadOn
+
+Turn a camera to face the selected faces along their normal, or the selection along the view.
+
+Arguments: [camera]
+
+## viewLookAt
+
+Turn a camera to a point, or to the selection. The camera stays where it is.
+
+Arguments: [camera]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `position` | `pos` |  |
+
+## viewPlace
+
+Place a camera: -eye -la look at -up, -fov degrees, -o orthographic, -p perspective, -ow its width.
+
+Arguments: [camera]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `eye` | `eye` |  |
+| `lookAt` | `la` |  |
+| `up` | `up` |  |
+| `fieldOfView` | `fov` |  |
+| `ortho` | `o` |  |
+| `perspective` | `p` |  |
+| `orthoWidth` | `ow` |  |
+
+## viewSet
+
+Put a camera on an axis, or back: -p -t -f -s -bo -bk -ls -rs, -home, -fit, -fitFactor.
+
+Arguments: [camera]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `persp` | `p` |  |
+| `top` | `t` |  |
+| `front` | `f` |  |
+| `side` | `s` |  |
+| `bottom` | `bo` |  |
+| `back` | `bk` |  |
+| `leftSide` | `ls` |  |
+| `rightSide` | `rs` |  |
+| `home` | `h` |  |
+| `fit` | `fit` |  |
+| `previousView` | `pv` |  |
+| `nextView` | `nv` |  |
+| `viewNegativeX` | `vnx` |  |
+| `viewNegativeY` | `vny` |  |
+| `viewNegativeZ` | `vnz` |  |
+| `viewX` | `vx` |  |
+| `viewY` | `vy` |  |
+| `viewZ` | `vz` |  |
+| `keepRenderSettings` | `krs` |  |
+| `animate` | `an` |  |
+| `fitFactor` | `ff` |  |
+| `namespace` | `ns` |  |
+
+## waitCursor
+
+The wait cursor: -state on or off.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `state` | `st` |  |
+| `query` | `q` |  |
+
+## weightHammerVerts
+
+Hammer Skin Weights: the points named or selected take the average weights of the points around them.
+
+Arguments: points (the selection when none)
+
+## window
+
+Script UI: window, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `title` | `t` |  |
+| `widthHeight` | `wh` |  |
+| `sizeable` | `s` |  |
+| `minimizeBox` | `mnb` |  |
+| `maximizeBox` | `mxb` |  |
+| `resizeToFitChildren` | `rtf` |  |
+| `menuBar` | `mb` |  |
+| `menuBarVisible` | `mbv` |  |
+| `titleBar` | `tb` |  |
+| `titleBarMenu` | `tbm` |  |
+| `toolbox` | `tlb` |  |
+| `topEdge` | `te` |  |
+| `leftEdge` | `le` |  |
+| `topLeftCorner` | `tlc` |  |
+| `retain` | `ret` |  |
+| `closeCommand` | `cc` |  |
+| `minimizeCommand` | `mnc` |  |
+| `restoreCommand` | `rc` |  |
+| `iconName` | `in` |  |
+| `iconify` | `i` |  |
+| `interactivePlacement` | `ip` |  |
+| `frontWindow` | `fw` |  |
+| `numberOfWindows` | `nw` |  |
+| `mainWindow` | `mw` |  |
+| `nestedDockingEnabled` | `nde` |  |
+| `dockCorner` | `dc` |  |
+| `dockStation` | `dcs` |  |
+| `dockingLayout` | `dl` |  |
+| `state` | `st` |  |
+| `menuArray` | `ma` |  |
+| `childArray` | `ca` |  |
+| `numberOfChildren` | `nch` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## windowPref
+
+Saved window positions and sizes: -exists, -remove, -wh, -tlc. None are kept here between sessions.
+
+Arguments: window
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `exists` | `ex` |  |
+| `remove` | `r` |  |
+| `removeAll` | `ra` |  |
+| `widthHeight` | `wh` |  |
+| `width` | `w` |  |
+| `height` | `h` |  |
+| `topLeftCorner` | `tlc` |  |
+| `topEdge` | `te` |  |
+| `leftEdge` | `le` |  |
+| `restoreMainWindowState` | `rms` |  |
+| `saveMainWindowState` | `sms` |  |
+| `enableAll` | `ea` |  |
 
 ## wire
 
@@ -7374,17 +15322,104 @@ Arguments: meshes to deform, then the wire unless -w names it (the selection whe
 
 ## workspace
 
-The project: -o opens a folder as the project, -q -rd or -q -fn gives its root, -cr creates the standard folders.
+The project: -q -rd or -fn gives its folder, -o and -dir change to one.
 
-Arguments: [folder]
+Arguments: [path]
 
 | Flag | Short | Description |
 | --- | --- | --- |
 | `query` | `q` | Query. |
-| `rootDirectory` | `rd` | The project's folder. |
-| `fullName` | `fn` | The project's folder. |
-| `openWorkspace` | `o` | Open this folder as the project. |
-| `create` | `cr` | Create the project's folders here. |
+| `rootDirectory` | `rd` | The project folder, with a slash. |
+| `fullName` | `fn` | The project folder. |
+| `directory` | `dir` | Change to this folder. |
+| `openWorkspace` | `o` | Open this project. |
+
+## workspaceControl
+
+Script UI: workspaceControl, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `label` | `l` |  |
+| `uiScript` | `ui` |  |
+| `floating` | `fl` |  |
+| `initialWidth` | `iw` |  |
+| `initialHeight` | `ih` |  |
+| `minimumWidth` | `mw` |  |
+| `minimumHeight` | `mh` |  |
+| `retain` | `r` |  |
+| `widthProperty` | `wp` |  |
+| `heightProperty` | `hp` |  |
+| `dockToMainWindow` | `dtm` |  |
+| `dockToControl` | `dtc` |  |
+| `dockToPanel` | `dtp` |  |
+| `tabToControl` | `ttc` |  |
+| `collapse` | `clp` |  |
+| `restore` | `rs` |  |
+| `closeCommand` | `cc` |  |
+| `requiredPlugin` | `rp` |  |
+| `requiredControl` | `rc` |  |
+| `loadImmediately` | `li` |  |
+| `checksPlugins` | `cp` |  |
+| `actLikeMayaUIElement` | `aui` |  |
+| `duplicatable` | `dup` |  |
+| `horizontal` | `hr` |  |
+| `stateString` | `ss` |  |
+| `uiScriptCommand` | `uic` |  |
+| `childArray` | `ca` |  |
+| `numberOfChildren` | `nch` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## workspaceControlState
+
+Saved state of workspace controls: none are kept here, so -ex is false and -remove does nothing.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `exists` | `ex` |  |
+| `remove` | `r` |  |
+| `defaultTopLeftCorner` | `dtc` |  |
+| `defaultWidthHeight` | `dwh` |  |
+| `heightProperty` | `hp` |  |
+| `leftEdge` | `le` |  |
+| `maximumWidthHeight` | `mwh` |  |
+| `minimumWidthHeight` | `nwh` |  |
+| `topEdge` | `te` |  |
+| `topLeftCorner` | `tlc` |  |
+| `widthHeight` | `wh` |  |
+| `widthProperty` | `wp` |  |
 
 ## wrap
 
@@ -7410,6 +15445,30 @@ Arguments: meshes to deform, then the wrapper unless -inf names it (the selectio
 | `weightThreshold` | `wth` | With -awt off: drop bindings of less weight than this. |
 | `falloffMode` | `fom` | 0 any triangle in reach, 1 only ones touching the nearest. |
 
+## wrinkle
+
+Wrinkle: creases around a handle. Returns [wrinkle1, wrinkle1Handle].
+
+Arguments: what to deform, and any target last (the selection when none); the deformer with -e and -q
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `name` | `n` | Name of the deformer. |
+| `before` | `bf` | Go just above the deformer nearest the mesh. |
+| `after` | `af` | Go nearest the mesh, after the other deformers (the default). |
+| `frontOfChain` | `foc` | Go above every other deformer. |
+| `envelope` | `en` | How much of the deformation applies (1). |
+| `edit` | `e` | Edit mode. |
+| `query` | `q` | Query mode. |
+| `wrinkleCount` | `wc` | How many creases (3). |
+| `wrinkleIntensity` | `wi` | How deep they go (0.5). |
+| `thickness` | `th` | How wide they are (1). |
+| `randomness` | `rnd` | How irregular they are (0.2). |
+| `style` | `st` | radial (the default), tangential or lines. |
+| `dropoffDistance` | `dds` | How far they reach from the handle. |
+| `scale` | `sc` | Multiplies the depth (1). |
+| `x` | `x` | Lines run across X rather than Z. |
+
 ## xform
 
 Query or set the transform of objects, in local or world space. Sets every flag given on each object, or with query=True returns one value of the first object: pass the flag to read as True. Values are local to the parent unless worldSpace is on.
@@ -7418,16 +15477,35 @@ Arguments: Transforms to edit or query; the selection when none are given.
 
 | Flag | Short | Description |
 | --- | --- | --- |
-| `query` | `q` | Return a value of the first object instead of setting. Pick it by passing one of translation, rotation, scale or matrix as True. |
-| `worldSpace` | `ws` | Read and write in world space instead of relative to the parent. Rotation and scale queries stay local. |
-| `relative` | `r` | On components: -t moves by the offset. |
-| `absolute` | `a` | The values are absolute (the default). |
+| `query` | `q` | Return a value of the first object. |
+| `worldSpace` | `ws` | World space. |
 | `objectSpace` | `os` | Object space (the default). |
-| `translation` | `t` | Position as (x, y, z) to set, or True to read it with query. |
-| `rotation` | `ro` | Euler rotation in degrees as (x, y, z) to set, or True to read it with query. |
-| `rotateAxis` | `ra` | rotateAxis as (x, y, z) to set, or True to read it with query. |
-| `scale` | `s` | Scale as (x, y, z) to set, or True to read it with query. |
-| `matrix` | `m` | The whole transform as 16 floats, column-major, to set; or True to read it with query. |
+| `absolute` | `a` | Values replace what is there (the default). |
+| `relative` | `r` | Values add to what is there. |
+| `preserve` | `p` | With -roo: keep the orientation, changing the angles. |
+| `translation` | `t` | Position. |
+| `rotation` | `ro` | Rotation, degrees. |
+| `scale` | `s` | Scale. |
+| `shear` | `sh` | Shear: xy, xz, yz. |
+| `matrix` | `m` | The matrix, 16 values. |
+| `pivots` | `piv` | Both pivots: a point to set, six values queried. |
+| `rotatePivot` | `rp` | The rotate pivot. |
+| `scalePivot` | `sp` | The scale pivot. |
+| `rotateAxis` | `ra` | The rotate axis. |
+| `rotateOrder` | `roo` | The rotate order, by name. |
+| `boundingBox` | `bb` | With -q: xmin ymin zmin xmax ymax zmax. |
+| `boundingBoxInvisible` | `bbi` | With -q: bounding box, hidden shapes included. |
+| `rotateTranslation` | `rt` | rotatePivotTranslate. |
+| `scaleTranslation` | `st` | scalePivotTranslate. |
+| `centerPivots` | `cp` | Centre the pivots on the bounding box. |
+| `centerPivotsOnComponents` | `cpc` | Centre the pivots on the bounding box. |
+| `zeroTransformPivots` | `ztp` | Put the pivots back at the origin of the object. |
+| `worldSpaceDistance` | `wd` | Accepted: distances are in world units already. |
+| `eulerFilter` | `eu` | Accepted for Maya scripts. |
+| `deletePriorHistory` | `dph` | Accepted for Maya scripts. |
+| `reflection` | `rfl` | Accepted for Maya scripts. |
+| `disableReflection` | `drp` | Accepted for Maya scripts. |
+| `requiresAll` | `rab` | Accepted for Maya scripts. |
 
 ## zeroPivot
 

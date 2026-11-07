@@ -167,5 +167,5 @@ with `loadPlugin`. C++ plug-ins can't load.
 
 The target is that Maya's scripts, habits and `.ma` files carry over. It has been developed without a copy of Maya to
 compare against, so behaviour comes from the published reference: expect differences in details, and see PARITY.md for
-the known ones. `.mb` files, references and C++ plug-ins are not supported. Rendering, dynamics and Bifrost are out of
+the known ones. `.mb` files and C++ plug-ins are not supported. Rendering, dynamics and Bifrost are out of
 scope.

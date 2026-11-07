@@ -149,8 +149,8 @@ resample, simplify), `simplify`, `bufferCurve`, `keyframeStats`, `mute`, `setAtt
 `timeControl`, `currentUnit`, ghosting as scene state. Graph Editor menus: infinities, tangents, Euler filter, simplify,
 resample, buffer curves, stacked and normalized views, isolate, copy, paste, snap, retime hotkeys.
 
-Not yet: tangent handles dragged in the Graph Editor; ghosts drawn; `flow` needs the lattice deformer; `-cp` keys no
-control points, which have no channels of their own; the Trax Editor. Bank amount and the unweighted-to-weighted
+Not yet: tangent handles dragged in the Graph Editor; ghosts drawn; `-cp` keys no control points, which have no
+channels of their own; the Trax Editor. Bank amount and the unweighted-to-weighted
 conversion of fixed tangents are our reading, not checked against Maya, as are the tangent formulas beyond what its
 documentation states. Clips play through a `clipChannel` node per channel, which Maya does not have.
 
@@ -166,7 +166,7 @@ preferred angles, zero scale orient), joint labels, segment scale compensate thr
 joint limits. Handle `weight`, `poWeight`, `priority`, `stickiness` and joint `stiffness` are stored but don't change the
 solve. Constraints: parent, point, orient, scale, aim, `poleVectorConstraint`, `geometryConstraint`, `normalConstraint`,
 `pointOnPolyConstraint` with `-e`, `-q`, `-rm`, skip flags, offsets, rest position, `interpType`, `nodeState` and weight
-attrs `<target>W0`. Not yet: `tangentConstraint` (needs curves), spline IK, an Insert Joint drag tool. Constraint nodes
+attrs `<target>W0`. Constraint nodes
 are not DAG children of what they drive, as they are in Maya: the graph orders whole nodes, so that would be a cycle.
 
 Rigging and deformers, as of 06/11/2026: `joint` (create, edit with orient, query), `orientJoint`, the joint tool,
@@ -305,8 +305,7 @@ reading, a `unitConversion` is seen through, its factor dropped, since Aztek's a
 Not yet in these: `polyEvaluate -b2` and `-bc2`, `select` of `pCube1.vtx[*]`; `displayCull`, `snapMode` and the display attributes (`displayHandle`, `displayLocalAxis` and so on) hold their values
 but the viewport does not draw from them.
 
-Not yet: weight painting, lattice, wrap, wire, delta mush, spline IK, set driven keys, NURBS curves, the dope sheet,
-the node editor, `.ma` files, the OpenMaya subset.
+(As of that date. All of these have since been done; see below.)
 
 Interface, as of 06/11/2026: named actions callable from hotkeys, MEL and Python (`runTimeCommand`, `nameCommand`,
 `hotkey`), an editable hotkey table in the Hotkey Editor, saved in settings. Status line: selection scope, masks
