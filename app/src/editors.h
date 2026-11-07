@@ -22,6 +22,7 @@ public:
     explicit InViewEditor(QWidget* parent);
     // The newest history node of the lead selection; hides when there's none.
     void show_last();
+    bool show_fields();
 private:
     QVBoxLayout* body_;
     QWidget* rows_ = nullptr;

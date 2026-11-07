@@ -205,7 +205,7 @@ fn bevel_op(a: &Args, m: &mut Mesh, sel: &Ids, sym: Option<&SymmetryMap>) -> Cmd
     let mut offset = a.float("offset", 0.5);
     // A fraction reaches the middle of the shortest edge at 1.
     if a.bool("offsetAsFraction") {
-        offset *= shortest_near(m, sel) * 0.5;
+        offset = a.float("fraction", 0.5) * shortest_near(m, sel) * 0.5;
     }
     let applied = Cell::new(offset);
     let o = BevelOptions {
@@ -818,6 +818,7 @@ pub(super) fn register(c: &mut Commands<Session>) {
         "polyBevel3",
         &[
             ("offset", json!(0.5)),
+            ("fraction", json!(0.5)),
             ("offsetAsFraction", json!(false)),
             ("segments", json!(1)),
             ("smoothingAngle", json!(30.0)),

@@ -1020,6 +1020,7 @@ void MainWindow::set_tool(const QString& tool) {
     query("uiToolChanged", tool);
     if (tool_settings_) tool_settings_->set_tool(tool);
     static const QHash<QString, QString> tool_help{
+        {"showManip", "Show Manipulator Tool: drag a handle to change the node's attribute. Middle-drag takes the highlighted channel's handle."},
         {"lasso", "Lasso Tool: drag round what to select. Shift toggles, Ctrl deselects, Ctrl+Shift adds."},
         {"paintSelect", "Paint Selection Tool: drag over components to select them; Ctrl deselects."},
         {"shortestPath", "Shortest Edge Path Tool: click a component, then another: the path between them is selected."},

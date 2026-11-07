@@ -191,6 +191,8 @@ fn material_push(base: Push, m: &DrawMaterial, sets: Option<&MatSets>) -> (MatPu
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Tool {
     Select,
+    /// Show Manipulator: the handles of a node's own attributes.
+    ShowManip,
     Move,
     Rotate,
     Scale,
@@ -406,6 +408,8 @@ pub struct Viewport {
     pub tool_points: Vec<(DVec3, [u8; 4])>,
     /// The handle a script made active (the contexts' -ah): what a middle drag takes when none is under the mouse.
     pub active_handle: Option<Handle>,
+    /// The Show Manipulator tool's lines, world space.
+    pub node_lines: Vec<(DVec3, DVec3, [u8; 4])>,
 }
 
 const WIRE: [u8; 4] = [10, 10, 30, 255];
@@ -453,6 +457,7 @@ impl Viewport {
             tool_lines: Vec::new(),
             tool_points: Vec::new(),
             active_handle: None,
+            node_lines: Vec::new(),
         }
     }
 
@@ -1056,9 +1061,27 @@ impl Viewport {
         self.draw_rig(gpu, r, s, scale);
         self.draw_hover(gpu, r, items, scale);
         self.draw_manip(gpu, r, s, scale);
+        self.draw_node_lines(gpu, r);
         self.draw_brush(gpu, r, s);
         self.draw_curve_tool(gpu, r, scale);
         self.draw_tool_overlay(gpu, r, scale);
+    }
+
+    fn draw_node_lines(&mut self, gpu: &mut Gpu, r: &Renderer) {
+        if self.node_lines.is_empty() || !self.disp.manipulators {
+            return;
+        }
+        let mut v = Vec::with_capacity(self.node_lines.len() * 2);
+        for (a, b, c) in &self.node_lines {
+            v.push(LineVertex { pos: a.as_vec3().to_array(), color: c8(*c) });
+            v.push(LineVertex { pos: b.as_vec3().to_array(), color: c8(*c) });
+        }
+        let b = gpu.buffer_with(vk::BufferUsageFlags::VERTEX_BUFFER, &v);
+        r.bind(gpu, Kind::LinesOnTop);
+        r.set_line_width(gpu, 2.0);
+        r.push(gpu, &push(self.view_proj(), DMat4::IDENTITY, self.cam.view(), [1.0; 4], 0.0, 1.0));
+        r.draw(gpu, &b, None, v.len() as u32);
+        gpu.drop_buffer(b);
     }
 
     fn draw_tool_overlay(&mut self, gpu: &mut Gpu, r: &Renderer, scale: f64) {

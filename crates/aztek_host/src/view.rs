@@ -211,6 +211,7 @@ impl View {
         let gathered = gather(&mut core.s.graph);
         let items = self.vp.filter_items(&core.s.graph, gathered);
         self.vp.show_grid = self.show_grid;
+        self.vp.node_lines = if self.vp.tool == Tool::ShowManip { crate::node_manip::draw_lines(core, &self.vp, self.dpr) } else { Vec::new() };
         self.vp.draw(&mut self.gpu, &self.r, &mut core.s, &items, self.dpr);
         for w in crate::textures::with_cache(&self.gpu, |c| c.take_warnings()) {
             core.push(format!("// Warning: {w} //"), crate::core::LineKind::Warning);
@@ -723,6 +724,11 @@ impl View {
         let alt = mods & ALT != 0;
         if !alt && self.hud_mouse(core, kind, button, px) {
             return true;
+        }
+        if !alt && self.nav.is_none() && self.vp.tool == Tool::ShowManip {
+            if let Some(r) = crate::node_manip::mouse(core, &self.vp, kind, button, px, buttons, self.dpr) {
+                return r;
+            }
         }
         if !alt && self.nav.is_none() && (kind != 1 || buttons == 0 || buttons & 1 != 0 || buttons & 2 != 0) {
             if let Some(r) = self.tool_mouse(core, kind, button, px, mods, &items) {
@@ -1483,6 +1489,7 @@ impl View {
                 self.vp.select_brush = None;
                 self.pick_hist.clear();
                 self.vp.tool = match v.as_str().unwrap_or("") {
+                    "showManip" => Tool::ShowManip,
                     "lasso" => Tool::Lasso,
                     "paintSelect" => Tool::PaintSelect,
                     "shortestPath" => Tool::ShortestPath,

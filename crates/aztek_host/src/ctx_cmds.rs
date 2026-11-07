@@ -122,7 +122,8 @@ fn tool_of(kind: &str) -> Option<&'static str> {
         "curveBezierCtx" => "curveBezier",
         "twoPointArcCtx" => "arcTwo",
         "threePointArcCtx" => "arcThree",
-        "polySelectCtx" | "polySuperCtx" | "showManipCtx" | "scriptCtx" | "userCtx" => "select",
+        "showManipCtx" => "showManip",
+        "polySelectCtx" | "polySuperCtx" | "scriptCtx" | "userCtx" => "select",
         "polyCreaseCtx" => "crease",
         "polyMergeEdgeCtx" => "mergeEdge",
         "polyMergeFacetCtx" => "mergeFacet",
@@ -346,6 +347,8 @@ fn axis_name(kind: &str, mode: i64) -> &'static str {
             0 => "object",
             1 => "world",
             2 => "gimbal",
+            3 => "custom",
+            10 => "component",
             _ => "object",
         };
     }
@@ -353,7 +356,11 @@ fn axis_name(kind: &str, mode: i64) -> &'static str {
         0 => "object",
         1 => "parent",
         2 => "world",
-        3 | 9 => "normal",
+        3 => "normal",
+        4 => "rotationAxis",
+        5 => "liveObject",
+        6 => "custom",
+        10 => "component",
         _ => "object",
     }
 }

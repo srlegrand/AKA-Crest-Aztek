@@ -467,6 +467,11 @@ pub fn register(c: &mut Commands<Session>) {
             let from_faces = components::mode(&s.graph) == K::Face;
             let mut a2 = a.clone();
             a2.flags.insert("chamfer".into(), json!(false));
+            // Named with no width, edges bevel by Maya's default: half way to the shortest edge's middle.
+            if !from_faces && a.get("offset").is_none() {
+                a2.flags.insert("offsetAsFraction".into(), json!(true));
+                a2.flags.insert("fraction".into(), json!(0.5));
+            }
             let (out, infos) = edit_selected_op_info(s, if from_faces { "polyBevelFace" } else { "polyBevel3" }, &a2, false, None)?;
             let used = infos.iter().filter_map(|i| i.as_f64()).fold(offset, f64::min);
             if a.bool("clamp") && used < offset - 1e-9 {

@@ -817,9 +817,10 @@ void MainWindow::nudge(int dx, int dy) {
 }
 
 void MainWindow::show_history_manips() {
-    // The newest history node's attributes in the view, to pull by number; its channels are in INPUTS too.
+    // The node's handles in the view, and its numbers in the in-view editor.
+    set_tool("showManip");
     in_view_->show_last();
-    help_line_->setText(in_view_->isVisible() ? "Show Manipulator Tool: change the history node's attributes in the view." : "Show Manipulator Tool: this object has no history node.");
+    help_line_->setText("Show Manipulator Tool: drag a handle to change the node's attribute.");
 }
 
 void MainWindow::add_to_shelf(QAction* a) {
