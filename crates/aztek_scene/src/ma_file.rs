@@ -1073,7 +1073,7 @@ fn is_plain_node(ty: &str) -> bool {
 /// Matrices a file connection may read: they are never set, so they are no channels to write.
 const MATRIX_OUTPUTS: &[&str] = &["matrix", "inverseMatrix", "xformMatrix", "worldMatrix", "worldInverseMatrix", "parentMatrix", "parentInverseMatrix"];
 const LINEAR_CHANNELS: &[&str] = &["translate", "rotatePivot", "scalePivot", "rotatePivotTranslate", "scalePivotTranslate"];
-const ANGLE_CHANNELS: &[&str] = &["rotate", "rotateAxis", "jointOrient"];
+const ANGLE_CHANNELS: &[&str] = &["rotate", "rotateAxis", "jointOrient", "preferredAngle"];
 
 /// Creator nodes: (type, [(Maya short name, Aztek attribute)]).
 const CREATORS: &[(&str, &[(&str, &str)])] = &[
@@ -1098,7 +1098,7 @@ fn channels_of(t: &NodeType) -> Vec<&'static str> {
         v.extend(XFORM_CHANNELS);
     }
     if t.is_a("joint") {
-        v.extend(["jointOrient", "radius", "segmentScaleCompensate"]);
+        v.extend(["jointOrient", "radius", "segmentScaleCompensate", "preferredAngle"]);
     }
     if t.is_a("ikHandle") {
         v.extend(["poleVector", "twist", "roll", "ikBlend", "offset", "weight", "poWeight", "priority", "stickiness", "snapEnable", "solverEnable", "rootOnCurve", "dTwistControlEnable", "dWorldUpType", "dForwardAxis", "dWorldUpAxis", "dWorldUpVector", "dWorldUpVectorEnd", "dWorldUpMatrix", "dWorldUpMatrixEnd", "dTwistValueType", "dTwistStart", "dTwistEnd", "dTwistRamp", "dTwistRampMult"]);
@@ -2345,6 +2345,9 @@ impl Build<'_> {
         if let (Some(w), Some(at)) = (n.num(&["wut", "worldUpType"]), t.attr_index("worldUpType")) {
             let _ = g.set_value(PlugRef::new(c, at as i32), PlugValue::Int(w as i64));
         }
+        if let (Some(w), Some(at)) = (n.num(&["int", "interpType"]), t.attr_index("interpType")) {
+            let _ = g.set_value(PlugRef::new(c, at as i32), PlugValue::Int(w as i64));
+        }
         let aliases = self.s.run(&cmd, json!({"args": [cname.clone()], "query": true, "queried": ["weightAliasList"]})).unwrap_or(Value::Null);
         for (alias, w) in aliases.as_array().into_iter().flatten().filter_map(Value::as_str).zip(&weights) {
             if (*w - 1.0).abs() > 1e-12 {
@@ -3221,8 +3224,6 @@ struct Writer<'a> {
     used: HashSet<String>,
     /// What gets written; None is everything.
     keep: HashSet<NodeId>,
-    /// Joint -> rotate when the chain was made, written as preferred angle.
-    preferred: HashMap<NodeId, DVec3>,
     /// Node text written after the DAG: skins, constraints, effectors, poses.
     pending: Vec<String>,
     /// Solver nodes already written.
@@ -3295,11 +3296,6 @@ impl Writer<'_> {
                     let _ = writeln!(self.out, "\tsetAttr \".{name}\" -type \"matrix\" {};", matrix_text(&m));
                 }
                 _ => {}
-            }
-        }
-        if let Some(pa) = self.preferred.get(&id).copied() {
-            if pa != DVec3::ZERO {
-                let _ = writeln!(self.out, "\tsetAttr \".pa\" -type \"double3\" {} ;", vec_text(pa));
             }
         }
         for (i, a) in t.attrs.iter().enumerate() {
@@ -3748,7 +3744,13 @@ impl Writer<'_> {
                 let _ = writeln!(body, "\tsetAttr \".o\" -type \"double3\" {} ;", vec_text(v));
             }
         }
-        if t.name == "aimConstraint" {
+        if let Some(i) = t.attr_index("interpType") {
+            let v = g.node(id).unwrap().data().int(i);
+            if v != 1 {
+                let _ = writeln!(body, "\tsetAttr \".int\" {v};");
+            }
+        }
+        if matches!(t.name.as_str(), "aimConstraint" | "tangentConstraint" | "normalConstraint") {
             let n = g.node(id).unwrap();
             for (attr, short) in [("aimVector", "a"), ("upVector", "u"), ("worldUpVector", "wu")] {
                 if let Some(i) = t.attr_index(attr) {
@@ -3794,8 +3796,17 @@ impl Writer<'_> {
         }
         if !blended {
             for (o, a) in outs {
-                for axis in ["x", "y", "z"] {
-                    conns.push((format!("{c}.{o}{axis}"), format!("{path}.{a}{axis}")));
+                let Some(at) = t.attr_index(match *o {
+                    "ct" => "constraintTranslate",
+                    "cr" => "constraintRotate",
+                    _ => "constraintScale",
+                }) else { continue };
+                // Only the channels it drives: a rig can hold some out.
+                let whole = !g.destinations(&PlugRef::new(id, at as i32)).is_empty();
+                for (k, axis) in ["x", "y", "z"].into_iter().enumerate() {
+                    if whole || !g.destinations(&PlugRef::component(id, at as i32, k as i32)).is_empty() {
+                        conns.push((format!("{c}.{o}{axis}"), format!("{path}.{a}{axis}")));
+                    }
                 }
             }
         }
@@ -3831,6 +3842,10 @@ impl Writer<'_> {
         // The solver drives the chain above the end joint; the end joint belongs to it all the same.
         if chain.last() != Some(&end) {
             chain.push(end);
+        }
+        // A one bone chain whose joint a constraint took over from the solver still starts at that joint.
+        if chain.len() == 1 && g.parent(end) != NO_NODE {
+            chain.insert(0, g.parent(end));
         }
         let Some(&start) = chain.first() else { return };
         if chain.iter().any(|j| !self.keep.contains(j)) {
@@ -4093,6 +4108,12 @@ impl Writer<'_> {
             if rig::CONSTRAINT_TYPES.contains(&st.name.as_str()) && dt.name == "pairBlend" {
                 continue;
             }
+            // A curve fed straight by another curve.
+            if dt.name == crate::curves::SHAPE_TYPE && st.name == crate::curves::SHAPE_TYPE && dst.attr as usize == crate::curves::CurveShape::CREATE {
+                let (a, b) = (g.path(src.node), g.path(dst.node));
+                self.conn(&format!("{a}.ws"), &format!("{b}.cr"));
+                continue;
+            }
             // A CV something drives.
             if dt.name == crate::curves::SHAPE_TYPE && dst.attr as usize == crate::curves::CurveShape::CONTROL_POINTS {
                 let (a, b) = (g.plug_name(&src), g.path(dst.node));
@@ -4282,24 +4303,7 @@ pub fn write_text(s: &mut Session, file_name: &str, only: Option<&[NodeId]>) -> 
     let (ref_head, ref_tail) = crate::references::ma_statements(s);
     let used: HashSet<String> = g.nodes().iter().filter_map(|&id| g.node(id).map(|n| n.name().to_string())).collect();
     let roots = g.roots().to_vec();
-    let mut w = Writer { s, out: String::new(), conns: Vec::new(), shading: Vec::new(), warnings: Vec::new(), used, keep, preferred: HashMap::new(), pending: Vec::new(), solvers: HashSet::new(), chain_written: HashSet::new(), needs_links: Vec::new(), links_text: String::new() };
-
-    // Preferred angles from the chains the IK solvers remember.
-    let g = &w.s.graph;
-    let solves: Vec<NodeId> = g.nodes().into_iter().filter(|&n| g.node(n).is_some_and(|x| x.ty().name == "ikSolve")).collect();
-    for sv in solves {
-        let g = &w.s.graph;
-        let st = g.node(sv).unwrap().type_arc().clone();
-        let data = rig::json_of(g.node(sv).unwrap().data(), st.attr_index("chain").unwrap());
-        let rests = data.get("joints").and_then(Value::as_array).cloned().unwrap_or_default();
-        let mut entries = Vec::new();
-        let driven = crate::ik::joints_of(g, sv);
-        for (rest, &j) in rests.iter().zip(&driven) {
-            let f = |k: usize| rest.get("r").and_then(|r| r.get(k)).and_then(Value::as_f64).unwrap_or(0.0);
-            entries.push((j, DVec3::new(f(0), f(1), f(2))));
-        }
-        w.preferred.extend(entries);
-    }
+    let mut w = Writer { s, out: String::new(), conns: Vec::new(), shading: Vec::new(), warnings: Vec::new(), used, keep, pending: Vec::new(), solvers: HashSet::new(), chain_written: HashSet::new(), needs_links: Vec::new(), links_text: String::new() };
 
     let fps = anim::fps();
     let name = std::path::Path::new(file_name).file_name().and_then(|n| n.to_str()).unwrap_or(file_name).to_string();

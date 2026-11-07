@@ -427,6 +427,11 @@ fn a_constraint_drives_only_the_channels_the_file_wires() {
     let (mut s, w) = load(body);
     assert!(w.is_empty(), "{w:?}");
     assert_near(get(&mut s, "obj.t"), &[1.0, 9.0, 3.0], "Y as stored");
+    let (out, _) = aztek_scene::ma_file::write_text(&mut s, "p.ma", None);
+    let mut b = Session::new();
+    let w = read_text(&mut b, &out, false);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut b, "obj.t"), &[1.0, 9.0, 3.0], "and after a save");
 }
 
 #[test]
@@ -484,6 +489,13 @@ fn a_control_point_on_a_curve_with_history_is_a_move() {
     let id = s.graph.find("cShape").unwrap().unwrap();
     let c = aztek_scene::curves::world_curve(&mut s.graph, id).unwrap();
     assert_near(c.cvs[1].to_array().to_vec(), &[2.0, 3.0, 0.0], "on top of the original");
+    let (out, _) = aztek_scene::ma_file::write_text(&mut s, "p.ma", None);
+    let mut b = Session::new();
+    let w = read_text(&mut b, &out, false);
+    assert!(w.is_empty(), "{w:?}");
+    let id = b.graph.find("cShape").unwrap().unwrap();
+    let c = aztek_scene::curves::world_curve(&mut b.graph, id).unwrap();
+    assert_near(c.cvs[1].to_array().to_vec(), &[2.0, 3.0, 0.0], "and after a save");
 }
 
 #[test]
@@ -534,6 +546,21 @@ fn a_unit_conversion_with_a_factor_of_its_own_scales() {
     assert!(w.is_empty(), "{w:?}");
     assert_near(get(&mut b, "b.tx"), &[1.0], "after a save");
     assert_near(get(&mut b, "d.rx"), &[25.0], "after a save");
+}
+
+#[test]
+fn a_preferred_angle_comes_from_the_file_and_goes_back_to_it() {
+    let body = "createNode joint -n \"a\";\ncreateNode joint -n \"b\" -p \"a\";\n\tsetAttr \".t\" -type \"double3\" 2 0 0 ;\n\tsetAttr \".pa\" -type \"double3\" 0 -60 0 ;\ncreateNode joint -n \"c\" -p \"b\";\n\tsetAttr \".t\" -type \"double3\" 2 0 0 ;\ncreateNode ikHandle -n \"h\";\n\tsetAttr \".t\" -type \"double3\" 3 0 0 ;\ncreateNode ikEffector -n \"e\" -p \"b\";\ncreateNode ikRPsolver -n \"ikRPsolver\";\nconnectAttr \"a.msg\" \"h.hsj\";\nconnectAttr \"e.hp\" \"h.hee\";\nconnectAttr \"ikRPsolver.msg\" \"h.hsv\";\nconnectAttr \"c.tx\" \"e.tx\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "b.pa"), &[0.0, -60.0, 0.0], "read");
+    let first = get(&mut s, "b.worldMatrix");
+    let (out, _) = aztek_scene::ma_file::write_text(&mut s, "p.ma", None);
+    assert!(out.contains("setAttr \".pa\" -type \"double3\" 0 -60 0 ;"), "{out}");
+    let mut b = Session::new();
+    let w = read_text(&mut b, &out, false);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut b, "b.worldMatrix"), &first, "solves the same way after a save");
 }
 
 #[test]

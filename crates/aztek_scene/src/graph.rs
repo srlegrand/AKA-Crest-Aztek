@@ -1874,6 +1874,16 @@ impl Graph {
                         }
                     }
                 }
+                // group[3].vec.child spelled out in long names.
+                if a.ty == PlugType::Vec3 && a.is_array() {
+                    if let Some((head, leaf)) = attr_name.rsplit_once('.') {
+                        if a.name == head {
+                            if let Some(c) = (0..3).find(|&c| a.child_names[c] == leaf || a.child_short[c] == leaf) {
+                                return Ok(PlugRef { node: id, attr: i as i32, component: c as i32, element });
+                            }
+                        }
+                    }
+                }
                 let (Some((lg, lc)), Some((sg, sc))) = (a.name.split_once('.'), a.short_name.split_once('.')) else { continue };
                 if lg != group && sg != group {
                     continue;
