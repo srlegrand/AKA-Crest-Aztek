@@ -199,9 +199,25 @@ fn keying_target_weights_animates_them() {
     assert_eq!(n, json!(8));
     let key = "bs.targetWeightKeys[0]";
     run(&mut s, "setKeyframe", json!({"args": [key], "time": 10, "value": 0.0}));
+    assert_eq!(run(&mut s, "keyframe", json!({"args": ["bs.envelope"], "query": true, "keyframeCount": true})), json!(0), "the envelope stays unkeyed");
+    assert_eq!(run(&mut s, "keyframe", json!({"args": ["bs.targetWeightKeys[0]"], "query": true, "keyframeCount": true})), json!(2));
     run(&mut s, "currentTime", json!({"args": [10]}));
     let y1 = point(&mut s, "base.vtx[0]")[1];
     assert!(y0 - y1 > 0.5, "the keyed weight should take the delta off: {y0} {y1}");
+}
+
+#[test]
+fn set_keyframe_keys_an_array_element_not_the_node() {
+    let mut s = Session::new();
+    run(&mut s, "polyCube", json!({"name": "base"}));
+    run(&mut s, "polyCube", json!({"name": "tgt"}));
+    run(&mut s, "blendShape", json!({"args": ["tgt", "base"], "name": "bs"}));
+    run(&mut s, "setKeyframe", json!({"args": ["bs.w[0]"], "time": 3, "value": 0.5}));
+    assert_eq!(run(&mut s, "keyframe", json!({"args": ["bs.w[0]"], "query": true, "keyframeCount": true})), json!(1));
+    assert_eq!(run(&mut s, "keyframe", json!({"args": ["bs.envelope"], "query": true, "keyframeCount": true})), json!(0));
+    // A component still keys its transform.
+    let n = run(&mut s, "setKeyframe", json!({"args": ["base.vtx[0]"], "time": 1})).as_i64().unwrap();
+    assert!(n >= 9, "the transform's channels: {n}");
 }
 
 #[test]

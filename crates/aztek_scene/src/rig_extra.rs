@@ -6,7 +6,6 @@
 //! constraints and the ffd runs after the skin, where Maya's node also moves the lattice's two ends rigidly. The bulge's
 //! shape is this module's own, since Maya does not document it. Settings with no effect say so in their command's text.
 
-use std::any::Any;
 use std::f64::consts::{PI, TAU};
 use std::sync::Arc;
 
@@ -19,7 +18,7 @@ use crate::deform::{self, data_attr, matrix_in};
 use crate::deform_lattice::{self, grid_of, DLM, DLP};
 use crate::graph::{Graph, SelectMode};
 use crate::maya_core::f;
-use crate::node::{types, vec3_attr, EvalContext, NodeBehavior, NodeData, NodeType};
+use crate::node::{types, vec3_attr, NodeData};
 use crate::plug::{flags, AttrDef, NodeId, PlugRef, PlugType, PlugValue, NO_NODE};
 use crate::rig::{find, is_joint, plug, rot3, world};
 use crate::session::Session;
@@ -75,10 +74,7 @@ pub(crate) fn is_flexor_type(ty: &str) -> bool {
 }
 
 /// Moves a lattice's points by how far the lower matrix has turned against the upper since binding.
-struct LatticeBulge;
-
-impl NodeBehavior for LatticeBulge {
-    fn compute(&mut self, _c: &EvalContext, d: &mut NodeData) {
+pub(crate) fn lattice_bulge(d: &mut NodeData) {
         let Some(mut grid) = grid_of(d.value(FX_IN)).cloned() else {
             d.set_output(FX_OUT, PlugValue::Data(None));
             return;
@@ -117,10 +113,6 @@ impl NodeBehavior for LatticeBulge {
         d.set_output(FX_OUT, PlugValue::Data(Some(Arc::new(grid))));
         d.set_output(FX_BEND_VECTOR, PlugValue::Vec3(axis));
         d.set_output(FX_BEND_MAGNITUDE, PlugValue::Float(magnitude));
-    }
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 }
 
 fn distance(name: &str, short: &str, doc: &str) -> AttrDef {
@@ -129,7 +121,7 @@ fn distance(name: &str, short: &str, doc: &str) -> AttrDef {
     x
 }
 
-fn flexor_attrs(inside: (&str, &str), outside: (&str, &str)) -> Vec<AttrDef> {
+pub(crate) fn flexor_attrs(inside: (&str, &str), outside: (&str, &str)) -> Vec<AttrDef> {
     vec![
         data_attr("inputGeometry", "ig", "The lattice's points as they come."),
         AttrDef { name: "outputGeometry".into(), short_name: "og".into(), ty: PlugType::Data, default_value: PlugValue::Data(None), flags: flags::OUTPUT | flags::HIDDEN, doc: "The lattice's points, moved.".into(), ..Default::default() },
@@ -142,25 +134,14 @@ fn flexor_attrs(inside: (&str, &str), outside: (&str, &str)) -> Vec<AttrDef> {
         distance("widthRight", "wr", "Bulge on the right side of the bend; positive is outwards."),
         matrix_in("upperMatrix", "um", "The upper transform's world matrix."),
         matrix_in("lowerMatrix", "lm", "The lower transform's world matrix."),
-        matrix_in("initialUpperMatrix", "iu", "upperMatrix when the node was made."),
-        matrix_in("initialLowerMatrix", "il", "lowerMatrix when the node was made."),
+        // Saved with the node: the bend is measured from these.
+        AttrDef { flags: flags::INPUT | flags::STORABLE, ..matrix_in("initialUpperMatrix", "iu", "upperMatrix when the node was made.") },
+        AttrDef { flags: flags::INPUT | flags::STORABLE, ..matrix_in("initialLowerMatrix", "il", "lowerMatrix when the node was made.") },
         matrix_in("deformedLatticeMatrix", "md", "The lattice's world matrix."),
         matrix_in("baseLatticeMatrix", "mb", "The base lattice's world matrix."),
         vec3_attr("bendVector", "bv", DVec3::ZERO, flags::OUTPUT, "The axis of the bend, in the upper transform's space."),
         AttrDef { name: "bendMagnitude".into(), short_name: "bm".into(), ty: PlugType::Float, default_value: PlugValue::Float(0.0), flags: flags::OUTPUT, doc: "The bend's angle over 180 degrees.".into(), ..Default::default() },
     ]
-}
-
-fn register_types() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        for (name, doc, attrs) in [
-            ("jointLattice", "Bulges a lattice around a joint as the joint bends.", flexor_attrs(("creasing", "cr"), ("rounding", "ro"))),
-            ("boneLattice", "Bulges a lattice along a bone as the joint at its end bends.", flexor_attrs(("bicep", "bi"), ("tricep", "tr"))),
-        ] {
-            types::register_type(NodeType { name: name.into(), icon: "grid-dots".into(), doc: doc.into(), own_attrs: attrs, create: Some(Arc::new(|| Box::new(LatticeBulge))), ..Default::default() }).expect(name);
-        }
-    });
 }
 
 const JOINT_SETTINGS: &[&str] = &["creasing", "rounding", "lengthIn", "lengthOut", "widthLeft", "widthRight"];
@@ -981,7 +962,6 @@ fn key_target_weights(s: &mut Session, a: &Args) -> CmdResult {
 }
 
 pub fn register(c: &mut Commands<Session>) {
-    register_types();
     c.register(flexor_node_def(
         "jointLattice",
         "A flexor's node on a lattice: the joint's bend bulges the lattice's points. Returns the node. Less than Maya: it does not move the lattice's ends rigidly (flexor keeps the lattice on the joints with constraints) and the bind skin flags do nothing.",

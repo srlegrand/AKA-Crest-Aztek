@@ -297,7 +297,7 @@ pub(crate) fn register_types(gf: Arc<NodeType>) {
     let mut weight = float_attr_short("weight", "w", 0.0, "Each target's weight, by its index.", None, None);
     weight.flags |= flags::ARRAY | flags::KEYABLE;
     let mut target_keys = float_attr_short("targetWeightKeys", "twk", 1.0, "Keyed per-point target weights, element target * 1000000 + point; see setKeyframeBlendshapeTargetWts.", None, None);
-    target_keys.flags |= flags::ARRAY;
+    target_keys.flags |= flags::ARRAY | flags::KEYABLE | flags::HIDDEN;
     let mut geom_target = mesh_attr("inputGeomTarget", "igt", flags::INPUT | flags::HIDDEN | flags::ARRAY, "Live targets: one element per target item, index * 100000 + item.");
     geom_target.ty = PlugType::Mesh;
     let hidden_int = |name: &str, short: &str, def: i64, doc: &str| AttrDef { name: name.into(), short_name: short.into(), ty: PlugType::Int, default_value: PlugValue::Int(def), flags: flags::INPUT | flags::STORABLE | flags::HIDDEN, doc: doc.into(), ..Default::default() };

@@ -3,8 +3,8 @@
 //!
 //! Differs from Maya: bindSkin makes a skinCluster with one influence per point, the weights a rigid bind has, rather than
 //! Maya's clusters per joint. jointCluster records its settings on a node and softens nothing; dropoffLocator marks the
-//! place on a wire and doesn't change the wire's falloff. flexor, combinationShape, skeletonEmbed and weightsColor aren't
-//! here.
+//! place on a wire and doesn't change the wire's falloff. flexor, combinationShape, skeletonEmbed and weightsColor are in
+//! rig_extra.
 
 use std::any::Any;
 use std::sync::Arc;

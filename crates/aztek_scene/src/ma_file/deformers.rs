@@ -424,7 +424,7 @@ impl Build<'_> {
             }
             let (sn, sa) = self.real_source(c);
             let plain_dst = plain_attr(&c.dst_attr);
-            if matches!(plain_dst.as_str(), "bw" | "baseWire" | "dw" | "deformedWire" | "ip.ig" | "ip.gi" | "input.inputGeometry" | "input.groupId" | "i" | "inMesh" | "dd" | "deformerData" | "gm" | "geomMatrix") || matches!(plain_attr(&sa).as_str(), "og" | "outputGeometry" | "msg" | "message") {
+            if matches!(plain_dst.as_str(), "bw" | "baseWire" | "dw" | "deformedWire" | "ip.ig" | "ip.gi" | "input.inputGeometry" | "input.groupId" | "i" | "inMesh" | "dd" | "deformerData" | "gm" | "geomMatrix") || (matches!(plain_attr(&sa).as_str(), "og" | "outputGeometry" | "msg" | "message") && !crate::rig_extra::is_flexor_type(&doc.nodes[sn].ty)) {
                 continue;
             }
             let Some(src) = self.id(sn) else { continue };

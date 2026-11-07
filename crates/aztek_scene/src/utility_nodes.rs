@@ -470,6 +470,9 @@ fn table() -> Vec<Spec> {
                 let (x, y) = (d.element_or(ia, c).scalar().unwrap_or(0.0), d.element_or(ia, c + 1).scalar().unwrap_or(0.0));
                 set(d, "output", x * (1.0 - t) + y * t);
             }),
+        // In this table so they go through .ma files as the utility nodes do. The node code is in rig_extra.
+        Spec("jointLattice", "deformer", "A flexor's node: bulges a lattice around a joint as the joint bends.", crate::rig_extra::flexor_attrs(("creasing", "cr"), ("rounding", "ro")), crate::rig_extra::lattice_bulge),
+        Spec("boneLattice", "deformer", "A flexor's node: bulges a lattice along a bone as the joint at its end bends.", crate::rig_extra::flexor_attrs(("bicep", "bi"), ("tricep", "tr")), crate::rig_extra::lattice_bulge),
         Spec("combinationShape", "utility/general", "Works out a blend shape target's weight from its drivers: multiplied, the lowest, or the lowest smoothed. The smoothing is a polynomial smooth minimum of this module's own.",
             vec![en("combinationMethod", "cm", 0, &["Multiplication", "Lowest Weighting", "Lowest Weighting (Smooth)"]), multi(fin("inputWeight", "iw", 0.0)), fout("outputWeight", "ow")],
             |d| {
