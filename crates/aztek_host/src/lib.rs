@@ -13,6 +13,7 @@ mod python_api;
 mod query;
 mod render;
 pub mod tools;
+pub mod ui_cmds;
 pub mod view;
 pub mod viewport;
 
@@ -28,6 +29,11 @@ use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 use serde_json::{json, Value};
 
 pub use crate::core::Core;
+
+/// The requests waiting for the shell, for tests.
+pub fn take_ui_requests_for_tests() -> Value {
+    core::take_ui_requests()
+}
 use crate::gpu::{Gpu, Shared};
 use crate::view::View;
 
@@ -106,6 +112,10 @@ pub extern "C" fn aztek_exec_quiet(name: *const c_char, call: *const c_char) -> 
     let name = cstr(name);
     let call: Value = serde_json::from_str(&cstr(call)).unwrap_or(json!({}));
     with(|h| {
+        // Echo All Commands: the quiet ones show too.
+        if ui_cmds::pref_bool("echoAllCommands", false) && name != "uiPref" {
+            h.core.push(mel::echo(&name, &call), core::LineKind::Echo);
+        }
         out_json(match h.core.exec_silent(&name, call) {
             Ok(v) => json!({ "ok": v }),
             Err(e) => {
@@ -173,6 +183,17 @@ pub extern "C" fn aztek_query(what: *const c_char, arg: *const c_char) -> *mut c
             "animCurves" => query::anim_curves(c, &arg),
             "nodeGraph" => query::node_graph(c, &arg),
             "uiRequests" => core::take_ui_requests(),
+            "registerUiNames" => {
+                let list: Value = serde_json::from_str(&arg).unwrap_or(json!([]));
+                ui_cmds::register_ui_names(&mut c.s, &list);
+                Value::Null
+            }
+            "runtimeCommands" => ui_cmds::runtime_commands(),
+            "melEcho" => {
+                let p: Value = serde_json::from_str(&arg).unwrap_or(json!({}));
+                json!(mel::echo(p["name"].as_str().unwrap_or(""), &p["call"]))
+            }
+            "editors" => query::editors(c, &arg),
             "uvData" => query::uv_data(c),
             "attributeEditor" => query::attribute_editor(c, &arg),
             "layers" => query::layers(c),
@@ -429,7 +450,11 @@ pub extern "C" fn aztek_view_hit(id: i32, x: f64, y: f64) -> *mut c_char {
         let Some(v) = views.get_mut(&id) else { return out(String::new()) };
         let items = viewport::gather(&mut core.s.graph);
         v.vp.rect = [0.0, 0.0, v.gpu.extent.width as f64, v.gpu.extent.height as f64];
-        let hit = v.vp.raycast(&items, DVec2::new(x, y)).map(|(i, _, _)| core.s.graph.path(items[i].xf)).unwrap_or_default();
+        let px = DVec2::new(x, y);
+        if let Some(id) = v.vp.pick_rig(&core.s.graph, px) {
+            return out(core.s.graph.path(id));
+        }
+        let hit = v.vp.raycast(&items, px).map(|(i, _, _)| core.s.graph.path(items[i].xf)).unwrap_or_default();
         out(hit)
     })
 }

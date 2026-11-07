@@ -1,4 +1,5 @@
 #include "toolsettings.h"
+#include <QSettings>
 #include "host.h"
 
 #include <QButtonGroup>
@@ -105,6 +106,23 @@ QWidget* ToolSettings::build_transform_page() {
     });
     form->addRow("Falloff mode:", soft_mode_);
     soft_radius_ = slider_row(form, "Falloff radius:", 0.0, 20.0, 0.1, [](double x) { exec_quiet("softSelect", QJsonObject{{"softSelectDistance", x}}); });
+    // Step Snap: Maya's relative steps, for each transform tool.
+    auto step = [this, w, form](const QString& label, const char* key, double hi) {
+        QString k = key;
+        auto* sb = new QDoubleSpinBox(w);
+        sb->setRange(0, hi);
+        sb->setDecimals(3);
+        sb->setSpecialValueText("Off");
+        sb->setValue(QSettings().value("prefs/" + k, 0.0).toDouble());
+        connect(sb, &QDoubleSpinBox::valueChanged, this, [this, k](double x) {
+            QSettings().setValue("prefs/" + k, x);
+            emit stepSnap(k, x);
+        });
+        form->addRow(label, sb);
+    };
+    step("Move step snap:", "stepMove", 1000);
+    step("Rotate step snap:", "stepRotate", 180);
+    step("Scale step snap:", "stepScale", 100);
     v->addLayout(form);
     v->addStretch(1);
     return w;

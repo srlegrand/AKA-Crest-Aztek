@@ -37,6 +37,8 @@ QLabel#channelNode { color: #dddddd; padding-left: 6px; }
 QPushButton#channelNodeButton { text-align: left; padding: 2px 6px; color: #dddddd; border: none; }
 QPushButton#channelNodeButton:hover { background: #505050; }
 QLabel#aeSection { background: #5d5d5d; padding: 3px 6px; font-weight: bold; }
+QToolButton#aeSectionButton { background: #5d5d5d; padding: 3px 6px; font-weight: bold; border: none; text-align: left; }
+QFrame#inViewEditor { background: #3a3a3a; border: 1px solid #222; }
 QLineEdit#cmdResult { background: #393939; }
 QLineEdit#cmdResult[error="true"] { background: #8a2f2f; color: white; }
 QToolButton#cmdLang { min-width: 34px; }

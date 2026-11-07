@@ -222,3 +222,31 @@ polygons with a warning; non-rational, so a sphere is Maya's cubic approximation
 are accepted and ignored; `loft` takes degrees 1 to 3; `attachSurface` copies its second surface rather than following
 it. None of this has been compared with a running Maya: the sphere's CV values, which way U runs on `loft` and `extrude`,
 the direction flags' numbering and the bare commands' axis of 1 0 0 are from memory of Maya's files and docs.
+
+Not yet: weight painting, lattice, wrap, wire, delta mush, spline IK, set driven keys, NURBS curves, the dope sheet,
+the node editor, `.ma` files, the OpenMaya subset.
+
+Interface, as of 06/11/2026: named actions callable from hotkeys, MEL and Python (`runTimeCommand`, `nameCommand`,
+`hotkey`), an editable hotkey table in the Hotkey Editor, saved in settings. Status line: selection scope, masks
+(`selectType`), snap toggles beside the X, C and V hold keys (grid, curve, point, view plane, live), lock and highlight
+selection, symmetry dropdown, soft select, numeric input and select by name. Selection: lasso, paint selection, Tab-drag,
+Shift+double-click loops and rings, Shortest Edge Path Tool, All by Type, Similar, Shell, Shell Border, Quick Select Sets.
+Manipulators: plane handles, Ctrl-click constraints, view ring, trackball, numeric readout, J discrete rotate, step snap,
+component scale along the manipulator's axes, B-drag sizing the falloff; W, E, R, Q + left press menus; right-click menus
+by object type with history inputs and Paint Weights on a joint. Hotbox with zones. Shelves saved between sessions, Shelf
+Editor, middle-drag from the Script Editor, Ctrl+Shift+click on a menu item, `shelf_*.mel` import; Curves / Surfaces and
+Sculpting shelves. Windows: Attribute Spread Sheet, Component Editor with skin weights, Connection Editor, Hypergraph,
+Namespace Editor (listing only until there is a `namespace` command), Channel Control, Modeling Toolkit, Shape Editor,
+workspaces, main pane only, panel layouts, saved layouts, a panel holding an outliner or editor. Panel menus: cameras,
+`lookThru`, bookmarks, camera tools, gates, safe action; flat, bounding box, X-Ray and its joint and component kinds,
+backface culling; Show filters, `isolateSelect`. Heads up display and `headsUpDisplay`; `polyOptions`. In-View Editor and
+the channel box's virtual slider on INPUTS. Attribute Editor sections by node type, sliders, Notes, Copy Tab. Outliner
+filters and icons. Layer editor V, P, T, R, colour, reorder. Script Editor tabs, highlighting, line numbers, save and
+source. File, Edit, Modify and Display menus; Preferences saved and `optionVar`; time units by name; playback speed and
+looping in real time.
+
+Not yet in the interface: Topology symmetry (World X, Y, Z act in object space: `setSymmetry` has no world mode), Cut,
+curve Edit Point and Curve Point modes, UV and Vertex Face component modes in the marking menu, manipulator handles for
+history nodes (T shows their numbers in the view instead), per-object display toggles are not saved with the scene,
+Outliner reorder between siblings waits on a `reorder` command, linear units and Z up. Roll stays in the view, not the
+camera node.

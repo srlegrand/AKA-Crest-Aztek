@@ -67,6 +67,8 @@ private:
 signals:
     void axisOrientation(const QString& mode);
     void curveDegree(int degree);
+    // Step snap: key is stepMove, stepRotate or stepScale; 0 is off.
+    void stepSnap(const QString& key, double value);
 };
 
 } // namespace az
