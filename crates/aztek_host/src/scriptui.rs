@@ -44,6 +44,7 @@ pub(crate) struct Model {
     prompt_text: String,
     built_in: bool,
     window_prefs: HashMap<String, Value>,
+    dirty_tables: Vec<Id>,
 }
 
 thread_local! {
@@ -103,7 +104,17 @@ fn ensure_built_in(m: &mut Model) {
         return;
     }
     m.built_in = true;
-    for (kind, name) in [("mainWindow", MAIN_WINDOW), ("progressBar", MAIN_PROGRESS)] {
+    // The application's own editors, under the names Maya gives them, so scripts can set them up.
+    for (kind, name) in [
+        ("mainWindow", MAIN_WINDOW),
+        ("progressBar", MAIN_PROGRESS),
+        ("outlinerEditor", "outlinerPanel1"),
+        ("animCurveEditor", "graphEditor1GraphEd"),
+        ("outlinerEditor", "graphEditor1OutlineEd"),
+        ("dopeSheetEditor", "dopeSheetPanel1DopeSheetEd"),
+        ("outlinerEditor", "dopeSheetPanel1OutlineEd"),
+        ("nodeEditor", "nodeEditorPanel1NodeEditorEd"),
+    ] {
         m.next += 1;
         m.controls.insert(m.next, Control { kind: kind.into(), name: name.into(), path: name.into(), parent: None, children: Vec::new(), props: Map::new() });
     }
@@ -149,7 +160,7 @@ pub fn take_gone() -> Vec<String> {
 
 /// A flag whose value is a script.
 pub fn is_callback(flag: &str) -> bool {
-    flag == "command" || flag.contains("Command") || flag.ends_with("Callback") || flag == "uiScript"
+    flag == "command" || flag.contains("Command") || flag.ends_with("Callback") || flag.ends_with("Cmd") || flag == "uiScript"
 }
 
 /// A callback as given, in the form it is stored: a string from Python is Python source.
@@ -306,20 +317,20 @@ pub fn cat_of(kind: &str) -> Cat {
         "window" | "workspaceControl" | "dockControl" | "mainWindow" | "progressWindow" => Cat::Window,
         "menu" | "popupMenu" | "optionMenu" | "optionMenuGrp" => Cat::Menu,
         "menuItem" => Cat::MenuItem,
-        "radioCollection" | "radioMenuItemCollection" => Cat::Collection,
+        "radioCollection" | "radioMenuItemCollection" | "toolCollection" => Cat::Collection,
         k if k.ends_with("Layout") || k == "scriptedPanel" => Cat::Layout,
         _ => Cat::Control,
     }
 }
 
-const COMMON: &str = "annotation:ann:a backgroundColor:bgc:a defineTemplate:dt:a docTag:dtg:a dragCallback:dgc:a dropCallback:dpc:a enable:en:b enableBackground:ebg:b enableKeyboardFocus:ekf:b exists:ex:b fullPathName:fpn:b height:h:a highlightColor:hlc:a isObscured:io:b manage:m:b noBackground:nbg:b numberOfPopupMenus:npm:b parent:p:a popupMenuArray:pma:b preventOverride:po:b statusBarMessage:sbm:a useTemplate:ut:a visible:vis:b visibleChangeCommand:vcc:a width:w:a query:q:b edit:e:b queried::a";
+pub(crate) const COMMON: &str = "annotation:ann:a backgroundColor:bgc:a defineTemplate:dt:a docTag:dtg:a dragCallback:dgc:a dropCallback:dpc:a enable:en:b enableBackground:ebg:b enableKeyboardFocus:ekf:b exists:ex:b fullPathName:fpn:b height:h:a highlightColor:hlc:a isObscured:io:b manage:m:b noBackground:nbg:b numberOfPopupMenus:npm:b parent:p:a popupMenuArray:pma:b preventOverride:po:b statusBarMessage:sbm:a useTemplate:ut:a visible:vis:b visibleChangeCommand:vcc:a width:w:a query:q:b edit:e:b queried::a";
 const LAYOUT: &str = "childArray:ca:b numberOfChildren:nch:b";
 const WINDOW: &str = "title:t:a widthHeight:wh:a sizeable:s:b minimizeBox:mnb:b maximizeBox:mxb:b resizeToFitChildren:rtf:b menuBar:mb:b menuBarVisible:mbv:b titleBar:tb:b titleBarMenu:tbm:b toolbox:tlb:b topEdge:te:a leftEdge:le:a topLeftCorner:tlc:a retain:ret:b closeCommand:cc:a minimizeCommand:mnc:a restoreCommand:rc:a iconName:in:a iconify:i:b interactivePlacement:ip:b frontWindow:fw:b numberOfWindows:nw:b mainWindow:mw:b nestedDockingEnabled:nde:b dockCorner:dc:a2 dockStation:dcs:b dockingLayout:dl:a state:st:a menuArray:ma:b";
 const BUTTON_ICON: &str = "style:st:a image:i:a image1:i1:a image2:i2:a image3:i3:a label:l:a command:c:a doubleClickCommand:dcc:a sourceType:stp:a imageOverlayLabel:iol:a flat:fla:b disabledImage:di:a align:al:a marginWidth:mw:a marginHeight:mh:a font:fn:a labelOffset:lo:a rotation:rot:a selectionImage:si:a highlightImage:hi:a overlayLabelColor:olc:a overlayLabelBackColor:olb:a scaleIcon:sic:b commandRepeatable:rpt:b ltVersion:lt:a version:ver:a useAlpha:ua:b flexibleWidthType:fwt:a flexibleWidthValue:fwv:a";
 const SLIDER: &str = "value:v:a minValue:min:a maxValue:max:a step:s:a horizontal:hr:b changeCommand:cc:a dragCommand:dc:a";
-const SLIDER_GRP: &str = "label:l:a field:f:b value:v:a minValue:min:a maxValue:max:a fieldMinValue:fmn:a fieldMaxValue:fmx:a sliderStep:ss:a step:s:a fieldStep:fs:a extraLabel:el:a changeCommand:cc:a dragCommand:dc:a";
+pub(crate) const SLIDER_GRP: &str = "label:l:a field:f:b value:v:a minValue:min:a maxValue:max:a fieldMinValue:fmn:a fieldMaxValue:fmx:a sliderStep:ss:a step:s:a fieldStep:fs:a extraLabel:el:a changeCommand:cc:a dragCommand:dc:a";
 const FIELD: &str = "value:v:a minValue:min:a maxValue:max:a step:s:a changeCommand:cc:a dragCommand:dc:a enterCommand:ec:a receiveFocusCommand:rfc:a editable:ed:b";
-const FIELD_GRP: &str = "label:l:a numberOfFields:nf:a value:v:a value1:v1:a value2:v2:a value3:v3:a value4:v4:a extraLabel:el:a changeCommand:cc:a changeCommand1:cc1:a changeCommand2:cc2:a changeCommand3:cc3:a changeCommand4:cc4:a dragCommand:dc:a dragCommand1:dc1:a dragCommand2:dc2:a dragCommand3:dc3:a dragCommand4:dc4:a enable1:en1:b enable2:en2:b enable3:en3:b enable4:en4:b";
+pub(crate) const FIELD_GRP: &str = "label:l:a numberOfFields:nf:a value:v:a value1:v1:a value2:v2:a value3:v3:a value4:v4:a extraLabel:el:a changeCommand:cc:a changeCommand1:cc1:a changeCommand2:cc2:a changeCommand3:cc3:a changeCommand4:cc4:a dragCommand:dc:a dragCommand1:dc1:a dragCommand2:dc2:a dragCommand3:dc3:a dragCommand4:dc4:a enable1:en1:b enable2:en2:b enable3:en3:b enable4:en4:b";
 const MENU: &str = "label:l:a tearOff:to:b allowOptionBoxes:aob:b deleteAllItems:dai:b itemArray:ia:b numberOfItems:ni:b postMenuCommand:pmc:a postMenuCommandOnce:pmo:b familyImage:fi:a mnemonic:mn:a ltVersion:lt:a version:ver:a scrollable:scr:b";
 
 /// (command, flags). `long:short:type`, type b a switch, a any value, aN N values per use.
@@ -378,9 +389,41 @@ const KINDS: &[(&str, &str)] = &[
     ("canvas", "rgbValue:rgb:a hsvValue:hsv:a pressCommand:pc:a"),
     ("workspaceControl", "label:l:a uiScript:ui:a floating:fl:b initialWidth:iw:a initialHeight:ih:a minimumWidth:mw:a minimumHeight:mh:a retain:r:b widthProperty:wp:a heightProperty:hp:a dockToMainWindow:dtm:a2 dockToControl:dtc:a2 dockToPanel:dtp:a3 tabToControl:ttc:a2 collapse:clp:b restore:rs:b closeCommand:cc:a requiredPlugin:rp:a requiredControl:rc:a loadImmediately:li:b checksPlugins:cp:b actLikeMayaUIElement:aui:b duplicatable:dup:b horizontal:hr:b stateString:ss:a uiScriptCommand:uic:a"),
     ("dockControl", "area:a:a content:con:a allowedArea:aa:a label:l:a floating:fl:b retain:r:b moveable:mov:b sizeable:s:b closeCommand:cc:a floatChangeCommand:fcc:a"),
+    ("floatSliderButtonGrp", "precision:pre:a showTrailingZeros:tze:b buttonLabel:bl:a buttonCommand:bc:a symbolButtonCommand:sbc:a symbolButtonDisplay:sbd:b image:i:a"),
+    ("shelfTabLayout", "tabLabel:tl:a2 tabLabelIndex:tli:a2 selectTabIndex:sti:a selectTab:st:a changeCommand:cc:a selectCommand:sc:a preSelectCommand:psc:a doubleClickCommand:dcc:a tabsVisible:tv:b innerMarginWidth:imw:a innerMarginHeight:imh:a scrollable:scr:b childResizable:cr:b horizontalScrollBarThickness:hst:a verticalScrollBarThickness:vst:a moveTab:mt:a2 newTabCommand:ntc:a showNewTab:snt:b tabPosition:tp:a tabTooltip:tt:a2 tabsClosable:tc:b closeTabCommand:ctc:a minChildWidth:mcw:a image:i:a imageVisible:iv:b"),
+    ("scriptTable", "rows:r:a columns:c:a label:l:a2 columnWidth:cw:a2 rowHeight:rh:a getCellCmd:gcc:a cellChangedCmd:ccc:a afterCellChangedCmd:acc:a selectionChangedCmd:scc:a selectedRow:sr:b selectedRows:srs:a selectedColumns:scs:a selectedCells:sc:a clearTable:clr:b clearRow:cr:a deleteRow:dr:a insertRow:ir:a excludingHeaders:eh:b multiEditEnabled:mee:b underPointerRow:upr:b underPointerColumn:upc:b useDoubleClickEdit:dce:b sortEnabled:se:b cellIndex:ci:a cellValue:cv:a cellBackgroundColor:cbc:a cellForegroundColor:cfc:a"),
+    ("layerButton", "label:l:a name:n:a changedCommand:cc:a color:cl:a command:c:a current:cr:b doubleClickCommand:dcc:a hideOnPlaybackCommand:hpc:a identification:id:a labelWidth:lw:a layerHideOnPlayback:lhp:b layerState:ls:a layerVisible:lv:b renameCommand:rc:a select:s:b transparent:t:b typeCommand:tc:a visibleCommand:vc:a"),
+    ("toolButton", "tool:t:a1 allowMultipleTools:amt:b collection:cl:a select:sl:b changeCommand:cc:a onCommand:onc:a offCommand:ofc:a doubleClickCommand:dcc:a image1:i1:a image2:i2:a image3:i3:a imageOverlayLabel:iol:a style:st:a popupIndicatorVisible:pin:b toolArray:ta:b toolCount:tc:b version:ver:a ltVersion:lt:a"),
+    ("outlinerEditor", "alwaysToggleSelect:ats:b animLayerFilterOptions:alf:a attrAlphaOrder:aao:a attrFilter:af:a autoExpand:xpd:b autoExpandLayers:ael:b autoSelectNewObjects:aso:b containersIgnoreFilters:cif:b directSelect:ds:b displayMode:dm:a doNotSelectNewObjects:dns:b dropIsParent:dip:b editAttrName:ean:b expandAllItems:eai:b expandAllSelectedItems:eas:b expandAttribute:xta:b expandConnections:xc:b expandObjects:eo:b feedbackItemName:fbn:b feedbackRowNumber:fbr:b getCurrentSetOfItem:gcs:a highlightActive:ha:b highlightSecondary:hs:b ignoreDagHierarchy:hir:b ignoreHiddenAttribute:iha:b ignoreOutlinerColor:ioc:b isChildSelected:ics:a isSet:isSet:a isSetMember:ism:a lineHeight:lh:a longNames:ln:b niceNames:nn:b object:obj:a organizeByClip:obc:b organizeByLayer:obl:b parentObject:po:b pinPlug:pin:a refresh:rfs:b removeFromCurrentSet:rcs:a renameItem:rni:a renameSelectedItem:rsi:b renderFilterActive:rfa:b renderFilterIndex:rfi:a renderFilterVisible:rfv:b selectCommand:sec:a setDefaultFilter:sdf:b setFilter:sf:a setsIgnoreFilters:sif:b showAnimCurvesOnly:aco:b showAnimLayerWeight:salw:b showAssets:a:b showAssignedMaterials:am:b showAttrValues:av:b showAttributes:sat:b showCompounds:cmp:b showConnected:sc:b showContainedOnly:sco:b showContainerContents:scc:b showDagOnly:dag:b showLeafs:laf:b showMuteInfo:smi:b showNamespace:sn:b showNumericAttrsOnly:num:b showParentContainers:spc:b showPinIcons:spi:b showPublishedAsConnected:spu:b showReferenceMembers:srm:b showReferenceNodes:rn:b showSelected:ssd:b showSetMembers:ssm:b showShapes:shp:b showTextureNodesOnly:tno:b showTimeEditor:ste:b showUVAttrsOnly:uv:b showUnitlessCurves:su:b showUpstreamCurves:suc:b sortOrder:so:a transmitFilters:tf:b control:ctl:b defineTemplate:dt:a docTag:dtg:a filter:f:a forceMainConnection:fmc:a highlightConnection:hlc:a lockMainConnection:lck:b mainListConnection:mlc:a panel:pnl:a selectionConnection:slc:a stateString:sts:b unParent:up:b unlockMainConnection:ulk:b updateMainConnection:upd:b useTemplate:ut:a"),
+    ("nodeEditor", "addNewNodes:ann:b addNode:an:a1 additiveGraphingMode:agm:b allAttributes:ala:b allNodes:aln:b autoSizeNodes:asn:b beginCreateNode:bcn:b consistentNameSize:cns:b createNodeCommand:cnc:a customAttributeListEdit:cal:a cycleHUD:ch:b defaultPinnedState:dps:b deleteSelected:dsl:b downstream:ds:b dotFormat:dot:a duplicateSelected:dup:b errorCallback:ecb:a extendToShapes:ets:b feedbackConnection:fbc:b feedbackNode:fbn:b feedbackPlug:fbp:b feedbackTabIndex:fbi:b feedbackType:fbt:b filterCreateNodeTypes:fcn:a focusCommand:fc:a frameAll:fa:b frameModelSelection:fms:b frameSelected:fs:b getNodeList:gnl:b graphSelectedConnections:gsc:b graphSelection:gs:b gridSnap:gsn:b gridVisibility:gv:b hasWatchpoint:hw:b hudMessage:hm:a ignoreAssets:ia:b island:isl:b keyPressCommand:kp:a keyReleaseCommand:kr:a layout:lay:b layoutCommand:lc:a nodeSwatchSize:nss:a nodeTitleMode:ntm:a nodeViewMode:nvm:a panView:pv:a pinSelectedNodes:psn:b popupMenuScript:pms:a redockSelectedNodes:rsn:b removeDownstream:rd:b removeNode:rem:a1 removeUnselected:run:b removeUpstream:ru:b rootNode:rn:a1 rootsFromSelection:rfs:b scaleView:sv:a selectAll:sa:b selectConnectionNodes:scn:b selectDownstream:sdn:b selectFeedbackConnection:sfc:b selectNode:sln:a1 selectUpstream:su:b setWatchpoint:sw:b settingsChangedCallback:scc:a shaderNetworks:sn:b showAllNodeAttributes:saa:a showNamespace:sns:b showSGShapes:ssg:b showShapes:ss:b showTransforms:st:b showUnitConversions:suc:b syncedSelection:ssl:b toggleAttrFilter:taf:b toggleSelectedPins:tsp:b toggleSwatchSize:tss:b toolTipCommand:ttc:a traversalDepthLimit:tdl:a updateNodeAdded:una:b upstream:ups:b useAssets:ua:b control:ctl:b defineTemplate:dt:a docTag:dtg:a filter:f:a forceMainConnection:fmc:a highlightConnection:hlc:a lockMainConnection:lck:b mainListConnection:mlc:a panel:pnl:a selectionConnection:slc:a stateString:sts:b unParent:up:b unlockMainConnection:ulk:b updateMainConnection:upd:b useTemplate:ut:a"),
+    ("dopeSheetEditor", "autoFit:af:a autoFitTime:aft:a displayActiveKeyTangents:dat:a displayActiveKeys:dak:a displayInfinities:di:a displayKeys:dk:a displayTangents:dtn:a displayValues:dv:a dropCommand:dc:a hierarchyBelow:hb:b lookAt:la:a outliner:o:a selectionWindow:sel:a showScene:sc:b showSummary:ss:b showTicks:stk:b snapTime:st:a snapValue:sv:a control:ctl:b defineTemplate:dt:a docTag:dtg:a filter:f:a forceMainConnection:fmc:a highlightConnection:hlc:a lockMainConnection:lck:b mainListConnection:mlc:a panel:pnl:a selectionConnection:slc:a stateString:sts:b unParent:up:b unlockMainConnection:ulk:b updateMainConnection:upd:b useTemplate:ut:a"),
+    ("animCurveEditor", "areCurvesSelected:acs:b autoFit:af:a autoFitTime:aft:a classicMode:cm:b clipTime:ct:a constrainDrag:cd:a curvesShown:cs:b denormalizeCurvesCommand:dcc:a displayActiveKeyTangents:dat:a displayActiveKeys:dak:a displayInfinities:di:a displayKeys:dk:a displayNormalized:dn:b displayTangents:dtn:a displayValues:dv:a keyingTime:kt:a lookAt:la:a menu:m:a normalizeCurvesCommand:ncc:a outliner:o:a preSelectionHighlight:psh:b renormalizeCurves:rnc:b resultSamples:rs:a resultScreenSamples:rss:a resultUpdate:ru:a showActiveCurveNames:acn:b showBufferCurves:sb:a showCurveNames:scn:b showResults:sr:a showUpstreamCurves:suc:b simpleKeyView:skv:a smoothness:s:a snapTime:st:a snapValue:sv:a stackedCurves:sc:b stackedCurvesMax:scx:a stackedCurvesMin:scm:a stackedCurvesSpace:scs:a valueLinesToggle:vlt:a control:ctl:b defineTemplate:dt:a docTag:dtg:a filter:f:a forceMainConnection:fmc:a highlightConnection:hlc:a lockMainConnection:lck:b mainListConnection:mlc:a panel:pnl:a selectionConnection:slc:a stateString:sts:b unParent:up:b unlockMainConnection:ulk:b updateMainConnection:upd:b useTemplate:ut:a"),
+    ("blendShapeEditor", "targetControlList:tcl:b targetList:tl:b verticalSliders:vs:b control:ctl:b defineTemplate:dt:a docTag:dtg:a filter:f:a forceMainConnection:fmc:a highlightConnection:hlc:a lockMainConnection:lck:b mainListConnection:mlc:a panel:pnl:a selectionConnection:slc:a stateString:sts:b unParent:up:b unlockMainConnection:ulk:b updateMainConnection:upd:b useTemplate:ut:a"),
+    ("poseEditor", "targetControlList:tcl:b targetList:tl:b verticalSliders:vs:b control:ctl:b defineTemplate:dt:a docTag:dtg:a filter:f:a forceMainConnection:fmc:a highlightConnection:hlc:a lockMainConnection:lck:b mainListConnection:mlc:a panel:pnl:a selectionConnection:slc:a stateString:sts:b unParent:up:b unlockMainConnection:ulk:b updateMainConnection:upd:b useTemplate:ut:a"),
+    ("componentEditor", "floatField:ff:a floatSlider:fs:a hidePathName:hpn:b hideZeroColumns:hzc:b lockInput:lck:b newTab:nt:a3 operationCount:oc:b operationLabels:ol:b operationType:ot:a precision:pre:a removeTab:rt:a selected:sl:b setOperationLabel:sol:a2 showObjects:so:a showSelected:ss:b sortAlpha:sa:b control:ctl:b defineTemplate:dt:a docTag:dtg:a filter:f:a forceMainConnection:fmc:a highlightConnection:hlc:a lockMainConnection:lck:b mainListConnection:mlc:a panel:pnl:a selectionConnection:slc:a stateString:sts:b unParent:up:b unlockMainConnection:ulk:b updateMainConnection:upd:b useTemplate:ut:a"),
+    ("spreadSheetEditor", "attrRegExp:are:a execute:exe:a fixedAttrList:fal:a1 header:hdr:b keyableOnly:ko:b longNames:ln:b niceNames:nn:b precision:pre:a selectedAttr:sla:b showShapes:ssh:b control:ctl:b defineTemplate:dt:a docTag:dtg:a filter:f:a forceMainConnection:fmc:a highlightConnection:hlc:a lockMainConnection:lck:b mainListConnection:mlc:a panel:pnl:a selectionConnection:slc:a stateString:sts:b unParent:up:b unlockMainConnection:ulk:b updateMainConnection:upd:b useTemplate:ut:a"),
+    ("keyframeOutliner", "animCurve:an:a display:dsp:a"),
+    ("textureWindow", "capture:cpt:a changeCommand:cc:a checkerColor1:cc1:a checkerColor2:cc2:a checkerDensity:cd:a clearImage:ci:b cmEnabled:cme:b displayAxes:dax:b displayCheckered:dc:b displayDistortion:dcd:b displayDivisionLines:ddl:b displayGridLines:dgl:b displayImage:di:a displayLabels:dl:b displayPreselection:dpr:b displaySolidMap:dsm:b displayStyle:dst:a displayUVShaded:dus:b displayUVWireframe:duw:b distortionAlpha:dal:a distortionPerObject:dpo:b divisions:d:a doubleBuffer:dbf:b drawAxis:da:b drawSubregions:dsr:b exposure:exp:a frameAll:fa:b frameSelected:fs:b frontFacingColor:ffc:a gamma:ga:a gridLinesColor:glc:a gridNumbersColor:gnc:a imageBaseColor:ibc:a imageDim:imd:b imageDisplay:id:b imageNames:imn:b imageNumber:in:a imagePixelSnap:ip:b imageRatio:imr:b imageRatioValue:irv:a imageSize:is:b imageTileRange:itr:a imageUnfiltered:iuf:b internalFaces:if:b labelPosition:lp:a loadImage:li:a maxResolution:mrs:a multiColorAlpha:mca:a nbImages:nim:b nextView:nv:b numUvSets:nuv:b numberOfImages:ni:a numberOfTextures:nt:a previousView:pv:b realSize:rs:b refresh:rf:b relativeHandleSize:rhs:b removeAllImages:rai:b removeImage:ri:b rendererString:rst:a reset:r:b saveImage:si:b selectInternalFaces:sif:b selectRelated:sr:b setUvSet:suv:a singleBuffer:sbf:b size:s:a solidMap3dView:sm3:b solidMapColorSeed:smc:a solidMapPerShell:smp:b spacing:sp:a style:st:a subdivisionLinesColor:slc:a textureBorder:tb:b textureBorderColor:tbc:a textureBorderWidth:tbw:a textureNames:tn:b textureNumber:tx:a tileLabels:tlb:b tileLinesColor:tlc:a toggle:tgl:b toggleExposure:txp:b toggleGamma:tgm:b useFaceGroup:ufg:b usedPercentageHUD:upp:b uvSets:uvs:b viewPortImage:vpi:b viewTransformName:vtn:a wireframeComponentColor:wcc:a wireframeObjectColor:woc:a writeImage:wi:a control:ctl:b defineTemplate:dt:a docTag:dtg:a filter:f:a forceMainConnection:fmc:a highlightConnection:hlc:a lockMainConnection:lck:b mainListConnection:mlc:a panel:pnl:a selectionConnection:slc:a stateString:sts:b unParent:up:b unlockMainConnection:ulk:b updateMainConnection:upd:b useTemplate:ut:a"),
+    ("timePort", "globalTime:gt:b snap:sn:b"),
+    ("rangeControl", "minRange:min:a maxRange:max:a changedCommand:cc:a"),
+    ("timeRangeControl", "minRange:min:a maxRange:max:a changedCommand:cc:a"),
 ];
 
-fn parse_flag(tok: &str) -> Option<FlagDef> {
+/// Editors can be made with no layout to go in, and put in one later with -e -parent.
+fn is_editor(kind: &str) -> bool {
+    matches!(kind, "outlinerEditor" | "nodeEditor" | "dopeSheetEditor" | "animCurveEditor" | "blendShapeEditor" | "poseEditor" | "componentEditor" | "spreadSheetEditor" | "keyframeOutliner" | "textureWindow")
+}
+
+/// The widget a command makes, when it is another command's with more on it.
+fn display_of(cmd: &str) -> &str {
+    match cmd {
+        "shelfTabLayout" => "tabLayout",
+        "timeRangeControl" => "rangeControl",
+        c => c,
+    }
+}
+
+pub(crate) fn parse_flag(tok: &str) -> Option<FlagDef> {
     let mut it = tok.split(':');
     let (long, short, ty) = (it.next()?, it.next()?, it.next()?);
     let mut d = FlagDef::new(long, short, if ty == "b" { ArgType::Bool } else { ArgType::Any }, Value::Null, "");
@@ -390,7 +433,7 @@ fn parse_flag(tok: &str) -> Option<FlagDef> {
     Some(d)
 }
 
-fn add_flags(mut c: Cmd, spec: &str) -> Cmd {
+pub(crate) fn add_flags(mut c: Cmd, spec: &str) -> Cmd {
     for t in spec.split_whitespace() {
         if let Some(d) = parse_flag(t) {
             if !c.flags.iter().any(|f| f.name == d.name) {
@@ -402,7 +445,7 @@ fn add_flags(mut c: Cmd, spec: &str) -> Cmd {
 }
 
 /// The -cw2 -cl3 -ad4 family of the group controls and rowLayout.
-fn add_column_flags(mut c: Cmd) -> Cmd {
+pub(crate) fn add_column_flags(mut c: Cmd) -> Cmd {
     for n in 1..=6u8 {
         if c.flags.iter().any(|f| f.name == format!("columnWidth{n}")) {
             continue;
@@ -424,14 +467,14 @@ fn is_group(kind: &str) -> bool {
 // ---------------------------------------------------------------------------------------------------------------------
 // Applying flags
 
-const META: &[&str] = &["query", "edit", "queried", "exists", "parent", "defineTemplate", "useTemplate", "fullPathName", "isObscured", "numberOfPopupMenus", "popupMenuArray", "childArray", "numberOfChildren"];
+const META: &[&str] = &["query", "edit", "queried", "exists", "parent", "unParent", "defineTemplate", "useTemplate", "fullPathName", "isObscured", "numberOfPopupMenus", "popupMenuArray", "childArray", "numberOfChildren"];
 
 fn is_int_kind(kind: &str) -> bool {
     matches!(kind, "intField" | "intSlider" | "intScrollBar" | "intSliderGrp" | "intFieldGrp" | "colorIndexSliderGrp")
 }
 
 fn is_float_kind(kind: &str) -> bool {
-    matches!(kind, "floatField" | "floatSlider" | "floatScrollBar" | "floatSliderGrp" | "floatFieldGrp")
+    matches!(kind, "floatField" | "floatSlider" | "floatScrollBar" | "floatSliderGrp" | "floatFieldGrp" | "floatSliderButtonGrp")
 }
 
 fn numeric(kind: &str, v: &Value) -> Value {
@@ -459,6 +502,16 @@ fn apply(m: &mut Model, id: Id, flags: &Map<String, Value>) -> Result<Map<String
             };
             if let Some(c) = m.controls.get_mut(&id) {
                 c.props.insert(key.clone(), cb);
+            }
+            // The shell has no use for scripts, but has to know a control takes part in drags.
+            match key.as_str() {
+                "dragCallback" => {
+                    changed.insert("hasDrag".to_string(), json!(true));
+                }
+                "dropCallback" => {
+                    changed.insert("hasDrop".to_string(), json!(true));
+                }
+                _ => {}
             }
             continue;
         }
@@ -555,14 +608,14 @@ fn apply_one(m: &mut Model, id: Id, kind: &str, key: &str, raw: &Value, changed:
                 changed.remove("select");
             }
         }
-        ("radioButton" | "iconTextRadioButton", "select") => {
+        ("radioButton" | "iconTextRadioButton" | "toolButton", "select") => {
             let on = truth(raw);
             set(m, id, key, json!(on), changed);
             if on {
                 radio_exclusive(m, id);
             }
         }
-        ("radioCollection", "select") => {
+        ("radioCollection" | "toolCollection", "select") => {
             let name = text(raw);
             let kids = collection_members(m, id);
             if name == "NONE" {
@@ -580,6 +633,16 @@ fn apply_one(m: &mut Model, id: Id, kind: &str, key: &str, raw: &Value, changed:
                 }
                 radio_exclusive(m, b);
             }
+        }
+        ("scriptTable", _) => table_flag(m, id, key, raw, changed),
+        ("paneLayout", "paneSize") => {
+            let mut sizes = m.get(id).and_then(|c| c.props.get("paneSizes")).and_then(Value::as_object).cloned().unwrap_or_default();
+            for ch in vals.chunks(3) {
+                if let [pane, w, h] = ch {
+                    sizes.insert((number(pane) as i64).to_string(), json!([number(w) as i64, number(h) as i64]));
+                }
+            }
+            set(m, id, "paneSizes", Value::Object(sizes), changed);
         }
         ("scrollField", "clear") => {
             if truth(raw) {
@@ -614,6 +677,139 @@ fn apply_one(m: &mut Model, id: Id, kind: &str, key: &str, raw: &Value, changed:
         }
     }
     Ok(())
+}
+
+/// A scriptTable's cells live with it, as rows of strings; the core fills them from -getCellCmd.
+fn table_cells(m: &Model, id: Id) -> Vec<Vec<String>> {
+    m.get(id).and_then(|c| c.props.get("cells")).and_then(Value::as_array).map(|rows| rows.iter().map(|r| r.as_array().map(|x| x.iter().map(text).collect()).unwrap_or_default()).collect()).unwrap_or_default()
+}
+
+fn table_flag(m: &mut Model, id: Id, key: &str, raw: &Value, changed: &mut Map<String, Value>) {
+    let get = |m: &Model, k: &str| m.get(id).and_then(|c| c.props.get(k)).map(number).unwrap_or(0.0) as i64;
+    let mut cells = table_cells(m, id);
+    let row = (number(raw) as usize).max(1) - 1;
+    match key {
+        "rows" | "columns" | "rowHeight" => set(m, id, key, json!(number(raw) as i64), changed),
+        "clearTable" => {
+            if truth(raw) {
+                set(m, id, "cells", json!(Vec::<Vec<String>>::new()), changed);
+                set(m, id, "rows", json!(0), changed);
+                set(m, id, "selectedCells", json!([]), changed);
+            }
+        }
+        "clearRow" => {
+            if let Some(r) = cells.get_mut(row) {
+                r.iter_mut().for_each(String::clear);
+            }
+            set(m, id, "cells", json!(cells), changed);
+        }
+        "insertRow" => {
+            let cols = get(m, "columns").max(0) as usize;
+            cells.insert(row.min(cells.len()), vec![String::new(); cols]);
+            let n = get(m, "rows") + 1;
+            set(m, id, "rows", json!(n), changed);
+            set(m, id, "cells", json!(cells), changed);
+        }
+        "deleteRow" => {
+            if row < cells.len() {
+                cells.remove(row);
+            }
+            let n = (get(m, "rows") - 1).max(0);
+            set(m, id, "rows", json!(n), changed);
+            set(m, id, "cells", json!(cells), changed);
+        }
+        "cellValue" => {
+            let at = m.get(id).and_then(|c| c.props.get("cellIndex")).map(flat).unwrap_or_default();
+            if let [r, c, ..] = at.as_slice() {
+                let (r, c) = ((number(r) as usize).max(1) - 1, (number(c) as usize).max(1) - 1);
+                if r < cells.len() && c < cells[r].len() {
+                    cells[r][c] = text(raw);
+                    set(m, id, "cells", json!(cells), changed);
+                }
+            }
+        }
+        _ => {
+            let v = match raw {
+                Value::Array(a) if a.len() == 1 => a[0].clone(),
+                o => o.clone(),
+            };
+            set(m, id, key, v, changed);
+        }
+    }
+}
+
+/// Cells from the core's -getCellCmd calls, or one the user changed, as an edit the shell hears about.
+pub(crate) fn table_set_cells(path: &str, cells: Vec<Vec<String>>) {
+    let _ = model_edit(path, &Map::from_iter([("cells".to_string(), json!(cells))]));
+}
+
+/// The tables whose cells have to be asked for: path, script, rows, columns.
+pub(crate) fn take_dirty_tables() -> Vec<(String, Value, usize, usize)> {
+    with_model(|m| {
+        let dirty = std::mem::take(&mut m.dirty_tables);
+        dirty
+            .into_iter()
+            .filter_map(|id| {
+                let c = m.get(id)?;
+                let cb = c.props.get("getCellCmd")?.clone();
+                let n = |k: &str| c.props.get(k).map(number).unwrap_or(0.0).max(0.0) as usize;
+                Some((c.path.clone(), cb, n("rows"), n("columns")))
+            })
+            .collect()
+    })
+}
+
+/// A flag edit made from inside the core: as a script's `-e`, heard by the shell.
+pub(crate) fn model_edit(path: &str, flags: &Map<String, Value>) -> Result<(), String> {
+    with_model(|m| {
+        let Some(id) = m.find(path) else { return Err(format!("Object '{path}' not found.")) };
+        let changed = apply(m, id, flags)?;
+        if !changed.is_empty() {
+            let c = m.get(id).unwrap();
+            op(json!({"op": "edit", "path": c.path, "props": changed}));
+        }
+        Ok(())
+    })
+}
+
+/// The kind of widget behind a control, for tests and the shell.
+pub fn control_kind_of(path: &str) -> Option<String> {
+    control_kind(path)
+}
+
+/// What the model holds for a control: its kind, and one flag's stored value.
+pub(crate) fn control_kind(path: &str) -> Option<String> {
+    with_model(|m| m.find(path).and_then(|i| m.get(i)).map(|c| c.kind.clone()))
+}
+
+pub(crate) fn control_full_path(path: &str) -> Option<String> {
+    with_model(|m| m.find(path).and_then(|i| m.get(i)).map(|c| c.path.clone()))
+}
+
+pub(crate) fn control_prop(path: &str, key: &str) -> Option<Value> {
+    with_model(|m| m.find(path).and_then(|i| m.get(i)).and_then(|c| c.props.get(key).cloned()))
+}
+
+pub(crate) fn control_props(path: &str) -> Option<Map<String, Value>> {
+    with_model(|m| m.find(path).and_then(|i| m.get(i)).map(|c| c.props.clone()))
+}
+
+pub(crate) fn delete_control(path: &str) {
+    with_model(|m| {
+        if let Some(i) = m.find(path) {
+            m.delete(i);
+        }
+    });
+}
+
+/// The generic query or -exists of a command, for commands that wrap the generic one.
+pub(crate) fn command_for(cmd: &str, a: &Args) -> CmdResult {
+    control_command(cmd, a)
+}
+
+/// Every control of a kind, as (path, flags).
+pub(crate) fn controls_of(kind: &str) -> Vec<(String, Map<String, Value>)> {
+    with_model(|m| m.controls.values().filter(|c| c.kind == kind).map(|c| (c.path.clone(), c.props.clone())).collect())
 }
 
 fn tab_labels(m: &Model, id: Id) -> Map<String, Value> {
@@ -848,13 +1044,35 @@ fn default_value(c: &Control, key: &str) -> Value {
     match (c.kind.as_str(), key) {
         ("window" | "workspaceControl" | "dockControl" | "progressWindow", "visible") => json!(false),
         (_, "enable" | "visible" | "manage" | "editable" | "sizeable" | "minimizeBox" | "maximizeBox" | "titleBar" | "titleBarMenu" | "enableKeyboardFocus" | "enableButton") => json!(true),
-        ("floatSliderGrp" | "intSliderGrp" | "colorIndexSliderGrp", "minValue") => zero(&c.kind),
-        ("floatSliderGrp" | "intSliderGrp", "maxValue") => ten(&c.kind),
+        ("floatSliderGrp" | "intSliderGrp" | "colorIndexSliderGrp" | "floatSliderButtonGrp", "minValue") => zero(&c.kind),
+        ("floatSliderGrp" | "intSliderGrp" | "floatSliderButtonGrp", "maxValue") => ten(&c.kind),
+        ("scriptTable", "rows" | "columns") => json!(0),
+        ("outlinerEditor", "mainListConnection") => json!("worldList"),
+        ("dopeSheetEditor" | "animCurveEditor", "mainListConnection") => json!("animationList"),
+        ("nodeEditor", "mainListConnection") => json!(""),
+        (k, "selectionConnection") if is_editor(k) => json!("modelList"),
+        (k, "highlightConnection" | "forceMainConnection" | "filter") if is_editor(k) => json!(""),
+        (k, "panel") if is_editor(k) => json!(c.name),
+        (k, "control") if is_editor(k) => json!(true),
+        (k, "lockMainConnection") if is_editor(k) => json!(false),
+        ("nodeEditor", "traversalDepthLimit") => json!(-1),
+        ("nodeEditor", "nodeTitleMode") => json!("name"),
+        ("outlinerEditor", "displayMode") => json!("DAG"),
+        ("outlinerEditor", "showShapes" | "showAttributes" | "showDagOnly" | "showConnected" | "showAnimCurvesOnly") => json!(c.kind == "outlinerEditor" && key == "showDagOnly"),
+        ("componentEditor", "precision") => json!(3),
+        ("spreadSheetEditor", "precision") => json!(3),
+        ("spreadSheetEditor", "keyableOnly" | "longNames") => json!(key == "keyableOnly"),
+        ("toolButton", "select") => json!(false),
+        ("layerButton", "select" | "current" | "transparent") => json!(false),
+        ("layerButton", "layerVisible") => json!(true),
+        ("layerButton", "layerState") => json!("normal"),
+        ("layerButton", "name") => json!(c.name),
         ("colorIndexSliderGrp", "maxValue") => json!(31),
         (k, "minValue") if is_int_kind(k) || is_float_kind(k) => zero(k),
         (k, "maxValue") if k.ends_with("Slider") || k.ends_with("ScrollBar") => hundred(k),
         (k, "value" | "value1" | "value2" | "value3" | "value4" | "step") if is_int_kind(k) || is_float_kind(k) => zero(k),
         ("window" | "workspaceControl" | "dockControl", "title" | "label") => json!(c.name),
+        ("dockControl", "area") => json!("left"),
         (k, "label") if !is_group(k) => json!(c.name),
         (k, "label") if is_group(k) => json!(""),
         (_, "text" | "placeholderText" | "annotation" | "docTag" | "image" | "status") => json!(""),
@@ -957,9 +1175,46 @@ fn query(m: &Model, id: Id, key: &str) -> Value {
             no_list(v)
         }
         "numberOfItems" if c.kind != "textScrollList" => json!(c.children.iter().filter(|k| m.get(**k).is_some_and(|x| x.kind == "menuItem")).count()),
-        "select" if c.kind == "radioCollection" => {
+        "select" if c.kind == "radioCollection" || c.kind == "toolCollection" => {
             let kids = collection_members(m, id);
             json!(kids.iter().find_map(|k| m.get(*k).filter(|x| x.props.get("select").is_some_and(truth)).map(|x| x.name.clone())).unwrap_or_else(|| "NONE".to_string()))
+        }
+        "toolArray" => no_list(c.props.get("tool").map(flat).unwrap_or_default().iter().map(text).collect()),
+        "toolCount" => json!(c.props.get("tool").map(flat).map_or(0, |t| t.len())),
+        "tool" if c.kind == "toolButton" => json!(c.props.get("tool").map(flat).and_then(|t| t.first().map(text)).unwrap_or_default()),
+        "selectedCells" | "selectedRows" | "selectedColumns" | "selectedRow" if c.kind == "scriptTable" => {
+            let at: Vec<i64> = c.props.get("selectedCells").map(flat).unwrap_or_default().iter().map(|v| number(v) as i64).collect();
+            let mut rows: Vec<i64> = at.chunks(2).map(|x| x[0]).collect();
+            let mut cols: Vec<i64> = at.chunks(2).filter_map(|x| x.get(1).copied()).collect();
+            rows.dedup();
+            cols.sort_unstable();
+            cols.dedup();
+            match key {
+                "selectedRow" => json!(rows.first().copied().unwrap_or(0)),
+                "selectedRows" => json!(rows),
+                "selectedColumns" => json!(cols),
+                _ => json!(at),
+            }
+        }
+        "cellValue" if c.kind == "scriptTable" => {
+            let at = c.props.get("cellIndex").map(flat).unwrap_or_default();
+            if let [r, col, ..] = at.as_slice() {
+                let (r, col) = ((number(r) as usize).max(1) - 1, (number(col) as usize).max(1) - 1);
+                json!(table_cells(m, id).get(r).and_then(|x| x.get(col)).cloned().unwrap_or_default())
+            } else {
+                json!("")
+            }
+        }
+        "underPointerRow" | "underPointerColumn" => json!(0),
+        "isOptionBox" => json!(c.props.get("optionBox").is_some_and(truth)),
+        "isCheckBox" => json!(c.props.contains_key("checkBox")),
+        "isRadioButton" => json!(c.props.contains_key("radioButton")),
+        "paneSize" => {
+            // Width and height of each pane given, in the panes' order.
+            let sizes = c.props.get("paneSizes").and_then(Value::as_object).cloned().unwrap_or_default();
+            let mut keys: Vec<i64> = sizes.keys().filter_map(|k| k.parse().ok()).collect();
+            keys.sort_unstable();
+            Value::Array(keys.iter().flat_map(|k| flat(&sizes[&k.to_string()])).collect())
         }
         "collectionItemArray" => no_list(kids_named(&collection_members(m, id))),
         "numberOfCollectionItems" => json!(collection_members(m, id).len()),
@@ -1014,12 +1269,13 @@ fn target(m: &Model, a: &Args, cmd: &str) -> Result<Id, String> {
     m.find(n).ok_or_else(|| format!("Object '{n}' not found."))
 }
 
-fn wants_kind(cmd: &str, kind: &str) -> bool {
+fn wants_kind(cmd: &str, c: &Control) -> bool {
+    let kind = c.kind.as_str();
     match cmd {
         "control" | "layout" => true,
         "progressBar" => kind == "progressBar",
         "menu" => matches!(kind, "menu" | "popupMenu" | "optionMenu" | "optionMenuGrp" | "menuBarLayout"),
-        c => c == kind,
+        x => x == kind || c.props.get("__cmd").and_then(Value::as_str) == Some(x),
     }
 }
 
@@ -1031,8 +1287,15 @@ fn run_query(cmd: &str, a: &Args) -> CmdResult {
                 asked.push(k.clone());
             }
         }
+        // Which cell is asked about is not itself the question.
+        if let Some(cell) = a.get("cellIndex").cloned() {
+            asked.retain(|k| k != "cellIndex");
+            if let Some(c) = a.pos_str(0).and_then(|n| m.find(n)).and_then(|i| m.controls.get_mut(&i)) {
+                c.props.insert("cellIndex".to_string(), cell);
+            }
+        }
         if asked.iter().any(|k| k == "exists") {
-            let ok = a.pos_str(0).and_then(|n| m.find(n)).is_some_and(|i| m.get(i).is_some_and(|c| wants_kind(cmd, &c.kind)));
+            let ok = a.pos_str(0).and_then(|n| m.find(n)).is_some_and(|i| m.get(i).is_some_and(|c| wants_kind(cmd, c)));
             return Ok(json!(ok));
         }
         let id = target(m, a, cmd).map_err(aztek_ops::CommandError::new)?;
@@ -1044,12 +1307,25 @@ fn run_query(cmd: &str, a: &Args) -> CmdResult {
 fn run_edit(cmd: &str, a: &Args) -> CmdResult {
     let out = with_model(|m| -> Result<Value, String> {
         let id = target(m, a, cmd)?;
+        if m.get(id).is_some_and(|c| is_editor(&c.kind)) {
+            if a.bool("unParent") {
+                move_editor(m, id, None);
+            } else if let Some(p) = a.get("parent").map(text).filter(|p| !p.is_empty()) {
+                let to = m.find(&p).ok_or_else(|| format!("Object '{p}' not found."))?;
+                move_editor(m, id, Some(to));
+            }
+        }
         let changed = apply(m, id, &a.flags)?;
         let c = m.get(id).unwrap();
+        let (is_table, path) = (c.kind == "scriptTable", c.path.clone());
         if !changed.is_empty() {
             op(json!({"op": "edit", "path": c.path, "props": changed}));
         }
-        Ok(json!(c.path))
+        // New rows, columns or a new script: the cells are asked for again.
+        if is_table && (a.has("rows") || a.has("columns") || a.has("getCellCmd")) {
+            m.dirty_tables.push(id);
+        }
+        Ok(json!(path))
     });
     out.map_err(aztek_ops::CommandError::new)
 }
@@ -1075,21 +1351,52 @@ fn parent_for(m: &Model, cmd: &str, a: &Args) -> Result<Option<Id>, String> {
             }
             m.parent.and_then(|i| m.window_of(i)).map(Some).ok_or_else(|| "No window found.".to_string())
         }
+        _ if is_editor(cmd) => Ok(m.parent),
         _ => m.parent.map(Some).ok_or_else(|| "No window found.".to_string()),
     }
 }
 
+/// -e -parent or -unParent on an editor: it moves, and the shell makes its widget again in the new place.
+fn move_editor(m: &mut Model, id: Id, parent: Option<Id>) {
+    let Some(c) = m.get(id).cloned() else { return };
+    op(json!({"op": "delete", "path": c.path}));
+    if let Some(p) = c.parent.and_then(|p| m.controls.get_mut(&p)) {
+        p.children.retain(|k| *k != id);
+    }
+    let path = match parent.and_then(|p| m.get(p)) {
+        Some(p) => format!("{}|{}", p.path, c.name),
+        None => c.name.clone(),
+    };
+    let parent_path = parent.and_then(|p| m.get(p)).map(|p| p.path.clone());
+    if let Some(p) = parent.and_then(|p| m.controls.get_mut(&p)) {
+        p.children.push(id);
+    }
+    if let Some(x) = m.controls.get_mut(&id) {
+        x.parent = parent;
+        x.path = path.clone();
+    }
+    let mut props = c.props.clone();
+    props.insert("name".to_string(), json!(c.name));
+    op(json!({"op": "create", "path": path, "kind": c.kind, "parent": parent_path, "props": props}));
+}
+
 fn create(cmd: &str, a: &Args) -> CmdResult {
+    create_as(display_of(cmd), cmd, a)
+}
+
+/// Makes a control of `kind` for the command `base`, which names it and answers -exists for it.
+pub(crate) fn create_as(kind: &str, base: &str, a: &Args) -> CmdResult {
+    let cmd = kind;
     let r = with_model(|m| -> Result<Value, String> {
         // A template only stores what it was given.
         if let Some(t) = a.get("defineTemplate").map(text) {
-            let e = m.templates.entry(t).or_default().entry(cmd.to_string()).or_default();
+            let e = m.templates.entry(t).or_default().entry(base.to_string()).or_default();
             for (k, v) in &a.flags {
                 if !META.contains(&k.as_str()) {
                     e.insert(k.clone(), v.clone());
                 }
             }
-            return Ok(json!(cmd));
+            return Ok(json!(base));
         }
         let parent = parent_for(m, cmd, a)?;
         let name = match a.pos_str(0) {
@@ -1100,7 +1407,7 @@ fn create(cmd: &str, a: &Args) -> CmdResult {
                 }
                 short.to_string()
             }
-            None => m.fresh_name(cmd, parent),
+            None => m.fresh_name(base, parent),
         };
         let path = match parent.and_then(|p| m.get(p)) {
             Some(p) => format!("{}|{name}", p.path),
@@ -1108,7 +1415,11 @@ fn create(cmd: &str, a: &Args) -> CmdResult {
         };
         m.next += 1;
         let id = m.next;
-        m.controls.insert(id, Control { kind: cmd.to_string(), name: name.clone(), path: path.clone(), parent, children: Vec::new(), props: Map::new() });
+        let mut made = Map::new();
+        if base != kind {
+            made.insert("__cmd".to_string(), json!(base));
+        }
+        m.controls.insert(id, Control { kind: cmd.to_string(), name: name.clone(), path: path.clone(), parent, children: Vec::new(), props: made });
         if let Some(p) = parent {
             m.controls.get_mut(&p).unwrap().children.push(id);
         }
@@ -1116,7 +1427,7 @@ fn create(cmd: &str, a: &Args) -> CmdResult {
         let mut flags = Map::new();
         let names: Vec<String> = a.get("useTemplate").map(text).into_iter().chain(m.template_stack.last().cloned()).collect();
         for t in names {
-            if let Some(d) = m.templates.get(&t).and_then(|x| x.get(cmd)) {
+            if let Some(d) = m.templates.get(&t).and_then(|x| x.get(base)) {
                 for (k, v) in d {
                     flags.entry(k.clone()).or_insert(v.clone());
                 }
@@ -1125,7 +1436,7 @@ fn create(cmd: &str, a: &Args) -> CmdResult {
         for (k, v) in &a.flags {
             flags.insert(k.clone(), v.clone());
         }
-        if matches!(cmd, "radioButton" | "iconTextRadioButton") && !flags.contains_key("collection") {
+        if matches!(cmd, "radioButton" | "iconTextRadioButton" | "toolButton") && !flags.contains_key("collection") {
             if let Some(c) = m.collection.and_then(|c| m.get(c)) {
                 flags.insert("collection".into(), json!(c.path));
             }
@@ -1150,6 +1461,9 @@ fn create(cmd: &str, a: &Args) -> CmdResult {
         };
         if cmd == "radioButton" && flags.get("select").is_some_and(truth) {
             radio_exclusive(m, id);
+        }
+        if cmd == "scriptTable" {
+            m.dirty_tables.push(id);
         }
         // The labels a control shows when it is given none, for the shell.
         props.entry("name".to_string()).or_insert(json!(name));
@@ -1180,7 +1494,7 @@ fn create(cmd: &str, a: &Args) -> CmdResult {
     r.map_err(aztek_ops::CommandError::new)
 }
 
-fn control_command(cmd: &'static str, a: &Args) -> CmdResult {
+fn control_command(cmd: &str, a: &Args) -> CmdResult {
     if a.bool("query") {
         return run_query(cmd, a);
     }
@@ -1188,7 +1502,7 @@ fn control_command(cmd: &'static str, a: &Args) -> CmdResult {
         return run_edit(cmd, a);
     }
     if a.bool("exists") {
-        return Ok(json!(a.pos_str(0).is_some_and(|n| with_model(|m| m.find(n).is_some_and(|i| m.get(i).is_some_and(|c| wants_kind(cmd, &c.kind)))))));
+        return Ok(json!(a.pos_str(0).is_some_and(|n| with_model(|m| m.find(n).is_some_and(|i| m.get(i).is_some_and(|c| wants_kind(cmd, c)))))));
     }
     create(cmd, a)
 }
@@ -1212,10 +1526,15 @@ fn after_create(cmd: &str, result: &CmdResult, a: &Args) {
         run_soon(callback_value(script), Vec::new());
     }
     let name = result.as_ref().ok().and_then(Value::as_str).unwrap_or("").to_string();
+    let docked = a.has("dockToMainWindow") || a.has("dockToControl") || a.has("dockToPanel") || a.has("tabToControl");
     with_model(|m| {
         if let Some(i) = m.find(&name) {
             if let Some(c) = m.controls.get_mut(&i) {
                 c.props.insert("visible".into(), json!(true));
+                // It floats until it is docked.
+                if !c.props.contains_key("floating") {
+                    c.props.insert("floating".into(), json!(!docked));
+                }
             }
         }
     });
@@ -1238,6 +1557,12 @@ pub fn shell_event(ev: &Value) -> Vec<(Value, Vec<Value>)> {
             set_from_python(saved);
         }
         let mut out = Vec::new();
+        // A tool button's press makes its tool current.
+        if ev["set"]["select"].as_bool() == Some(true) && m.get(id).is_some_and(|c| c.kind == "toolButton") {
+            if let Some(t) = m.get(id).and_then(|c| c.props.get("tool")).map(flat).and_then(|t| t.first().map(text)) {
+                out.push((json!(format!("setToolTo \"{t}\";")), Vec::new()));
+            }
+        }
         if let Some(f) = ev["fire"].as_array() {
             for flag in f.iter().filter_map(Value::as_str) {
                 if let Some(cb) = m.get(id).and_then(|c| c.props.get(flag)).cloned() {
@@ -1499,10 +1824,16 @@ fn in_view(msg: &str, time: f64, pos: &str) {
 pub fn register(s: &mut Session) {
     for (name, spec) in KINDS {
         let cmd: &'static str = name;
-        let mut c = Cmd::new(cmd, &format!("Script UI: {cmd}, with create, edit and query as in Maya's command."), move |_s, a| {
+        let mut c = Cmd::new(cmd, &format!("Script UI: {cmd}, with create, edit and query as in Maya's command."), move |s, a| {
+            if let Some(v) = crate::attr_ui::live_query(s, cmd, a) {
+                return Ok(v);
+            }
             let r = control_command(cmd, a);
             if !a.bool("query") && !a.bool("edit") {
                 after_create(cmd, &r, a);
+            }
+            if r.is_ok() && !a.bool("query") {
+                crate::attr_ui::after_command(s, cmd, a, &r);
             }
             r
         })
@@ -1513,7 +1844,7 @@ pub fn register(s: &mut Session) {
         c = match *name {
             "floatField" => add_flags(c, FIELD),
             "floatFieldGrp" => add_flags(c, FIELD_GRP),
-            "floatSliderGrp" => add_flags(c, SLIDER_GRP),
+            "floatSliderGrp" | "floatSliderButtonGrp" => add_flags(c, SLIDER_GRP),
             _ => c,
         };
         if is_group(name) || *name == "rowLayout" {
@@ -1544,7 +1875,10 @@ pub fn register(s: &mut Session) {
         s.register(add_flags(add_flags(c, LAYOUT), COMMON));
     }
 
+    crate::attr_ui::register(s);
+
     for (name, spec) in [
+        ("toolCollection", "select:sl:a collectionItemArray:cia:b numberOfCollectionItems:nci:b global:gl:b parent:p:a exists:ex:b query:q:b edit:e:b queried::a defineTemplate:dt:a useTemplate:ut:a"),
         ("radioCollection", "select:sl:a collectionItemArray:cia:b numberOfCollectionItems:nci:b global:gl:b parent:p:a exists:ex:b query:q:b edit:e:b queried::a defineTemplate:dt:a useTemplate:ut:a"),
         ("radioMenuItemCollection", "select:sl:a collectionItemArray:cia:b numberOfCollectionItems:nci:b global:gl:b parent:p:a exists:ex:b query:q:b edit:e:b queried::a defineTemplate:dt:a useTemplate:ut:a"),
     ] {

@@ -128,7 +128,7 @@ pub fn outliner(core: &Core, arg: &str) -> Value {
 }
 
 /// How the channel box colours a channel: keyed, keyed on this frame, driven by another connection, locked, or "".
-fn channel_state(g: &Graph, p: &PlugRef) -> &'static str {
+pub(crate) fn channel_state(g: &Graph, p: &PlugRef) -> &'static str {
     if g.source(p).is_some_and(|x| aztek_scene::anim_filter::is_mute(g, x.node)) {
         return "muted";
     }

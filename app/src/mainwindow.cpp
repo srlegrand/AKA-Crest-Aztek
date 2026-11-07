@@ -702,6 +702,7 @@ void MainWindow::build_docks() {
     outliner_dock_ = new QDockWidget("Outliner", this);
     outliner_dock_->setObjectName("outlinerDock");
     outliner_dock_->setWidget(new Outliner(outliner_dock_));
+    ScriptUi::get()->add_builtin_editor("outlinerPanel1", "outlinerEditor", outliner_dock_->widget());
     addDockWidget(Qt::LeftDockWidgetArea, outliner_dock_);
     resizeDocks({outliner_dock_}, {220}, Qt::Horizontal);
 
@@ -1025,6 +1026,18 @@ void MainWindow::set_tool(const QString& tool) {
         {"camRoll", "Roll Tool: drag to roll the view."},
         {"camYawPitch", "Yaw-Pitch Tool: drag to turn the camera where it stands."},
         {"sculpt", "Sculpting: drag to sculpt, Ctrl inverts, Shift smooths, B-drag sizes the brush."},
+        {"camBoxDolly", "Box Dolly Tool: drag a box left to right to dolly in on it, right to left to dolly out."},
+        {"camWalk", "Walk Tool: left drag looks round, middle drag walks: up and down forward and back, sideways to the side."},
+        {"modelTime", "Time Drag: drag in the view to change the current time."},
+        {"curveAddPt", "Add Points Tool: click to add points to the end of the selected curve, Enter adds them."},
+        {"curveBezier", "Bezier Curve Tool: click for a sharp point, drag out for a smooth one. Backspace takes the last back, Enter makes the curve."},
+        {"arcTwo", "Two Point Arc: click the two ends."},
+        {"arcThree", "Three Point Arc: click the start, a point on the arc, and the end."},
+        {"mergeEdge", "Merge Edge Tool: click two border edges of a mesh."},
+        {"mergeFacet", "Merge Face Tool: click two faces of different shells."},
+        {"createCube", "Polygon Cube: drag on the grid for the base, move for the height, click to finish."},
+        {"createPlane", "Polygon Plane: drag on the grid."},
+        {"snapTogether", "Snap Together Tool: click a point on the object to move, then the point it goes to."},
         {"insertJoint", "Insert Joint: drag from a joint to add a joint along the bone."},
         {"multiCut", "Multi-Cut: click to place cut points, Shift snaps along edges, Ctrl-click inserts a loop, Backspace takes the last back, Enter cuts."},
         {"insertLoop", "Insert Edge Loop: hover an edge to see the loop, click to insert it."},

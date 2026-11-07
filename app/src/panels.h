@@ -33,6 +33,8 @@ class Outliner : public Panel {
     Q_OBJECT
 public:
     explicit Outliner(QWidget* parent = nullptr);
+    // What outlinerEditor's flags say: -showShapes, -showDagOnly, -showAttributes, -mainListConnection, -setFilter.
+    void set_editor_options(const QJsonObject& props);
 protected:
     void refresh() override;
 private:
@@ -48,6 +50,9 @@ private:
     bool attrs_ = false;
     bool hide_cameras_ = false;
     bool show_icons_ = true;
+    // A selectionConnection or itemFilter limiting what shows; empty for everything.
+    QString list_connection_, item_filter_;
+    void apply_list_limit();
     QSet<QString> hidden_types_;
 };
 

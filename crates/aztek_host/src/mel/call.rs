@@ -325,6 +325,16 @@ pub fn build(cmds: &Commands<Session>, typed: &str, toks: &[Tok]) -> Result<(Str
                 flags.insert(long, json!(on));
                 continue;
             }
+            // scriptTable's cell: a row and a column, whichever side of -q it is.
+            if long == "cellIndex" {
+                let mut at = Vec::new();
+                while at.len() < 2 && toks.get(i).is_some_and(|n| !is_flag(n)) {
+                    at.push(scalar(&toks[i]));
+                    i += 1;
+                }
+                flags.insert(long, Value::Array(at));
+                continue;
+            }
             let next_is_value = toks.get(i).is_some_and(|n| !is_flag(n));
             if next_is_value && fd.is_some() && (before_q || query_takes_value(&name, &long)) {
                 flags.insert(long, scalar(&toks[i]));

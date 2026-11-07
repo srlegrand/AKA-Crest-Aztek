@@ -127,6 +127,15 @@ QJsonArray DopeCanvas::selected_refs() const {
     return out;
 }
 
+// What an animation curve drives, as setKeyframe takes it.
+static QJsonArray plugs_of_curve(const QString& curve) {
+    return ask("listConnections", QJsonObject{{"args", QJsonArray{curve}}, {"plugs", true}, {"destination", true}, {"source", false}}).toArray();
+}
+
+static QString g_dope_tool = "select";
+
+void DopeCanvas::set_tool(const QString& t) { g_dope_tool = t; }
+
 void DopeCanvas::mousePressEvent(QMouseEvent* e) {
     setFocus();
     press_ = last_ = e->position();
@@ -134,6 +143,39 @@ void DopeCanvas::mousePressEvent(QMouseEvent* e) {
     if (e->modifiers() & Qt::AltModifier) {
         mode_ = e->button() == Qt::RightButton ? Mode::Zoom : Mode::Pan;
         return;
+    }
+    if (e->button() == Qt::LeftButton) {
+        if (g_dope_tool == "dolly") {
+            mode_ = Mode::Zoom;
+            return;
+        }
+        if (g_dope_tool == "track") {
+            mode_ = Mode::Pan;
+            return;
+        }
+        if (g_dope_tool == "time") {
+            mode_ = Mode::Scrub;
+            exec_quiet("currentTime", QJsonObject{{"args", QJsonArray{std::round(t_of(e->position().x()))}}});
+            Host::get()->poke();
+            return;
+        }
+        if (g_dope_tool == "move" && !sel_.isEmpty()) {
+            mode_ = Mode::Move;
+            return;
+        }
+        if (g_dope_tool == "set" || g_dope_tool == "insert") {
+            int r = row_at(e->position().y());
+            if (r >= 0 && r < rows_.size()) {
+                QJsonArray curves;
+                for (const QString& c : rows_[r].curves)
+                    for (const QJsonValue& p : plugs_of_curve(c)) curves.append(p);
+                if (!curves.isEmpty()) {
+                    exec("setKeyframe", QJsonObject{{"args", curves}, {"time", std::round(t_of(e->position().x()))}, {"insert", true}});
+                    emit edited();
+                }
+            }
+            return;
+        }
     }
     if (e->position().y() < 24) {
         mode_ = Mode::Scrub;

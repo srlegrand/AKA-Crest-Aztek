@@ -320,7 +320,40 @@ void AttributeEditor::refresh() {
 
         QJsonArray attrs = t["attrs"].toArray();
         QSet<QString> used;
-        for (const Section& sec : sections_for(node_type)) {
+        // A script's AE<type>Template lays the tab out: what it does not name shows only under -addExtraControls.
+        QJsonArray layout = query("aeTemplate", node_type + " " + path).toArray();
+        bool extra = layout.isEmpty();
+        QFormLayout* current = nullptr;
+        for (const QJsonValue& iv : layout) {
+            QJsonObject item = iv.toObject();
+            QString kind = item["kind"].toString();
+            if (kind == "beginLayout") {
+                current = add_section(v, body, item["title"].toString());
+            } else if (kind == "endLayout") {
+                current = nullptr;
+            } else if (kind == "separator") {
+                auto* line = new QFrame(body);
+                line->setFrameShape(QFrame::HLine);
+                if (current) current->addRow(line);
+                else v->addWidget(line);
+            } else if (kind == "suppress") {
+                used.insert(item["attr"].toString());
+            } else if (kind == "extraControls") {
+                extra = true;
+            } else if (kind == "control") {
+                const QString n = item["attr"].toString();
+                for (const QJsonValue& av : attrs) {
+                    QJsonObject a = av.toObject();
+                    if (a["attr"].toString() != n) continue;
+                    if (!current) current = add_section(v, body, node_type);
+                    used.insert(n);
+                    QWidget* field = attr_field(a, body);
+                    field->setToolTip(item.contains("annotation") ? item["annotation"].toString() : a["doc"].toString());
+                    current->addRow(item.contains("label") ? item["label"].toString() : a["nice"].toString(), field);
+                }
+            }
+        }
+        for (const Section& sec : layout.isEmpty() ? sections_for(node_type) : QList<Section>()) {
             QStringList names = QString(sec.attrs).split(' ');
             QFormLayout* f = nullptr;
             for (const QString& n : names)
@@ -345,7 +378,7 @@ void AttributeEditor::refresh() {
                 notes = a["value"];
                 continue;
             }
-            if (used.contains(n) || a["type"].toString() == "matrix") continue;
+            if (used.contains(n) || a["type"].toString() == "matrix" || !extra) continue;
             QString cat = a["category"].toString();
             if (cat.isEmpty()) cat = sections_for(node_type).size() > 1 ? QString("Extra Attributes") : QString("%1 Attributes").arg(node_type.left(1).toUpper() + node_type.mid(1));
             if (!forms.contains(cat)) forms[cat] = add_section(v, body, cat);

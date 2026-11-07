@@ -224,8 +224,11 @@ fn get_panel(a: &Args) -> CmdResult {
             v.dedup();
             return Ok(json!(v));
         }
-        if a.bool("allConfigs") || a.has("configWithLabel") {
-            return Ok(Value::Null);
+        if a.bool("allConfigs") {
+            return Ok(json!(crate::script_objects::all_configs()));
+        }
+        if let Some(l) = a.get("configWithLabel").map(text) {
+            return Ok(json!(crate::script_objects::config_with_label(&l).unwrap_or_default()));
         }
         if a.has("atPosition") {
             return Ok(json!(p.focus));
@@ -373,7 +376,7 @@ fn panel_common(kind: &'static str, a: &Args) -> CmdResult {
             Ok(match q.as_str() {
                 "camera" => json!(x.camera),
                 "label" => json!(x.label),
-                "modelEditor" => json!(x.name),
+                "modelEditor" | "outlinerEditor" | "blendShapeEditor" | "poseEditor" => json!(x.name),
                 "control" => json!(x.parent),
                 "parent" => json!(x.parent),
                 "type" => json!(x.scripted_type),
@@ -433,8 +436,12 @@ fn panel_common(kind: &'static str, a: &Args) -> CmdResult {
     let mut panel = if kind == "modelPanel" { model_panel(&n, &label, &cam, true) } else { other_panel(&n, kind, &label, &a.string("type", "")) };
     panel.parent = parent.clone();
     with_panels(|p| p.all.push(panel));
-    if matches!(kind, "modelPanel" | "scriptedPanel") {
-        crate::scriptui::embed_panel(kind, &n, Some(&parent), &cam);
+    match kind {
+        "modelPanel" | "scriptedPanel" => crate::scriptui::embed_panel(kind, &n, Some(&parent), &cam),
+        "outlinerPanel" => crate::scriptui::embed_panel("outlinerEditor", &n, Some(&parent), ""),
+        "blendShapePanel" => crate::scriptui::embed_panel("blendShapeEditor", &n, Some(&parent), ""),
+        "posePanel" => crate::scriptui::embed_panel("poseEditor", &n, Some(&parent), ""),
+        _ => {}
     }
     Ok(json!(n))
 }
@@ -654,12 +661,32 @@ fn view_set(s: &mut Session, a: &Args) -> CmdResult {
 // ---------------------------------------------------------------------------------------------------------------------
 // Playblast
 
+/// A program on the PATH, by name; Windows' .exe is tried too.
+pub fn find_program(name: &str) -> Option<std::path::PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path).find_map(|dir| [dir.join(name), dir.join(format!("{name}.exe"))].into_iter().find(|p| p.is_file()))
+}
+
+/// The file a movie goes in: the name given, with the format's extension when it has none.
+pub fn movie_file_name(base: &str, format: &str) -> String {
+    let stem = base.rsplit(['/', '\\']).next().unwrap_or(base);
+    if stem.contains('.') {
+        return base.to_string();
+    }
+    format!("{base}.{}", if format == "avi" { "avi" } else { "mov" })
+}
+
+/// What ffmpeg is given for a movie from a numbered frame sequence. Sizes are made even, as yuv420p needs.
+pub fn movie_arguments(pattern: &str, fps: f64, out: &str) -> Vec<String> {
+    ["-y", "-loglevel", "error", "-framerate", &fps.to_string(), "-i", pattern, "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", "-c:v", "libx264", "-pix_fmt", "yuv420p", out].iter().map(|x| x.to_string()).collect()
+}
+
 fn playblast(s: &mut Session, a: &Args) -> CmdResult {
     if a.bool("query") {
         let q = asked(a).unwrap_or_default();
         return Ok(match q.as_str() {
             "activeEditor" => json!(focus_model_panel()),
-            "format" => json!(["image"]),
+            "format" => json!(["image", "movie", "qt", "avi"]),
             "compression" => json!(["png", "jpg", "bmp", "tif"]),
             _ => Value::Null,
         });
@@ -686,8 +713,9 @@ fn playblast(s: &mut Session, a: &Args) -> CmdResult {
         v
     };
     let fmt = a.string("format", "image");
-    if fmt != "image" {
-        crate::script_jobs::warn(&format!("playblast: format \"{fmt}\" is not available; writing an image sequence."));
+    let movie = fmt != "image";
+    if movie && find_program("ffmpeg").is_none() {
+        fail!("playblast: format \"{fmt}\" needs ffmpeg, and there is none on the PATH. Install it, or use -format image for an image sequence.");
     }
     let compression = match a.string("compression", "png").to_lowercase().as_str() {
         "jpg" | "jpeg" => "jpg",
@@ -700,8 +728,19 @@ fn playblast(s: &mut Session, a: &Args) -> CmdResult {
         _ => std::env::temp_dir().join("playblast").display().to_string(),
     };
     let padding = a.int("framePadding", 4).clamp(1, 16) as usize;
-    let names: Vec<String> = frames.iter().map(|t| format!("{base}.{:0padding$}.{compression}", t.round() as i64)).collect();
-    if !a.bool("forceOverwrite") {
+    // A movie's frames go in a folder of their own, numbered from 0 whatever frames they are, for ffmpeg to read.
+    let movie_dir = movie.then(|| std::env::temp_dir().join(format!("aztek_playblast_{}", std::process::id())));
+    let movie_out = movie.then(|| movie_file_name(&base, &fmt));
+    if let Some(out) = &movie_out {
+        if !a.bool("forceOverwrite") && std::path::Path::new(out).exists() {
+            fail!("playblast: {out} exists; use -forceOverwrite.");
+        }
+    }
+    let names: Vec<String> = match &movie_dir {
+        Some(d) => (0..frames.len()).map(|i| d.join(format!("frame.{i:06}.png")).display().to_string()).collect(),
+        None => frames.iter().map(|t| format!("{base}.{:0padding$}.{compression}", t.round() as i64)).collect(),
+    };
+    if !a.bool("forceOverwrite") && !movie {
         if let Some(n) = names.iter().find(|n| std::path::Path::new(n).exists()) {
             fail!("playblast: {n} exists; use -forceOverwrite.");
         }
@@ -710,10 +749,28 @@ fn playblast(s: &mut Session, a: &Args) -> CmdResult {
     let panel = a.get("editorPanelName").map(text).unwrap_or_else(focus_model_panel);
     let payload = json!({"frames": frames, "files": names, "width": wh.0, "height": wh.1, "percent": a.float("percent", 50.0), "quality": a.int("quality", 90), "panel": panel, "viewer": a.has("viewer") && a.bool("viewer"), "ornaments": !a.has("showOrnaments") || a.bool("showOrnaments")});
     // Each frame is set and drawn by the shell. With none there are no pixels to write.
-    if crate::scriptui::call_hook("playblast", &payload).is_none() {
+    let written = crate::scriptui::call_hook("playblast", &payload);
+    if written.is_none() {
         crate::script_jobs::warn("playblast: no view to capture without the interface; nothing was written.");
     }
     aztek_scene::anim::set_frame(&mut s.graph, time);
+    if let (Some(dir), Some(out)) = (movie_dir, movie_out) {
+        if written.is_none() {
+            return Ok(json!(out));
+        }
+        let fps = s.run("playbackOptions", json!({"query": true, "queried": ["framesPerSecond"]})).ok().and_then(|v| v.as_f64()).unwrap_or(24.0);
+        let run = std::process::Command::new("ffmpeg").args(movie_arguments(&dir.join("frame.%06d.png").display().to_string(), fps, &out)).output();
+        let _ = std::fs::remove_dir_all(&dir);
+        match run {
+            Ok(o) if o.status.success() => return Ok(json!(out)),
+            Ok(o) => {
+                let said = String::from_utf8_lossy(&o.stderr);
+                let last = said.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").to_string();
+                fail!("playblast: ffmpeg could not make {out}: {last}");
+            }
+            Err(e) => fail!("playblast: could not run ffmpeg: {e}"),
+        }
+    }
     Ok(json!(format!("{base}.{}.{compression}", "#".repeat(padding))))
 }
 
@@ -731,6 +788,11 @@ pub fn register(s: &mut Session) {
 
     let spec = "camera:cam:a modelEditor:me:b label:l:a parent:p:a control:ctl:b copy:cp:a createString:cs:b defineTemplate:dt:a docTag:dtg:a editString:es:b exists:ex:b init:in:b isUnique:iu:b menuBarVisible:mbv:b needsInit:ni:b popupMenuProcedure:pmp:a replacePanel:rp:a tearOff:to:b tearOffCopy:toc:a unParent:up:b useTemplate:ut:a barLayout:bl:b query:q:b edit:e:b queried::a";
     s.register(add_spec(Cmd::new("modelPanel", "A panel holding a view: -q -cam, -e -cam, -me its editor.", |_s, a| panel_common("modelPanel", a)).positional("name").undoable(false), spec));
+    for (name, editor) in [("outlinerPanel", "outlinerEditor:oe:b"), ("blendShapePanel", "blendShapeEditor:be:b"), ("posePanel", "poseEditor:pe:b")] {
+        let kind: &'static str = name;
+        let c = Cmd::new(kind, "A panel holding an editor of its kind: the editor has the panel's name.", move |_s, a| panel_common(kind, a)).positional("name").undoable(false);
+        s.register(add_spec(add_spec(c, editor), "label:l:a parent:p:a control:ctl:b copy:cp:a createString:cs:b defineTemplate:dt:a docTag:dtg:a editString:es:b exists:ex:b init:in:b isUnique:iu:b menuBarVisible:mbv:b needsInit:ni:b popupMenuProcedure:pmp:a replacePanel:rp:a tearOff:to:b tearOffCopy:toc:a unParent:up:b useTemplate:ut:a query:q:b edit:e:b queried::a"));
+    }
     s.register(add_spec(Cmd::new("panel", "Any panel: -ex, -l, -ctl, -p.", |_s, a| panel_common("panel", a)).positional("name").undoable(false), "label:l:a parent:p:a control:ctl:b copy:cp:a createString:cs:b defineTemplate:dt:a docTag:dtg:a editString:es:b exists:ex:b init:in:b isUnique:iu:b menuBarVisible:mbv:b needsInit:ni:b popupMenuProcedure:pmp:a replacePanel:rp:a tearOff:to:b tearOffCopy:toc:a unParent:up:b useTemplate:ut:a query:q:b edit:e:b queried::a"));
     s.register(add_spec(
         Cmd::new("scriptedPanel", "A panel of a scripted type: -typ the type, -l, -p. The type's callbacks build it.", |_s, a| scripted_panel(a)).positional("name").undoable(false),
@@ -1052,6 +1114,28 @@ pub fn register(s: &mut Session) {
         .flag(f("verticalAngle", "va", ArgType::Float))
         .flag(f("pivotPoint", "pp", ArgType::Vec3)),
     );
+
+    s.register(add_spec(
+        Cmd::new("tumble", "Turn a camera about a point: -aa azimuth, -ea elevation, -ra both, -pp the point.", |s, a| {
+            let mut call = Map::new();
+            if let Some(c) = cam_arg(a) {
+                call.insert("args".to_string(), json!([c]));
+            }
+            let (mut h, mut v) = (a.float("azimuthAngle", 0.0), a.float("elevationAngle", 0.0));
+            if let Some(l) = a.get("rotationAngles").and_then(Value::as_array) {
+                h = l.first().and_then(Value::as_f64).unwrap_or(h);
+                v = l.get(1).and_then(Value::as_f64).unwrap_or(v);
+            }
+            call.insert("rotationAngles".to_string(), json!([h, v]));
+            if let Some(p) = a.get("pivotPoint") {
+                call.insert("pivotPoint".to_string(), p.clone());
+            }
+            s.run("orbit", Value::Object(call))?;
+            Ok(Value::Null)
+        })
+        .positional("[camera]"),
+        "azimuthAngle:aa:a elevationAngle:ea:a localTumble:lt:a pivotPoint:pp:a rotationAngles:ra:a",
+    ));
 
     s.register(
         Cmd::new("roll", "Roll a camera about its view: -d degrees; -abs sets the roll.", |s, a| {

@@ -1,5 +1,6 @@
 // The Outliner: the DAG with an icon per type, Display and Show menus, search, drag to parent, middle-drag to reorder.
 #include "panels.h"
+#include <functional>
 #include "host.h"
 #include "icons.h"
 
@@ -266,11 +267,49 @@ void Outliner::add(QTreeWidgetItem* parent, const QJsonObject& node) {
     }
 }
 
+void Outliner::set_editor_options(const QJsonObject& p) {
+    if (p.contains("showShapes")) shapes_ = p["showShapes"].toBool();
+    if (p.contains("showDagOnly")) dag_only_ = p["showDagOnly"].toBool();
+    if (p.contains("showAttributes")) attrs_ = p["showAttributes"].toBool();
+    if (p.contains("mainListConnection")) list_connection_ = p["mainListConnection"].toString();
+    if (p.contains("setFilter")) item_filter_ = p["setFilter"].toString();
+    if (p.contains("filter")) item_filter_ = p["filter"].toString();
+    schedule();
+}
+
+// Only what the editor's connection or filter names, with the items above them.
+void Outliner::apply_list_limit() {
+    QSet<QString> keep;
+    bool limited = false;
+    if (!list_connection_.isEmpty()) {
+        QString kind = ask("selectionConnection", QJsonObject{{"args", QJsonArray{list_connection_}}, {"query", true}, {"queried", QJsonArray{"identify"}}}).toString();
+        if (kind == "objectList") {
+            limited = true;
+            for (const QJsonValue& v : ask("selectionConnection", QJsonObject{{"args", QJsonArray{list_connection_}}, {"query", true}, {"queried", QJsonArray{"object"}}}).toArray()) keep.insert(v.toString().section('|', -1));
+        }
+    }
+    if (!item_filter_.isEmpty()) {
+        QSet<QString> passed;
+        for (const QJsonValue& v : ask("lsThroughFilter", QJsonObject{{"args", QJsonArray{item_filter_}}}).toArray()) passed.insert(v.toString().section('|', -1));
+        keep = limited ? keep.intersect(passed) : passed;
+        limited = true;
+    }
+    if (!limited) return;
+    std::function<bool(QTreeWidgetItem*)> walk = [&](QTreeWidgetItem* it) {
+        bool any = keep.contains(it->data(0, Qt::UserRole).toString().section('|', -1));
+        for (int i = 0; i < it->childCount(); ++i) any |= walk(it->child(i));
+        it->setHidden(!any);
+        return any;
+    };
+    for (int i = 0; i < tree_->topLevelItemCount(); ++i) walk(tree_->topLevelItem(i));
+}
+
 void Outliner::refresh() {
     updating_ = true;
     int scroll = tree_->verticalScrollBar()->value();
     tree_->clear();
     for (const QJsonValue& n : query("outliner", intermediates_ ? "shapes intermediate" : shapes_ ? "shapes" : "").toArray()) add(nullptr, n.toObject());
+    apply_list_limit();
     tree_->verticalScrollBar()->setValue(scroll);
     updating_ = false;
 }
