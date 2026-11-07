@@ -69,6 +69,8 @@ pub struct Session {
     pub scene_path: Option<String>,
     /// The file type asked for with `file -type`, for the next save.
     pub scene_type: Option<crate::ma_file::Format>,
+    /// Scene settings and references: see system_cmds.
+    pub extras: crate::system_cmds::Extras,
 }
 
 impl Default for Session {
@@ -101,6 +103,7 @@ impl Session {
             sculpt_ctx: Default::default(),
             scene_path: None,
             scene_type: None,
+            extras: Default::default(),
         };
         crate::commands::register(&mut s.commands);
         crate::components::register(&mut s.commands);
@@ -152,6 +155,12 @@ impl Session {
         crate::maya_attrs::register(&mut s.commands);
         crate::maya_xforms::register(&mut s.commands);
         crate::maya_scene::register(&mut s.commands);
+        crate::system_cmds::register(&mut s.commands);
+        crate::references::register(&mut s.commands);
+        crate::rig_misc::register(&mut s.commands);
+        crate::anim_misc::register(&mut s.commands);
+        crate::uv_misc::register(&mut s.commands);
+        crate::nurbs_ops::register(&mut s.commands);
         // Last: history node types take their attributes from the commands registered above.
         crate::history::register(&mut s.commands);
         crate::instancing::install(&mut s.graph);
@@ -181,6 +190,7 @@ impl Session {
             sculpt_ctx: Default::default(),
             scene_path: Default::default(),
             scene_type: Default::default(),
+            extras: Default::default(),
             buffer_curves: Default::default(),
             current_characters: Default::default(),
             option_vars: BTreeMap::new(),

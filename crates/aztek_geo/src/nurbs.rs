@@ -926,6 +926,32 @@ pub struct NurbsSurface {
     pub cvs: Vec<DVec3>,
     pub knots_u: Vec<f64>,
     pub knots_v: Vec<f64>,
+    /// Trims, in parameter space; a point shows when every one keeps it.
+    pub trim: Vec<TrimRegion>,
+}
+
+/// One trim: closed loops in (u, v). A point counts as inside by how many it's in, odd or even, so a loop within a loop is
+/// a hole. keep_odd keeps what's inside; otherwise what's outside.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TrimRegion {
+    pub loops: Vec<Vec<glam::DVec2>>,
+    pub keep_odd: bool,
+}
+
+impl TrimRegion {
+    pub fn keeps(&self, p: glam::DVec2) -> bool {
+        let mut odd = false;
+        for l in &self.loops {
+            let n = l.len();
+            for i in 0..n {
+                let (a, b) = (l[i], l[(i + 1) % n]);
+                if (a.y > p.y) != (b.y > p.y) && p.x < a.x + (p.y - a.y) / (b.y - a.y) * (b.x - a.x) {
+                    odd = !odd;
+                }
+            }
+        }
+        odd == self.keep_odd
+    }
 }
 
 /// How a surface becomes a mesh.
@@ -956,7 +982,7 @@ impl NurbsSurface {
                 cvs.push(c.cvs[u]);
             }
         }
-        NurbsSurface { degree_u: first.degree, degree_v, form_u: first.form, form_v, nu, nv, cvs, knots_u: first.knots.clone(), knots_v }
+        NurbsSurface { degree_u: first.degree, degree_v, form_u: first.form, form_v, nu, nv, cvs, knots_u: first.knots.clone(), knots_v, trim: Vec::new() }
     }
 
     /// The tensor product of a curve along U and a curve along V, with CVs from a function of their indices.
@@ -968,7 +994,7 @@ impl NurbsSurface {
                 cvs.push(f(u, v));
             }
         }
-        let mut s = NurbsSurface { degree_u: cu.degree, degree_v: cv.degree, form_u: cu.form, form_v: cv.form, nu, nv, cvs, knots_u: cu.knots.clone(), knots_v: cv.knots.clone() };
+        let mut s = NurbsSurface { degree_u: cu.degree, degree_v: cv.degree, form_u: cu.form, form_v: cv.form, nu, nv, cvs, knots_u: cu.knots.clone(), knots_v: cv.knots.clone(), trim: Vec::new() };
         s.rewrap();
         s
     }
@@ -1070,6 +1096,7 @@ impl NurbsSurface {
             cvs,
             knots_u: self.knots_v.clone(),
             knots_v: self.knots_u.clone(),
+            trim: self.trim.iter().map(|r| TrimRegion { keep_odd: r.keep_odd, loops: r.loops.iter().map(|l| l.iter().map(|p| glam::DVec2::new(p.y, p.x)).collect()).collect() }).collect(),
         }
     }
 
@@ -1170,13 +1197,146 @@ impl NurbsSurface {
             vs.pop();
         }
         let mut out = Vec::with_capacity(us.len() + vs.len());
+        if self.trim.is_empty() {
+            for u in us {
+                out.push(self.iso_u(u).tessellate(per_span));
+            }
+            for v in vs {
+                out.push(self.iso_v(v).tessellate(per_span));
+            }
+            return out;
+        }
+        // Trimmed: the runs of each isoparm inside the trim, and the trim's own edges.
+        let n = (per_span.max(1) * 24).max(48);
+        let (ulo, uhi) = self.domain_u();
+        let (vlo, vhi) = self.domain_v();
+        let mut runs = |param: &dyn Fn(f64) -> glam::DVec2| {
+            let mut run: Vec<DVec3> = Vec::new();
+            for k in 0..=n {
+                let p = param(k as f64 / n as f64);
+                if self.trim_keeps(p) {
+                    run.push(self.eval(p.x, p.y));
+                } else if !run.is_empty() {
+                    out.push(std::mem::take(&mut run));
+                }
+            }
+            if run.len() > 1 {
+                out.push(run);
+            }
+        };
         for u in us {
-            out.push(self.iso_u(u).tessellate(per_span));
+            runs(&|t| glam::DVec2::new(u, vlo + (vhi - vlo) * t));
         }
         for v in vs {
-            out.push(self.iso_v(v).tessellate(per_span));
+            runs(&|t| glam::DVec2::new(ulo + (uhi - ulo) * t, v));
+        }
+        for region in &self.trim {
+            for l in &region.loops {
+                let mut line: Vec<DVec3> = l.iter().map(|p| self.eval(p.x, p.y)).collect();
+                if let Some(&f) = line.first() {
+                    line.push(f);
+                }
+                out.push(line);
+            }
         }
         out
+    }
+
+    /// Whether every trim keeps this point of parameter space.
+    pub fn trim_keeps(&self, p: glam::DVec2) -> bool {
+        self.trim.iter().all(|r| r.keeps(p))
+    }
+
+    /// The mesh of what the trims keep: a grid of cells, each cut where a trim's edge crosses it.
+    fn trimmed_mesh(&self, us: &[f64], vs: &[f64], opts: MeshOptions) -> crate::Mesh {
+        use crate::attribute::names;
+        use glam::DVec2;
+        let refine = |list: &[f64], want: usize| -> Vec<f64> {
+            let per = (want / list.len().max(2)).max(1);
+            let mut out = Vec::new();
+            for w in list.windows(2) {
+                for k in 0..per {
+                    out.push(w[0] + (w[1] - w[0]) * k as f64 / per as f64);
+                }
+            }
+            out.extend(list.last());
+            out
+        };
+        let (us, vs) = (refine(us, 64), refine(vs, 64));
+        let mut m = crate::Mesh::default();
+        let mut ids: std::collections::HashMap<(i64, i64), u32> = std::collections::HashMap::new();
+        let (ulo, uhi) = self.domain_u();
+        let (vlo, vhi) = self.domain_v();
+        let mut corner_uv: Vec<[f32; 2]> = Vec::new();
+        let mut corner_n: Vec<[f32; 3]> = Vec::new();
+        for i in 0..us.len() - 1 {
+            for j in 0..vs.len() - 1 {
+                let corners = [DVec2::new(us[i], vs[j]), DVec2::new(us[i + 1], vs[j]), DVec2::new(us[i + 1], vs[j + 1]), DVec2::new(us[i], vs[j + 1])];
+                let inside = corners.map(|c| self.trim_keeps(c));
+                if inside.iter().all(|x| !*x) {
+                    continue;
+                }
+                // Round the cell: the corners kept, and where each edge crosses a trim.
+                let mut poly: Vec<DVec2> = Vec::with_capacity(6);
+                for k in 0..4 {
+                    let (a, b) = (corners[k], corners[(k + 1) % 4]);
+                    if inside[k] {
+                        poly.push(a);
+                    }
+                    if inside[k] != inside[(k + 1) % 4] {
+                        let (mut lo, mut hi) = (0.0, 1.0);
+                        for _ in 0..24 {
+                            let mid = (lo + hi) * 0.5;
+                            if self.trim_keeps(a.lerp(b, mid)) == inside[k] {
+                                lo = mid;
+                            } else {
+                                hi = mid;
+                            }
+                        }
+                        poly.push(a.lerp(b, (lo + hi) * 0.5));
+                    }
+                }
+                if poly.len() < 3 {
+                    continue;
+                }
+                let mut face = Vec::with_capacity(poly.len());
+                for p in &poly {
+                    let key = ((p.x * 1e8).round() as i64, (p.y * 1e8).round() as i64);
+                    let id = *ids.entry(key).or_insert_with(|| m.add_point(self.eval(p.x, p.y)));
+                    if !face.contains(&id) {
+                        face.push(id);
+                    }
+                }
+                if face.len() < 3 {
+                    continue;
+                }
+                let tris: Vec<Vec<u32>> = if opts.quads { vec![face.clone()] } else { (1..face.len() - 1).map(|k| vec![face[0], face[k], face[k + 1]]).collect() };
+                let mut uv_of: std::collections::HashMap<u32, DVec2> = std::collections::HashMap::new();
+                for p in &poly {
+                    let key = ((p.x * 1e8).round() as i64, (p.y * 1e8).round() as i64);
+                    uv_of.insert(ids[&key], *p);
+                }
+                for t in tris {
+                    m.add_face(&t);
+                    for id in &t {
+                        let p = uv_of[id];
+                        corner_uv.push([((p.x - ulo) / (uhi - ulo).max(1e-12)) as f32, ((p.y - vlo) / (vhi - vlo).max(1e-12)) as f32]);
+                        if opts.normals {
+                            corner_n.push(self.normal(p.x, p.y).as_vec3().to_array());
+                        }
+                    }
+                }
+            }
+        }
+        for (dst, src) in m.corner_attrs_mut().get_or_add::<[f32; 2]>(&names::uv(0)).iter_mut().zip(&corner_uv) {
+            *dst = *src;
+        }
+        if opts.normals {
+            for (dst, src) in m.corner_attrs_mut().get_or_add::<[f32; 3]>(names::NORMAL).iter_mut().zip(&corner_n) {
+                *dst = *src;
+            }
+        }
+        m
     }
 
     /// The default display tessellation: quads with corner normals and `uv0` from the parameters.
@@ -1211,6 +1371,9 @@ impl NurbsSurface {
         let mut m = crate::Mesh::default();
         if !self.is_valid() || us.len() < 2 || vs.len() < 2 {
             return m;
+        }
+        if !self.trim.is_empty() {
+            return self.trimmed_mesh(us, vs, opts);
         }
         let (cu, cv) = (us.len(), vs.len());
         let pos: Vec<DVec3> = us.iter().flat_map(|&u| vs.iter().map(move |&v| (u, v))).map(|(u, v)| self.eval(u, v)).collect();
@@ -1470,7 +1633,7 @@ impl NurbsSurface {
         }
         let cvs = rows.into_iter().flatten().collect::<Vec<_>>();
         let nu = cvs.len() / nv.max(1);
-        NurbsSurface { degree_u: d, degree_v: a.degree_v, form_u: Form::Open, form_v: a.form_v, nu, nv, cvs, knots_u: knots, knots_v: a.knots_v }
+        NurbsSurface { degree_u: d, degree_v: a.degree_v, form_u: Form::Open, form_v: a.form_v, nu, nv, cvs, knots_u: knots, knots_v: a.knots_v, trim: Vec::new() }
     }
     /// Attached along V.
     pub fn attached_v(&self, other: &NurbsSurface, blend: bool, bias: f64) -> NurbsSurface {
@@ -1497,7 +1660,7 @@ impl NurbsSurface {
                 grid[i * nv + j] = p;
             }
         }
-        let mut s = NurbsSurface { degree_u: du, degree_v: dv, form_u: fu, form_v: fv, nu, nv, cvs: grid, knots_u: ku, knots_v: kv };
+        let mut s = NurbsSurface { degree_u: du, degree_v: dv, form_u: fu, form_v: fv, nu, nv, cvs: grid, knots_u: ku, knots_v: kv, trim: Vec::new() };
         s.rewrap();
         s
     }

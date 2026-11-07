@@ -65,6 +65,16 @@ fn left(c: char) -> f64 {
 }
 
 /// Width of text at a cap height of size pixels.
+/// The strokes of a character on its grid: polylines of (x, y), x-height 4, ascender 6, descender -2.
+pub fn char_strokes(c: char) -> Vec<Vec<(f64, f64)>> {
+    glyph(c.to_ascii_lowercase()).iter().map(|p| p.iter().map(|q| (q.0 as f64, q.1 as f64)).collect()).collect()
+}
+
+/// How far a character advances, on its grid.
+pub fn char_advance(c: char) -> f64 {
+    advance(c.to_ascii_lowercase())
+}
+
 pub fn width(text: &str, size: f64) -> f64 {
     text.chars().map(|c| advance(c.to_ascii_lowercase())).sum::<f64>() * size / 6.0
 }

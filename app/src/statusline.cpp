@@ -139,9 +139,12 @@ void MainWindow::build_status_line() {
     symmetry_ = new QComboBox(tb);
     symmetry_->addItems({"Off", "Object X", "Topology", "World X", "World Y", "World Z"});
     symmetry_->setToolTip("Symmetry on the selected meshes");
-    // Topology symmetry needs a seam-picking step Aztek doesn't have yet.
-    if (auto* model = qobject_cast<QStandardItemModel*>(symmetry_->model())) model->item(2)->setEnabled(false);
     connect(symmetry_, &QComboBox::activated, this, [this](int i) {
+        // Topology pairs the mesh from the seam edge selected.
+        if (i == 2) {
+            exec("symmetricModelling", QJsonObject{{"topoSymmetry", true}});
+            return;
+        }
         static const char* axis[] = {"off", "x", "off", "x", "y", "z"};
         exec("setSymmetry", QJsonObject{{"axis", axis[i]}});
     });

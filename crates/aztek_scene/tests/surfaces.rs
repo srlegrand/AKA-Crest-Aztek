@@ -281,13 +281,13 @@ fn revolve_extrude_planar() {
     let (a, b) = (point(&mut s, "tube", 0.0, 1.0), point(&mut s, "tube", 2.0, 1.0));
     assert!((a[2] - 4.0).abs() < 1e-3 && (b[2] - 4.0).abs() < 1e-3, "{a:?} {b:?}");
 
-    // planar: a surface for a rectangle, polygons otherwise.
+    // planar: a plain patch for a rectangle, a trimmed plane otherwise, polygons with -po 1.
     run(&mut s, "nurbsSquare", json!({"name": "sq"}));
     assert_eq!(run(&mut s, "planar", json!({"args": ["sq"]})), json!(["planarTrimmedSurface1", "planarTrim1"]));
     assert_eq!(attr(&mut s, "planarTrimmedSurface1.degreeU"), 1.0);
     assert_eq!(cvs(&mut s, "planarTrimmedSurface1"), 4);
     run(&mut s, "planar", json!({"args": ["profile"], "name": "disc"}));
-    assert!(faces(&mut s, "disc") == 1);
+    assert_eq!(run(&mut s, "listRelatives", json!({"args": ["disc"], "s": true, "typ": "nurbsSurface"})), json!(["discShape"]));
     run(&mut s, "planar", json!({"args": ["sq"], "polygon": 1, "name": "polyQuad"}));
     assert_eq!(faces(&mut s, "polyQuad"), 1);
 }

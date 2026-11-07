@@ -2254,6 +2254,8 @@ pub fn rig_items(g: &Graph) -> Vec<RigItem> {
             // A cluster's handle sits on its pivot.
             let at = w * glam::DMat4::from_translation(n.data().vec3(Transform::ROTATE_PIVOT));
             out.push(RigItem { node: id, color: [200, 120, 230, 255], segs: aztek_scene::deform::handle_lines(&kind, &at) });
+        } else if let Some(segs) = aztek_scene::rig_misc::shape_lines(n) {
+            out.push(RigItem { node: aztek_scene::dag::transform_of(g, id), color: override_color(g, id).unwrap_or([60, 90, 230, 255]), segs });
         } else if ty.is_a("nurbsCurve") {
             if n.bool(DagNode::INTERMEDIATE_OBJECT) {
                 continue;

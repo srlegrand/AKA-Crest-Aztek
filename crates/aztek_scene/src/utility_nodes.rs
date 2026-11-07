@@ -295,6 +295,31 @@ fn closest_on_triangle(p: DVec3, a: DVec3, c: DVec3, e: DVec3) -> DVec3 {
     a + ab * (vb * denom) + ac * (vc * denom)
 }
 
+/// The UV at a point on a face: interpolated in the triangle of the face's fan the point is in.
+pub fn uv_at(mesh: &aztek_geo::Mesh, face: u32, q: DVec3) -> glam::DVec2 {
+    let corners = mesh.face_corners(face);
+    let uv = mesh.corner_attrs().get::<[f32; 2]>(aztek_geo::names::uv(0).as_str());
+    let uv_of = |c: u32| uv.get(c as usize).map_or(glam::DVec2::ZERO, |u| glam::DVec2::new(u[0] as f64, u[1] as f64));
+    let mut best = (f64::MAX, glam::DVec2::ZERO);
+    for k in 1..corners.len().saturating_sub(1) {
+        let (c0, c1, c2) = (corners[0], corners[k], corners[k + 1]);
+        let (a, b, c) = (mesh.position(mesh.corner_point(c0)), mesh.position(mesh.corner_point(c1)), mesh.position(mesh.corner_point(c2)));
+        let (v0, v1, v2) = (b - a, c - a, q - a);
+        let (d00, d01, d11, d20, d21) = (v0.dot(v0), v0.dot(v1), v1.dot(v1), v2.dot(v0), v2.dot(v1));
+        let den = d00 * d11 - d01 * d01;
+        if den.abs() < 1e-20 {
+            continue;
+        }
+        let (w1, w2) = ((d11 * d20 - d01 * d21) / den, (d00 * d21 - d01 * d20) / den);
+        let w0 = 1.0 - w1 - w2;
+        let miss = (a * w0 + b * w1 + c * w2 - q).length() + (-w0).max(0.0) + (-w1).max(0.0) + (-w2).max(0.0);
+        if miss < best.0 {
+            best = (miss, uv_of(c0) * w0 + uv_of(c1) * w1 + uv_of(c2) * w2);
+        }
+    }
+    best.1
+}
+
 /// Closest surface point on a mesh: (point, face, nearest vertex of that face).
 pub fn closest_point(mesh: &aztek_geo::Mesh, p: DVec3) -> Option<(DVec3, u32, u32)> {
     let mut best: Option<(f64, DVec3, u32)> = None;
@@ -855,6 +880,9 @@ fn table() -> Vec<Spec> {
                 if let Some((q, face, vert, normal)) = found {
                     set(d, "position", w.transform_point3(q));
                     set(d, "normal", w.inverse().transpose().transform_vector3(normal).normalize_or_zero());
+                    let uv = d.mesh(at(d, "inMesh")).map_or(glam::DVec2::ZERO, |mesh| uv_at(mesh, face, q));
+                    set(d, "parameterU", uv.x);
+                    set(d, "parameterV", uv.y);
                     set(d, "closestFaceIndex", face as i64);
                     set(d, "closestVertexIndex", vert as i64);
                 }

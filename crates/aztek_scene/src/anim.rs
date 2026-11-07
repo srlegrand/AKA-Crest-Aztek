@@ -575,7 +575,9 @@ pub const ROT_KEYS: usize = 6;
 pub const ROT_AXIS: usize = 9;
 pub const ROT_ORDER: usize = 10;
 /// The attrs every animCurve has; driven curves add theirs after these.
-pub const BASE_ATTRS: usize = 11;
+/// From a timeWarp: the frames it moves.
+pub const TIME_WARP: usize = 11;
+pub const BASE_ATTRS: usize = 12;
 
 pub const ROT_INTERP_NAMES: &[&str] = &["none", "euler", "quaternionSlerp", "quaternionSquad", "quaternion"];
 
@@ -588,6 +590,10 @@ impl NodeBehavior for CurveNode {
                 let f = ctx.time * fps();
                 let r = f.round();
                 let f = if (f - r).abs() < 1e-6 { r } else { f };
+                let f = match d.value(TIME_WARP) {
+                    PlugValue::Data(Some(w)) => w.as_any().downcast_ref::<crate::rig::JsonData>().map_or(f, |w| crate::anim_misc::warped_frame(&w.0, f)),
+                    _ => f,
+                };
                 if let Some(v) = (d.int(ROT_INTERP) >= 2).then(|| crate::anim_filter::eval_quaternion(k, d, f)).flatten() {
                     return v;
                 }
@@ -693,6 +699,7 @@ fn register_types_now() {
             hidden_keys("rotationKeysZ", "rkz"),
             hidden_int("rotationAxis", "rax"),
             hidden_int("rotationOrder", "rord"),
+            AttrDef { name: "timeWarp".into(), short_name: "twp".into(), ty: PlugType::Data, default_value: PlugValue::Data(None), flags: flags::INPUT | flags::HIDDEN, doc: "From a timeWarp node.".into(), ..Default::default() },
         ],
         ..Default::default()
     };

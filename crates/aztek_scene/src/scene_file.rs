@@ -139,12 +139,17 @@ pub fn serialize(g: &Graph, packed: bool) -> Value {
         if !locked.is_empty() {
             node.insert("locked".into(), Value::Array(locked));
         }
+        if n.is_locked() {
+            node.insert("nodeLocked".into(), json!(true));
+        }
         nodes.push(Value::Object(node));
     }
 
     let connections: Vec<Value> = g
         .connections()
         .iter()
+        // A reference keeps what it connects to the scene with its edits.
+        .filter(|(dst, src)| [dst, src].iter().all(|p| g.node(p.node).is_some_and(|n| n.reference_id() == 0)))
         .map(|(dst, src)| json!([g.full_plug_name(src), g.full_plug_name(dst)]))
         .collect();
     let selection: Vec<Value> = g
@@ -344,6 +349,9 @@ pub fn instantiate(g: &mut Graph, doc: &Value, warnings: &mut Vec<String>) -> Ve
                     g.set_channel_state(&PlugRef { node: id, attr: i as i32, component: comp as i32, element: -1 }, Some(k), Some(b));
                 }
             }
+        }
+        if jn.get("nodeLocked").and_then(Value::as_bool) == Some(true) {
+            g.set_node_locked(id, true);
         }
         // After the values, which a lock would otherwise refuse.
         for plug in member(jn, "locked") {

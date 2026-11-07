@@ -130,6 +130,9 @@ pub fn flatten_component(g: &mut Graph, s: &str) -> Vec<String> {
     let Some((kind, inner)) = comp.split_once('[') else { return vec![s.to_string()] };
     let inner = inner.trim_end_matches(']');
     let Ok(Some(id)) = g.find(obj) else { return vec![s.to_string()] };
+    if let Some(list) = crate::nurbs_components::flatten(g, id, obj, kind, inner) {
+        return list;
+    }
     if let Some(sh) = crate::surfaces::as_surface(g, id) {
         g.evaluate();
         let Some(ids) = crate::surfaces::parse_cv_ranges(g, sh, inner) else { return vec![s.to_string()] };

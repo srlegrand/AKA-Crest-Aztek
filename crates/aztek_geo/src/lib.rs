@@ -28,6 +28,7 @@ pub mod reduce;
 pub mod render_mesh;
 pub mod smart_join;
 pub mod stl;
+pub mod stroke_font;
 pub mod symmetry;
 pub mod topology;
 pub mod triangulate;

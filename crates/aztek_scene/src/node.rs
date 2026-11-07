@@ -430,6 +430,8 @@ pub struct Node {
     /// aliasAttr: alias -> attribute.
     pub(crate) aliases: BTreeMap<String, String>,
     pub(crate) reference: u32,
+    /// lockNode: a locked node can't be deleted or renamed.
+    pub(crate) locked: bool,
     pub(crate) data: NodeData,
     /// True once `data.ty` is this node's private copy holding user attrs.
     pub(crate) own_type: bool,
@@ -462,6 +464,7 @@ impl Node {
             channels: BTreeMap::new(),
             aliases: BTreeMap::new(),
             reference: 0,
+            locked: false,
             data: NodeData {
                 ty,
                 values: Vec::new(),
@@ -502,6 +505,9 @@ impl Node {
         &self.uuid
     }
     /// Reference this node was loaded from; 0 for nodes owned by the scene.
+    pub fn is_locked(&self) -> bool {
+        self.locked
+    }
     pub fn reference_id(&self) -> u32 {
         self.reference
     }

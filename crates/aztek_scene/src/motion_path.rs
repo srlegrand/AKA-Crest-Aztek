@@ -315,6 +315,10 @@ fn axis_index(s: &str) -> Option<i64> {
     }
 }
 
+pub(crate) fn u_value_plug(id: NodeId) -> PlugRef {
+    u_plug(id)
+}
+
 fn u_plug(id: NodeId) -> PlugRef {
     PlugRef::new(id, U_VALUE as i32)
 }

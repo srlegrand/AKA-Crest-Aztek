@@ -483,6 +483,9 @@ pub const NODE_TYPES: &[(&str, &str)] = &[
     ("polyForceUV", "UVs flipped, fitted or made one per face."),
     ("polyContourProj", "UVs stretched along a run of quads."),
     ("polyTransfer", "UVs copied from a mesh of the same topology."),
+    ("polyMapDel", "UVs of faces cleared."),
+    ("polyOptUvs", "UVs relaxed."),
+    ("polyUVRectangle", "A shell's UVs squared onto its bounding box."),
 ];
 
 pub struct UvEditNode;

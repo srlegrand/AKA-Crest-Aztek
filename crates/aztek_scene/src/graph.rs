@@ -1268,6 +1268,22 @@ impl Graph {
         }
     }
 
+    /// lockNode. Undoable.
+    pub fn set_node_locked(&mut self, id: NodeId, locked: bool) {
+        let Some(old) = self.node(id).map(|n| n.locked) else { return };
+        if old == locked {
+            return;
+        }
+        fn raw(g: &mut Graph, id: NodeId, on: bool) {
+            if let Some(n) = g.nodes.get_mut(&id) {
+                n.locked = on;
+            }
+            g.changed(Change::Value, id, None);
+        }
+        raw(self, id, locked);
+        self.record(move |g| raw(g, id, old), move |g| raw(g, id, locked));
+    }
+
     pub fn delete_node(&mut self, id: NodeId) -> Result<()> {
         if self.node(id).is_none() {
             return Ok(());
@@ -1376,6 +1392,8 @@ impl Graph {
     /// Resolves a short name ("Arm"), a partial path ("L|Arm", any unique run of parents ending at the node) or a full
     /// path ("|Body|L|Arm"). None when nothing matches; `Ambiguous`, listing the full paths, when several do.
     pub fn find(&self, path: &str) -> Result<Option<NodeId>> {
+        // surface->curve: a curve on a surface goes by its own name.
+        let path = path.rsplit_once("->").map_or(path, |x| x.1);
         if !path.contains('|') {
             match self.names.get(path).map(Vec::as_slice) {
                 None | Some([]) => return Ok(None),

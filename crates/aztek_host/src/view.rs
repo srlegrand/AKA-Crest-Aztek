@@ -380,6 +380,16 @@ impl View {
                 }
             }
         }
+        // Dimension and annotation labels.
+        let screen = self.vp.screen();
+        for id in core.s.graph.nodes() {
+            let Some(n) = core.s.graph.node(id) else { continue };
+            let Some((text, at)) = aztek_scene::rig_misc::shape_label(n) else { continue };
+            let Some(p) = screen.project(at) else { continue };
+            for (a, b) in font::strokes(&text, p + DVec2::new(6.0 * s, -6.0 * s), size) {
+                seg(a, b, [230, 230, 230, 255]);
+            }
+        }
         // What the drag has done so far, by the cursor.
         if let Some((at, t)) = &readout {
             for (a, b) in font::strokes(t, *at + DVec2::new(14.0 * s, -10.0 * s), size) {

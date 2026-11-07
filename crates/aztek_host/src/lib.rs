@@ -4,7 +4,7 @@
 mod camera;
 mod core;
 pub mod ctx_cmds;
-mod font;
+use aztek_geo::stroke_font as font;
 mod gpu;
 pub mod mel;
 pub mod panel_cmds;

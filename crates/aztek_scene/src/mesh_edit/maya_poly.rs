@@ -18,9 +18,11 @@ use crate::plug::NodeId;
 use crate::session::Session;
 use crate::transform::Transform;
 
+pub use more_cmds::SymmetryState;
 pub mod flag_table;
 mod edit_ops;
 mod mesh_cmds;
+mod more_cmds;
 mod queries;
 mod state_cmds;
 mod uv_cmds;
@@ -54,6 +56,9 @@ const NATIVE: &[&str] = &[
     "polyMirrorFace", "polyMoveEdge", "polyMoveFacet", "polyMoveUV", "polyMoveVertex", "polyNormal", "polyNormalPerVertex", "polyOptions",
     "polyPasteFace", "polyPinUV", "polyPoke", "polyProjectCurve", "polyQuad", "polyReduce", "polyRemesh", "polyRetopo", "polySelect",
     "polySelectConstraint", "polySelectSp", "polySeparate", "polySetToFaceNormal", "polySmooth", "polySoftEdge", "polySplit", "polySplitEdge",
+    "polyCut", "polySewEdge", "polyClean", "polyColorMod", "polyColorDel", "polyAverageColor", "polyBlendColor", "polyGeoSampler", "polyBlindData", "polyQueryBlindData",
+    "polyColorBlindData", "polyCheck", "polyCompare", "polyOutput", "polyDuplicateAndConnect", "polySmartBevel", "polyMoveFacetUV", "polyMapDel", "polyEditUVShell", "polyOptUvs",
+    "polyUVRectangle", "polyUVOverlap", "polyUVCoverage", "polyUVStackSimilarShells", "polyStraightenUVBorder",
     "polySplitFacet", "polySplitRing", "polySplitVertex", "polySubdivideEdge", "polySubdivideFacet", "polySymmetrize", "polyTransfer",
     "polyTriangulate", "polyUVSet", "polyUnite", "polyWedgeFace", "polyMirror", "polyCrease",
 ];
@@ -302,9 +307,11 @@ pub fn register(c: &mut Commands<Session>) {
     edit_ops::register_ops();
     mesh_cmds::register_ops();
     state_cmds::register_ops();
+    more_cmds::register_ops();
     edit_ops::register(c);
     mesh_cmds::register(c);
     queries::register(c);
     state_cmds::register(c);
     uv_cmds::register(c);
+    more_cmds::register(c);
 }
