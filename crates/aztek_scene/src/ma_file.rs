@@ -1009,7 +1009,7 @@ const XFORM_CHANNELS: &[&str] = &[
 ];
 
 /// Rigging and animation nodes that are all attributes and connections.
-const PLAIN_NODES: &[&str] = &["makeNurbCircle", "makeNurbPlane", "transformGeometry", "pointOnCurveInfo", "curveInfo", "nearestPointOnCurve", "container", "controller", "timeWarp", "hierarchyTreeNode", "curveFromMeshEdge", "characterMap", "keyingGroup"];
+const PLAIN_NODES: &[&str] = &["blendWeighted", "makeNurbCircle", "makeNurbPlane", "transformGeometry", "pointOnCurveInfo", "curveInfo", "nearestPointOnCurve", "container", "controller", "timeWarp", "hierarchyTreeNode", "curveFromMeshEdge", "characterMap", "keyingGroup"];
 /// The same under a transform.
 const PLAIN_SHAPES: &[&str] = &["follicle", "distanceDimShape", "paramDimension", "annotationShape", "dropoffLocator", "lattice", "baseLattice", "softModHandle"];
 
@@ -1312,6 +1312,7 @@ const QUIET_TYPES: &[&str] = &[
     "unitConversion",
     "ikRPsolver",
     "ikSCsolver",
+    "ikSplineSolver",
     "ikEffector",
     "ikSystem",
     "camera",
@@ -1993,6 +1994,10 @@ impl Build<'_> {
                 if parent != NO_NODE {
                     let _ = self.s.graph.set_parent(h, parent, false, usize::MAX);
                 }
+                // A new handle sits at the end joint; the file says where it is, and leaves out zeros.
+                let g = &mut self.s.graph;
+                let _ = g.set_value(PlugRef::new(h, Transform::TRANSLATE as i32), PlugValue::Vec3(DVec3::ZERO));
+                let _ = g.set_value(PlugRef::new(h, Transform::ROTATE as i32), PlugValue::Vec3(DVec3::ZERO));
                 self.apply_channels(i);
                 // The rest reference: the constraint's rest value when one drives it, else the stored vector.
                 let driven_by = doc.input(i, &["pvx", "poleVectorX", "pv", "poleVector"]).map(|c| &doc.nodes[c.src]);
@@ -2119,6 +2124,18 @@ impl Build<'_> {
                 set_vec(g, attr, None, v);
             }
         }
+        // Where it rests with its weights at zero. A pole vector's rest stays what the handle gave.
+        if cmd != "poleVectorConstraint" {
+            if let Some(v) = n.vec3(&["rst", "restTranslate"]) {
+                let _ = crate::constraint::set_rest(g, c, Some(v * doc.lin), None);
+            }
+            if let Some(v) = n.vec3(&["rsrr", "restRotate"]) {
+                let _ = crate::constraint::set_rest(g, c, None, Some(v * doc.ang));
+            }
+        }
+        if let (Some(on), Some(at)) = (n.truth(&["erp", "enableRestPosition"]), t.attr_index("enableRestPosition")) {
+            let _ = g.set_value(PlugRef::new(c, at as i32), PlugValue::Bool(on));
+        }
         if let (Some(w), Some(at)) = (n.num(&["wut", "worldUpType"]), t.attr_index("worldUpType")) {
             let _ = g.set_value(PlugRef::new(c, at as i32), PlugValue::Int(w as i64));
         }
@@ -2239,7 +2256,9 @@ impl Build<'_> {
             if crate::deform::is_deformer(&dt.name) || crate::deform::is_deformer(&st.name) {
                 continue;
             }
-            if is_plain_node(&dt.name) || is_plain_node(&st.name) {
+            // A CV driven by a locator or anything else, as an eyelid rig does.
+            let into_cv = dt.name == crate::curves::SHAPE_TYPE && matches!(plain_attr(&c.dst_attr).as_str(), "cp" | "controlPoints");
+            if into_cv || is_plain_node(&dt.name) || is_plain_node(&st.name) {
                 self.plain_connection(c, sn, &sa, src, dst);
                 continue;
             }

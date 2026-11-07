@@ -510,6 +510,20 @@ pub(crate) fn register_types() {
 // ---------------------------------------------------------------------------------------------------------------------
 // Keeping in step
 
+/// Where a constraint rests, from a file: what the command takes from the object as it is. Its driver, if any, gives way.
+pub(crate) fn set_rest(g: &mut Graph, c: NodeId, t: Option<DVec3>, r: Option<DVec3>) -> CmdResult<()> {
+    for (attr, v) in [(REST_T, t), (REST_R, r)] {
+        if let Some(v) = v {
+            let p = plug(c, attr);
+            if g.source(&p).is_some() {
+                g.disconnect(&p);
+            }
+            set_vec3(g, c, attr, v)?;
+        }
+    }
+    Ok(())
+}
+
 /// The node a constraint drives. A constraint feeding a geometry constraint drives what that one drives.
 pub(crate) fn driven_of(g: &Graph, c: NodeId) -> Option<NodeId> {
     for attr in [OUT_T, OUT_R, OUT_S] {

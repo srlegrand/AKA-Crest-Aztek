@@ -240,6 +240,25 @@ impl Build<'_> {
         if t.name == "blendShape" {
             self.read_blend(&d, &state, lead);
         }
+        if t.name == "wire" {
+            self.read_wires(&d);
+        }
+    }
+
+    /// `.dw[k]` drives and `.bw[k]` is where it rested.
+    fn read_wires(&mut self, d: &FileDeformer) {
+        let doc = self.doc;
+        let of = |this: &Self, names: [&str; 2], k: i64| {
+            doc.conns.iter().find(|c| c.dst == d.doc && names.contains(&plain_attr(&c.dst_attr).as_str()) && first_index(&c.dst_attr).unwrap_or(0) == k).and_then(|c| this.id(c.src))
+        };
+        let indices: Vec<i64> = doc.conns.iter().filter(|c| c.dst == d.doc && matches!(plain_attr(&c.dst_attr).as_str(), "dw" | "deformedWire")).map(|c| first_index(&c.dst_attr).unwrap_or(0)).collect();
+        for k in indices {
+            let Some(driver) = of(self, ["dw", "deformedWire"], k) else { continue };
+            let base = of(self, ["bw", "baseWire"], k).unwrap_or(driver);
+            if let Err(e) = crate::deform_wire::add_file_wire(&mut self.s.graph, d.id, k as i32, driver, base) {
+                self.warnings.push(format!("{}: {e}", doc.nodes[d.doc].name));
+            }
+        }
     }
 
     fn read_members(&mut self, d: &FileDeformer, capacity: u32) {
@@ -405,7 +424,7 @@ impl Build<'_> {
             }
             let (sn, sa) = self.real_source(c);
             let plain_dst = plain_attr(&c.dst_attr);
-            if matches!(plain_dst.as_str(), "ip.ig" | "ip.gi" | "input.inputGeometry" | "input.groupId" | "i" | "inMesh" | "dd" | "deformerData" | "gm" | "geomMatrix") || matches!(plain_attr(&sa).as_str(), "og" | "outputGeometry" | "msg" | "message") {
+            if matches!(plain_dst.as_str(), "bw" | "baseWire" | "dw" | "deformedWire" | "ip.ig" | "ip.gi" | "input.inputGeometry" | "input.groupId" | "i" | "inMesh" | "dd" | "deformerData" | "gm" | "geomMatrix") || matches!(plain_attr(&sa).as_str(), "og" | "outputGeometry" | "msg" | "message") {
                 continue;
             }
             let Some(src) = self.id(sn) else { continue };
