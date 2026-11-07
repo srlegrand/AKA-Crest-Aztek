@@ -28,7 +28,7 @@ use crate::transform::Transform;
 
 pub const WEIGHT: usize = BASE_COUNT;
 const BLEND: usize = BASE_COUNT + 1;
-const GEOM_TARGET: usize = BASE_COUNT + 2;
+pub(crate) const GEOM_TARGET: usize = BASE_COUNT + 2;
 const TARGET_MATRIX: usize = BASE_COUNT + 3;
 const ORIGIN: usize = BASE_COUNT + 4;
 const TOPOLOGY: usize = BASE_COUNT + 5;
@@ -36,6 +36,10 @@ const TOPOLOGY: usize = BASE_COUNT + 5;
 pub const PAINT_TARGET: usize = BASE_COUNT + 6;
 const SCULPT_TARGET: usize = BASE_COUNT + 7;
 const SCULPT_STATE: usize = BASE_COUNT + 8;
+/// Per-point target weights that can be keyed: element target * TARGET_KEY_STRIDE + point. An element overrides blendData's
+/// weight for that point. Maya keeps these under inputTarget[].inputTargetGroup[].targetWeights[], which are not plugs here.
+pub(crate) const TARGET_KEYS: usize = BASE_COUNT + 9;
+pub(crate) const TARGET_KEY_STRIDE: i32 = 1_000_000;
 
 const HERO: i32 = 6000;
 
@@ -194,6 +198,7 @@ impl NodeBehavior for BlendNode {
         if let Some(b) = data_of(d) {
             let geom = d.matrix(GEOM);
             let is_world = d.int(ORIGIN) == 1;
+            let keyed: std::collections::HashMap<i32, f64> = d.elements(TARGET_KEYS).iter().map(|(i, v)| (*i, v.as_float())).collect();
             let deltas_of = |t: &BlendTarget, it: &BlendItem| -> Vec<(u32, DVec3)> {
                 let key = item_key(t.index, it.iti);
                 if let Some(PlugValue::Mesh(Some(live))) = d.element(GEOM_TARGET, key) {
@@ -218,7 +223,12 @@ impl NodeBehavior for BlendNode {
                     if k == 0.0 {
                         return;
                     }
-                    let at_tw = |p: u32| t.weights.as_ref().map_or(1.0, |v| v.get(p as usize).copied().unwrap_or(0.0));
+                    let at_tw = |p: u32| {
+                        if let Some(v) = keyed.get(&(t.index * TARGET_KEY_STRIDE + p as i32)) {
+                            return *v;
+                        }
+                        t.weights.as_ref().map_or(1.0, |v| v.get(p as usize).copied().unwrap_or(0.0))
+                    };
                     for (p, dv) in deltas_of(t, it) {
                         if let Some(x) = total.get_mut(p as usize) {
                             *x += dv * k * at_tw(p);
@@ -286,6 +296,8 @@ pub(crate) fn register_types(gf: Arc<NodeType>) {
     crate::plug::data::register_kind("blendData", Arc::new(|j| Ok(Arc::new(blend_from_json(j)) as Arc<dyn crate::plug::Data>)));
     let mut weight = float_attr_short("weight", "w", 0.0, "Each target's weight, by its index.", None, None);
     weight.flags |= flags::ARRAY | flags::KEYABLE;
+    let mut target_keys = float_attr_short("targetWeightKeys", "twk", 1.0, "Keyed per-point target weights, element target * 1000000 + point; see setKeyframeBlendshapeTargetWts.", None, None);
+    target_keys.flags |= flags::ARRAY | flags::KEYABLE | flags::HIDDEN;
     let mut geom_target = mesh_attr("inputGeomTarget", "igt", flags::INPUT | flags::HIDDEN | flags::ARRAY, "Live targets: one element per target item, index * 100000 + item.");
     geom_target.ty = PlugType::Mesh;
     let hidden_int = |name: &str, short: &str, def: i64, doc: &str| AttrDef { name: name.into(), short_name: short.into(), ty: PlugType::Int, default_value: PlugValue::Int(def), flags: flags::INPUT | flags::STORABLE | flags::HIDDEN, doc: doc.into(), ..Default::default() };
@@ -304,6 +316,7 @@ pub(crate) fn register_types(gf: Arc<NodeType>) {
             hidden_int("paintTargetIndex", "pti", 0, "The target whose weights the paint tool works on."),
             hidden_int("sculptTargetIndex", "sti", -1, "The target being edited through the base, or -1."),
             deform::data_attr("sculptState", "sts", "The base's points and tweaks when a target edit began."),
+            target_keys,
         ],
         create: Some(Arc::new(|| Box::new(BlendNode))),
         ..Default::default()

@@ -52,7 +52,7 @@ fn register_types() {
     });
 }
 
-fn slots_of(g: &Graph, c: NodeId) -> BTreeMap<String, String> {
+pub(crate) fn slots_of(g: &Graph, c: NodeId) -> BTreeMap<String, String> {
     let v = g.node(c).map(|n| json_of(n.data(), SLOTS)).unwrap_or(Value::Null);
     v.get("slots").and_then(Value::as_object).map(|o| o.iter().filter_map(|(k, x)| Some((k.clone(), x.as_str()?.to_string()))).collect()).unwrap_or_default()
 }
@@ -66,7 +66,7 @@ fn set_slots(g: &mut Graph, c: NodeId, slots: &BTreeMap<String, String>) -> CmdR
     set_json(g, c, SLOTS, v)
 }
 
-fn character(g: &Graph, name: &str, cmd: &str) -> CmdResult<NodeId> {
+pub(crate) fn character(g: &Graph, name: &str, cmd: &str) -> CmdResult<NodeId> {
     match g.find(name)? {
         Some(id) if g.node(id).is_some_and(|n| n.ty().name == TYPE) => Ok(id),
         _ => fail!("{cmd}: {name} is not a character"),

@@ -9,7 +9,7 @@ use crate::core::LineKind;
 
 /// Every name `call` answers.
 pub const NAMES: &[&str] = &[
-    "print", "eval", "evalEcho", "evalDeferred", "source", "error", "warning", "python", "whatIs", "exists", "about", "env", "getenv", "putenv", "size", "sizeBytes",
+    "getProcArguments", "print", "eval", "evalEcho", "evalDeferred", "source", "error", "warning", "python", "whatIs", "exists", "about", "env", "getenv", "putenv", "size", "sizeBytes",
     "substring", "tokenize", "tokenizeList", "match", "gmatch", "substitute", "substituteAllString", "strip", "toupper", "tolower", "startsWith", "endsWith", "strcmp", "stringArrayToString",
     "stringToStringArray", "stringArrayContains", "stringArrayRemove", "stringArrayRemoveExact", "stringArrayRemoveDuplicates", "stringArrayCount", "stringArrayFind", "stringArrayCatenate",
     "stringArrayInsertAtIndex", "stringArrayReverse", "startString", "endString", "capitalizeString", "shortNameOf", "rootOf", "longNameOf", "basename", "dirname", "fromNativePath",
@@ -174,6 +174,14 @@ fn run(it: &mut Interp, name: &str, a: &mut Vec<Value>) -> R<Value> {
         return Ok(Value::Float(f(a[0].to_float())));
     }
     match name {
+        "getProcArguments" => {
+            need(1)?;
+            let w = s(&a[0]);
+            match it.proc_params(&w) {
+                Some(list) => Ok(Value::StrArr(list)),
+                None => err(format!("Cannot find procedure \"{w}\".")),
+            }
+        }
         "print" => {
             for v in a.iter() {
                 match v {

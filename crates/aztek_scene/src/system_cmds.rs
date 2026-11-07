@@ -43,6 +43,8 @@ pub struct Extras {
     pub symmetry: crate::mesh_edit::maya_poly::SymmetryState,
     /// The scene's file references.
     pub references: crate::references::RefTable,
+    /// The state of general_cmds and its neighbours.
+    pub more: crate::general_cmds::MoreState,
 }
 
 /// What a query asks for: the first flag -q names.

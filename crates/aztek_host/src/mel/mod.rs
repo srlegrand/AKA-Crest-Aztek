@@ -6,7 +6,7 @@ mod call;
 mod interp;
 mod lexer;
 mod parser;
-mod pattern;
+pub(crate) mod pattern;
 mod value;
 
 pub use call::*;

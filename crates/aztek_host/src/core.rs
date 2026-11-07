@@ -75,6 +75,7 @@ impl Core {
         crate::script_jobs::register(&mut c.s);
         crate::ctx_cmds::register(&mut c.s);
         crate::panel_cmds::register(&mut c.s);
+        crate::host_general::register(&mut c.s);
         c.mel_state.set_global_string("gMainWindow", crate::scriptui::MAIN_WINDOW);
         c.mel_state.set_global_string("gMainProgressBar", crate::scriptui::MAIN_PROGRESS);
         c.ensure_defaults();
@@ -128,6 +129,7 @@ impl Core {
         if crate::script_jobs::take_flush() {
             self.idle();
         }
+        self.run_conditions();
     }
 
     fn run_open_scripts(&mut self) {
@@ -198,12 +200,24 @@ impl Core {
         }
         self.in_idle = true;
         crate::attr_ui::idle(self);
+        crate::host_general::watch(&mut self.s);
+        self.run_conditions();
         let scripts = crate::script_jobs::scan(&mut self.s);
         let deferred = crate::script_jobs::take_deferred();
         self.drain_captured();
         self.run_callbacks(scripts);
         self.run_callbacks(deferred);
         self.in_idle = false;
+    }
+
+    /// Runs the scripts of named conditions that are due, and keeps their answers.
+    fn run_conditions(&mut self) {
+        for (name, script) in crate::host_general::take_due() {
+            match self.mel_checked(&script) {
+                Ok(v) => crate::host_general::set_condition(&name, v.as_bool().unwrap_or(v.as_i64().is_some_and(|i| i != 0))),
+                Err(e) => self.push(format!("// Warning: condition {name}: {e} //"), LineKind::Warning),
+            }
+        }
     }
 
     fn drain_captured(&mut self) {
@@ -396,6 +410,11 @@ impl Core {
                 args.push(json!(what));
                 kwargs.insert(k.to_string(), json!(true));
             }
+        }
+        if crate::host_general::echoes(typed) {
+            let mut shown = kwargs.clone();
+            shown.insert("args".to_string(), json!(args));
+            self.push(mel::echo(typed, &Value::Object(shown)), LineKind::Echo);
         }
         let al = mel::alias(typed);
         let name = al.map(|a| a.target.to_string()).unwrap_or(typed.to_string());

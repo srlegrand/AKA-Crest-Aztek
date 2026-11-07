@@ -273,6 +273,12 @@ impl Interp<'_> {
         st.local_procs.get(&(unit, name.to_string())).or_else(|| st.global_procs.get(name)).map(|e| (e.proc.clone(), e.unit))
     }
 
+    /// A procedure's argument types, as getProcArguments gives them.
+    pub fn proc_params(&mut self, name: &str) -> Option<Vec<String>> {
+        let (p, _) = self.find_proc(name)?;
+        Some(p.params.iter().map(|(ty, _)| ty.name().to_string()).collect())
+    }
+
     pub fn is_proc(&mut self, name: &str) -> bool {
         self.find_proc(name).is_some()
     }
