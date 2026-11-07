@@ -4008,6 +4008,10 @@ impl Writer<'_> {
         if n.is_locked() {
             text.push_str("\tlockNode -l 1 ;\n");
         }
+        // Added attributes come first: the values and connections below can name them.
+        for a in n.ty().attrs.iter().filter(|a| a.has(flags::USER)) {
+            text.push_str(&attr_add_lines(a));
+        }
         text.push_str(&self.plain_attr_lines(id));
         self.out.push_str(&text);
     }

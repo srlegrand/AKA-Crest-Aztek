@@ -948,6 +948,9 @@ pub fn resolve_texture_uncached(written: &str, scene: Option<&str>, project: Opt
         if let Some(up) = d.parent() {
             folders.push(up.join("sourceimages"));
         }
+        // Rigs handed round as a folder often keep their images in one of these beside the scene.
+        folders.push(d.join("Textures"));
+        folders.push(d.join("textures"));
     }
     if let Some(i) = written.to_lowercase().find("sourceimages/") {
         let sub = &written[i + "sourceimages/".len()..];

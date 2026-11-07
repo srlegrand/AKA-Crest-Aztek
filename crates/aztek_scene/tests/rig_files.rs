@@ -348,6 +348,14 @@ fn an_added_attribute_driven_from_below_is_no_cycle() {
     assert_near(get(&mut s, "ctrl.len"), &[4.0], "read after everything computed");
     s.run("setAttr", json!({"args": ["ctrl.tx", 3.0]})).unwrap();
     assert_near(get(&mut s, "ctrl.len"), &[7.0], "follows");
+    // The same on a utility node, whose added attribute a save keeps.
+    let body = "createNode distanceBetween -n \"db\";\n\taddAttr -ci true -k true -sn \"extra\" -ln \"extra\" -at \"double\";\ncreateNode addDoubleLinear -n \"adl\";\nconnectAttr \"db.d\" \"adl.i1\";\nconnectAttr \"adl.o\" \"db.extra\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    let (out, _) = aztek_scene::ma_file::write_text(&mut s, "e.ma", None);
+    let mut b = Session::new();
+    let w = read_text(&mut b, &out, false);
+    assert!(w.is_empty(), "{w:?}");
 }
 
 #[test]
@@ -529,7 +537,7 @@ fn spline_ik_twist_can_come_from_a_ramp() {
     let (mut s, w) = load(&body);
     assert!(w.is_empty(), "{w:?}");
     assert_near(get(&mut s, "j1.r"), &[90.0, 0.0, 0.0], "none at the start");
-    assert_near(get(&mut s, "j2.r"), &[20.0, 0.0, 0.0], "half the ramp at the middle, on top of the first");
+    assert_near(get(&mut s, "j2.r"), &[40.0, 0.0, 0.0], "all of the ramp at the last joint, on top of the first");
 }
 
 #[test]

@@ -2448,34 +2448,6 @@ impl Graph {
     /// only on what drives it, so `pCube1.tx -> multiplyDivide1 -> pCube1.ty` is fine and
     /// `pCube1.worldMatrix -> multMatrix1 -> pCube1.tx` is not. A direct attribute to attribute link back to `dst`'s node
     /// stays refused, as it always was here.
-    fn debug_cycle(&self, src: &PlugRef, dst: &PlugRef) {
-        let mut came: HashMap<NodeId, (NodeId, String)> = HashMap::new();
-        let mut q = std::collections::VecDeque::new();
-        q.push_back(src.node);
-        came.insert(src.node, (0, String::new()));
-        while let Some(x) = q.pop_front() {
-            if x == dst.node && x != src.node { break; }
-            let mut push = |y: NodeId, how: String, q: &mut std::collections::VecDeque<NodeId>| { if !came.contains_key(&y) { came.insert(y, (x, how)); q.push_back(y); } };
-            for (d, s) in inputs_of(&self.inputs, x) {
-                if self.node(x).is_some_and(|n| computes_nothing(n.type_arc(), d.attr)) { continue; }
-                let Some(n) = self.node(s.node) else { continue };
-                let a = &n.ty().attrs[s.attr as usize];
-                if from_parent(n, s.attr) { let p = self.parent(s.node); if p != NO_NODE { push(p, format!("{}<-pm {}", self.plug_name(d), self.plug_name(s)), &mut q); } continue; }
-                if a.has(flags::MESSAGE) { continue; }
-                push(s.node, format!("{} <- {}", self.plug_name(d), self.plug_name(s)), &mut q);
-            }
-            let p = self.parent(x);
-            if p != NO_NODE { push(p, "parent".into(), &mut q); }
-        }
-        eprintln!("CYCLE {} -> {}", self.plug_name(src), self.plug_name(dst));
-        let mut c = dst.node;
-        while c != src.node && came.contains_key(&c) {
-            let (b, how) = &came[&c];
-            eprintln!("   {} : {}", self.path(c), how);
-            c = *b;
-        }
-    }
-
     fn reads_depend_on(&self, src: &PlugRef, dst: &PlugRef) -> bool {
         let dst_computes_nothing = self.node(dst.node).is_some_and(|n| computes_nothing(n.type_arc(), dst.attr));
         let mut stack = vec![(*src, src.node != dst.node)];
@@ -2618,7 +2590,6 @@ impl Graph {
             )));
         }
         if self.reads_depend_on(src, &dst) {
-            if std::env::var("AZTEK_CYCLE").is_ok() { self.debug_cycle(src, &dst); }
             return Err(GraphError::invalid("connection would create a cycle"));
         }
 

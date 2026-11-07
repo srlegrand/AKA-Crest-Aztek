@@ -820,7 +820,7 @@ impl Writer<'_> {
         if st.is_a("mesh") && g.node(src.node).is_some_and(|n| n.bool(DagNode::INTERMEDIATE_OBJECT)) {
             return;
         }
-        let written = |id: NodeId, t: &NodeType| self.dag_written(id) || is_def(t) || anim::is_curve(g, id) || DRIVEN_CURVES.contains(&t.name.as_str()) || is_plain_node(&t.name);
+        let written = |id: NodeId, t: &NodeType| self.dag_written(id) || is_def(t) || anim::is_curve(g, id) || DRIVEN_CURVES.contains(&t.name.as_str()) || is_plain_node(&t.name) || t.name == "unitConversion";
         if !written(src.node, &st) || !written(dst.node, &dt) {
             return;
         }
