@@ -211,6 +211,8 @@ fn more_controls_as_maya_has_them() {
     assert_eq!(ok(&mut c, "playbackOptions -q -max;").as_f64(), Some(20.0));
     ok(&mut c, "timeRangeControl trc;");
     assert_eq!(ok(&mut c, "timeRangeControl -q -ex trc;"), json!(true));
+    // The range is the process's, as the time slider is: other tests start from it.
+    ok(&mut c, "playbackOptions -min 1 -max 120;");
     errors(&mut c);
 }
 
@@ -999,10 +1001,10 @@ fn script_jobs_fire_at_idle_and_die_when_killed() {
 
     // Run once.
     ok(&mut c, "scriptJob -ro 1 -e \"timeChanged\" \"bump\";");
-    ok(&mut c, "currentTime 5;");
+    ok(&mut c, "currentTime 57;");
     c.idle();
     assert_eq!(count(&mut c), 2);
-    ok(&mut c, "currentTime 6;");
+    ok(&mut c, "currentTime 58;");
     c.idle();
     assert_eq!(count(&mut c), 2);
 
