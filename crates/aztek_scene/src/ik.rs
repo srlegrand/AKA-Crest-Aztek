@@ -100,6 +100,10 @@ const IK_REST_POLE: usize = 11;
 const IK_CURVE: usize = 12;
 const IK_ROOT: usize = 13;
 const IK_REST_TURN: usize = 14;
+/// The handle's advanced twist settings, in the order of ADVANCED_TWIST.
+const IK_ADVANCED: usize = 15;
+const ADVANCED_TWIST: [&str; 12] = ["dTwistControlEnable", "dWorldUpType", "dForwardAxis", "dWorldUpAxis", "dWorldUpVector", "dWorldUpVectorEnd", "dWorldUpMatrix", "dWorldUpMatrixEnd", "dTwistValueType", "dTwistStart", "dTwistEnd", "dTwistRampMult"];
+const IK_RAMP: usize = IK_ADVANCED + 12;
 
 const SYSTEM_SOLVE: usize = 0;
 const SYSTEM_SNAP: usize = 1;
@@ -333,6 +337,94 @@ impl Bend {
     }
 }
 
+/// Spline IK's advanced twist: each joint's frame comes from the curve and an up direction.
+struct AdvancedTwist {
+    up_type: i64,
+    up_axis: i64,
+    up: DVec3,
+    up_end: DVec3,
+    matrix: DMat4,
+    matrix_end: DMat4,
+    value_type: i64,
+    twist_start: f64,
+    twist_end: f64,
+    ramp_mult: f64,
+    ramp: Vec<(f64, f64)>,
+}
+
+impl AdvancedTwist {
+    fn of(d: &NodeData) -> Option<Self> {
+        if !d.bool(IK_ADVANCED) {
+            return None;
+        }
+        let keys = json_of(d, IK_RAMP);
+        let ramp = keys.as_array().map(|a| a.iter().filter_map(|k| Some((k.get(0)?.as_f64()?, k.get(1)?.as_f64()?))).collect()).unwrap_or_default();
+        Some(AdvancedTwist {
+            up_type: d.int(IK_ADVANCED + 1),
+            up_axis: d.int(IK_ADVANCED + 3),
+            up: d.vec3(IK_ADVANCED + 4),
+            up_end: d.vec3(IK_ADVANCED + 5),
+            matrix: d.matrix(IK_ADVANCED + 6),
+            matrix_end: d.matrix(IK_ADVANCED + 7),
+            value_type: d.int(IK_ADVANCED + 8),
+            twist_start: d.float(IK_ADVANCED + 9),
+            twist_end: d.float(IK_ADVANCED + 10),
+            ramp_mult: d.float(IK_ADVANCED + 11),
+            ramp,
+        })
+    }
+
+    /// The up direction wanted at this fraction of the chain, at this place.
+    fn up_at(&self, s: f64, at: DVec3) -> DVec3 {
+        let (a, b) = (self.matrix, self.matrix_end);
+        match self.up_type {
+            1 => a.w_axis.truncate() - at,
+            2 => a.w_axis.truncate().lerp(b.w_axis.truncate(), s) - at,
+            3 => a.transform_vector3(self.up),
+            4 => a.transform_vector3(self.up).lerp(b.transform_vector3(self.up_end), s),
+            5 => self.up,
+            6 => self.up.lerp(self.up_end, s),
+            _ => DVec3::Y,
+        }
+    }
+
+    /// Degrees about the chain at this fraction of it.
+    fn twist_at(&self, s: f64, total: f64, roll: f64) -> f64 {
+        match self.value_type {
+            1 => self.twist_start + (self.twist_end - self.twist_start) * s,
+            2 => {
+                let k = &self.ramp;
+                let v = match (k.first(), k.last()) {
+                    (Some(first), _) if s <= first.0 => first.1,
+                    (_, Some(last)) if s >= last.0 => last.1,
+                    _ => k.windows(2).find(|w| s <= w[1].0).map_or(0.0, |w| w[0].1 + (w[1].1 - w[0].1) * (s - w[0].0) / (w[1].0 - w[0].0).max(1e-12)),
+                };
+                v * self.ramp_mult
+            }
+            _ => roll + total * s,
+        }
+    }
+
+    /// The world rotation that lays the joint along `dir` with its up axis toward `up`. `f` is the way the bone leaves the joint in the
+    /// joint's own space: a mirrored chain runs down negative X whatever dForwardAxis says, and Maya keeps it so.
+    fn frame(&self, f: DVec3, dir: DVec3, up: DVec3) -> DMat3 {
+        // Positive Y, negative Y, closest Y, then the same for Z and X.
+        let u = [DVec3::Y, -DVec3::Y, DVec3::Y, DVec3::Z, -DVec3::Z, DVec3::Z, DVec3::X, -DVec3::X, DVec3::X][self.up_axis.clamp(0, 8) as usize];
+        let f = if f == DVec3::ZERO { DVec3::X } else { f.normalize() };
+        let u = if f.dot(u).abs() > 0.9 { f.any_orthonormal_vector() } else { u };
+        let s = f.cross(u).normalize();
+        let u = s.cross(f);
+        let d = dir.normalize_or_zero();
+        let mut wu = up - d * up.dot(d);
+        if wu.length() < 1e-9 {
+            wu = d.any_orthonormal_vector();
+        }
+        let wu = wu.normalize();
+        let ws = d.cross(wu);
+        DMat3::from_cols(d, wu, ws) * DMat3::from_cols(f, u, s).transpose()
+    }
+}
+
 struct SolveInput<'a> {
     parent: DMat4,
     handle: DMat4,
@@ -341,6 +433,7 @@ struct SolveInput<'a> {
     pole: DVec3,
     rest_pole: DVec3,
     rest_turn: DMat3,
+    advanced: Option<AdvancedTwist>,
     twist: f64,
     roll: f64,
     kind: SolverKind,
@@ -502,8 +595,17 @@ fn solve_spline(input: &SolveInput) -> (Vec<DVec3>, Option<DVec3>) {
         }
         // Twist grows up the chain; roll turns all of it.
         let t = if n > 1 { i as f64 / (n - 1) as f64 } else { 1.0 };
-        let spin = DQuat::from_axis_angle(want, (input.roll + input.twist * t).to_radians());
-        let w = DMat3::from_quat(spin * turn) * rot3(&worlds[i]);
+        let w = match &input.advanced {
+            Some(a) => {
+                let spin = DQuat::from_axis_angle(want, a.twist_at(t, input.twist, input.roll).to_radians());
+                let f = rot3(&worlds[i]).transpose() * rest_dir;
+                DMat3::from_quat(spin) * a.frame(f, want, a.up_at(t, targets[i]))
+            }
+            None => {
+                let spin = DQuat::from_axis_angle(want, (input.roll + input.twist * t).to_radians());
+                DMat3::from_quat(spin * turn) * rot3(&worlds[i])
+            }
+        };
         let e = js[i].rotate_for(&prev, &w, js[i].pa);
         prev *= js[i].local(e);
         out.push(e);
@@ -543,6 +645,7 @@ impl NodeBehavior for IkSolve {
                 pole: d.matrix(IK_PARENT).transform_vector3(d.vec3(IK_POLE)),
                 rest_pole: d.matrix(IK_PARENT).transform_vector3(d.vec3(IK_REST_POLE)),
                 rest_turn: DMat3::from_mat4(d.matrix(IK_REST_TURN)),
+                advanced: AdvancedTwist::of(d),
                 // Outside spline IK, twist and roll both turn the plane about the handle line.
                 twist: if SolverKind::from_index(d.int(IK_TYPE)) == SolverKind::Spline { d.float(IK_TWIST) } else { d.float(IK_TWIST) + d.float(IK_ROLL) },
                 roll: d.float(IK_ROLL),
@@ -605,17 +708,17 @@ pub(crate) fn register_types() {
             AttrDef { name: "message".into(), short_name: "msg".into(), ty: PlugType::Int, default_value: PlugValue::Int(0), flags: flags::OUTPUT | flags::HIDDEN | flags::MESSAGE, doc: "Connects the handle to its effector.".into(), ..Default::default() },
             AttrDef { short_name: "dtce".into(), flags: store | flags::HIDDEN, ..bool_attr("dTwistControlEnable", false, "Spline IK: advanced twist on.") },
             AttrDef { short_name: "dwut".into(), flags: store | flags::HIDDEN, ..enum_attr("dWorldUpType", &["Scene Up", "Object Up", "Object Up (Start/End)", "Object Rotation Up", "Object Rotation Up (Start/End)", "Vector", "Vector (Start/End)", "Relative"], 0, "Spline IK: what up means along the chain.") },
-            AttrDef { short_name: "dfa".into(), flags: store | flags::HIDDEN, ..enum_attr("dForwardAxis", &["Positive X", "Negative X", "Positive Y", "Negative Y", "Positive Z", "Negative Z"], 0, "Spline IK: the joints' axis along the curve.") },
+            AttrDef { short_name: "dpa".into(), aliases: vec!["dfa".into()], flags: store | flags::HIDDEN, ..enum_attr("dForwardAxis", &["Positive X", "Negative X", "Positive Y", "Negative Y", "Positive Z", "Negative Z"], 0, "Spline IK: the joints' axis along the curve.") },
             AttrDef { short_name: "dwua".into(), flags: store | flags::HIDDEN, ..enum_attr("dWorldUpAxis", &["Positive Y", "Negative Y", "Closest Y", "Positive Z", "Negative Z", "Closest Z", "Positive X", "Negative X", "Closest X"], 0, "Spline IK: the joints' axis towards up.") },
-            AttrDef { child_short: ["dwux".into(), "dwuy".into(), "dwuz".into()], ..vec3_attr("dWorldUpVector", "dwu", DVec3::Y, store | flags::HIDDEN, "Spline IK: up at the start, in the up object's space.") },
+            AttrDef { child_short: ["dwux".into(), "dwuy".into(), "dwuz".into()], ..vec3_attr("dWorldUpVector", "dwuv", DVec3::Y, store | flags::HIDDEN, "Spline IK: up at the start, in the up object's space.") },
             AttrDef { child_short: ["dwvx".into(), "dwvy".into(), "dwvz".into()], ..vec3_attr("dWorldUpVectorEnd", "dwve", DVec3::Y, store | flags::HIDDEN, "Spline IK: up at the end, in the up object's space.") },
             matrix_in("dWorldUpMatrix", "dwum", false, "Spline IK: the up object at the start."),
             matrix_in("dWorldUpMatrixEnd", "dwue", false, "Spline IK: the up object at the end."),
             AttrDef { short_name: "dtvt".into(), flags: store | flags::HIDDEN, ..enum_attr("dTwistValueType", &["Total", "Start/End", "Ramp"], 0, "Spline IK: where the twist comes from.") },
-            float_attr_short("dTwistStart", "dtws", 0.0, "Spline IK: twist at the start, degrees.", None, None),
-            float_attr_short("dTwistEnd", "dtwe", 0.0, "Spline IK: twist at the end, degrees.", None, None),
+            float_attr_short("dTwistStart", "dtst", 0.0, "Spline IK: twist at the start, degrees.", None, None),
+            float_attr_short("dTwistEnd", "dten", 0.0, "Spline IK: twist at the end, degrees.", None, None),
             AttrDef { child_short: ["dtrr".into(), "dtrg".into(), "dtrb".into()], ..vec3_attr("dTwistRamp", "dtra", DVec3::ZERO, store | flags::HIDDEN, "Spline IK: a texture's colour, its red a twist along the chain.") },
-            float_attr_short("dTwistRampMult", "dtrm", 1.0, "Spline IK: what the ramp's value is multiplied by.", None, None),
+            float_attr_short("dTwistRampMult", "dtrm", 90.0, "Spline IK: what the ramp's value is multiplied by.", None, None),
         ],
         create: Some(Arc::new(|| Box::new(IkHandle))),
         ..Default::default()
@@ -660,6 +763,19 @@ pub(crate) fn register_types() {
             AttrDef { name: "inCurve".into(), short_name: "ic".into(), ty: PlugType::Data, default_value: PlugValue::Data(None), flags: flags::INPUT | flags::HIDDEN, doc: "Spline IK: the curve, world space.".into(), ..Default::default() },
             vec3_attr("outRootTranslate", "ort", DVec3::ZERO, flags::OUTPUT | flags::HIDDEN, "Spline IK with root on curve: the start joint's translate."),
             AttrDef { name: "restTurn".into(), short_name: "rtn".into(), ty: PlugType::Matrix, default_value: PlugValue::Matrix(DMat4::IDENTITY), flags: flags::INPUT | flags::STORABLE | flags::HIDDEN, doc: "Single chain: from the handle's rotation to the chain's. A new handle's is the identity.".into(), ..Default::default() },
+            AttrDef { short_name: "dtce".into(), flags: flags::INPUT | flags::HIDDEN, ..bool_attr("dTwistControlEnable", false, "From the handle.") },
+            AttrDef { name: "dWorldUpType".into(), short_name: "dwut".into(), ty: PlugType::Int, default_value: PlugValue::Int(0), flags: flags::INPUT | flags::HIDDEN, ..Default::default() },
+            AttrDef { name: "dForwardAxis".into(), short_name: "dpa".into(), ty: PlugType::Int, default_value: PlugValue::Int(0), flags: flags::INPUT | flags::HIDDEN, ..Default::default() },
+            AttrDef { name: "dWorldUpAxis".into(), short_name: "dwua".into(), ty: PlugType::Int, default_value: PlugValue::Int(0), flags: flags::INPUT | flags::HIDDEN, ..Default::default() },
+            vec3_attr("dWorldUpVector", "dwuv", DVec3::Y, flags::INPUT | flags::HIDDEN, "From the handle."),
+            vec3_attr("dWorldUpVectorEnd", "dwve", DVec3::Y, flags::INPUT | flags::HIDDEN, "From the handle."),
+            matrix_in("dWorldUpMatrix", "dwum", false, "From the handle."),
+            matrix_in("dWorldUpMatrixEnd", "dwue", false, "From the handle."),
+            AttrDef { name: "dTwistValueType".into(), short_name: "dtvt".into(), ty: PlugType::Int, default_value: PlugValue::Int(0), flags: flags::INPUT | flags::HIDDEN, ..Default::default() },
+            AttrDef { flags: flags::INPUT | flags::HIDDEN, ..float_attr_short("dTwistStart", "dtst", 0.0, "From the handle.", None, None) },
+            AttrDef { flags: flags::INPUT | flags::HIDDEN, ..float_attr_short("dTwistEnd", "dten", 0.0, "From the handle.", None, None) },
+            AttrDef { flags: flags::INPUT | flags::HIDDEN, ..float_attr_short("dTwistRampMult", "dtrm", 90.0, "From the handle.", None, None) },
+            data_attr("dTwistRampKeys", "dtrk", "The ramp's entries, from the texture on the handle's dTwistRamp."),
         ],
         create: Some(Arc::new(|| Box::new(IkSolve))),
         ..Default::default()
@@ -826,6 +942,18 @@ pub(crate) fn sync_handle(g: &mut Graph, handle: NodeId, after: bool) -> bool {
             }
         }
         changed = true;
+    }
+    // A ramp on the handle: the solver reads its entries, sampling them along the chain.
+    if let Some(ramp) = g.node(handle).and_then(|n| n.ty().attr_index("dTwistRamp")).and_then(|a| {
+        (0..3).map(|c| PlugRef::component(handle, a as i32, c)).chain([plug(handle, a)]).find_map(|p| g.source(&p))
+    }) {
+        if let Some(keys) = g.node(ramp.node).and_then(|n| n.ty().attr_index("rampKeys")) {
+            let wanted = plug(ramp.node, keys);
+            if g.source(&plug(solver, IK_RAMP)) != Some(wanted) {
+                g.connect_derived(&wanted, &plug(solver, IK_RAMP));
+                changed = true;
+            }
+        }
     }
     if after {
         changed |= snap_handle(g, handle, end, solver);
@@ -996,6 +1124,11 @@ fn create_handle(g: &mut Graph, name: &str, start: NodeId, end: NodeId, solver_n
     g.connect(&plug(h, IkHandle::IK_BLEND), &plug(sv, IK_BLEND), false)?;
     g.connect(&plug(h, IkHandle::SOLVER_ENABLE), &plug(sv, IK_ENABLE), false)?;
     g.connect(&plug(h, IkHandle::SOLVER_TYPE), &plug(sv, IK_TYPE), false)?;
+    for (k, name) in ADVANCED_TWIST.iter().enumerate() {
+        if let Some(a) = g.node(h).and_then(|n| n.ty().attr_index(name)) {
+            g.connect(&plug(h, a), &plug(sv, IK_ADVANCED + k), false)?;
+        }
+    }
     let system = ensure_system(g)?;
     g.connect(&plug(system, SYSTEM_SOLVE), &plug(sv, IK_GLOBAL), false)?;
     wire_chain(g, h, sv, eff, &chain, end)?;

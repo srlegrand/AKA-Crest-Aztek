@@ -318,7 +318,7 @@ impl NodeBehavior for ConstraintNode {
                     let off_t = d.element(T_OFFSET_T, x.index).map(|v| v.as_vec3()).unwrap_or(DVec3::ZERO);
                     let off_r = d.element(T_OFFSET_R, x.index).map(|v| v.as_vec3()).unwrap_or(DVec3::ZERO);
                     sum += (pinv.transform_point3(x.matrix.transform_point3(off_t)) - pivot) * w;
-                    qs.push((DQuat::from_mat3(&(pr.transpose() * rot3(&x.matrix) * mat3(off_r, RotateOrder::Xyz))), w));
+                    qs.push((DQuat::from_mat3(&(pr.transpose() * rot3(&x.matrix) * mat3(off_r, RotateOrder::from_index(d.int(ROTATE_ORDER))))), w));
                 }
                 t = sum;
                 e = rotate_for(d, &with_rest(qs));
@@ -837,6 +837,8 @@ fn world_rotation(g: &mut Graph, driven: NodeId) -> DMat3 {
 fn maintain_offset(g: &mut Graph, c: NodeId, kind: usize, driven: NodeId, only: Option<&[i32]>) -> CmdResult<()> {
     g.evaluate();
     let n = g.node(c).unwrap();
+    // Offsets are in the driven object's rotate order, as the Eulers it is given.
+    let order_now = RotateOrder::from_index(n.data().int(ROTATE_ORDER));
     let ty = n.type_arc().clone();
     let targets = target_nodes(g, c);
     let mut items = Vec::new();
@@ -863,7 +865,7 @@ fn maintain_offset(g: &mut Graph, c: NodeId, kind: usize, driven: NodeId, only: 
                     continue;
                 }
                 let off_t = tm.inverse().transform_point3(p_now);
-                let off_r = matrix_to_euler(&(rot3(&tm).transpose() * w_now), RotateOrder::Xyz);
+                let off_r = matrix_to_euler(&(rot3(&tm).transpose() * w_now), order_now);
                 g.set_value(PlugRef::element(c, T_OFFSET_T as i32, i), PlugValue::Vec3(off_t))?;
                 g.set_value(PlugRef::element(c, T_OFFSET_R as i32, i), PlugValue::Vec3(off_r))?;
             }
@@ -878,7 +880,7 @@ fn maintain_offset(g: &mut Graph, c: NodeId, kind: usize, driven: NodeId, only: 
         ORIENT => {
             let qs: Vec<(DQuat, f64)> = items.iter().map(|&(_, tm, w)| (DQuat::from_mat3(&(pr.transpose() * rot3(&tm))), share(w))).collect();
             let avg = DMat3::from_quat(quat_avg(&qs, 1));
-            set_vec3(g, c, OFFSET, matrix_to_euler(&(avg.transpose() * pr.transpose() * w_now), RotateOrder::Xyz))?;
+            set_vec3(g, c, OFFSET, matrix_to_euler(&(avg.transpose() * pr.transpose() * w_now), order_now))?;
         }
         SCALE => {
             let ps = scale_of(&pm).max(DVec3::splat(1e-12));
@@ -897,7 +899,7 @@ fn maintain_offset(g: &mut Graph, c: NodeId, kind: usize, driven: NodeId, only: 
             let d = g.node(c).unwrap().data();
             let frame = aim_rotation(d, at - p_now, p_now, &pm, d.vec3(REST_R));
             if let Some(frame) = frame {
-                set_vec3(g, c, OFFSET, matrix_to_euler(&(frame.transpose() * pr.transpose() * w_now), RotateOrder::Xyz))?;
+                set_vec3(g, c, OFFSET, matrix_to_euler(&(frame.transpose() * pr.transpose() * w_now), order_now))?;
             }
         }
         POLE => {

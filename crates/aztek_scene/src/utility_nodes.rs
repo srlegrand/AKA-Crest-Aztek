@@ -404,7 +404,7 @@ fn binary_float(name: &'static str, doc: &'static str, c: Compute) -> Spec {
 fn table() -> Vec<Spec> {
     vec![
         Spec("multiplyDivide", "utility/general", "Multiplies, divides or raises input1 by input2, per channel.",
-            vec![en("operation", "op", 1, &["noOperation", "multiply", "divide", "power"]), vin("input1", "i1", [1.0; 3]), vin("input2", "i2", [1.0; 3]), vout("output", "o")],
+            vec![en("operation", "op", 1, &["noOperation", "multiply", "divide", "power"]), vin("input1", "i1", [0.0; 3]), vin("input2", "i2", [1.0; 3]), vout("output", "o")],
             |d| {
                 let (x, y) = (v(d, "input1"), v(d, "input2"));
                 let o = match i(d, "operation") {
@@ -506,8 +506,14 @@ fn table() -> Vec<Spec> {
                 two(vec_kids("uvFilterSize", "fs", [0.0; 3], IN, [("X", "x"), ("Y", "y"), ("", "")])),
                 cout("outColor", "oc"),
                 fout("outAlpha", "oa"),
+                crate::rig::data_attr("rampKeys", "rkk", "Each entry's position and value, for what samples the ramp itself: spline IK's twist."),
             ],
             |d| {
+                let (pa, ca) = (at(d, "colorEntryList.position"), at(d, "colorEntryList.color"));
+                let mut keys: Vec<(f64, f64)> = d.elements(pa).iter().map(|(k, p)| (p.scalar().unwrap_or(0.0), d.element_or(ca, *k).as_vec3().x)).collect();
+                keys.sort_by(|a, b| a.0.total_cmp(&b.0));
+                let json: serde_json::Value = keys.iter().map(|k| serde_json::json!([k.0, k.1])).collect();
+                set(d, "rampKeys", PlugValue::Data(Some(Arc::new(crate::rig::JsonData(json)))));
                 let at_v = if i(d, "type") == 1 { f(d, "uCoord") } else { f(d, "vCoord") };
                 let o = colour_ramp_at(d, at_v);
                 set(d, "outColor", o);

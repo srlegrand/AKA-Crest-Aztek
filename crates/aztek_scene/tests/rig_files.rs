@@ -487,6 +487,40 @@ fn a_control_point_on_a_curve_with_history_is_a_move() {
 }
 
 #[test]
+fn an_offset_rotation_is_in_the_driven_objects_rotate_order() {
+    // One turn in YZX order. Read in XYZ it is a different turn, so the object would miss the stored rotation.
+    let body = format!(
+        "createNode transform -n \"tgt\";\ncreateNode transform -n \"obj\";\n\tsetAttr \".ro\" 1;\n{}\tsetAttr \".tg[0].tor\" -type \"double3\" 30 40 50 ;\nconnectAttr \"obj.ro\" \"obj_parentConstraint1.cro\";\n",
+        constraint("obj_parentConstraint1", "obj", "tgt", "tgtW0", true)
+    );
+    let (mut s, w) = load(&body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "obj.r"), &[30.0, 40.0, 50.0], "the same three angles");
+}
+
+fn spline_chain(extra: &str) -> String {
+    format!("createNode joint -n \"j1\";\ncreateNode joint -n \"j2\" -p \"j1\";\n\tsetAttr \".t\" -type \"double3\" 2 0 0 ;\ncreateNode joint -n \"j3\" -p \"j2\";\n\tsetAttr \".t\" -type \"double3\" 2 0 0 ;\ncreateNode transform -n \"c\";\ncreateNode nurbsCurve -n \"cShape\" -p \"c\";\n\tsetAttr \".cc\" -type \"nurbsCurve\" \n\t\t1 1 0 no 3\n\t\t2 0 1\n\t\t2\n\t\t0 0 0\n\t\t4 0 0\n\t\t;\ncreateNode transform -n \"up\";\n\tsetAttr \".r\" -type \"double3\" 90 0 0 ;\ncreateNode ikHandle -n \"h\";\n\tsetAttr \".roc\" yes;\n\tsetAttr \".dtce\" yes;\n\tsetAttr \".dwut\" 4;\n{extra}createNode ikEffector -n \"e\" -p \"j2\";\ncreateNode ikSplineSolver -n \"ikSplineSolver\";\nconnectAttr \"j1.msg\" \"h.hsj\";\nconnectAttr \"e.hp\" \"h.hee\";\nconnectAttr \"ikSplineSolver.msg\" \"h.hsv\";\nconnectAttr \"cShape.ws\" \"h.ic\";\nconnectAttr \"j3.tx\" \"e.tx\";\nconnectAttr \"up.wm\" \"h.dwum\";\nconnectAttr \"up.wm\" \"h.dwue\";\n")
+}
+
+#[test]
+fn spline_ik_advanced_twist_follows_its_up_objects() {
+    // Up, Y in the up object's space, is world Z there, so the joints roll 90 about X.
+    let (mut s, w) = load(&spline_chain(""));
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "j1.r"), &[90.0, 0.0, 0.0], "start");
+    assert_near(world_at(&mut s, "j3"), &[4.0, 0.0, 0.0], "on the curve");
+}
+
+#[test]
+fn spline_ik_twist_can_come_from_a_ramp() {
+    let body = format!("{}createNode ramp -n \"rp\";\n\tsetAttr -s 2 \".cel\";\n\tsetAttr \".cel[0].ep\" 0;\n\tsetAttr \".cel[0].ec\" -type \"float3\" 0 0 0 ;\n\tsetAttr \".cel[1].ep\" 1;\n\tsetAttr \".cel[1].ec\" -type \"float3\" 1 0 0 ;\nconnectAttr \"rp.oc\" \"h.dtra\";\n", spline_chain("\tsetAttr \".dtvt\" 2;\n\tsetAttr \".dtrm\" 40;\n"));
+    let (mut s, w) = load(&body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "j1.r"), &[90.0, 0.0, 0.0], "none at the start");
+    assert_near(get(&mut s, "j2.r"), &[20.0, 0.0, 0.0], "half the ramp at the middle, on top of the first");
+}
+
+#[test]
 fn an_aim_with_a_zero_up_vector_turns_the_shortest_way() {
     let body = "createNode transform -n \"tgt\";\n\tsetAttr \".t\" -type \"double3\" 1 0 1 ;\ncreateNode transform -n \"obj\";\ncreateNode aimConstraint -n \"ac\" -p \"obj\";\n\taddAttr -dcb 0 -ci true -sn \"w0\" -ln \"tgtW0\" -dv 1 -at \"double\";\n\tsetAttr \".a\" -type \"double3\" 0 0 1 ;\n\tsetAttr \".wu\" -type \"double3\" 0 0 0 ;\nconnectAttr \"tgt.t\" \"ac.tg[0].tt\";\nconnectAttr \"tgt.pm\" \"ac.tg[0].tpm\";\nconnectAttr \"ac.w0\" \"ac.tg[0].tw\";\nconnectAttr \"obj.t\" \"ac.ct\";\nconnectAttr \"ac.crx\" \"obj.rx\";\nconnectAttr \"ac.cry\" \"obj.ry\";\nconnectAttr \"ac.crz\" \"obj.rz\";\n";
     let (mut s, w) = load(body);

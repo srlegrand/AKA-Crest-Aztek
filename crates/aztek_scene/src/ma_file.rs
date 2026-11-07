@@ -2155,15 +2155,19 @@ impl Build<'_> {
         if !doc.nodes.iter().any(single) {
             return;
         }
-        self.s.graph.evaluate();
-        for i in 0..doc.nodes.len() {
-            if !single(&doc.nodes[i]) {
-                continue;
+        let handles: Vec<(NodeId, DVec3)> = (0..doc.nodes.len())
+            .filter(|&i| single(&doc.nodes[i]))
+            .filter_map(|i| {
+                let start = doc.input(i, &["hsj", "startJoint"])?.src;
+                Some((self.id(i)?, doc.nodes[start].vec3(&["r", "rotate"]).unwrap_or(DVec3::ZERO) * doc.ang))
+            })
+            .collect();
+        // A handle can hang under a chain another of them solves: each pass settles one more link.
+        for _ in 0..4 {
+            self.s.graph.evaluate();
+            for &(h, r) in &handles {
+                crate::ik::set_rest_turn(&mut self.s.graph, h, r);
             }
-            let Some(h) = self.id(i) else { continue };
-            let Some(start) = doc.input(i, &["hsj", "startJoint"]).map(|c| c.src) else { continue };
-            let r = doc.nodes[start].vec3(&["r", "rotate"]).unwrap_or(DVec3::ZERO) * doc.ang;
-            crate::ik::set_rest_turn(&mut self.s.graph, h, r);
         }
     }
 

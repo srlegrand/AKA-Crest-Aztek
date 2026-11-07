@@ -32,6 +32,7 @@ fn main() {
     }
     bind_check(&mut s);
     stored_check(&mut s, &path);
+    last_rotation_check(&mut s, &path);
     rest_check(&mut s);
     for name in std::env::args().skip(2) {
         chain(&mut s, &name);
@@ -225,6 +226,49 @@ fn stored_check(s: &mut Session, path: &str) {
     }
 }
 
+
+/// Maya stores each rotating constraint's last result in `.lr`, so these are posed results it computed. Reports the ones that differ.
+fn last_rotation_check(s: &mut Session, path: &str) {
+    use aztek_scene::transform::{euler_to_matrix, RotateOrder};
+    let text = std::fs::read(path).map(|b| String::from_utf8_lossy(&b).to_string()).unwrap_or_default();
+    let mut current = String::new();
+    let mut stored: Vec<(String, glam::DVec3)> = Vec::new();
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("createNode ") {
+            current = if rest.split_whitespace().next().is_some_and(|t| t.ends_with("Constraint")) { rest.split('"').nth(1).unwrap_or("").to_string() } else { String::new() };
+            continue;
+        }
+        let l = line.trim_start();
+        if !current.is_empty() && l.starts_with("setAttr \".lr\"") {
+            let v: Vec<f64> = l.split_whitespace().filter_map(|x| x.parse().ok()).collect();
+            if v.len() == 3 {
+                stored.push((current.clone(), glam::DVec3::new(v[0], v[1], v[2])));
+            }
+        }
+    }
+    let g = &mut s.graph;
+    g.evaluate();
+    let mut bad = Vec::new();
+    let mut checked = 0;
+    for (name, lr) in &stored {
+        let Ok(Some(id)) = g.find(name) else { continue };
+        let Some(n) = g.node(id) else { continue };
+        let (Some(out), Some(ro)) = (n.ty().attr_index("constraintRotate"), n.ty().attr_index("constraintRotateOrder")) else { continue };
+        checked += 1;
+        let order = RotateOrder::from_index(n.data().int(ro));
+        let q = |v: glam::DVec3| glam::DQuat::from_mat4(&euler_to_matrix(v, order));
+        let got = n.data().vec3(out);
+        let angle = q(got).dot(q(*lr)).abs().min(1.0).acos().to_degrees() * 2.0;
+        if angle > 0.05 {
+            bad.push((angle, name.clone(), got, *lr));
+        }
+    }
+    println!("last rotation check: {checked} constraints, {} differ", bad.len());
+    let limit = std::env::var("BIND_ALL").map_or(40, |_| usize::MAX);
+    for (angle, name, got, lr) in bad.iter().take(limit) {
+        println!("  {angle:8.3}  {name}  got {:.2} stored {:.2}", got, lr);
+    }
+}
 
 /// A rig at rest deforms nothing: every mesh sits on its original, the sibling intermediate shape. Reports how far each is off.
 fn rest_check(s: &mut Session) {
