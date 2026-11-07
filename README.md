@@ -108,7 +108,7 @@ Node Editor:
 
 ## Install
 
-Packages are on the [releases page](https://github.com/srlegrand/AKA-Crest-Aztek/releases): `latest` follows main.
+Packages are on the [releases page](https://github.com/srlegrand/Aztek/releases): `latest` follows main.
 
 | System | Package | Install |
 | --- | --- | --- |

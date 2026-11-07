@@ -3,7 +3,7 @@
 ## What it is
 
 Aztek is a modelling, UV, rigging and animation application that behaves like Maya, released by Simon (srlegrand) at
-https://github.com/srlegrand/AKA-Crest-Aztek. It started as a Rust port of Simon's C++ app Lila; Lila is now a parts
+https://github.com/srlegrand/Aztek. It started as a Rust port of Simon's C++ app Lila; Lila is now a parts
 bin, and the target is Maya's behaviour. PARITY.md holds the target and status; PORTING.md the history of the port.
 
 ## Rules
