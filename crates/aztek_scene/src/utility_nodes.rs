@@ -519,6 +519,12 @@ fn table() -> Vec<Spec> {
                 set(d, "outColor", o);
                 set(d, "outAlpha", (o.x + o.y + o.z) / 3.0);
             }),
+        Spec("unitConversion", "utility/general", "input times conversionFactor. Angles are degrees everywhere here, so only a factor beyond the change of angle units needs one.",
+            vec![fin("input", "i", 0.0), fin("conversionFactor", "cf", 1.0), fout("output", "o")],
+            |d| {
+                let o = f(d, "input") * f(d, "conversionFactor");
+                set(d, "output", o);
+            }),
         Spec("blendTwoAttr", "utility/general", "Blends input[current] toward input[current + 1] by attributesBlender.",
             vec![iin("current", "c", 0), multi(fin("input", "i", 0.0)), fin("attributesBlender", "ab", 0.0), fout("output", "o")],
             |d| {

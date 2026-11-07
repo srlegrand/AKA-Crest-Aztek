@@ -1044,6 +1044,29 @@ const PLAIN_NODES: &[&str] = &["blendWeighted", "makeNurbCircle", "makeNurbPlane
 const PLAIN_SHAPES: &[&str] = &["follicle", "distanceDimShape", "paramDimension", "annotationShape", "dropoffLocator", "lattice", "baseLattice", "softModHandle"];
 
 /// Nodes written and read attribute by attribute, with their connections: utility nodes and expressions.
+/// What a file's unitConversion does here, where angles are degrees: Maya's factors between radians and degrees come out as 1, and what
+/// is left is a rig's own scale: 0.1 on a blend, -1, or 2.5 degrees per unit written as 0.0436.
+fn conversion_factor(n: &MaNode) -> f64 {
+    let cf = n.num(&["cf", "conversionFactor"]).unwrap_or(1.0);
+    let k = if cf != 0.0 && cf.abs() < 0.05 {
+        cf / 1_f64.to_radians()
+    } else if cf.abs() >= 5.0 {
+        cf / 1_f64.to_degrees()
+    } else {
+        cf
+    };
+    if (k - k.round()).abs() < 1e-6 {
+        k.round()
+    } else {
+        k
+    }
+}
+
+/// A unitConversion that changes a value, and so has to exist here.
+fn scales(n: &MaNode) -> bool {
+    n.ty == "unitConversion" && conversion_factor(n) != 1.0
+}
+
 fn is_plain_node(ty: &str) -> bool {
     ty == "expression" || ty == crate::script_node::TYPE || (ty != "unitConversion" && crate::utility_nodes::classification(ty).is_some()) || PLAIN_NODES.contains(&ty) || PLAIN_SHAPES.contains(&ty)
 }
@@ -2440,7 +2463,7 @@ impl Build<'_> {
     fn real_source(&self, c: &Conn) -> (usize, String) {
         let (mut src, mut attr) = (c.src, c.src_attr.clone());
         for _ in 0..8 {
-            if self.doc.nodes[src].ty != "unitConversion" {
+            if self.doc.nodes[src].ty != "unitConversion" || scales(&self.doc.nodes[src]) {
                 break;
             }
             let Some(up) = self.doc.input(src, &["i", "input"]) else { break };
@@ -2469,7 +2492,7 @@ impl Build<'_> {
             // A CV driven by a locator or anything else, as an eyelid rig does.
             let into_cv = dt.name == crate::curves::SHAPE_TYPE && matches!(plain_attr(&c.dst_attr).as_str(), "cp" | "controlPoints");
             let from_layer = st.name == crate::display_layers::TYPE_NAME;
-            if !from_layer && (into_cv || is_plain_node(&dt.name) || is_plain_node(&st.name)) {
+            if !from_layer && (into_cv || is_plain_node(&dt.name) || is_plain_node(&st.name) || dt.name == "unitConversion" || st.name == "unitConversion") {
                 self.plain_connection(c, sn, &sa, src, dst);
                 continue;
             }
@@ -2804,6 +2827,15 @@ fn build(s: &mut Session, doc: &Doc, import: bool) -> Vec<String> {
         // Maya's own configuration scripts stay out: their content is read above and their MEL is for its interface.
         if is_plain_node(&doc.nodes[i].ty) && !matches!(doc.nodes[i].name.as_str(), "sceneConfigurationScriptNode" | "uiConfigurationScriptNode") {
             b.create_plain(i);
+        }
+        if scales(&doc.nodes[i]) {
+            b.create_plain(i);
+            if let Some(id) = b.ids[i] {
+                let path = format!("{}.cf", b.s.graph.path(id));
+                if let Ok(p) = b.s.graph.plug(&path) {
+                    let _ = b.s.graph.set_value(p, PlugValue::Float(conversion_factor(&doc.nodes[i])));
+                }
+            }
         }
     }
     for i in 0..count {

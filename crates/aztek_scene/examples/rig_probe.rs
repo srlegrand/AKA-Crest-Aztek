@@ -42,6 +42,14 @@ fn main() {
             }
             continue;
         }
+        // set=node.attr=value: poses it for what is asked after.
+        if let Some(pose) = a.strip_prefix("set=") {
+            let (plug, v) = pose.split_once('=').expect("set=node.attr=value");
+            let v: f64 = v.parse().expect("number");
+            println!("{pose}: {:?}", s.run("setAttr", serde_json::json!({"args": [plug, v]})).map(|_| ()));
+            s.graph.evaluate();
+            continue;
+        }
         if a == "touch" {
             // Dirties everything and evaluates again: a result that moves was not settled.
             for id in s.graph.nodes() {

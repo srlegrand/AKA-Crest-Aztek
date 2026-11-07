@@ -521,6 +521,22 @@ fn spline_ik_twist_can_come_from_a_ramp() {
 }
 
 #[test]
+fn a_unit_conversion_with_a_factor_of_its_own_scales() {
+    let body = "createNode transform -n \"a\";\n\tsetAttr \".tx\" 10;\ncreateNode transform -n \"b\";\ncreateNode unitConversion -n \"tenth\";\n\tsetAttr \".cf\" 0.1;\nconnectAttr \"a.tx\" \"tenth.i\";\nconnectAttr \"tenth.o\" \"b.tx\";\ncreateNode transform -n \"c\";\ncreateNode unitConversion -n \"toDegrees\";\n\tsetAttr \".cf\" 0.017453292519943295;\nconnectAttr \"a.tx\" \"toDegrees.i\";\nconnectAttr \"toDegrees.o\" \"c.rx\";\ncreateNode transform -n \"d\";\ncreateNode unitConversion -n \"twoAndAHalf\";\n\tsetAttr \".cf\" 0.043633231299858237;\nconnectAttr \"a.tx\" \"twoAndAHalf.i\";\nconnectAttr \"twoAndAHalf.o\" \"d.rx\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "b.tx"), &[1.0], "a tenth");
+    assert_near(get(&mut s, "c.rx"), &[10.0], "only a change of units");
+    assert_near(get(&mut s, "d.rx"), &[25.0], "2.5 degrees per unit");
+    let (out, _) = aztek_scene::ma_file::write_text(&mut s, "u.ma", None);
+    let mut b = Session::new();
+    let w = read_text(&mut b, &out, false);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut b, "b.tx"), &[1.0], "after a save");
+    assert_near(get(&mut b, "d.rx"), &[25.0], "after a save");
+}
+
+#[test]
 fn an_aim_with_a_zero_up_vector_turns_the_shortest_way() {
     let body = "createNode transform -n \"tgt\";\n\tsetAttr \".t\" -type \"double3\" 1 0 1 ;\ncreateNode transform -n \"obj\";\ncreateNode aimConstraint -n \"ac\" -p \"obj\";\n\taddAttr -dcb 0 -ci true -sn \"w0\" -ln \"tgtW0\" -dv 1 -at \"double\";\n\tsetAttr \".a\" -type \"double3\" 0 0 1 ;\n\tsetAttr \".wu\" -type \"double3\" 0 0 0 ;\nconnectAttr \"tgt.t\" \"ac.tg[0].tt\";\nconnectAttr \"tgt.pm\" \"ac.tg[0].tpm\";\nconnectAttr \"ac.w0\" \"ac.tg[0].tw\";\nconnectAttr \"obj.t\" \"ac.ct\";\nconnectAttr \"ac.crx\" \"obj.rx\";\nconnectAttr \"ac.cry\" \"obj.ry\";\nconnectAttr \"ac.crz\" \"obj.rz\";\n";
     let (mut s, w) = load(body);
