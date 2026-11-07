@@ -841,7 +841,7 @@ protected:
     void mouseMoveEvent(QMouseEvent* e) override {
         if (!(e->buttons() & Qt::LeftButton)) return;
         double dx = e->globalPosition().x() - from_;
-        double v = std::clamp(start_ + dx * (hi_ - lo_) / 300.0, lo_, hi_);
+        double v = std::clamp(start_ + dx * (hi_ - lo_) / (is_int_ ? 200.0 : 1000.0), lo_, hi_);
         if (is_int_) v = std::round(v);
         QSignalBlocker block(spin_);
         spin_->setValue(v);
