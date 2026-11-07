@@ -27,6 +27,7 @@ fn maya_scripts_run() {
     let l = log();
     assert!(l.iter().any(|(k, t)| *k == 3 && t == "['pCube1', 'polyCube1']"), "{l:?}");
     python_keys();
+    python_messages();
     py("cmds.polyCube('polyCube1', q=True, w=True)");
     let l = log();
     assert!(l.iter().any(|(_, t)| t == "# Result: 2.0 #"), "{l:?}");
@@ -45,6 +46,27 @@ fn maya_scripts_run() {
     py("import maya.mel as mel\nmel.eval('polySphere -r 2')");
     let l = log();
     assert!(l.iter().any(|(_, t)| t.contains("pSphere2")), "{l:?}");
+}
+
+/// Called from maya_scripts_run, as Python runs once per process.
+fn python_messages() {
+    log();
+    py("import maya.cmds as cmds\ncmds.warning('careful')\ngetattr(cmds, 'print')('hello')");
+    let l = log();
+    assert!(l.iter().any(|(k, t)| *k == 4 && t == "# Warning: careful #"), "{l:?}");
+    assert!(l.iter().any(|(_, t)| t == "hello"), "{l:?}");
+    py("import maya.mel\nmaya.mel.eval('proc pyProc(int $i, string $s[]) {}')\nx = ['a', 'b']\nprint(cmds.clear(x), x)\nprint(cmds.getProcArguments('pyProc'))");
+    let l = log();
+    assert!(l.iter().any(|(_, t)| t == "2 []"), "{l:?}");
+    assert!(l.iter().any(|(_, t)| t == "['int', 'string[]']"), "{l:?}");
+    py("cmds.commandEcho(state=True)\ncmds.ls(sl=True)\ncmds.commandEcho(state=False)");
+    let l = log();
+    assert!(l.iter().any(|(_, t)| t.starts_with("ls ") && t.ends_with(';')), "commandEcho should echo: {l:?}");
+    log();
+    py("cmds.ls(sl=True)");
+    assert!(!log().iter().any(|(_, t)| t.starts_with("ls ")));
+    py("print(cmds.skeletonEmbed, cmds.jointDisplayScale, cmds.help, cmds.condition)");
+    assert!(!log().iter().any(|(k, _)| *k == 2), "new commands should reach cmds");
 }
 
 /// Python runs once per process: called from maya_scripts_run.

@@ -17,6 +17,7 @@ mod render;
 pub mod script_jobs;
 pub mod attr_ui;
 pub mod script_objects;
+pub mod host_general;
 pub mod scriptui;
 pub mod tools;
 pub mod ui_cmds;

@@ -100,7 +100,7 @@ fn probe_event(s: &mut Session, event: &str) -> Option<Value> {
     })
 }
 
-fn probe_condition(s: &mut Session, name: &str) -> bool {
+pub(crate) fn probe_condition(s: &mut Session, name: &str) -> bool {
     match name {
         "SomethingSelected" => s.run("ls", json!({"selection": true})).ok().and_then(|v| v.as_array().map(|a| !a.is_empty())).unwrap_or(false),
         "UndoAvailable" | "undoAvailable" => s.graph.undo_stack().can_undo(),
@@ -110,7 +110,7 @@ fn probe_condition(s: &mut Session, name: &str) -> bool {
         "MayaInitialized" => true,
         "objectMode" => aztek_scene::components::mode(&s.graph) == aztek_scene::components::ComponentMode::Object,
         "componentMode" => aztek_scene::components::mode(&s.graph) != aztek_scene::components::ComponentMode::Object,
-        _ => false,
+        _ => crate::host_general::condition_state(name).unwrap_or(false),
     }
 }
 

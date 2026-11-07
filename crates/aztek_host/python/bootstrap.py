@@ -159,6 +159,17 @@ def _print(*args, **kwargs):
     sys.stdout.write(_message(args))
 
 
+def _clear(array):
+    # MEL's clear on a Python list: empties it in place and gives how many it held.
+    held = len(array)
+    del array[:]
+    return held
+
+
+def _get_proc_arguments(name):
+    return _mel_eval('getProcArguments "%s"' % name)
+
+
 def _what_is(name):
     return _mel_eval('whatIs "%s"' % name)
 
@@ -175,6 +186,8 @@ cmds.warning = _warning
 cmds.error = _error
 setattr(cmds, "print", _print)
 cmds.whatIs = _what_is
+cmds.clear = _clear
+cmds.getProcArguments = _get_proc_arguments
 cmds.evalDeferred = _eval_deferred
 
 
