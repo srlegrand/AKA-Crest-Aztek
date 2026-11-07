@@ -390,6 +390,17 @@ fn add_attr_flags(a: &crate::plug::AttrDef) -> String {
 // ---------------------------------------------------------------------------------------------------------------------
 // The scene against what the file gave
 
+/// A connection as compared: a set's member slot moves when another member comes or goes, so which slot doesn't count.
+fn conn_key(g: &Graph, src: PlugRef, dst: PlugRef) -> (PlugRef, PlugRef) {
+    let slot = g.node(dst.node).is_some_and(|n| dst.attr >= 0 && matches!(n.ty().attrs[dst.attr as usize].name.as_str(), "dagSetMembers" | "dnSetMembers"));
+    (src, if slot { PlugRef { element: -1, ..dst } } else { dst })
+}
+
+/// Nodes a file holds that belong to the scene: every scene has just one.
+fn is_shared_node(g: &Graph, n: NodeId) -> bool {
+    g.node(n).is_some_and(|x| matches!(x.ty().name.as_str(), "ikSystem" | "time" | "displayLayerManager" | "renderLayerManager" | "lightLinker"))
+}
+
 fn nodes_of(g: &Graph, id: u32) -> Vec<NodeId> {
     g.nodes().into_iter().filter(|&n| g.node(n).is_some_and(|x| x.reference_id() == id && x.ty().name != REF_NODE_TYPE)).collect()
 }
@@ -429,7 +440,7 @@ fn snapshot(g: &mut Graph, id: u32) -> Baseline {
     }
     for (dst, src) in g.connections() {
         if set.contains(&dst.node) || set.contains(&src.node) {
-            b.conns.insert((src, dst));
+            b.conns.insert(conn_key(g, src, dst));
         }
     }
     b
@@ -447,7 +458,8 @@ fn gather(s: &mut Session, at: usize) -> (Vec<RefEdit>, Vec<RefConn>) {
     let e = &s.extras.references.entries[at];
     let ids = nodes_of(g, id);
     let set: HashSet<NodeId> = ids.iter().copied().collect();
-    let live: HashSet<(PlugRef, PlugRef)> = g.connections().into_iter().map(|(dst, src)| (src, dst)).collect();
+    let all: Vec<(PlugRef, PlugRef)> = g.connections().into_iter().map(|(dst, src)| (src, dst)).collect();
+    let live: HashSet<(PlugRef, PlugRef)> = all.iter().map(|&(src, dst)| conn_key(g, src, dst)).collect();
     let (mut parents, mut adds, mut sets, mut disconnects, mut deletes, mut locks) = (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
     for &n in &ids {
         let node = g.node(n).unwrap();
@@ -467,13 +479,18 @@ fn gather(s: &mut Session, at: usize) -> (Vec<RefEdit>, Vec<RefConn>) {
             if is_new {
                 adds.push(RefEdit::new(1, vec![path.clone(), a.name.clone(), if a.short_name.is_empty() { a.name.clone() } else { a.short_name.clone() }, add_attr_flags(a)]));
             }
-            if !compared(a) {
+            // A constraint's constraintPosition and the like are what it worked out, not settings.
+            if !compared(a) || a.name.starts_with("constraint") {
                 continue;
             }
             let name = attr_name(&t, i);
             let mut one = |el: i32, v: &PlugValue| {
                 let plug = PlugRef { node: n, attr: i as i32, component: -1, element: el };
                 if g.source(&plug).is_some() {
+                    return;
+                }
+                // Part of a compound driven: its value moves with that, and the other parts rarely get edited on their own.
+                if matches!(v, PlugValue::Vec3(_)) && (0..3).any(|c| g.source(&PlugRef { component: c, ..plug }).is_some()) {
                     return;
                 }
                 let changed = match e.baseline.values.get(&(n, i as u32, el)) {
@@ -504,15 +521,17 @@ fn gather(s: &mut Session, at: usize) -> (Vec<RefEdit>, Vec<RefConn>) {
         }
     }
     let mut conns = Vec::new();
-    for (src, dst) in &live {
-        if !(set.contains(&src.node) || set.contains(&dst.node)) || e.baseline.conns.contains(&(*src, *dst)) {
+    for (src, dst) in &all {
+        if !(set.contains(&src.node) || set.contains(&dst.node)) || e.baseline.conns.contains(&conn_key(g, *src, *dst)) {
             continue;
         }
         let referenced = |n: NodeId| g.node(n).is_some_and(|x| x.reference_id() != 0);
         conns.push(RefConn { src: plug_full_name(g, src), dst: plug_full_name(g, dst), src_ref: referenced(src.node), dst_ref: referenced(dst.node), failed: false });
     }
     for (src, dst) in &e.baseline.conns {
-        if !live.contains(&(*src, *dst)) && g.node(src.node).is_some() && g.node(dst.node).is_some() {
+        // Leaving a shading group is said by joining another; a shared group's member list is rebuilt on every read.
+        let member = g.node(dst.node).is_some_and(|n| dst.attr >= 0 && n.ty().attrs[dst.attr as usize].name == "dagSetMembers");
+        if !member && !live.contains(&(*src, *dst)) && g.node(src.node).is_some() && g.node(dst.node).is_some() {
             disconnects.push(RefEdit::new(3, vec![plug_full_name(g, src), plug_full_name(g, dst)]));
         }
     }
@@ -730,7 +749,7 @@ fn load(s: &mut Session, at: usize, scene_edits: bool) -> Result<Vec<String>, St
         if !ns.is_empty() {
             g.set_namespace_known(&ns, true);
         }
-        let new: Vec<NodeId> = g.nodes().into_iter().filter(|n| !before.contains(n) && g.node(*n).is_some_and(|x| x.reference_id() == 0)).collect();
+        let new: Vec<NodeId> = g.nodes().into_iter().filter(|n| !before.contains(n) && g.node(*n).is_some_and(|x| x.reference_id() == 0) && !is_shared_node(g, *n)).collect();
         for &n in &new {
             let name = g.node(n).unwrap().name().to_string();
             if !ns.is_empty() {
@@ -960,9 +979,15 @@ fn create_with(s: &mut Session, r: &FileRef) -> Result<usize, String> {
         let (rfn, id) = (e.rfn.clone(), e.id);
         let file = PathBuf::from(&e.path);
         s.graph.without_undo(|g| make_reference_node(g, &rfn, id, &file));
-    } else if let Err(e) = load(s, at, true) {
-        s.extras.references.entries.remove(at);
-        return Err(e);
+    } else {
+        // One evaluation at the end rather than one per constraint.
+        s.graph.begin_batch();
+        let r = load(s, at, true);
+        s.graph.end_batch();
+        if let Err(e) = r {
+            s.extras.references.entries.remove(at);
+            return Err(e);
+        }
     }
     s.graph.undo_stack_mut().clear();
     Ok(at)

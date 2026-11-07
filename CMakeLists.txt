@@ -54,6 +54,7 @@ add_executable(aztek WIN32
   app/src/mainwindow.cpp
   app/src/grapheditor.cpp
   app/src/uveditor.cpp
+  app/src/referenceeditor.cpp
   app/src/materials.cpp
   app/src/toolsettings.cpp
   app/src/dopesheet.cpp

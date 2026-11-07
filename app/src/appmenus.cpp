@@ -163,6 +163,13 @@ QMenu* MainWindow::file_menu() {
         QString c = f.endsWith(".ply", Qt::CaseInsensitive) ? "importPly" : f.endsWith(".stl", Qt::CaseInsensitive) ? "importStl" : "importObj";
         exec(c, args(QJsonArray{f}));
     });
+    m->addSeparator();
+    {
+        auto* row = new OptionRow("Create Reference...", "Ctrl+R", [this] { create_reference_dialog(false); }, [this] { create_reference_dialog(true); }, m);
+        m->addAction(row);
+    }
+    m->addAction("Reference Editor", this, &MainWindow::show_reference_editor);
+    m->addSeparator();
     auto do_export = [](bool all) {
         QString f = QFileDialog::getSaveFileName(nullptr, all ? "Export All" : "Export Selection", "export.ma", "ASCII scenes (*.ma);;OBJ (*.obj);;PLY (*.ply);;STL (*.stl)");
         if (f.isEmpty()) return;

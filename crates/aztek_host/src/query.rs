@@ -109,6 +109,7 @@ fn outliner_node(g: &Graph, id: NodeId, shapes: bool, show_intermediate: bool, s
         "path": g.path(id),
         "type": n.ty().name,
         "icon": icon,
+        "referenced": n.reference_id() != 0,
         "selected": sel.contains(&id),
         "visible": !n.ty().dag || n.bool(DagNode::VISIBILITY),
         "intermediate": intermediate,

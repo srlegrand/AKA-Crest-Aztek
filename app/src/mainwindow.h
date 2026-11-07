@@ -53,6 +53,8 @@ public:
     PanelLayout* panels() const { return panels_; }
     void run_startup(const QString& script, const QString& screenshot);
     void open_file(const QString& path);
+    void show_reference_editor();
+    void create_reference_dialog(bool options = false);
 protected:
     bool eventFilter(QObject* o, QEvent* e) override;
     void closeEvent(QCloseEvent* e) override;

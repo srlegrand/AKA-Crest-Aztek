@@ -150,6 +150,9 @@ void MainWindow::build_runtime() {
     r("EditMembershipTool", "Tools", "Edit Membership", [this] { set_tool("editMembership"); show_tool_settings(); });
     r("ArtPaintSkinWeightsToolOptions", "Tools", "Paint Skin Weights and its settings", [this] { set_tool("paintSkin"); show_tool_settings(); });
     r("RepeatLast", "Edit", "Repeat the last command", [this] { repeat_last(); });
+    r("CreateReference", "File", "Create a reference", [this] { create_reference_dialog(false); });
+    r("CreateReferenceOptions", "File", "Create a reference, with options", [this] { create_reference_dialog(true); });
+    r("ReferenceEditor", "Windows", "Reference Editor", [this] { show_reference_editor(); });
     r("LastTool", "Tools", "The tool used before this one", [this] { set_tool(last_tool_); });
     r("ToolSettingsWindow", "Windows", "Tool Settings", [this] { show_tool_settings(); });
     r("ScriptEditor", "Windows", "Script Editor", [this] { show_script_editor(); });
@@ -402,7 +405,7 @@ QList<HotkeyBinding> MainWindow::default_hotkeys() const {
         {"W", S, "SetKeyTranslate", ""}, {"E", S, "SetKeyRotate", ""}, {"R", S, "SetKeyScale", ""}, {"S", 0, "SetKey", ""},
         {"V", A, "PlaybackToggle", ""}, {"V", A | S, "GoToMinFrame", ""}, {".", 0, "NextKey", ""}, {",", 0, "PreviousKey", ""}, {".", A, "NextFrame", ""}, {",", A, "PreviousFrame", ""},
         {"F", 0, "FrameSelected", ""}, {"A", 0, "FrameAll", ""}, {"F", S, "FrameSelectedInAllViews", ""}, {"A", S, "FrameAllInAllViews", ""}, {"[", 0, "PreviousView", ""}, {"]", 0, "NextView", ""},
-        {"Z", 0, "Undo", ""}, {"Z", C, "Undo", ""}, {"Z", S, "Redo", ""}, {"Z", C | S, "Redo", ""}, {"Y", C, "Redo", ""}, {"G", 0, "RepeatLast", ""}, {"G", C, "Group", ""},
+        {"Z", 0, "Undo", ""}, {"Z", C, "Undo", ""}, {"Z", S, "Redo", ""}, {"Z", C | S, "Redo", ""}, {"Y", C, "Redo", ""}, {"G", 0, "RepeatLast", ""}, {"R", C, "CreateReference", ""}, {"G", C, "Group", ""},
         {"D", C, "Duplicate", ""}, {"D", C | S, "DuplicateSpecialOptions", ""}, {"D", S, "DuplicateWithTransform", ""}, {"D", A | S, "DeleteHistory", ""},
         {"P", 0, "Parent", ""}, {"P", S, "Unparent", ""}, {"H", 0, "ToggleVisibility", ""}, {"H", C, "HideSelected", ""}, {"H", C | S, "ShowLastHidden", ""},
         {"N", C, "NewScene", ""}, {"O", C, "OpenScene", ""}, {"S", C, "SaveScene", ""}, {"S", C | S, "SaveSceneAs", ""}, {"S", C | A, "IncrementAndSave", ""},
