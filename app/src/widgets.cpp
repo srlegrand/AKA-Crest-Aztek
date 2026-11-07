@@ -57,7 +57,7 @@ void show_about(QWidget* parent) {
     img->setPixmap(splash_pixmap());
     v->addWidget(img);
     auto* text = new QLabel(QString("Aztek %1<br>Modelling, UVs, rigging and animation.<br>Rust core, Qt interface, Vulkan viewport.<br><br>"
-                                    "<a href=\"https://github.com/srlegrand/AKA-Crest-Aztek\" style=\"color:#7fb4d6\">github.com/srlegrand/AKA-Crest-Aztek</a>")
+                                    "<a href=\"https://github.com/srlegrand/Aztek\" style=\"color:#7fb4d6\">github.com/srlegrand/Aztek</a>")
                                 .arg(AZTEK_VERSION),
                             &d);
     text->setOpenExternalLinks(true);

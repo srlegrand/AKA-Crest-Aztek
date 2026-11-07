@@ -1,4 +1,5 @@
 // The Outliner: the DAG with an icon per type, Display and Show menus, search, drag to parent, middle-drag to reorder.
+#include <QPainter>
 #include "panels.h"
 #include <functional>
 #include "host.h"
@@ -236,7 +237,22 @@ void Outliner::add(QTreeWidgetItem* parent, const QJsonObject& node) {
     QString path = node["path"].toString();
     it->setText(0, node["name"].toString());
     it->setData(0, Qt::UserRole, path);
-    if (show_icons_) it->setIcon(0, icon(ic, 16));
+    if (show_icons_) {
+        QIcon shown = icon(ic, 16);
+        // A node from a reference: a small blue diamond on its icon.
+        if (node["referenced"].toBool()) {
+            QPixmap pm = shown.pixmap(16, 16);
+            QPainter p(&pm);
+            p.setRenderHint(QPainter::Antialiasing);
+            p.setBrush(QColor(70, 150, 255));
+            p.setPen(QColor(20, 40, 80));
+            const QPointF diamond[4] = {{4, 8}, {8, 12}, {4, 16}, {0, 12}};
+            p.drawPolygon(diamond, 4);
+            p.end();
+            shown = QIcon(pm);
+        }
+        it->setIcon(0, shown);
+    }
     it->setFlags(it->flags() | Qt::ItemIsEditable | Qt::ItemIsDragEnabled | Qt::ItemIsDropEnabled);
     // Default nodes dim, as Maya's are.
     if (cam_default) it->setForeground(0, QColor(150, 150, 150));

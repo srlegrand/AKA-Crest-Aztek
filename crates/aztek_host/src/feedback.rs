@@ -7,7 +7,7 @@ use std::path::Path;
 use aztek_scene::Session;
 use serde_json::{json, Value};
 
-pub const NEW_ISSUE_URL: &str = "https://github.com/srlegrand/AKA-Crest-Aztek/issues/new";
+pub const NEW_ISSUE_URL: &str = "https://github.com/srlegrand/Aztek/issues/new";
 /// Past about this length browsers or GitHub can refuse the link.
 pub const URL_LIMIT: usize = 7000;
 /// What the title holds before the prefix, in characters.

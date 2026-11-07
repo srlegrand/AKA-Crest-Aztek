@@ -258,6 +258,8 @@ struct MaNode {
     adds: Vec<AddAttr>,
     /// lockNode -l 1.
     locked: bool,
+    /// -p naming a node this file doesn't hold: one from a reference.
+    ext_parent: Option<String>,
 }
 
 impl MaNode {
@@ -348,6 +350,15 @@ fn first_index(a: &str) -> Option<i64> {
     a[open + 1..close].parse().ok().filter(|e| (0..MAX_INDEX).contains(e))
 }
 
+#[derive(Debug, Clone)]
+struct RefLine {
+    src: String,
+    dst: String,
+    src_ref: bool,
+    dst_ref: bool,
+    owner: Option<String>,
+}
+
 #[derive(Debug)]
 struct Doc {
     nodes: Vec<MaNode>,
@@ -358,12 +369,15 @@ struct Doc {
     ang: f64,
     fps: Option<f64>,
     warnings: Vec<String>,
-    /// file -r: path, namespace, reference node, deferred.
-    refs: Vec<(String, String, Option<String>, bool)>,
+    /// file -r lines.
+    refs: Vec<crate::references::FileRef>,
+    /// file -rdi lines: reference node, starts unloaded.
+    ref_load: Vec<(String, bool)>,
     /// parent -s -add: the shape and the transform it's also under.
     instances: Vec<(String, String)>,
-    /// Connections with a node of a reference.
-    ref_conns: Vec<(String, String)>,
+    /// Connections with a node of a reference: source, destination, whether each is in one, and the reference node
+    /// when a placeholder named it.
+    ref_conns: Vec<RefLine>,
     up_z: bool,
 }
 
@@ -454,7 +468,7 @@ impl Doc {
     }
 
     fn parse(text: &str) -> Doc {
-        let mut d = Doc { nodes: Vec::new(), by_name: HashMap::new(), conns: Vec::new(), lin: 1.0, ang: 1.0, fps: None, warnings: Vec::new(), refs: Vec::new(), instances: Vec::new(), ref_conns: Vec::new(), up_z: false };
+        let mut d = Doc { nodes: Vec::new(), by_name: HashMap::new(), conns: Vec::new(), lin: 1.0, ang: 1.0, fps: None, warnings: Vec::new(), refs: Vec::new(), ref_load: Vec::new(), instances: Vec::new(), ref_conns: Vec::new(), up_z: false };
         let mut lex = Lexer::new(text);
         let mut st = Vec::new();
         let mut current: Option<usize> = None;
@@ -509,21 +523,7 @@ impl Doc {
                 }
                 "parent" => d.parent(&st),
                 "currentUnit" => d.current_unit(&st),
-                "file" => {
-                    if st.iter().any(|t| matches!(t.text(), Some("-r") | Some("-reference"))) {
-                        let after = |flags: &[&str]| st.iter().position(|t| matches!(t, Tok::Word(w) if flags.contains(&w.as_str()))).and_then(|i| st.get(i + 1)).and_then(Tok::text).map(str::to_string);
-                        let ns = after(&["-ns", "-namespace"]).unwrap_or_default();
-                        let rfn = after(&["-rfn", "-referenceNode"]);
-                        let deferred = st.iter().position(|t| matches!(t, Tok::Word(w) if w == "-dr" || w == "-deferReference")).and_then(|i| st.get(i + 1)).and_then(Tok::num).is_some_and(|v| v != 0.0);
-                        let path = st.iter().rev().find_map(|t| match t {
-                            Tok::Str(s) => Some(s.clone()),
-                            _ => None,
-                        });
-                        if let Some(path) = path {
-                            d.refs.push((path, ns, rfn, deferred));
-                        }
-                    }
-                }
+                "file" => d.file_line(&st),
                 "lockNode" => {
                     let off = st.iter().position(|t| matches!(t, Tok::Word(w) if w == "-l" || w == "-lock")).and_then(|i| st.get(i + 1)).and_then(Tok::num) == Some(0.0);
                     if let Some(i) = current {
@@ -538,12 +538,25 @@ impl Doc {
                 _ => {}
             }
         }
+        let placeholders = d.placeholders();
         for (a, b) in raw_conns {
+            // Through a reference's placeholder list: what it stands for is in the reference's edits.
+            let (held_a, held_b) = (placeholders.get(&a), placeholders.get(&b));
+            if held_a.is_some() || held_b.is_some() {
+                let owner = held_a.or(held_b).map(|h| h.1.clone());
+                d.ref_conns.push(RefLine { src: held_a.map_or(a.clone(), |h| h.0.clone()), dst: held_b.map_or(b.clone(), |h| h.0.clone()), src_ref: held_a.is_some(), dst_ref: held_b.is_some(), owner });
+                continue;
+            }
+            // The sharedReferenceNode and the like hold nothing to connect.
+            if a.split_once('.').is_some_and(|x| x.1 == "sr" || x.1 == "sharedReference") {
+                continue;
+            }
             let (Some((sn, sa)), Some((dn, da))) = (a.split_once('.'), b.split_once('.')) else { continue };
             // Plugs on default nodes the file never touched are of no interest: only nodes it knows connect.
-            let from_ref = |d: &Doc, n: &str| n.contains(':') && !shading::is_named_default(n) && d.find(n).is_none_or(|i| d.nodes[i].default);
+            let from_ref = |d: &Doc, n: &str| n.trim_start_matches(':').contains(':') && !shading::is_named_default(n) && d.find(n).is_none_or(|i| d.nodes[i].default);
             if from_ref(&d, sn) || from_ref(&d, dn) {
-                d.ref_conns.push((a.clone(), b.clone()));
+                let (src_ref, dst_ref) = (from_ref(&d, sn), from_ref(&d, dn));
+                d.ref_conns.push(RefLine { src: a.clone(), dst: b.clone(), src_ref, dst_ref, owner: None });
                 continue;
             }
             // A connection to lambert1 or initialShadingGroup holds even if the file never selected it.
@@ -567,10 +580,84 @@ impl Doc {
         d
     }
 
+    /// The `rigRN.phl[1]` plugs a file's connections name, to what they stand for and their reference node. Maya writes
+    /// `5 side reference plug placeholder flags` in `.ed`.
+    fn placeholders(&self) -> HashMap<String, (String, String)> {
+        let mut out = HashMap::new();
+        for (rfn, tokens) in self.reference_edits_text() {
+            let (sections, _) = crate::references::parse_edits(&tokens);
+            for (_, list) in sections {
+                for e in list.iter().filter(|e| e.kind == 5) {
+                    let [_, _, plug, holder, ..] = e.args.as_slice() else { continue };
+                    let Some(index) = holder.split_once('.').map(|x| x.1) else { continue };
+                    let index = index.trim_start_matches("placeHolderList").trim_start_matches("phl");
+                    for name in ["phl", "placeHolderList"] {
+                        out.insert(format!("{rfn}.{name}{index}"), (plug.clone(), rfn.clone()));
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// `file -rdi`, where Maya keeps a reference's load state, and `file -r`, which always says -dr 1 in its own files.
+    fn file_line(&mut self, st: &[Tok]) {
+        let word = |t: &Tok, names: &[&str]| matches!(t, Tok::Word(w) if names.contains(&w.as_str()));
+        let after = |names: &[&str]| st.iter().position(|t| word(t, names)).and_then(|i| st.get(i + 1)).and_then(Tok::text).map(str::to_string);
+        let on = |names: &[&str]| st.iter().position(|t| word(t, names)).is_some_and(|i| st.get(i + 1).and_then(Tok::num).is_none_or(|v| v != 0.0));
+        let is_rdi = st.iter().any(|t| word(t, &["-rdi", "-referenceDepthInfo"]));
+        let rfn = after(&["-rfn", "-referenceNode"]);
+        let deferred = on(&["-dr", "-deferReference"]);
+        if is_rdi {
+            if let Some(rfn) = rfn {
+                self.ref_load.push((rfn, deferred));
+            }
+            return;
+        }
+        if !st.iter().any(|t| word(t, &["-r", "-reference"])) {
+            return;
+        }
+        let path = st.iter().rev().find_map(|t| match t {
+            Tok::Str(s) => Some(s.clone()),
+            _ => None,
+        });
+        if let Some(path) = path {
+            self.refs.push(crate::references::FileRef {
+                path,
+                ns: after(&["-ns", "-namespace"]).unwrap_or_default(),
+                rfn,
+                deferred,
+                rpr: after(&["-rpr", "-renamingPrefix"]),
+                file_type: after(&["-typ", "-type"]).unwrap_or_default(),
+                options: after(&["-op", "-options"]).unwrap_or_default(),
+                locked: on(&["-lck", "-lockReference"]),
+                merge: false,
+            });
+        }
+    }
+
+    /// What each reference node's `.ed` holds, as text.
+    fn reference_edits_text(&self) -> Vec<(String, Vec<String>)> {
+        let mut out = Vec::new();
+        for n in self.nodes.iter().filter(|n| n.ty == crate::references::REF_NODE_TYPE) {
+            for set in &n.sets {
+                if matches!(set.path.as_slice(), [seg] if seg.name == "ed" || seg.name == "edits") {
+                    let tok = set.values.iter().map(|t| match t {
+                        Tok::Num(v) => v.to_string(),
+                        Tok::Word(w) | Tok::Str(w) => w.clone(),
+                    });
+                    out.push((n.name.clone(), tok.collect()));
+                }
+            }
+        }
+        out
+    }
+
     fn create_node(&mut self, st: &[Tok]) -> Option<usize> {
         let ty = st.get(1)?.text()?.to_string();
         let mut name = String::new();
         let mut parent = None;
+        let mut ext_parent = None;
         let mut k = 2;
         while k < st.len() {
             match st[k].text() {
@@ -579,7 +666,12 @@ impl Doc {
                     k += 1;
                 }
                 Some("-p") | Some("-parent") => {
-                    parent = st.get(k + 1)?.text().and_then(|p| self.find(p));
+                    let named = st.get(k + 1)?.text()?;
+                    parent = self.find(named);
+                    // A parent the file doesn't make: a node of a reference.
+                    if parent.is_none() && named.contains(':') {
+                        ext_parent = Some(named.to_string());
+                    }
                     k += 1;
                 }
                 _ => {}
@@ -590,7 +682,7 @@ impl Doc {
             let n = self.nodes.iter().filter(|n| n.ty == ty).count() + 1;
             name = format!("{ty}{n}");
         }
-        Some(self.add_node(MaNode { ty, name, parent, ..Default::default() }))
+        Some(self.add_node(MaNode { ty, name, parent, ext_parent, ..Default::default() }))
     }
 
     fn set_attr(&mut self, st: &[Tok], current: Option<usize>) {
@@ -1518,6 +1610,13 @@ impl Build<'_> {
     }
 
     fn nearest_parent(&mut self, node: usize) -> NodeId {
+        if let Some(p) = &self.doc.nodes[node].ext_parent {
+            let prefix = crate::references::reading_namespace(self.s);
+            let named = crate::references::prefix_path(p, &prefix);
+            if let Ok(Some(id)) = self.s.graph.find(&named) {
+                return id;
+            }
+        }
         let mut at = self.doc.nodes[node].parent;
         while let Some(p) = at {
             if self.ids[p].is_none() && self.keeps(p) {
@@ -1589,51 +1688,10 @@ impl Build<'_> {
             if !a.parent.is_empty() || a.long == "aztekTrim" {
                 continue;
             }
-            let at = a.at.as_str();
-            let ty = match (at, a.dt.as_str()) {
-                ("double" | "float" | "doubleLinear" | "doubleAngle" | "time", _) => PlugType::Float,
-                ("long" | "short" | "byte" | "char", _) => PlugType::Int,
-                ("bool", _) => PlugType::Bool,
-                ("enum", _) => PlugType::Enum,
-                ("double3" | "float3", _) => PlugType::Vec3,
-                (_, "string") => PlugType::String,
-                ("message", _) => PlugType::Int,
-                _ => {
-                    self.warnings.push(format!("{}.{}: attribute type {}{} skipped", n.name, a.long, a.at, a.dt));
-                    continue;
-                }
+            let Some(def) = user_attr_def(a) else {
+                self.warnings.push(format!("{}.{}: attribute type {}{} skipped", n.name, a.long, a.at, a.dt));
+                continue;
             };
-            let default_value = match ty {
-                PlugType::Float => PlugValue::Float(a.dv.unwrap_or(0.0)),
-                PlugType::Int | PlugType::Enum => PlugValue::Int(a.dv.unwrap_or(0.0) as i64),
-                PlugType::Bool => PlugValue::Bool(a.dv.unwrap_or(0.0) != 0.0),
-                PlugType::Vec3 => PlugValue::Vec3(DVec3::ZERO),
-                _ => PlugValue::String(String::new()),
-            };
-            let mut flags_on = flags::INPUT | flags::STORABLE | flags::USER;
-            if a.keyable {
-                flags_on |= flags::KEYABLE;
-            }
-            if at == "message" {
-                flags_on = flags::INPUT | flags::USER | flags::MESSAGE;
-            }
-            if a.multi {
-                flags_on |= flags::ARRAY;
-            }
-            let mut def = AttrDef {
-                name: a.long.clone(),
-                short_name: if a.short == a.long { String::new() } else { a.short.clone() },
-                ty,
-                default_value,
-                flags: flags_on,
-                min_value: a.min,
-                max_value: a.max,
-                enum_names: a.en.split(':').filter(|s| !s.is_empty()).map(|s| s.split('=').next().unwrap_or(s).to_string()).collect(),
-                ..Default::default()
-            };
-            if ty == PlugType::Vec3 {
-                def = AttrDef { ..crate::node::vec3_attr(&def.name, &def.short_name, DVec3::ZERO, flags_on, "") };
-            }
             if let Err(e) = self.g().add_attr(id, def) {
                 self.warnings.push(format!("{}.{}: {e}", n.name, a.long));
             }
@@ -2477,6 +2535,19 @@ impl Build<'_> {
     }
 
     fn channel_connections(&mut self) {
+        // A joint's inverseScale, which undoes the parent joint's scale.
+        for c in &self.doc.conns {
+            if matches!(c.dst_attr.as_str(), "is" | "inverseScale") {
+                if let (Some(src), Some(dst)) = (self.ids[c.src], self.ids[c.dst]) {
+                    let g = &mut self.s.graph;
+                    if rig::is_joint(g, dst) {
+                        if let Ok(from) = g.plug(&format!("{}.{}", g.path(src), c.src_attr)) {
+                            let _ = g.connect(&from, &PlugRef::new(dst, rig::Joint::INVERSE_SCALE as i32), true);
+                        }
+                    }
+                }
+            }
+        }
         let doc = self.doc;
         for c in &doc.conns {
             let Some(dst) = self.id(c.dst) else { continue };
@@ -2604,6 +2675,11 @@ impl Build<'_> {
 
     /// Curves with something left to drive; the rest are dropped with what they animated.
     fn curve_is_needed(&self, i: usize) -> bool {
+        // Keys on a node of a reference, through its placeholder or by name.
+        let start = format!("{}.", self.doc.nodes[i].name);
+        if self.doc.ref_conns.iter().any(|c| c.src.starts_with(&start)) {
+            return true;
+        }
         self.doc.conns.iter().any(|c| {
             c.src == i && {
                 let d = &self.doc.nodes[c.dst];
@@ -2656,11 +2732,8 @@ impl Build<'_> {
                 }
             }
         }
-        for (a, b) in &self.doc.ref_conns {
-            let g = &mut self.s.graph;
-            if let (Ok(x), Ok(y)) = (g.plug(a), g.plug(b)) {
-                let _ = g.connect(&x, &y, true);
-            }
+        for c in &self.doc.ref_conns {
+            crate::references::file_connection(self.s, &c.src, &c.dst, c.src_ref, c.dst_ref, c.owner.as_deref());
         }
     }
 
@@ -2742,6 +2815,112 @@ fn xform_values(v: &[Tok]) -> Option<(DVec3, DVec3, DVec3)> {
     let r = DVec3::new(n(4)?, n(5)?, n(6)?) * (180.0 / std::f64::consts::PI);
     let t = DVec3::new(n(8)?, n(9)?, n(10)?);
     Some((t, r, s))
+}
+
+/// An added attribute as the graph holds it. None for a type that isn't kept.
+fn user_attr_def(a: &AddAttr) -> Option<AttrDef> {
+    let at = a.at.as_str();
+    let ty = match (at, a.dt.as_str()) {
+        ("double" | "float" | "doubleLinear" | "doubleAngle" | "time", _) => PlugType::Float,
+        ("long" | "short" | "byte" | "char", _) => PlugType::Int,
+        ("bool", _) => PlugType::Bool,
+        ("enum", _) => PlugType::Enum,
+        ("double3" | "float3", _) => PlugType::Vec3,
+        (_, "string") => PlugType::String,
+        ("message", _) => PlugType::Int,
+        _ => return None,
+    };
+    let default_value = match ty {
+        PlugType::Float => PlugValue::Float(a.dv.unwrap_or(0.0)),
+        PlugType::Int | PlugType::Enum => PlugValue::Int(a.dv.unwrap_or(0.0) as i64),
+        PlugType::Bool => PlugValue::Bool(a.dv.unwrap_or(0.0) != 0.0),
+        PlugType::Vec3 => PlugValue::Vec3(DVec3::ZERO),
+        _ => PlugValue::String(String::new()),
+    };
+    let mut flags_on = flags::INPUT | flags::STORABLE | flags::USER;
+    if a.keyable {
+        flags_on |= flags::KEYABLE;
+    }
+    if at == "message" {
+        flags_on = flags::INPUT | flags::USER | flags::MESSAGE;
+    }
+    if a.multi {
+        flags_on |= flags::ARRAY;
+    }
+    let mut def = AttrDef {
+        name: a.long.clone(),
+        short_name: if a.short == a.long { String::new() } else { a.short.clone() },
+        ty,
+        default_value,
+        flags: flags_on,
+        min_value: a.min,
+        max_value: a.max,
+        enum_names: a.en.split(':').filter(|s| !s.is_empty()).map(|s| s.split('=').next().unwrap_or(s).to_string()).collect(),
+        ..Default::default()
+    };
+    if ty == PlugType::Vec3 {
+        def = AttrDef { ..crate::node::vec3_attr(&def.name, &def.short_name, DVec3::ZERO, flags_on, "") };
+    }
+    Some(def)
+}
+
+/// What became of a reference edit.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum EditResult {
+    Done,
+    /// The values are of a type that isn't read: kept as written.
+    NotRead,
+    Failed,
+}
+
+fn lex_one(text: &str) -> Vec<Tok> {
+    let mut lex = Lexer::new(text);
+    let mut st = Vec::new();
+    lex.statement(&mut st);
+    st
+}
+
+/// The setAttr a reference edit's text holds, against a stand-in node.
+fn edit_set(args: &str) -> Option<SetAttr> {
+    let mut d = Doc::parse("");
+    let i = d.add_node(MaNode::default());
+    d.set_attr(&lex_one(&format!("setAttr \".x\"{args};")), Some(i));
+    d.nodes[i].sets.pop()
+}
+
+/// Whether a setAttr edit holds only flags, as `" -av"` and `" -k 1"` do.
+pub(crate) fn edit_is_flags_only(args: &str) -> bool {
+    edit_set(args).is_some_and(|s| s.values.is_empty())
+}
+
+pub(crate) fn set_attr_edit(g: &mut Graph, p: PlugRef, args: &str) -> EditResult {
+    let Some(set) = edit_set(args) else { return EditResult::Failed };
+    if !set.values.is_empty() {
+        let def = g.attr(&p).clone();
+        let Some(v) = plug_value(&def, p.component, &set.values, 1.0) else { return EditResult::NotRead };
+        if g.set_value(p, v).is_err() {
+            return EditResult::Failed;
+        }
+    }
+    if let Some(lock) = set.lock {
+        let _ = g.set_locked(&p, lock);
+    }
+    EditResult::Done
+}
+
+pub(crate) fn add_attr_edit(g: &mut Graph, n: NodeId, long: &str, short: &str, args: &str) -> bool {
+    let mut d = Doc::parse("");
+    let i = d.add_node(MaNode::default());
+    d.add_attr(&lex_one(&format!("addAttr{args} -ln \"{long}\" -sn \"{short}\";")), Some(i));
+    let Some(a) = d.nodes[i].adds.pop() else { return false };
+    if !a.parent.is_empty() {
+        return true;
+    }
+    let Some(def) = user_attr_def(&a) else { return false };
+    if g.node(n).is_some_and(|x| x.ty().attr_index(&def.name).is_some()) {
+        return true;
+    }
+    g.add_attr(n, def).is_ok()
 }
 
 fn plug_value(def: &AttrDef, comp: i32, values: &[Tok], factor: f64) -> Option<PlugValue> {
@@ -2972,9 +3151,10 @@ pub fn read_text(s: &mut Session, text: &str, import: bool) -> Vec<String> {
     register_types();
     let doc = Doc::parse(text);
     let mut before = Vec::new();
-    for (path, ns, rfn, deferred) in &doc.refs {
-        if let Err(e) = crate::references::from_ma(s, path, ns, rfn.as_deref(), *deferred) {
-            before.push(format!("reference skipped: {path}: {e}"));
+    crate::references::begin_read(s, &doc.reference_edits_text(), &doc.ref_load, &mut before);
+    for r in &doc.refs {
+        if let Err(e) = crate::references::from_ma(s, r) {
+            before.push(format!("reference {} not loaded: {e}", r.path));
         }
     }
     if doc.up_z && !import {
@@ -2982,6 +3162,7 @@ pub fn read_text(s: &mut Session, text: &str, import: bool) -> Vec<String> {
         crate::system_cmds::rotate_cameras(s, true);
     }
     let mut warnings = build(s, &doc, import);
+    crate::references::end_read(s, &mut warnings);
     crate::shading::scene_was_read(s);
     warnings.extend(before);
     for w in &warnings {
@@ -3322,7 +3503,8 @@ impl Writer<'_> {
         if parent == NO_NODE {
             let _ = writeln!(self.out, "createNode {ty} -n {};", quoted(name));
         } else {
-            let p = self.s.graph.path(parent);
+            let referenced = self.s.graph.node(parent).is_some_and(|n| n.reference_id() != 0);
+            let p = if referenced { self.s.graph.full_path(parent) } else { self.s.graph.path(parent) };
             let _ = writeln!(self.out, "createNode {ty} -n {} -p {};", quoted(name), quoted(&p));
         }
     }
@@ -3332,7 +3514,8 @@ impl Writer<'_> {
         let g = &self.s.graph;
         let mut p = g.parent(id);
         while p != NO_NODE {
-            if self.dag_written(p) {
+            // A node of a reference is there when the file is read.
+            if self.dag_written(p) || g.node(p).is_some_and(|n| n.reference_id() != 0) {
                 return p;
             }
             p = g.parent(p);
@@ -4297,6 +4480,8 @@ fn closure(g: &Graph, roots: &[NodeId]) -> HashSet<NodeId> {
 pub fn write_text(s: &mut Session, file_name: &str, only: Option<&[NodeId]>) -> (String, Vec<String>) {
     register_types();
     s.graph.evaluate();
+    // Before anything's borrowed: this reads the scene against what the files gave.
+    let (ref_head, ref_tail) = crate::references::ma_statements(s);
     let g = &s.graph;
     let mut keep = match only {
         Some(list) => closure(g, list),
@@ -4304,7 +4489,6 @@ pub fn write_text(s: &mut Session, file_name: &str, only: Option<&[NodeId]>) -> 
     };
     // What a reference brought in is written as the reference.
     keep.retain(|&id| g.node(id).is_some_and(|n| n.reference_id() == 0));
-    let (ref_head, ref_tail) = crate::references::ma_statements(s);
     let used: HashSet<String> = g.nodes().iter().filter_map(|&id| g.node(id).map(|n| n.name().to_string())).collect();
     let roots = g.roots().to_vec();
     let mut w = Writer { s, out: String::new(), conns: Vec::new(), shading: Vec::new(), warnings: Vec::new(), used, keep, pending: Vec::new(), solvers: HashSet::new(), chain_written: HashSet::new(), needs_links: Vec::new(), links_text: String::new() };
@@ -4349,9 +4533,9 @@ pub fn write_text(s: &mut Session, file_name: &str, only: Option<&[NodeId]>) -> 
             let output = PlugRef::new(id, t.attr_index("output").unwrap() as i32);
             let drives = w.s.graph.destinations(&output).iter().any(|d| {
                 let dt = w.s.graph.node(d.node).unwrap().ty().name.as_str();
-                w.keep.contains(&d.node) && (rig::CONSTRAINT_TYPES.contains(&dt) || w.dag_written(d.node) || DRIVEN_CURVES.contains(&dt) || is_plain_node(dt) || crate::deform::is_deformer(dt))
+                w.s.graph.node(d.node).unwrap().reference_id() != 0 || (w.keep.contains(&d.node) && (rig::CONSTRAINT_TYPES.contains(&dt) || w.dag_written(d.node) || DRIVEN_CURVES.contains(&dt) || is_plain_node(dt) || crate::deform::is_deformer(dt)))
             });
-            if drives {
+            if drives || crate::references::held_by_unloaded(w.s, n.name()) {
                 w.write_curve(id);
             } else {
                 w.warnings.push(format!("{}: keys on what is not written; omitted", n.name()));
@@ -4530,6 +4714,7 @@ pub fn write_file(s: &mut Session, path: &str, format: Format, only: Option<&[No
 pub fn save_scene(s: &mut Session, path: &str, format: Format) -> Result<Vec<String>, String> {
     let w = write_file(s, path, format, None)?;
     s.scene_path = Some(path.to_string());
+    s.mark_saved();
     Ok(w)
 }
 
@@ -4540,6 +4725,7 @@ pub fn open_scene(s: &mut Session, path: &str) -> Result<Vec<String>, String> {
         let _ = s.run("newScene", json!({}));
         // Here and not at the next command: a script can use a camera straight after opening a file.
         crate::cameras::make_defaults(&mut s.graph);
+        crate::references::note_scene_folder(s, path);
         let g = &mut s.graph;
         g.begin_batch();
         g.undo_stack_mut().set_enabled(false);
@@ -4552,6 +4738,7 @@ pub fn open_scene(s: &mut Session, path: &str) -> Result<Vec<String>, String> {
     } else {
         let doc: Value = serde_json::from_str(&text).map_err(|e| format!("{path}: {e}"))?;
         let _ = s.run("newScene", json!({}));
+        crate::references::note_scene_folder(s, path);
         let w = crate::scene_file::deserialize(&mut s.graph, &doc).map_err(|e| format!("{path}: {e}"))?;
         if let Some(p) = doc.get("playbackOptions").and_then(Value::as_object) {
             let mut call = p.clone();
@@ -4574,12 +4761,14 @@ pub fn open_scene(s: &mut Session, path: &str) -> Result<Vec<String>, String> {
     let _ = s.run("flushUndo", json!({}));
     s.scene_path = Some(path.to_string());
     crate::shading::scene_was_read(s);
+    s.mark_saved();
     Ok(warnings)
 }
 
 /// Adds a `.ma` or Aztek scene file's contents to the scene. One undo step.
 pub fn import_scene(s: &mut Session, path: &str) -> Result<Vec<String>, String> {
     let text = read_scene_text(path)?;
+    crate::references::note_scene_folder(s, path);
     if Format::of_path(path) == Format::MayaAscii {
         return Ok(read_text(s, &text, true));
     }
@@ -4607,9 +4796,7 @@ fn file_command(s: &mut Session, a: &Args) -> CmdResult {
     }
     if a.bool("reference") {
         let Some(path) = path_arg else { fail!("file: -reference needs a path") };
-        let rfn = a.get("referenceNode").and_then(Value::as_str);
-        let r = crate::references::create(s, &path, &a.string("namespace", ""), rfn, a.bool("deferReference")).map_err(aztek_ops::CommandError::new)?;
-        return Ok(json!(r));
+        return crate::references::file_reference(s, a, &path);
     }
     if let Some(t) = &type_flag {
         s.scene_type = Some(Format::of_type(t)?);
@@ -4620,6 +4807,10 @@ fn file_command(s: &mut Session, a: &Args) -> CmdResult {
             _ => Format::of_path(path),
         }
     };
+    // As Maya: a script has to say -force to throw changes away.
+    if (a.bool("new") || a.bool("open")) && !a.bool("force") && s.is_modified() {
+        fail!("file: Unsaved changes.");
+    }
     if a.bool("new") {
         let _ = s.run("newScene", json!({}))?;
         s.scene_path = None;
@@ -4697,7 +4888,7 @@ fn file_query(s: &Session, a: &Args, path: Option<&str>) -> Value {
         return json!([t.type_name()]);
     }
     if a.bool("modified") {
-        return json!(s.graph.undo_stack().can_undo());
+        return json!(s.is_modified());
     }
     if a.has("options") || crate::maya_core::asked(a, "options") {
         return json!("");
@@ -4743,7 +4934,29 @@ pub fn register(c: &mut Commands<Session>) {
         .flag(FlagDef::new("unloadReference", "ur", ArgType::Any, Value::Null, "Unload a reference, by its reference node (or the path argument)."))
         .flag(b("removeReference", "rr", "Remove the reference named by the path argument."))
         .flag(t("referenceNode", "rfn", "The reference node's name, or with -q ask for it."))
-        .flag(FlagDef::new("deferReference", "dr", ArgType::Any, Value::Null, "Add the reference unloaded."))
+        .flag(FlagDef::new("deferReference", "dr", ArgType::Any, Value::Null, "Add the reference unloaded. Query: whether it is."))
+        .flag(b("importReference", "ir", "Make the reference's contents part of the scene."))
+        .flag(FlagDef::new("cleanReference", "cr", ArgType::Any, Value::Null, "Remove the edits of an unloaded reference, or -editCommand's kind."))
+        .flag(FlagDef::new("editCommand", "ec", ArgType::Any, Value::Null, "With -cleanReference, which edits."))
+        .flag(FlagDef::new("flushReference", "fr", ArgType::Any, Value::Null, "Unload, keeping the reference nodes."))
+        .flag(FlagDef::new("loadReferencePreview", "lrp", ArgType::Any, Value::Null, "Loads the reference; there's no partial load here."))
+        .flag(t("loadReferenceDepth", "lrd", "Accepted for scripts: all, none, topOnly, asPrefs."))
+        .flag(b("groupReference", "gr", "Group the reference's top nodes under one transform."))
+        .flag(t("groupName", "gn", "The group's name."))
+        .flag(b("groupLocator", "gl", "Make the group a locator."))
+        .flag(FlagDef::new("sharedNodes", "shd", ArgType::Any, Value::Null, "Accepted for scripts: nothing's shared yet."))
+        .flag(b("sharedReferenceFile", "srf", "Accepted for scripts: nothing's shared yet."))
+        .flag(b("mergeNamespacesOnClash", "mnc", "Use the namespace even if it's there already."))
+        .flag(t("renamingPrefix", "rpr", "A prefix instead of a namespace. Query: what it is."))
+        .flag(b("lockReference", "lck", "Lock the reference's nodes and attributes."))
+        .flag(b("usingNamespaces", "uns", "Query: whether it uses a namespace."))
+        .flag(b("unresolvedName", "un", "Query: the path as written."))
+        .flag(b("withoutCopyNumber", "wcn", "Query: the path without its {n}."))
+        .flag(b("expandName", "exn", "Query: the file's path."))
+        .flag(FlagDef::new("swapNamespace", "sns", ArgType::Any, Value::Null, "Accepted for scripts."))
+        .flag(b("edit", "e", "Edit mode: -namespace renames a reference's."))
+        .flag(b("saveReferencesUnloaded", "sru", "Accepted for scripts."))
+        .flag(b("exportUnloadedReferences", "eur", "Accepted for scripts."))
         .flag(FlagDef::new("referenceDepthInfo", "rdi", ArgType::Int, Value::Null, "Accepted for Maya scripts."))
         .flag(b("prompt", "pmt", "Accepted for Maya scripts."))
         .flag(b("ignoreVersion", "iv", "Accepted for Maya scripts."))
@@ -4753,7 +4966,7 @@ pub fn register(c: &mut Commands<Session>) {
         .flag(b("constraints", "con", "Accepted for Maya scripts."))
         .flag(b("expressions", "exp", "Accepted for Maya scripts."))
         .flag(b("shader", "sh", "Accepted for Maya scripts."))
-        .flag(b("returnNewNodes", "rnn", "Accepted for Maya scripts."))
+        .flag(b("returnNewNodes", "rnn", "With a reference, return the new nodes."))
         .flag(t("namespace", "ns", "The namespace a reference goes under.")),
     );
 }

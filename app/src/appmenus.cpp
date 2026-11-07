@@ -138,7 +138,7 @@ void MainWindow::add_recent_project(const QString& dir) {
 
 QMenu* MainWindow::file_menu() {
     auto* m = new QMenu("File", this);
-    m->addAction(icon("new"), "New Scene\tCtrl+N", [] { aztek_free(aztek_file("new", "")); Host::get()->poke(); });
+    m->addAction(icon("new"), "New Scene\tCtrl+N", [this] { new_scene(); });
     m->addAction(icon("open"), "Open Scene...\tCtrl+O", this, &MainWindow::open_scene);
     m->addAction(icon("save"), "Save Scene\tCtrl+S", [this] { save_scene(false); });
     m->addAction("Save Scene As...\tCtrl+Shift+S", [this] { save_scene(true); });
@@ -163,6 +163,13 @@ QMenu* MainWindow::file_menu() {
         QString c = f.endsWith(".ply", Qt::CaseInsensitive) ? "importPly" : f.endsWith(".stl", Qt::CaseInsensitive) ? "importStl" : "importObj";
         exec(c, args(QJsonArray{f}));
     });
+    m->addSeparator();
+    {
+        auto* row = new OptionRow("Create Reference...", "Ctrl+R", [this] { create_reference_dialog(false); }, [this] { create_reference_dialog(true); }, m);
+        m->addAction(row);
+    }
+    m->addAction("Reference Editor", this, &MainWindow::show_reference_editor);
+    m->addSeparator();
     auto do_export = [](bool all) {
         QString f = QFileDialog::getSaveFileName(nullptr, all ? "Export All" : "Export Selection", "export.ma", "ASCII scenes (*.ma);;OBJ (*.obj);;PLY (*.ply);;STL (*.stl)");
         if (f.isEmpty()) return;
@@ -209,7 +216,7 @@ QMenu* MainWindow::file_menu() {
     QMenu* recent = m->addMenu("Recent Files");
     connect(recent, &QMenu::aboutToShow, this, [this, recent] {
         recent->clear();
-        for (const QString& f : QSettings().value("recentFiles").toStringList()) recent->addAction(f, [this, f] { open_file(f); });
+        for (const QString& f : QSettings().value("recentFiles").toStringList()) recent->addAction(f, [this, f] { if (confirm_unsaved()) open_file(f); });
         if (recent->isEmpty()) recent->addAction("(none)")->setEnabled(false);
     });
     QMenu* projects = m->addMenu("Recent Projects");

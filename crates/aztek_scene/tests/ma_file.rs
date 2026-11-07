@@ -591,7 +591,7 @@ connectAttr "nobody.x" "keep.tx";
 "#;
     let mut s = Session::new();
     let w = read_text(&mut s, text, false);
-    assert!(w.iter().any(|x| x.contains("reference skipped") && x.contains("rig.ma")), "{w:?}");
+    assert!(w.iter().any(|x| x.contains("not loaded") && x.contains("rig.ma")), "{w:?}");
     assert!(w.iter().any(|x| x.contains("surfaceShape1: no stored surface")), "{w:?}");
     assert!(w.iter().any(|x| x.contains("blendShape not represented: blendShape1, blendShape2")), "{w:?}");
     assert!(s.graph.find("group1|keep").unwrap().is_some());
@@ -1159,10 +1159,10 @@ fn the_file_command() {
     s.undo();
     assert_eq!(s.graph.nodes().len(), before);
 
-    assert!(s.run("file", json!({"args": ["/nowhere/none.ma"], "open": true})).is_err());
+    assert!(s.run("file", json!({"args": ["/nowhere/none.ma"], "open": true, "force": true})).is_err());
     let mb = temp("x.mb");
     std::fs::write(&mb, b"FOR8 data").unwrap();
-    let e = s.run("file", json!({"args": [mb], "open": true})).unwrap_err().to_string();
+    let e = s.run("file", json!({"args": [mb], "open": true, "force": true})).unwrap_err().to_string();
     assert!(e.contains("binary"), "{e}");
     assert!(s.run("file", json!({"args": [temp("y.mb")], "save": true, "type": "mayaBinary"})).is_err());
     // A failed open leaves the scene alone.

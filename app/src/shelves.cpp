@@ -200,7 +200,25 @@ ShelfBar::ShelfBar(std::function<void(const QString&, const QString&)> run, QWid
 
 void ShelfBar::set_corner(QWidget* w) {
     tabs_->setUsesScrollButtons(true);
-    tabs_->setCornerWidget(w, Qt::TopRightCorner);
+    // It's as tall as the tab row and the shelf together: it sits over their right end, with a gap kept for it in the tabs.
+    corner_ = w;
+    w->setParent(this);
+    auto* gap = new QWidget(tabs_);
+    gap->setFixedSize(w->sizeHint().width() + 8, 1);
+    tabs_->setCornerWidget(gap, Qt::TopRightCorner);
+    w->raise();
+    place_corner();
+}
+
+void ShelfBar::place_corner() {
+    if (!corner_) return;
+    QSize size = corner_->sizeHint();
+    corner_->setGeometry(width() - size.width() - 4, 4, size.width(), size.height());
+}
+
+void ShelfBar::resizeEvent(QResizeEvent* e) {
+    QWidget::resizeEvent(e);
+    place_corner();
 }
 
 void ShelfBar::save() const {

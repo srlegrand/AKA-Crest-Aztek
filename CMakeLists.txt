@@ -9,7 +9,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
-find_package(Qt6 6.4 REQUIRED COMPONENTS Widgets)
+find_package(Qt6 6.2 REQUIRED COMPONENTS Widgets)
 
 # Python for aztek.cmds and the maya.cmds shim: the interpreter cargo's pyo3 builds against, and its library.
 option(AZTEK_PYTHON "Embed Python" ON)
@@ -54,6 +54,7 @@ add_executable(aztek WIN32
   app/src/mainwindow.cpp
   app/src/grapheditor.cpp
   app/src/uveditor.cpp
+  app/src/referenceeditor.cpp
   app/src/materials.cpp
   app/src/toolsettings.cpp
   app/src/dopesheet.cpp
@@ -105,4 +106,10 @@ if(UNIX AND NOT APPLE)
   install(FILES app/aztek.desktop DESTINATION share/applications)
   install(FILES app/icons/aztek-icon.svg DESTINATION share/icons/hicolor/scalable/apps RENAME aztek.svg)
   install(FILES app/icons/aztek-icon.png DESTINATION share/icons/hicolor/512x512/apps RENAME aztek.png)
+  foreach(size 16 24 32 48 64 128 256)
+    install(FILES app/icons/hicolor/${size}.png DESTINATION share/icons/hicolor/${size}x${size}/apps RENAME aztek.png)
+  endforeach()
+  if(EXISTS ${CMAKE_SOURCE_DIR}/examples)
+    install(DIRECTORY examples/ DESTINATION share/aztek/examples)
+  endif()
 endif()

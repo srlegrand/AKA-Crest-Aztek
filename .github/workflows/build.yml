@@ -6,13 +6,37 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+  # A fresh set of packages every hour, if main has moved since the last one.
+  schedule:
+    - cron: "7 * * * *"
 
+# A build in progress finishes: cancelling it for each push meant a busy day released nothing. One newer run waits.
 concurrency:
   group: build-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
+  # Whether there's anything to build: only the hourly run can find nothing new.
+  gate:
+    runs-on: ubuntu-24.04
+    outputs:
+      go: ${{ steps.check.outputs.go }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - id: check
+        run: |
+          go=true
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            built=$(gh api "repos/$GH_REPO/git/ref/tags/latest" --jq .object.sha || true)
+            [ "$built" = "$GITHUB_SHA" ] && go=false
+          fi
+          echo "go=$go" >> "$GITHUB_OUTPUT"
+
   linux:
+    needs: gate
+    if: needs.gate.outputs.go == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -20,7 +44,7 @@ jobs:
       - name: Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build qt6-base-dev libvulkan-dev python3-dev
+          sudo apt-get install -y build-essential dpkg-dev cmake ninja-build qt6-base-dev libvulkan-dev python3-dev
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -37,14 +61,151 @@ jobs:
         run: ./build.sh
 
       - name: Package
-        run: tar -czf aztek-linux-x86_64.tar.gz -C build aztek
+        run: |
+          tar -czf aztek-linux-x86_64.tar.gz -C build aztek
+          packaging/deb/build-deb.sh build dist
 
       - uses: actions/upload-artifact@v4
         with:
           name: aztek-linux-x86_64
           path: aztek-linux-x86_64.tar.gz
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aztek-deb-ubuntu24.04
+          path: dist/*.deb
+
+  # Ubuntu 22.04 has Qt 6.2 and Python 3.10, so it gets its own package.
+  ubuntu-2204:
+    needs: gate
+    if: needs.gate.outputs.go == 'true'
+    runs-on: ubuntu-24.04
+    container: ubuntu:22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependencies
+        run: |
+          apt-get update
+          apt-get install -y build-essential dpkg-dev cmake ninja-build qt6-base-dev libgl-dev libvulkan-dev python3-dev ca-certificates curl file
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            . -> build/cargo
+
+      - name: Test
+        run: cargo test --workspace
+
+      - name: Package
+        run: packaging/deb/build-deb.sh build dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aztek-deb-ubuntu22.04
+          path: dist/*.deb
+
+  # Rocky 8 has no Qt 6 packages, so its RPM bundles Qt 6.8 from aqtinstall. Rocky 9 uses EPEL's Qt.
+  rocky:
+    needs: gate
+    if: needs.gate.outputs.go == 'true'
+    runs-on: ubuntu-24.04
+    container: rockylinux:${{ matrix.el }}
+    strategy:
+      fail-fast: false
+      matrix:
+        el: [8, 9]
+    env:
+      PYO3_PYTHON: /usr/bin/python3.12
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependencies
+        run: packaging/rpm/install-build-deps.sh
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: el${{ matrix.el }}
+          workspaces: |
+            . -> target
+            . -> build/cargo
+
+      - name: Qt cache
+        if: matrix.el == 8
+        uses: actions/cache@v4
+        with:
+          path: /opt/qt
+          key: qt-6.8.3-el8
+
+      - name: Test
+        run: cargo test --workspace
+
+      - name: RPM
+        run: packaging/rpm/build-rpm.sh build dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aztek-rpm-el${{ matrix.el }}
+          path: dist/*.rpm
+
+  # Each package installed in a clean container, where only its declared dependencies can satisfy it.
+  verify-rpm:
+    needs: rocky
+    runs-on: ubuntu-24.04
+    container: rockylinux:${{ matrix.el }}
+    strategy:
+      fail-fast: false
+      matrix:
+        el: [8, 9]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: aztek-rpm-el${{ matrix.el }}
+          path: pkg
+
+      # Rocky 8 gets no EPEL here: its package must install from the base repositories alone.
+      - name: Install
+        run: |
+          if [ "${{ matrix.el }}" = 9 ]; then dnf -y --setopt=retries=10 install epel-release; fi
+          dnf -y --setopt=retries=10 install ./pkg/*.rpm xorg-x11-server-Xvfb xorg-x11-xauth which
+
+      - name: Smoke test
+        run: packaging/linux/smoke-test.sh
+
+  verify-deb:
+    needs: [linux, ubuntu-2204]
+    runs-on: ubuntu-24.04
+    container: ubuntu:${{ matrix.ubuntu }}
+    strategy:
+      fail-fast: false
+      matrix:
+        ubuntu: ["22.04", "24.04"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: aztek-deb-ubuntu${{ matrix.ubuntu }}
+          path: pkg
+
+      - name: Install
+        run: |
+          apt-get update
+          apt-get install -y ./pkg/*.deb xvfb xauth
+
+      - name: Smoke test
+        run: packaging/linux/smoke-test.sh
+
   windows:
+    needs: gate
+    if: needs.gate.outputs.go == 'true'
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -53,11 +214,13 @@ jobs:
         with:
           python-version: "3.12"
 
+      # setup-python off: left on, this action puts the newest Python first on PATH and the exe links that one.
       - uses: jurplel/install-qt-action@v4
         with:
           version: "6.8.*"
           arch: win64_msvc2022_64
           cache: true
+          setup-python: false
 
       - name: Ninja
         run: python -m pip install ninja
@@ -74,17 +237,28 @@ jobs:
 
       - name: Package
         shell: pwsh
-        run: Compress-Archive -Path build\dist\* -DestinationPath aztek-windows-x86_64.zip
+        run: |
+          Compress-Archive -Path build\dist\* -DestinationPath aztek-windows-x86_64.zip
+          .\packaging\windows\build-installer.ps1 -OutputDir dist
+
+      - name: Installer check
+        shell: pwsh
+        run: .\packaging\windows\smoke-test.ps1
 
       - uses: actions/upload-artifact@v4
         with:
           name: aztek-windows-x86_64
           path: aztek-windows-x86_64.zip
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aztek-windows-setup
+          path: dist/*.exe
+
   # Every push to main replaces the "latest" pre-release; a v* tag makes a versioned release.
   release:
-    needs: [linux, windows]
-    if: github.event_name == 'push'
+    needs: [linux, ubuntu-2204, rocky, verify-rpm, verify-deb, windows]
+    if: (github.event_name == 'push' || github.event_name == 'schedule') && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -99,13 +273,23 @@ jobs:
       - name: Latest build
         if: github.ref == 'refs/heads/main'
         run: |
-          gh release delete latest --yes --cleanup-tag || true
-          gh release create latest aztek-linux-x86_64.tar.gz aztek-windows-x86_64.zip \
-            --target "$GITHUB_SHA" --prerelease --title "Latest build" \
-            --notes "Built from $GITHUB_SHA on $(date -u +%d/%m/%Y)."
+          # Replaced in place, so the website's links never meet a release that isn't there.
+          notes="Built from $GITHUB_SHA on $(date -u '+%d/%m/%Y %H:%M') UTC."
+          if gh release view latest >/dev/null 2>&1; then
+            gh release upload latest aztek-* aztek_* --clobber
+            gh api -X PATCH "repos/$GH_REPO/git/refs/tags/latest" -f sha="$GITHUB_SHA" -F force=true
+            gh release edit latest --prerelease --title "Latest build" --notes "$notes"
+            # A package from an older version has another name; only this run's stay.
+            keep=$(ls aztek-* aztek_*)
+            gh release view latest --json assets --jq '.assets[].name' | while read -r name; do
+              echo "$keep" | grep -qxF "$name" || gh release delete-asset latest "$name" --yes
+            done
+          else
+            gh release create latest aztek-* aztek_* --target "$GITHUB_SHA" --prerelease --title "Latest build" --notes "$notes"
+          fi
 
       - name: Versioned release
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          gh release create "$GITHUB_REF_NAME" aztek-linux-x86_64.tar.gz aztek-windows-x86_64.zip \
+          gh release create "$GITHUB_REF_NAME" aztek-* aztek_* \
             --title "Aztek $GITHUB_REF_NAME" --generate-notes

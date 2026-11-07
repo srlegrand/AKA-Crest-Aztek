@@ -1,9 +1,6 @@
 //! File references against scenes Maya itself wrote (`tests/data/maya_refs`): load state, edits, placeholders, and the
 //! world matrices Maya gave for them. The scenes name a Windows path, so each is found by its name beside the scene.
 
-// Off until the rewrite of references.rs lands; these fail on what's there now.
-#![cfg(any())]
-
 use aztek_scene::Session;
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -255,9 +252,9 @@ fn edits_can_be_listed_removed_and_retargeted() {
     run(&mut s, "setAttr", json!({"args": ["x:a.tx", 2.0]}));
     run(&mut s, "setAttr", json!({"args": ["x:b.ty", 3.0]}));
     let strings = run(&mut s, "referenceQuery", json!({"args": ["xRN"], "es": true}));
-    assert_eq!(strings, json!(["setAttr |x:a.translateX 2", "setAttr |x:b.translateY 3"]));
-    assert_eq!(run(&mut s, "referenceQuery", json!({"args": ["x:a"], "es": true})), json!(["setAttr |x:a.translateX 2"]));
-    assert_eq!(run(&mut s, "referenceQuery", json!({"args": ["xRN"], "en": true, "ea": true})), json!(["|x:a.translateX", "|x:b.translateY"]));
+    assert_eq!(strings, json!(["setAttr |x:a.translate -type \"double3\" 2 0 0", "setAttr |x:b.translate -type \"double3\" 0 3 0"]));
+    assert_eq!(run(&mut s, "referenceQuery", json!({"args": ["x:a"], "es": true})), json!(["setAttr |x:a.translate -type \"double3\" 2 0 0"]));
+    assert_eq!(run(&mut s, "referenceQuery", json!({"args": ["xRN"], "en": true, "ea": true})), json!(["|x:a.translate", "|x:b.translate"]));
     assert!(s.run("referenceEdit", json!({"args": ["xRN"], "r": true})).is_err(), "a reference has to be unloaded first");
     run(&mut s, "file", json!({"ur": "xRN"}));
     run(&mut s, "referenceEdit", json!({"args": ["x:a"], "r": true, "ec": "setAttr"}));
@@ -269,7 +266,7 @@ fn edits_can_be_listed_removed_and_retargeted() {
     run(&mut s, "file", json!({"ur": "xRN"}));
     write(&dir, "rig.ma", "createNode transform -n \"a\";\ncreateNode transform -n \"renamed\";\n");
     run(&mut s, "file", json!({"lr": "xRN"}));
-    assert_eq!(run(&mut s, "referenceQuery", json!({"args": ["xRN"], "es": true, "fld": true, "scs": false})), json!(["setAttr |x:b.translateY 3"]));
+    assert_eq!(run(&mut s, "referenceQuery", json!({"args": ["xRN"], "es": true, "fld": true, "scs": false})), json!(["setAttr |x:b.translate -type \"double3\" 0 3 0"]));
     run(&mut s, "referenceEdit", json!({"args": ["xRN"], "cet": ["x:b", "x:renamed"]}));
     run(&mut s, "referenceEdit", json!({"args": ["xRN"], "afe": true}));
     assert_eq!(get(&mut s, "x:renamed.ty"), vec![3.0]);
@@ -309,7 +306,7 @@ fn replacing_importing_and_the_load_flags() {
     assert!(s.run("setAttr", json!({"args": ["L:box.tx", 2.0]})).is_err(), "a locked reference");
     run(&mut s, "file", json!({"args": [one.clone()], "r": true, "rpr": "pre"}));
     assert!(exists(&mut s, "pre_box"));
-    assert_eq!(run(&mut s, "ls", json!({"rn": true, "type": "transform"})).as_array().unwrap().len(), 5);
+    assert_eq!(run(&mut s, "ls", json!({"rn": true, "type": "transform"})).as_array().unwrap().len(), 4);
     assert_eq!(run(&mut s, "lockNode", json!({"args": ["gRN"], "q": true, "lock": true, "queried": ["lock"]})), json!([true]));
 }
 

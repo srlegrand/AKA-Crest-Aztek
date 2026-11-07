@@ -73,10 +73,19 @@ int MarkingMenu::item_at(QPoint p) const {
     return -1;
 }
 
+std::function<void(const QString&, const std::function<void()>&)>& MarkingMenu::around() {
+    static std::function<void(const QString&, const std::function<void()>&)> hook;
+    return hook;
+}
+
 void MarkingMenu::pick(int i) {
     releaseMouse();
     close();
-    if (i >= 0 && items_[i].fn) items_[i].fn();
+    if (i >= 0 && items_[i].fn) {
+        auto fn = items_[i].fn;
+        if (around()) around()(items_[i].label, fn);
+        else fn();
+    }
 }
 
 void MarkingMenu::paintEvent(QPaintEvent*) {

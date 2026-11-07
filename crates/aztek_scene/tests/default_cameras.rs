@@ -79,3 +79,33 @@ fn a_saved_scene_keeps_what_the_camera_was_set_to() {
     assert_eq!(numbers(run(&mut t, "getAttr", json!({"args": ["persp.tx"]}))), [3.0]);
     assert_eq!(run(&mut t, "ls", json!({"type": "camera"})).as_array().unwrap().len(), 4, "still only the four");
 }
+
+/// What decides whether closing or opening asks about saving.
+#[test]
+fn modified_follows_edits_saves_and_undo() {
+    let dir = std::env::temp_dir().join(format!("aztek_modified_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("a.ma").to_string_lossy().to_string();
+    let modified = |s: &mut Session| run(s, "file", json!({"q": true, "mf": true, "queried": ["modified"]}));
+    let mut s = scene();
+    assert_eq!(modified(&mut s), json!(false), "a new scene");
+    run(&mut s, "polyCube", json!({"name": "a"}));
+    assert_eq!(modified(&mut s), json!(true));
+    assert!(s.run("file", json!({"new": true})).is_err(), "a script has to say -force");
+    assert!(s.run("file", json!({"args": [path.clone()], "open": true})).is_err());
+    assert_eq!(run(&mut s, "objExists", json!({"args": ["a"]})), json!(true), "and the scene is untouched");
+    run(&mut s, "file", json!({"args": [path.clone()], "rename": path.clone()}));
+    run(&mut s, "file", json!({"save": true}));
+    assert_eq!(modified(&mut s), json!(false), "saved");
+    run(&mut s, "setAttr", json!({"args": ["a.tx", 2.0]}));
+    assert_eq!(modified(&mut s), json!(true));
+    run(&mut s, "undo", json!({}));
+    assert_eq!(modified(&mut s), json!(false), "back at what's saved");
+    run(&mut s, "setAttr", json!({"args": ["a.tx", 3.0]}));
+    run(&mut s, "file", json!({"args": [path.clone()], "open": true, "force": true}));
+    assert_eq!(modified(&mut s), json!(false), "just opened");
+    run(&mut s, "polyCube", json!({"name": "b"}));
+    run(&mut s, "file", json!({"new": true, "force": true}));
+    assert_eq!(modified(&mut s), json!(false), "new");
+    std::fs::remove_dir_all(dir).ok();
+}

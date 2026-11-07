@@ -3,7 +3,7 @@
 Generated from the command registry by `cargo run -p aztek_host --example gen_commands`; do not edit by hand.
 Commands take Maya's flags, long or short, in MEL and in Python (`aztek.cmds` or `maya.cmds`).
 
-963 commands.
+964 commands.
 
 ## AppendToPolygonTool
 
@@ -28,6 +28,10 @@ The paint skin weights tool and its settings.
 ## AttributeEditor
 
 Show the Attribute Editor.
+
+## AztekFeedback
+
+Report that something doesn't feel right.
 
 ## CVCurveTool
 
@@ -2321,6 +2325,7 @@ Arguments: a camera, with -q and -e
 | `nearClipPlane` | `ncp` | Near clip. |
 | `farClipPlane` | `fcp` | Far clip. |
 | `orthographic` | `o` | No perspective. |
+| `startupCamera` | `sc` | Query or edit: a startup camera, which can't be deleted. |
 | `orthographicWidth` | `ow` | View width when orthographic. |
 | `centerOfInterest` | `coi` | Distance to what it tumbles about. |
 | `lensSqueezeRatio` | `lsr` | Lens squeeze. |

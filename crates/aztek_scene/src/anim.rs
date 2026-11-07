@@ -941,7 +941,7 @@ pub fn key_plug_in(g: &mut Graph, p: &PlugRef, t: f64, value: Option<f64>, itt: 
             Some(s) if is_curve(g, s.node) && s.attr == OUTPUT as i32 => (s.node, v),
             Some(_) => return Ok(false),
             None => {
-                let name = format!("{}_{}", g.node(p.node).map(|n| n.name.clone()).unwrap_or_default(), channel_name(g, p));
+                let name = format!("{}_{}", g.node(p.node).map(|n| n.name.rsplit(':').next().unwrap_or("").to_string()).unwrap_or_default(), channel_name(g, p));
                 let slot = crate::anim_layers::curve_slot(g, p);
                 (new_curve(g, curve_type_for(g, p), &name, &slot)?, v)
             }

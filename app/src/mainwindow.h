@@ -53,6 +53,8 @@ public:
     PanelLayout* panels() const { return panels_; }
     void run_startup(const QString& script, const QString& screenshot);
     void open_file(const QString& path);
+    void show_reference_editor();
+    void create_reference_dialog(bool options = false);
 protected:
     bool eventFilter(QObject* o, QEvent* e) override;
     void closeEvent(QCloseEvent* e) override;
@@ -100,7 +102,11 @@ private:
     void marking_menu(QPoint global, int mods);
     void repeat_last();
     void open_scene();
-    void save_scene(bool as);
+    void new_scene();
+    /// True when the scene saved, or when it can be thrown away: asks if it has changes. False: stay where you are.
+    bool confirm_unsaved();
+    bool save_scene(bool as);
+    bool no_prompts_ = false;
     bool hotkey(QKeyEvent* k, bool press);
     // runtime.cpp: named actions, the hotkey table and its editor.
     void build_runtime();
@@ -225,8 +231,14 @@ private:
     QDockWidget* attr_dock_ = nullptr;
     Hotbox* hotbox_ = nullptr;
     QString tool_ = "select";
-    QString last_command_;
-    QJsonObject last_call_;
+    /// What G does again, and what it's called. Only what changed the scene counts: opening a window or selecting doesn't.
+    std::function<void()> last_repeat_;
+    QString last_repeat_label_;
+    bool repeating_ = false;
+    double menu_mark_ = 0;
+    void watch_menus();
+    void run_repeatable(const QString& label, const std::function<void()>& fn);
+    void note_repeat(const QString& label, const std::function<void()>& fn, double undo_before);
     qint64 space_down_ms_ = 0;
     bool space_held_ = false;
     bool pivot_mode_ = false;

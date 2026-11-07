@@ -662,3 +662,7 @@ Shallower than it could be:
 - Checked under Xvfb in dry-run mode only. The real browser, pasting into GitHub, a real upload, opening the folder with the file selected, and Windows have not been exercised.
 - The screenshot covers the app's own windows, placed as they are on the screen and overlapping in no particular order. Under Wayland they go one under another (not exercised).
 - Folders under `feedback/` in the data location are kept, and nothing cleans them up.
+
+### References (07/11/2026)
+
+`references.rs` rewritten against Maya-written scenes (`tests/data/maya_refs`), whose world matrices match Maya's recorded values. Load state from `-rdi`, nesting, Maya's `.ed` edits and placeholders, failed edits kept, `referenceEdit`, `file -ir -cr -gr -lck -rpr -mnc`, `ls -rn`, Reference Editor, File > Create Reference. Three production rigs referenced twice save and reopen with no joint difference (`examples/ref_rig.rs`). Shallower: `.mb` files can't be read; `-shd` and `exportEdits` not done; painted skin weights and mesh tweaks on a referenced mesh aren't kept as edits; a few IK solver values show as edits; a second reference of a large rig loads slower than the first.

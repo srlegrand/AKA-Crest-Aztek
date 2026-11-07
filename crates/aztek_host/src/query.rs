@@ -109,6 +109,7 @@ fn outliner_node(g: &Graph, id: NodeId, shapes: bool, show_intermediate: bool, s
         "path": g.path(id),
         "type": n.ty().name,
         "icon": icon,
+        "referenced": n.reference_id() != 0,
         "selected": sel.contains(&id),
         "visible": !n.ty().dag || n.bool(DagNode::VISIBILITY),
         "intermediate": intermediate,
@@ -524,6 +525,9 @@ pub fn state(core: &Core) -> Value {
         "canUndo": g.undo_stack().can_undo(),
         "canRedo": g.undo_stack().can_redo(),
         "file": core.s.scene_path,
+        "modified": core.s.is_modified(),
+        "undoId": g.undo_stack().newest_id(),
+        "undoLabel": g.undo_stack().undo_label(),
         "version": core.version,
     })
 }

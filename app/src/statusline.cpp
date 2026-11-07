@@ -42,7 +42,7 @@ void MainWindow::build_status_line() {
     connect(menu_set_, &QComboBox::currentTextChanged, this, &MainWindow::build_menu_set);
     tb->addWidget(menu_set_);
     tb->addSeparator();
-    tb->addAction(icon("new"), "New Scene", [] { aztek_free(aztek_file("new", "")); Host::get()->poke(); });
+    tb->addAction(icon("new"), "New Scene", [this] { new_scene(); });
     tb->addAction(icon("open"), "Open Scene", this, &MainWindow::open_scene);
     tb->addAction(icon("save"), "Save Scene", [this] { save_scene(false); });
     tb->addSeparator();

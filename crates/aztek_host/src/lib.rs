@@ -301,6 +301,7 @@ pub extern "C" fn aztek_query(what: *const c_char, arg: *const c_char) -> *mut c
             "texturePath" => query::texture_path(c, &arg),
             "attributeEditor" => query::attribute_editor(c, &arg),
             "layers" => query::layers(c),
+            "references" => aztek_scene::references::ui_list(&mut c.s),
             "state" => query::state(c),
             "commands" => query::commands(c),
             "flagDefaults" => c
