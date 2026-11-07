@@ -10,6 +10,7 @@ use aztek_geo::render_mesh::{build_render_mesh, RenderMeshOptions};
 use aztek_geo::{Index, Mesh};
 use aztek_scene::component_pick::{self, Screen};
 use aztek_scene::components::{self, ComponentMode};
+use aztek_scene::draw_style as ds;
 use aztek_scene::graph::Graph;
 use aztek_scene::mesh_nodes::MeshNode;
 use aztek_scene::plug::{NodeId, NO_NODE};
@@ -41,7 +42,7 @@ fn visible(g: &Graph, id: NodeId) -> bool {
         if node.ty().dag && !node.bool(DagNode::VISIBILITY) {
             return false;
         }
-        if aztek_scene::display_layers::hidden_by_own_layer(g, n) {
+        if aztek_scene::draw_style::hidden_by_override(g, n) {
             return false;
         }
         n = g.parent(n);
@@ -407,8 +408,6 @@ pub struct Viewport {
     pub active_handle: Option<Handle>,
 }
 
-const LEAD: [u8; 4] = [66, 255, 163, 255];
-const SELECTED: [u8; 4] = [255, 255, 255, 255];
 const WIRE: [u8; 4] = [10, 10, 30, 255];
 const VERT: [u8; 4] = [170, 30, 170, 255];
 const SEL_COMP: [u8; 4] = [255, 160, 30, 255];
@@ -673,17 +672,22 @@ impl Viewport {
                 entry.sel_key = u64::MAX;
                 // Tint reuses the triangle vertex buffer; rebuilt with the selection key below.
             }
-            let templated = aztek_scene::display_layers::display(g, it.xf).ty == aztek_scene::display_layers::DisplayType::Template || override_type(g, it.xf) == 1;
+            let style = ds::style(g, it.shape);
+            let templated = style.kind == ds::DisplayKind::Template;
             // A surface's tessellation is only shaded: isoparms and CVs are drawn with the rig lines.
             let is_surface = surfaces::is_surface(g, it.shape);
             let selected = !is_surface && self.disp.highlight && (sel.contains(&it.xf) || sel.contains(&it.shape));
             let hilited = selected && mode != ComponentMode::Object;
+            let child_lit = !is_surface && self.disp.highlight && ds::select_state(g, it.shape, &sel) == ds::SelectState::Child;
+            let wire_sel: &[NodeId] = if self.disp.highlight { &sel } else { &[] };
+            let wire = ds::wire_color(g, it.shape, wire_sel, "polymesh", WIRE);
             let comps: &[u32] = if hilited { components::selected(g, it.shape, mode) } else { &[] };
             let comp_set: std::collections::HashSet<u32> = comps.iter().copied().collect();
             let soft = aztek_scene::soft_select::state();
             let soft_on = soft.0 && hilited && !comps.is_empty();
             let mut h = DefaultHasher::new();
             (mode as i32, selected, lead == Some(it.xf), self.wireframe, self.wire_on_shaded, comps, self.smooth_cage, entry.smooth, templated).hash(&mut h);
+            (wire, child_lit, style.shaded).hash(&mut h);
             (soft_on, soft.1.to_bits(), Arc::as_ptr(&it.mesh) as usize).hash(&mut h);
             let sel_key = h.finish();
             if sel_key != entry.sel_key {
@@ -702,19 +706,11 @@ impl Viewport {
                         } else {
                             UNSEL_EDGE
                         }
-                    } else if selected {
-                        if lead == Some(it.xf) {
-                            LEAD
-                        } else {
-                            SELECTED
-                        }
-                    } else if templated {
-                        [120, 120, 120, 255]
                     } else {
-                        WIRE
+                        wire
                     }
                 };
-                let want_lines = !is_surface && (selected || templated || self.wireframe || self.wire_on_shaded || (entry.display.is_some() && self.smooth_cage));
+                let want_lines = !is_surface && (selected || child_lit || !style.shaded || self.wireframe || self.wire_on_shaded || (entry.display.is_some() && self.smooth_cage));
                 if want_lines {
                     let mut lv = Vec::new();
                     for e in 0..m.edge_capacity() {
@@ -891,7 +887,7 @@ impl Viewport {
             // Quad Draw's mesh sits on the live surface, chords and all, so it's pulled forward to stay in sight.
             let retopo = if self.tool == Tool::QuadDraw && !s.live_surface.contains(&it.shape) && !s.live_surface.is_empty() { 0.03 } else { 0.0 };
             // Bounding box display: twelve lines and nothing else.
-            if self.disp.bounding_box || crate::ui_cmds::node_flag("boundingBox", it.xf) {
+            if self.disp.bounding_box || style.bounding_box || crate::ui_cmds::node_flag("boundingBox", it.xf) {
                 let (mut lo, mut hi) = (DVec3::splat(f64::MAX), DVec3::splat(f64::MIN));
                 for p in 0..it.mesh.point_capacity() {
                     if it.mesh.point_valid(p) {
@@ -900,7 +896,7 @@ impl Viewport {
                         hi = hi.max(q);
                     }
                 }
-                let c = c8(if selected { if lead == Some(it.xf) { LEAD } else { SELECTED } } else { WIRE });
+                let c = c8(wire);
                 let corner = |i: usize| DVec3::new(if i & 1 == 0 { lo.x } else { hi.x }, if i & 2 == 0 { lo.y } else { hi.y }, if i & 4 == 0 { lo.z } else { hi.z }).as_vec3().to_array();
                 let mut v = Vec::new();
                 for i in 0..8usize {
@@ -933,7 +929,7 @@ impl Viewport {
                 }
                 (!ti.is_empty()).then(|| (gpu.buffer_with(vk::BufferUsageFlags::INDEX_BUFFER, &ti), ti.len() as u32))
             };
-            if !self.wireframe && !painted && !templated {
+            if !self.wireframe && !painted && style.shaded {
                 if let Some((vb, ib, n)) = &entry.tris {
                     let (ib, n) = match &partial {
                         Some((pb, pn)) => (pb, pn),
@@ -985,7 +981,7 @@ impl Viewport {
                             let m = if b.group == NO_NODE { &green } else { self.mats.materials.get(&b.group).or(self.mats.fallback.as_ref()).unwrap_or(&green) };
                             let mut pc = push(mvp, it.world, view, [m.color[0], m.color[1], m.color[2], 1.0], retopo, 1.0);
                             pc.n2[3] = self.disp.flat as i32 as f32;
-                            let (mp, clear) = material_push(pc, m, self.mats.sets.get(&b.group));
+                            let (mp, clear) = material_push(pc, m, self.mats.sets.get(&b.group).filter(|_| style.textured));
                             // The isolated draws are for this frame only, so see-through ones go now rather than later.
                             if clear && shown_batches.is_none() && r.materials {
                                 transparent.push(Clear { shape: it.shape, world: it.world, batch: bi, depth, retopo });
@@ -993,7 +989,7 @@ impl Viewport {
                             }
                             let (Some(ib), Some(uvs)) = (draw_ib, entry.uvs.as_ref()) else { continue };
                             if r.materials {
-                                let sets = self.mats.sets.get(&b.group);
+                                let sets = self.mats.sets.get(&b.group).filter(|_| style.textured);
                                 let white = crate::textures::with_cache(gpu, |c| c.white(gpu));
                                 let kind = match (clear, self.disp.backface) {
                                     (false, false) => Kind::Material,
@@ -1177,7 +1173,7 @@ impl Viewport {
 
     /// Whether the selection masks and display type let a click select this node.
     pub fn pickable(&self, g: &Graph, id: NodeId) -> bool {
-        if !aztek_scene::display_layers::pickable(g, id) || override_type(g, id) != 0 {
+        if !ds::pickable(g, id) {
             return false;
         }
         crate::ui_cmds::mask_allows(type_category(g, id))
@@ -1449,7 +1445,7 @@ impl Viewport {
         let screen = self.screen();
         let mut best: Option<(f64, NodeId)> = None;
         for it in rig_items(g) {
-            if !self.rig_shown(g, it.node) || !self.node_shown(g, it.node) || !self.pickable(g, it.node) {
+            if !self.rig_shown(g, it.node) || !self.node_shown(g, it.node) || !self.pickable(g, it.shape) {
                 continue;
             }
             for (a, b) in &it.segs {
@@ -1466,20 +1462,13 @@ impl Viewport {
     fn draw_rig(&mut self, gpu: &mut Gpu, r: &Renderer, s: &Session, scale: f64) {
         let g = &s.graph;
         let sel = g.selection();
-        let lead = sel.last().copied();
         let mut v = Vec::new();
         let mut joints_v = Vec::new();
         for it in rig_items(g) {
             if !self.rig_shown(g, it.node) || !self.node_shown(g, it.node) {
                 continue;
             }
-            let c = if Some(it.node) == lead {
-                [100, 255, 160, 255]
-            } else if sel.contains(&it.node) {
-                [255, 255, 255, 255]
-            } else {
-                it.color
-            };
+            let c = ds::selected_color(g, it.shape, sel).unwrap_or(it.color);
             let joint = g.node(it.node).is_some_and(|n| n.ty().is_a("joint"));
             let out = if joint && self.disp.xray_joints { &mut joints_v } else { &mut v };
             for (a, b) in &it.segs {
@@ -1556,17 +1545,18 @@ impl Viewport {
             }
             let xf = aztek_scene::dag::transform_of(g, id);
             let picked = sel.contains(&xf) || sel.contains(&id);
-            if !picked && !self.wireframe && !self.wire_on_shaded {
+            let style = ds::style(g, id);
+            if style.bounding_box {
+                continue;
+            }
+            let lit = ds::select_state(g, id, sel) != ds::SelectState::None;
+            if !lit && style.shaded && !self.wireframe && !self.wire_on_shaded {
                 continue;
             }
             let c = if components::mode(g) != ComponentMode::Object && picked {
                 UNSEL_EDGE
-            } else if lead == Some(xf) || lead == Some(id) {
-                LEAD
-            } else if picked {
-                SELECTED
             } else {
-                override_color(g, id).unwrap_or(WIRE)
+                ds::wire_color(g, id, sel, "nurbsSurface", WIRE)
             };
             for (a, b) in surfaces::wire_lines(n) {
                 wires.push(LineVertex { pos: a.as_vec3().to_array(), color: c8(c) });
@@ -1676,7 +1666,7 @@ impl Viewport {
             // The nearest object the masks allow.
             let allowed: Vec<DrawItem> = items
                 .iter()
-                .filter(|it| self.pickable(g, it.xf))
+                .filter(|it| self.pickable(g, it.shape))
                 .map(|it| DrawItem { shape: it.shape, xf: it.xf, world: it.world, mesh: it.mesh.clone(), smooth: 0 })
                 .collect();
             return self.raycast(&allowed, px).map(|(i, _, _)| vec![g.path(crate::ui_cmds::scoped(g, allowed[i].xf))]).unwrap_or_default();
@@ -1794,7 +1784,7 @@ impl Viewport {
         }
         if mode == ComponentMode::Object {
             for it in rig_items(g) {
-                if !self.rig_shown(g, it.node) || !self.node_shown(g, it.node) || !self.pickable(g, it.node) {
+                if !self.rig_shown(g, it.node) || !self.node_shown(g, it.node) || !self.pickable(g, it.shape) {
                     continue;
                 }
                 if it.segs.iter().any(|(a, b)| screen.project(*a).is_some_and(inside) || screen.project(*b).is_some_and(inside)) {
@@ -1822,7 +1812,7 @@ impl Viewport {
             let proj = |p: Index| screen.project(it.world.transform_point3(m.position(p)));
             match mode {
                 ComponentMode::Object => {
-                    if self.pickable(g, it.xf) && (0..m.point_capacity()).any(|p| m.point_valid(p) && proj(p).is_some_and(inside)) {
+                    if self.pickable(g, it.shape) && (0..m.point_capacity()).any(|p| m.point_valid(p) && proj(p).is_some_and(inside)) {
                         let path = g.path(crate::ui_cmds::scoped(g, it.xf));
                         if !out.contains(&path) {
                             out.push(path);
@@ -2486,6 +2476,8 @@ fn seg_distance(p: DVec2, a: DVec2, b: DVec2) -> f64 {
 /// Something drawn as lines in world space: joints, locators, IK handles.
 pub struct RigItem {
     pub node: NodeId,
+    /// The shape it draws: what its colour, display type and pick refusal are read from.
+    pub shape: NodeId,
     pub color: [u8; 4],
     pub segs: Vec<(DVec3, DVec3)>,
 }
@@ -2499,34 +2491,29 @@ fn circle(c: DVec3, u: DVec3, v: DVec3, r: f64, out: &mut Vec<(DVec3, DVec3)>) {
     }
 }
 
-/// Maya's drawing override index colours, 0 to 31.
-const INDEX_COLORS: [[u8; 3]; 32] = [
-    [120, 120, 120], [0, 0, 0], [64, 64, 64], [153, 153, 153], [155, 0, 40], [0, 4, 96], [0, 0, 255], [0, 70, 25],
-    [38, 0, 67], [200, 0, 200], [138, 72, 51], [63, 35, 31], [153, 38, 0], [255, 0, 0], [0, 255, 0], [0, 65, 153],
-    [255, 255, 255], [255, 255, 0], [100, 220, 255], [67, 255, 163], [255, 176, 176], [228, 172, 121], [255, 255, 99], [0, 153, 84],
-    [161, 106, 48], [158, 161, 48], [104, 161, 48], [48, 161, 93], [48, 161, 161], [48, 103, 161], [111, 48, 161], [161, 48, 106],
-];
+/// A line item with its colour settled, or twelve lines round it at overrideLevelOfDetail's bounding box.
+fn rig_item(g: &Graph, shape: NodeId, node: NodeId, kind: &str, factory: [u8; 4], segs: Vec<(DVec3, DVec3)>) -> RigItem {
+    let st = ds::style(g, shape);
+    let segs = if st.bounding_box { box_segs(&segs) } else { segs };
+    RigItem { node, shape, color: st.color.unwrap_or_else(|| ds::dormant_color(kind, factory)), segs }
+}
 
-/// The drawing override on a node, or on one above it, as Maya inherits it.
-fn override_color(g: &Graph, id: NodeId) -> Option<[u8; 4]> {
-    let mut n = id;
-    while n != NO_NODE {
-        let node = g.node(n)?;
-        if node.ty().dag && node.bool(DagNode::OVERRIDE_ENABLED) {
-            if node.bool(DagNode::OVERRIDE_RGB_COLORS) {
-                let c = node.data().vec3(DagNode::OVERRIDE_COLOR_RGB);
-                return Some([(c.x * 255.0) as u8, (c.y * 255.0) as u8, (c.z * 255.0) as u8, 255]);
-            }
-            let i = node.int(DagNode::OVERRIDE_COLOR).clamp(0, 31) as usize;
-            // Index 0 means no colour of its own.
-            if i > 0 {
-                let c = INDEX_COLORS[i];
-                return Some([c[0], c[1], c[2], 255]);
+fn box_segs(segs: &[(DVec3, DVec3)]) -> Vec<(DVec3, DVec3)> {
+    let (mut lo, mut hi) = (DVec3::splat(f64::MAX), DVec3::splat(f64::MIN));
+    for (a, b) in segs {
+        lo = lo.min(a.min(*b));
+        hi = hi.max(a.max(*b));
+    }
+    let corner = |i: usize| DVec3::new(if i & 1 == 0 { lo.x } else { hi.x }, if i & 2 == 0 { lo.y } else { hi.y }, if i & 4 == 0 { lo.z } else { hi.z });
+    let mut out = Vec::new();
+    for i in 0..8usize {
+        for bit in [1usize, 2, 4] {
+            if i & bit == 0 {
+                out.push((corner(i), corner(i | bit)));
             }
         }
-        n = g.parent(n);
     }
-    None
+    out
 }
 
 /// A component string for a CV by its id: `cv[i]`, or `cv[u][v]` on a surface with `stride` CVs along V.
@@ -2609,20 +2596,19 @@ pub fn rig_items(g: &Graph) -> Vec<RigItem> {
                     segs.push((corners[i], tip));
                 }
             }
-            out.push(RigItem { node: id, color: override_color(g, id).unwrap_or([70, 110, 220, 255]), segs });
+            out.push(rig_item(g, id, id, "joint", [70, 110, 220, 255], segs));
         } else if ty.is_a("deformHandle") {
             let kind = ty.attr_index("deformerType").map(|i| n.data().string(i).to_string()).unwrap_or_default();
             // A cluster's handle sits on its pivot.
             let at = w * glam::DMat4::from_translation(n.data().vec3(Transform::ROTATE_PIVOT));
-            out.push(RigItem { node: id, color: [200, 120, 230, 255], segs: aztek_scene::deform::handle_lines(&kind, &at) });
+            out.push(rig_item(g, id, id, "cluster", [200, 120, 230, 255], aztek_scene::deform::handle_lines(&kind, &at)));
         } else if let Some(segs) = aztek_scene::rig_misc::shape_lines(n) {
-            out.push(RigItem { node: aztek_scene::dag::transform_of(g, id), color: override_color(g, id).unwrap_or([60, 90, 230, 255]), segs });
+            out.push(rig_item(g, id, aztek_scene::dag::transform_of(g, id), "dimension", [60, 90, 230, 255], segs));
         } else if ty.is_a("nurbsCurve") {
             if n.bool(DagNode::INTERMEDIATE_OBJECT) {
                 continue;
             }
-            let color = override_color(g, id).unwrap_or([10, 10, 110, 255]);
-            out.push(RigItem { node: aztek_scene::dag::transform_of(g, id), color, segs: aztek_scene::curves::curve_lines(n) });
+            out.push(rig_item(g, id, aztek_scene::dag::transform_of(g, id), "curve", [10, 10, 110, 255], aztek_scene::curves::curve_lines(n)));
         } else if ty.is_a("camera") {
             // A box and a lens, for cameras that show: the default views' are hidden.
             let (x, y, z) = (w.x_axis.truncate().normalize_or_zero(), w.y_axis.truncate().normalize_or_zero(), w.z_axis.truncate().normalize_or_zero());
@@ -2639,12 +2625,12 @@ pub fn rig_items(g: &Graph) -> Vec<RigItem> {
                 }
             }
             circle(c - z * k * 0.5, x, y, k * 0.5, &mut segs);
-            out.push(RigItem { node: aztek_scene::dag::transform_of(g, id), color: override_color(g, id).unwrap_or([60, 90, 230, 255]), segs });
+            out.push(rig_item(g, id, aztek_scene::dag::transform_of(g, id), "camera", [60, 90, 230, 255], segs));
         } else if ty.is_a("softModHandle") {
             let at = w * glam::DMat4::from_translation(n.data().vec3(aztek_scene::transform::Shape::COUNT));
-            out.push(RigItem { node: aztek_scene::dag::transform_of(g, id), color: [200, 120, 230, 255], segs: aztek_scene::deform::handle_lines("softMod", &at) });
+            out.push(rig_item(g, id, aztek_scene::dag::transform_of(g, id), "cluster", [200, 120, 230, 255], aztek_scene::deform::handle_lines("softMod", &at)));
         } else if ty.is_a("baseLattice") {
-            out.push(RigItem { node: aztek_scene::dag::transform_of(g, id), color: [130, 70, 150, 255], segs: aztek_scene::deform_lattice::box_lines(&w) });
+            out.push(rig_item(g, id, aztek_scene::dag::transform_of(g, id), "lattice", [130, 70, 150, 255], aztek_scene::deform_lattice::box_lines(&w)));
         } else if ty.is_a("lattice") {
             let Some((dims, pts)) = aztek_scene::deform_lattice::world_points(g, id) else { continue };
             let mut segs = aztek_scene::deform_lattice::grid_lines(dims, &pts);
@@ -2658,7 +2644,7 @@ pub fn rig_items(g: &Graph) -> Vec<RigItem> {
             for p in &pts {
                 cross(*p, k, &mut segs);
             }
-            out.push(RigItem { node: aztek_scene::dag::transform_of(g, id), color: [200, 120, 230, 255], segs });
+            out.push(rig_item(g, id, aztek_scene::dag::transform_of(g, id), "lattice", [200, 120, 230, 255], segs));
             // Selected points show in vertex mode. No node: this is a highlight, and it mustn't pick or take selection colours.
             if components::mode(g) == ComponentMode::Vertex {
                 let picked = components::selected(g, id, ComponentMode::Vertex);
@@ -2667,11 +2653,11 @@ pub fn rig_items(g: &Graph) -> Vec<RigItem> {
                     for p in picked.iter().filter_map(|&i| pts.get(i as usize)) {
                         cross(*p, k * 2.5, &mut segs);
                     }
-                    out.push(RigItem { node: aztek_scene::NO_NODE, color: [255, 200, 60, 255], segs });
+                    out.push(RigItem { node: aztek_scene::NO_NODE, shape: aztek_scene::NO_NODE, color: [255, 200, 60, 255], segs });
                 }
             }
         } else if ty.is_a("motionTrailShape") {
-            out.push(RigItem { node: aztek_scene::dag::transform_of(g, id), color: [220, 200, 80, 255], segs: aztek_scene::motion_path::trail_lines(n) });
+            out.push(rig_item(g, id, aztek_scene::dag::transform_of(g, id), "dimension", [220, 200, 80, 255], aztek_scene::motion_path::trail_lines(n)));
         } else if ty.is_a("ikHandle") {
             let k = 0.4 * crate::ui_cmds::pref_f64("ikHandleScale", 1.0);
             let segs = vec![
@@ -2679,7 +2665,7 @@ pub fn rig_items(g: &Graph) -> Vec<RigItem> {
                 (c - DVec3::Y * k, c + DVec3::Y * k),
                 (c - DVec3::Z * k, c + DVec3::Z * k),
             ];
-            out.push(RigItem { node: id, color: [200, 200, 255, 255], segs });
+            out.push(rig_item(g, id, id, "ikHandle", [200, 200, 255, 255], segs));
         } else if ty.is_a("locator") {
             let lp = n.data().vec3(Locator::LOCAL_POSITION);
             let ls = n.data().vec3(Locator::LOCAL_SCALE);
@@ -2689,27 +2675,11 @@ pub fn rig_items(g: &Graph) -> Vec<RigItem> {
                 let d = ax.truncate() * ls[i];
                 segs.push((p - d, p + d));
             }
-            out.push(RigItem { node: aztek_scene::dag::transform_of(g, id), color: override_color(g, id).unwrap_or([60, 90, 230, 255]), segs });
+            out.push(rig_item(g, id, aztek_scene::dag::transform_of(g, id), "locator", [60, 90, 230, 255], segs));
         }
         let _ = Transform::TRANSLATE;
     }
     out
-}
-
-/// A node's drawing override display type: 0 normal, 1 template, 2 reference, as Maya inherits it.
-pub fn override_type(g: &Graph, id: NodeId) -> i64 {
-    let mut n = id;
-    while n != NO_NODE {
-        let Some(node) = g.node(n) else { return 0 };
-        if node.ty().dag && node.bool(DagNode::OVERRIDE_ENABLED) {
-            let t = node.int(DagNode::OVERRIDE_DISPLAY_TYPE);
-            if t != 0 {
-                return t;
-            }
-        }
-        n = g.parent(n);
-    }
-    0
 }
 
 /// The selection mask and Show menu category of a node: its transform takes its shape's.

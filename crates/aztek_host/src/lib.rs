@@ -12,7 +12,7 @@ pub mod panel_cmds;
 mod python;
 #[cfg(feature = "python")]
 mod python_api;
-mod query;
+pub mod query;
 mod render;
 pub mod textures;
 pub mod script_jobs;

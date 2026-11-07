@@ -36,7 +36,7 @@ fn visible(g: &Graph, id: NodeId) -> bool {
         if node.ty().dag && !node.bool(DagNode::VISIBILITY) {
             return false;
         }
-        if aztek_scene::display_layers::hidden_by_own_layer(g, n) {
+        if aztek_scene::draw_style::hidden_by_override(g, n) {
             return false;
         }
         n = g.parent(n);
