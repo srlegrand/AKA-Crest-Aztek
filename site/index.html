@@ -35,11 +35,10 @@
       and production rigs pose. Free and open source under MIT-0, for Linux and Windows.</p>
     <div class="buttons">
       <a class="btn primary" id="dl-main" href="https://github.com/srlegrand/Aztek/releases/tag/latest">Download</a>
+      <a class="btn" href="#download">Other platforms &darr;</a>
       <a class="btn" href="https://github.com/srlegrand/Aztek">Source on GitHub</a>
       <a class="btn" href="https://github.com/srlegrand/Aztek/fork">Fork it on GitHub</a>
     </div>
-    <p class="dl-note"><span id="dl-detected">Builds for Windows and Linux.</span>
-      <a href="#download">All downloads: Windows installer and zip, Ubuntu 24.04 and 22.04, Rocky Linux 9 and 8, other Linux</a></p>
     <p class="build-line" id="build-line"></p>
   </div>
 </section>
@@ -271,15 +270,11 @@ build.bat -Run               # Windows</code></pre>
     main.href = document.getElementById('dl-windows').href;
     main.textContent = 'Download for Windows';
     document.getElementById('dl-windows').classList.add('mine');
-    document.getElementById('dl-detected').textContent =
-      'This button is the Windows installer, picked because you are on Windows.';
   } else if (isLinux) {
     main.dataset.from = 'dl-linux';
     main.href = document.getElementById('dl-linux').href;
     main.textContent = 'Download for Linux';
     document.getElementById('dl-linux').classList.add('mine');
-    document.getElementById('dl-detected').textContent =
-      'This button is the Ubuntu 24.04 package, picked because you are on Linux.';
   }
   fetch('https://api.github.com/repos/srlegrand/Aztek/releases/tags/latest')
     .then(function (r) { return r.ok ? r.json() : null; })
