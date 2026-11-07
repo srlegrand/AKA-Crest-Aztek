@@ -5,7 +5,9 @@
 A modelling, UV, rigging and animation application that behaves like Maya. Rust core (scene graph, commands,
 geometry, Vulkan viewport), Qt Widgets shell in C++, a MEL interpreter, and embedded Python with `aztek.cmds`, a
 `maya.cmds` shim and an OpenMaya API 2.0 subset. Reads and writes `.ma` files. [PARITY.md](PARITY.md) has the behaviour
-target and status, including where it differs from Maya; [docs/COMMANDS.md](docs/COMMANDS.md) lists all 962 commands.
+target and status, including where it differs from Maya; [docs/COMMANDS.md](docs/COMMANDS.md) lists all 963 commands.
+
+Website: [srlegrand.github.io/Aztek](https://srlegrand.github.io/Aztek/). Downloads: [latest build](https://github.com/srlegrand/Aztek/releases/tag/latest) for Windows and Linux. Licence: [Apache 2.0](LICENSE).
 
 ![A production rig from Maya 2020, opened from its .ma file](docs/production-rig.png)
 
@@ -20,6 +22,8 @@ blendShapes, 82 IK handles, follicles, ribbons and wires. It opens in about 3 se
   boundary, birail, `nurbsToPoly`), with CVs as components.
 - **UVs:** projections, unfold, layout, cut and sew, UV Editor.
 - **Materials and textures:** lambert, blinn, phong, phongE and surfaceShader with file textures and place2dTexture, assigned to objects or faces; Textured mode (6) in the viewport; Hypershade lists; the image behind the UV Editor.
+
+  ![Materials and a file texture in Textured mode](docs/materials.png)
 - **Rigging:** joints (orient, mirror, insert, segment scale compensate), RP, SC and spline IK, every constraint, smooth
   skin with weight painting, mirror and copy, dual quaternion; lattice, wrap, wire, delta mush, softMod, nonlinears,
   clusters, blend shapes; a HumanIK subset (skeleton, definition, control rig, retargeting). Controls keep their colours:
@@ -40,6 +44,8 @@ blendShapes, 82 IK handles, follicles, ribbons and wires. It opens in about 3 se
   ![A MEL script in the Script Editor building cubes with expressions, then playing them](docs/scripting.gif)
 - **Script-built interface:** `window`, layouts, controls, menus and dialogs from MEL or Python become Qt widgets;
   attribute-bound controls, `AE<type>Template` procedures, `workspaceControl` docking, editors and panels created by script.
+
+  ![A window built from MEL: sliders, a colour slider and buttons driving a procedure](docs/script-window.png)
 - **Playblast** to images or, through ffmpeg, to a movie.
 - **Interface:** menu sets, shelves with an editor, hotkey editor, marking menus, hotbox, channel box, outliner, attribute
   editor, node editor, tool settings, panel layouts, workspaces.
@@ -195,3 +201,11 @@ The target is that Maya's scripts, habits and `.ma` files carry over. A producti
 compare against, so behaviour comes from the published reference: expect differences in details, and see PARITY.md for
 the known ones. `.mb` files and C++ plug-ins are not supported. Rendering, dynamics and Bifrost are out of
 scope.
+
+## Licence
+
+Aztek is free and open source under the [Apache License 2.0](LICENSE): use it, change it and ship it, commercially or not,
+keeping the licence and copyright notices.
+
+Maya is a trademark of Autodesk, Inc. Aztek is an independent project, not affiliated with or endorsed by Autodesk. It uses
+Maya's published behaviour as its reference and contains none of its code or artwork.

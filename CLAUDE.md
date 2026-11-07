@@ -48,6 +48,8 @@ bin, and the target is Maya's behaviour. PARITY.md holds the target and status; 
   editor), `viewport.*`, `widgets.*` (option boxes, time and range sliders, splash, About), `grapheditor.*`,
   `uveditor.*`, `dopesheet.*`, `nodeeditor.*`, `toolsettings.*`, `shapeeditor.cpp`, `runtime.cpp` (script-built windows),
   `markingmenu.*`, `icons.cpp` (icons drawn with QPainter), `style.qss`.
+- `site/` the website (GitHub Pages, `.github/workflows/pages.yml`; `sh site/build.sh _site` to preview). It uses the
+  images in `docs/`; keep it and the README saying the same things.
 - `app/icons` logo and app icon (SVG sources, PNG, ICO). `docs/` README screenshots.
 
 The UI talks to the core only through commands (exec, exec_quiet, ask) and JSON queries; panels refresh when the
