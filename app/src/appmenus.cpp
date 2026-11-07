@@ -153,7 +153,7 @@ QMenu* MainWindow::file_menu() {
     m->addAction("Optimize Scene Size", [] { exec("cleanUpScene"); });
     m->addSeparator();
     m->addAction("Import...", [] {
-        QString f = QFileDialog::getOpenFileName(nullptr, "Import", QString(), "Scenes and meshes (*.ma *.obj *.ply *.stl);;Maya ASCII (*.ma);;Meshes (*.obj *.ply *.stl)");
+        QString f = QFileDialog::getOpenFileName(nullptr, "Import", QString(), "Scenes and meshes (*.ma *.obj *.ply *.stl);;ASCII scenes (*.ma);;Meshes (*.obj *.ply *.stl)");
         if (f.isEmpty()) return;
         if (f.endsWith(".ma", Qt::CaseInsensitive)) {
             exec("file", QJsonObject{{"args", QJsonArray{f}}, {"import", true}});
@@ -163,7 +163,7 @@ QMenu* MainWindow::file_menu() {
         exec(c, args(QJsonArray{f}));
     });
     auto do_export = [](bool all) {
-        QString f = QFileDialog::getSaveFileName(nullptr, all ? "Export All" : "Export Selection", "export.ma", "Maya ASCII (*.ma);;OBJ (*.obj);;PLY (*.ply);;STL (*.stl)");
+        QString f = QFileDialog::getSaveFileName(nullptr, all ? "Export All" : "Export Selection", "export.ma", "ASCII scenes (*.ma);;OBJ (*.obj);;PLY (*.ply);;STL (*.stl)");
         if (f.isEmpty()) return;
         if (f.endsWith(".ma", Qt::CaseInsensitive)) {
             exec("file", QJsonObject{{"args", QJsonArray{f}}, {all ? "exportAll" : "exportSelected", true}, {"type", "mayaAscii"}});

@@ -1018,7 +1018,7 @@ void MainWindow::repeat_last() {
 }
 
 void MainWindow::open_scene() {
-    QString f = QFileDialog::getOpenFileName(this, "Open Scene", QString(), "Scenes (*.aztek *.ma);;Aztek scenes (*.aztek);;Maya ASCII (*.ma);;All files (*)");
+    QString f = QFileDialog::getOpenFileName(this, "Open Scene", QString(), "Scenes (*.aztek *.ma);;Aztek scenes (*.aztek);;ASCII scenes (*.ma);;All files (*)");
     if (!f.isEmpty()) open_file(f);
 }
 
@@ -1040,7 +1040,7 @@ void MainWindow::save_scene(bool as) {
     QString f = state()["file"].toString();
     if (as || f.isEmpty()) {
         QString filter;
-        f = QFileDialog::getSaveFileName(this, "Save Scene As", f.isEmpty() ? "untitled.aztek" : f, "Aztek scenes (*.aztek);;Maya ASCII (*.ma)", &filter);
+        f = QFileDialog::getSaveFileName(this, "Save Scene As", f.isEmpty() ? "untitled.aztek" : f, "Aztek scenes (*.aztek);;ASCII scenes (*.ma)", &filter);
         if (f.isEmpty()) return;
         if (!f.section('/', -1).contains('.')) f += filter.contains("*.ma") ? ".ma" : ".aztek";
     }
