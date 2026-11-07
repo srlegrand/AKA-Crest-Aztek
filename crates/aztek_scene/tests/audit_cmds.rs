@@ -204,7 +204,10 @@ fn cube_file(ext: &str) -> String {
     let mut s = Session::new();
     run(&mut s, "polyCube", json!({"name": "box"}));
     run(&mut s, "spaceLocator", json!({"name": "loc"}));
-    let path = temp(&format!("ref_source_{}.{ext}", std::process::id()));
+    // Tests run in parallel: each its own file, or one reads what another is rewriting.
+    static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = temp(&format!("ref_source_{n}.{ext}"));
     run(&mut s, "file", json!({"args": [path.clone()], "save": true}));
     path
 }
