@@ -335,6 +335,20 @@ def _fire(cid, args):
         _finish_callback()
 
 
+def _fire_value(cid, args):
+    """As _fire, with what the callable returns, as JSON."""
+    fn = _callbacks.get(cid)
+    if fn is None:
+        return "null"
+    try:
+        return json.dumps(_plain(fn(*json.loads(args))))
+    except Exception as e:
+        _report_exception(e)
+        return "null"
+    finally:
+        _finish_callback()
+
+
 def _fire_source(src):
     """Python source given as a callback, run in __main__."""
     try:
@@ -346,6 +360,7 @@ def _fire_source(src):
 
 
 __main__.__dict__["_aztek_fire"] = _fire
+__main__.__dict__["_aztek_fire_value"] = _fire_value
 __main__.__dict__["_aztek_fire_source"] = _fire_source
 __main__.__dict__["_aztek_run"] = _run
 __main__.__dict__["_aztek_eval"] = _eval_from_mel

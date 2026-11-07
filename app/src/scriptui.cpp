@@ -2,6 +2,7 @@
 #include "aztek.h"
 #include "host.h"
 #include "viewport.h"
+#include "widgets.h"
 
 #include <QAction>
 #include <QActionGroup>
@@ -45,6 +46,8 @@
 #include <QSpinBox>
 #include <QStyle>
 #include <QTabBar>
+#include <QTableWidget>
+#include <QHeaderView>
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -1126,6 +1129,106 @@ void ScriptUi::build_control(Item* it, const QJsonObject& props) {
         f->installEventFilter(this);
         f->setMinimumSize(20, 20);
         it->w = f;
+    } else if (k == "toolButton") {
+        auto* b = new QToolButton();
+        b->setCheckable(true);
+        b->setMinimumSize(32, 32);
+        b->setStyleSheet("QToolButton:checked { background: #5285a6; }");
+        connect(b, &QToolButton::clicked, this, [this, path, b](bool) {
+            auto* i = items_.value(path);
+            // Clicking the one current keeps it current.
+            if (i && as_bool(i->prop("select"))) {
+                QSignalBlocker block(b);
+                b->setChecked(true);
+                return;
+            }
+            fire(path, QJsonObject{{"select", true}}, QJsonArray{"changeCommand", "onCommand"}, QJsonArray{true});
+        });
+        b->installEventFilter(this);
+        it->w = b;
+    } else if (k == "layerButton") {
+        auto* box = new QWidget();
+        auto* h = new QHBoxLayout(box);
+        h->setContentsMargins(0, 0, 0, 0);
+        h->setSpacing(1);
+        auto* vis = new QToolButton(box);
+        vis->setCheckable(true);
+        vis->setText("V");
+        vis->setFixedSize(20, 20);
+        auto* type = new QToolButton(box);
+        type->setFixedSize(20, 20);
+        auto* name = new QToolButton(box);
+        name->setCheckable(true);
+        name->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        name->setStyleSheet("QToolButton:checked { background: #5285a6; }");
+        h->addWidget(vis);
+        h->addWidget(type);
+        h->addWidget(name, 1);
+        it->parts["visible"] = vis;
+        it->parts["type"] = type;
+        it->parts["name"] = name;
+        connect(vis, &QToolButton::clicked, this, [this, path](bool on) { fire(path, QJsonObject{{"layerVisible", on}}, QJsonArray{"visibleCommand"}, QJsonArray{on}); });
+        connect(type, &QToolButton::clicked, this, [this, path](bool) {
+            auto* i = items_.value(path);
+            if (!i) return;
+            QString now = i->prop("layerState").toString("normal");
+            QString next = now == "normal" ? "template" : now == "template" ? "reference" : "normal";
+            QJsonObject set{{"layerState", next}};
+            i->props.insert("layerState", next);
+            apply_control(i, set);
+            fire(path, set, QJsonArray{"typeCommand"}, QJsonArray{next});
+        });
+        connect(name, &QToolButton::clicked, this, [this, path](bool on) { fire(path, QJsonObject{{"select", on}}, QJsonArray{"command", "changedCommand"}, QJsonArray{on}); });
+        name->installEventFilter(this);
+        it->w = box;
+    } else if (k == "scriptTable") {
+        auto* t = new QTableWidget();
+        t->setMinimumSize(120, 60);
+        connect(t, &QTableWidget::cellChanged, this, [this, path, t](int r, int c) {
+            QTableWidgetItem* cell = t->item(r, c);
+            QJsonObject ev{{"path", path}, {"cellEdit", QJsonArray{r + 1, c + 1, cell ? cell->text() : QString()}}};
+            QByteArray text = QJsonDocument(ev).toJson(QJsonDocument::Compact);
+            aztek_ui_event(text.constData());
+            Host::get()->poke();
+            sync();
+        });
+        connect(t, &QTableWidget::itemSelectionChanged, this, [this, path, t] {
+            QJsonArray sel;
+            for (const QModelIndex& i : t->selectionModel()->selectedIndexes()) {
+                sel.append(i.row() + 1);
+                sel.append(i.column() + 1);
+            }
+            fire(path, QJsonObject{{"selectedCells", sel}}, QJsonArray{"selectionChangedCmd"}, QJsonArray());
+        });
+        it->w = t;
+    } else if (k == "timePort") {
+        auto* t = new TimeSlider();
+        t->setMinimumHeight(30);
+        auto update = [t] {
+            auto q = [](const char* flag) { return ask("playbackOptions", QJsonObject{{"query", true}, {"queried", QJsonArray{flag}}}).toDouble(); };
+            t->blockSignals(true);
+            t->set_range(q("minTime"), q("maxTime"));
+            t->set_time(state()["time"].toDouble(t->time()));
+            t->blockSignals(false);
+        };
+        update();
+        connect(Host::get(), &Host::sceneChanged, t, update);
+        connect(t, &TimeSlider::timeChanged, this, [](double f) { exec_quiet("currentTime", QJsonObject{{"args", QJsonArray{f}}}); });
+        it->w = t;
+    } else if (k == "rangeControl") {
+        auto* r = new RangeSlider();
+        r->setMinimumHeight(20);
+        auto update = [r] {
+            auto q = [](const char* flag) { return ask("playbackOptions", QJsonObject{{"query", true}, {"queried", QJsonArray{flag}}}).toDouble(); };
+            r->set(q("animationStartTime"), q("minTime"), q("maxTime"), q("animationEndTime"));
+        };
+        update();
+        connect(Host::get(), &Host::sceneChanged, r, update);
+        connect(r, &RangeSlider::rangeChanged, this, [this, path](double a, double b) {
+            exec_quiet("playbackOptions", QJsonObject{{"minTime", a}, {"maxTime", b}});
+            fire(path, QJsonObject{{"minRange", a}, {"maxRange", b}}, QJsonArray{"changedCommand"}, QJsonArray());
+        });
+        it->w = r;
     } else if (k == "modelPanel") {
         QString cam = props["camera"].toString("persp");
         auto* v = new ViewportWidget(cam);
@@ -1181,7 +1284,8 @@ void ScriptUi::build_group(Item* it, const QJsonObject& props) {
     } else if (k == "intFieldGrp" || k == "floatFieldGrp") {
         bool is_int = k == "intFieldGrp";
         int n = qBound(1, int(as_number(props["numberOfFields"], 1)), 4);
-        for (int i = 1; i <= n; ++i) {
+        // All four exist, those past the count hidden: a rebound attribute can have more or fewer.
+        for (int i = 1; i <= 4; ++i) {
             QString slot = QString::number(i);
             QString val_flag = "value" + slot;
             auto changed = [this, path, val_flag, slot](const QJsonValue& v) {
@@ -1195,6 +1299,7 @@ void ScriptUi::build_group(Item* it, const QJsonObject& props) {
                 connect(s, QOverload<int>::of(&QSpinBox::valueChanged), this, [changed](int v) { changed(v); });
                 g->addWidget(s, 0, col++);
                 it->parts["field" + slot] = s;
+                if (i > n) s->hide();
             } else {
                 auto* s = new QDoubleSpinBox(box);
                 s->setButtonSymbols(QAbstractSpinBox::NoButtons);
@@ -1204,11 +1309,12 @@ void ScriptUi::build_group(Item* it, const QJsonObject& props) {
                 connect(s, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [changed](double v) { changed(v); });
                 g->addWidget(s, 0, col++);
                 it->parts["field" + slot] = s;
+                if (i > n) s->hide();
             }
         }
         if (props.contains("extraLabel")) extra_label();
-    } else if (k == "intSliderGrp" || k == "floatSliderGrp" || k == "colorIndexSliderGrp") {
-        bool is_int = k != "floatSliderGrp";
+    } else if (k == "intSliderGrp" || k == "floatSliderGrp" || k == "floatSliderButtonGrp" || k == "colorIndexSliderGrp") {
+        bool is_int = k != "floatSliderGrp" && k != "floatSliderButtonGrp";
         bool with_field = as_bool(props["field"], k == "colorIndexSliderGrp");
         QWidget* field = nullptr;
         if (with_field) {
@@ -1279,6 +1385,20 @@ void ScriptUi::build_group(Item* it, const QJsonObject& props) {
         if (field && is_int) connect(static_cast<QSpinBox*>(field), QOverload<int>::of(&QSpinBox::valueChanged), this, [field_changed](int v) { field_changed(v, v); });
         else if (field) connect(static_cast<QDoubleSpinBox*>(field), QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [field_changed](double v) { field_changed(v, v); });
         if (props.contains("extraLabel")) extra_label();
+        if (k == "floatSliderButtonGrp") {
+            auto* b = new QPushButton(props["buttonLabel"].toString("Button"), box);
+            g->addWidget(b, 0, col++);
+            it->parts["button"] = b;
+            connect(b, &QPushButton::clicked, this, [this, path](bool) { fire(path, QJsonObject(), QJsonArray{"buttonCommand"}, QJsonArray()); });
+            if (as_bool(props["symbolButtonDisplay"])) {
+                auto* sb = new QToolButton(box);
+                QString image = props["image"].toString();
+                if (QFile::exists(image)) sb->setIcon(QIcon(image));
+                g->addWidget(sb, 0, col++);
+                it->parts["symbol"] = sb;
+                connect(sb, &QToolButton::clicked, this, [this, path](bool) { fire(path, QJsonObject(), QJsonArray{"symbolButtonCommand"}, QJsonArray()); });
+            }
+        }
     } else if (k == "colorSliderGrp") {
         auto* swatch = new QPushButton(box);
         swatch->setFixedSize(40, 20);
@@ -1437,6 +1557,61 @@ void ScriptUi::apply_control(Item* it, const QJsonObject& props) {
             if (auto* b = qobject_cast<QAbstractButton*>(w)) b->setText(props["label"].toString());
         }
     }
+    if (k == "toolButton") {
+        auto* b = static_cast<QToolButton*>(w);
+        QSignalBlocker block(b);
+        QString image = it->prop("image1").toString();
+        if (!image.isEmpty() && QFile::exists(image)) {
+            b->setIcon(QIcon(image));
+            b->setIconSize(QSize(32, 32));
+            b->setToolButtonStyle(Qt::ToolButtonIconOnly);
+        } else {
+            // No picture: the tool's name, so the button can be told from the others.
+            QStringList tools = strings(it->prop("tool"));
+            b->setText(tools.isEmpty() ? it->name : tools.first());
+            b->setToolButtonStyle(Qt::ToolButtonTextOnly);
+        }
+        if (props.contains("select")) b->setChecked(as_bool(props["select"]));
+    } else if (k == "layerButton") {
+        auto* vis = static_cast<QToolButton*>(it->parts["visible"]);
+        auto* type = static_cast<QToolButton*>(it->parts["type"]);
+        auto* name = static_cast<QToolButton*>(it->parts["name"]);
+        QSignalBlocker b1(vis), b2(name);
+        vis->setChecked(as_bool(it->prop("layerVisible"), true));
+        QString state = it->prop("layerState").toString("normal");
+        type->setText(state == "template" ? "T" : state == "reference" ? "R" : "");
+        name->setText(it->props.contains("label") ? it->prop("label").toString() : it->prop("name").toString(it->name));
+        name->setChecked(as_bool(it->prop("select")));
+        if (it->props.contains("labelWidth")) name->setFixedWidth(int(as_number(it->prop("labelWidth"))));
+        QFont f = name->font();
+        f.setBold(as_bool(it->prop("current")));
+        name->setFont(f);
+        w->setEnabled(as_bool(it->prop("enable"), true));
+    } else if (k == "scriptTable") {
+        auto* t = static_cast<QTableWidget*>(w);
+        QSignalBlocker block(t);
+        int rows = int(as_number(it->prop("rows"))), cols = int(as_number(it->prop("columns")));
+        t->setRowCount(rows);
+        t->setColumnCount(cols);
+        QJsonArray labels = flat(it->prop("label"));
+        for (int i = 0; i + 1 < labels.size(); i += 2) t->setHorizontalHeaderItem(int(as_number(labels[i])) - 1, new QTableWidgetItem(labels[i + 1].toString()));
+        QJsonArray widths = flat(it->prop("columnWidth"));
+        for (int i = 0; i + 1 < widths.size(); i += 2) t->setColumnWidth(int(as_number(widths[i])) - 1, int(as_number(widths[i + 1])));
+        if (props.contains("rowHeight")) t->verticalHeader()->setDefaultSectionSize(int(as_number(props["rowHeight"])));
+        if (props.contains("useDoubleClickEdit")) t->setEditTriggers(as_bool(props["useDoubleClickEdit"]) ? QAbstractItemView::DoubleClicked : QAbstractItemView::AllEditTriggers);
+        if (props.contains("multiEditEnabled") || props.contains("selectionMode")) t->setSelectionMode(as_bool(it->prop("multiEditEnabled")) ? QAbstractItemView::ExtendedSelection : QAbstractItemView::ContiguousSelection);
+        if (props.contains("cells") || props.contains("rows") || props.contains("columns")) {
+            QJsonArray cells = it->prop("cells").toArray();
+            for (int r = 0; r < rows; ++r) {
+                QJsonArray row = r < cells.size() ? cells[r].toArray() : QJsonArray();
+                for (int c = 0; c < cols; ++c) {
+                    QString v = c < row.size() ? row[c].toString() : QString();
+                    if (QTableWidgetItem* cell = t->item(r, c)) cell->setText(v);
+                    else t->setItem(r, c, new QTableWidgetItem(v));
+                }
+            }
+        }
+    }
     if (k == "iconTextButton" || k == "symbolButton" || k == "shelfButton" || k == "iconTextCheckBox" || k == "symbolCheckBox" || k == "iconTextRadioButton") {
         auto* b = qobject_cast<QToolButton*>(w);
         if (b) {
@@ -1593,13 +1768,21 @@ void ScriptUi::apply_control(Item* it, const QJsonObject& props) {
             if (props.contains("enableButton")) b->setEnabled(as_bool(props["enableButton"], true));
         }
     } else if (k == "intFieldGrp" || k == "floatFieldGrp") {
+        if (props.contains("numberOfFields")) {
+            int n = qBound(1, int(as_number(props["numberOfFields"], 1)), 4);
+            for (int i = 1; i <= 4; ++i)
+                if (QWidget* f = it->parts.value("field" + QString::number(i))) f->setVisible(i <= n);
+        }
         for (int i = 1; i <= 4; ++i) {
             QString slot = QString::number(i);
             if (props.contains("value" + slot)) set_number(it->parts.value("field" + slot), props["value" + slot]);
             if (props.contains("enable" + slot))
                 if (QWidget* f = it->parts.value("field" + slot)) f->setEnabled(as_bool(props["enable" + slot], true));
         }
-    } else if (k == "intSliderGrp" || k == "floatSliderGrp" || k == "colorIndexSliderGrp") {
+    } else if (k == "intSliderGrp" || k == "floatSliderGrp" || k == "floatSliderButtonGrp" || k == "colorIndexSliderGrp") {
+        if (auto* b = qobject_cast<QPushButton*>(it->parts.value("button"))) {
+            if (props.contains("buttonLabel")) b->setText(props["buttonLabel"].toString());
+        }
         double lo = as_number(it->prop("minValue"), k == "colorIndexSliderGrp" ? 1 : 0), hi = as_number(it->prop("maxValue"), k == "colorIndexSliderGrp" ? 31 : 10);
         double v = as_number(it->prop("value"), lo);
         auto* s = static_cast<QSlider*>(it->parts["slider"]);
@@ -1658,6 +1841,24 @@ void ScriptUi::apply_control(Item* it, const QJsonObject& props) {
             QSignalBlocker block(c);
             c->setCurrentIndex(int(as_number(props["select"])) - 1);
         }
+    }
+
+    // A bound control says how its plug is driven, in the channel box's colours.
+    if (props.contains("plugState")) {
+        const QString state = props["plugState"].toString();
+        QString style;
+        if (state == "keyed") style = "background: #dd727a; color: #1e1e1e;";
+        else if (state == "keyOnFrame") style = "background: #cd2729; color: #f0f0f0;";
+        else if (state == "connected") style = "background: #f1f1a5; color: #1e1e1e;";
+        else if (state == "changed") style = "background: #e3ac79; color: #1e1e1e;";
+        else if (state == "muted") style = "background: #8a6a48; color: #1e1e1e;";
+        else if (state == "locked") style = "background: #5c6874; color: #c8c8c8;";
+        QList<QWidget*> fields;
+        if (QWidget* f = it->parts.value("field")) fields << f;
+        for (int i = 1; i <= 4; ++i)
+            if (QWidget* f = it->parts.value("field" + QString::number(i))) fields << f;
+        if (qobject_cast<QAbstractSpinBox*>(w)) fields << w;
+        for (QWidget* f : fields) f->setStyleSheet(style);
     }
 }
 
@@ -1752,7 +1953,7 @@ bool ScriptUi::eventFilter(QObject* o, QEvent* e) {
     }
     if (e->type() == QEvent::MouseButtonDblClick && qobject_cast<QToolButton*>(w)) {
         for (Item* it : items_)
-            if (it->w == w) {
+            if (it->w == w || (it->kind == "layerButton" && it->parts.value("name") == w)) {
                 fire(it->path, QJsonObject(), QJsonArray{"doubleClickCommand"}, QJsonArray());
                 break;
             }

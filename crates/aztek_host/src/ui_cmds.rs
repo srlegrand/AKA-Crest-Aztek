@@ -111,11 +111,70 @@ pub fn hud_on(name: &str) -> bool {
 }
 
 /// The scripted heads up displays, as (section, block, label, command).
+/// The buttons and sliders in the views, by name, as their commands gave them.
+pub fn hud_controls() -> Vec<(String, Value)> {
+    with_ui(|u| u.huds.iter().filter(|(_, h)| h.get("kind").is_some() && h.get("visible").and_then(Value::as_bool).unwrap_or(true)).map(|(n, h)| (n.clone(), h.clone())).collect())
+}
+
+/// A slider dragged in a view.
+pub fn hud_set_value(name: &str, v: f64) {
+    with_ui(|u| {
+        if let Some(h) = u.huds.get_mut(name) {
+            h["value"] = json!(v);
+        }
+    });
+}
+
+/// hudButton, hudSlider and hudSliderButton: one record in the heads up display's list, so -rem, -ex and -lh of
+/// headsUpDisplay see them, as in Maya.
+fn hud_control(kind: &'static str, a: &aztek_ops::Args) -> aztek_ops::CmdResult {
+    let name = a.pos_str(0).map(str::to_string);
+    if a.bool("exists") && !a.bool("query") {
+        return Ok(json!(name.is_some_and(|n| with_ui(|u| u.huds.get(&n).is_some_and(|h| h["kind"] == kind)))));
+    }
+    let mut flags = a.flags.clone();
+    flags.retain(|k, v| !matches!(k.as_str(), "query" | "edit" | "queried" | "exists") && !v.is_null());
+    for (k, v) in flags.iter_mut() {
+        if crate::scriptui::is_callback(k) {
+            *v = crate::scriptui::callback_value(v);
+        }
+    }
+    if a.bool("query") {
+        let Some(n) = name else { fail!("{kind}: name it.") };
+        let q = a.get("queried").and_then(Value::as_array).and_then(|q| q.first()).and_then(Value::as_str).map(str::to_string).or_else(|| flags.keys().next().cloned());
+        let Some(q) = q else { fail!("{kind}: name what to ask about.") };
+        return with_ui(|u| {
+            let Some(h) = u.huds.get(&n) else { fail!("{kind}: Object '{n}' not found.") };
+            Ok(h.get(&q).cloned().unwrap_or_else(|| match q.as_str() {
+                "visible" => json!(true),
+                "section" | "block" => json!(0),
+                "minValue" | "value" => json!(0.0),
+                "maxValue" => json!(100.0),
+                _ => Value::Null,
+            }))
+        });
+    }
+    let Some(n) = name else { fail!("{kind}: name it.") };
+    with_ui(|u| {
+        if a.bool("edit") {
+            let Some(h) = u.huds.get_mut(&n).and_then(Value::as_object_mut) else { fail!("{kind}: Object '{n}' not found.") };
+            h.extend(flags);
+        } else {
+            if u.huds.contains_key(&n) {
+                fail!("{kind}: Object's name '{n}' is not unique.");
+            }
+            flags.insert("kind".to_string(), json!(kind));
+            u.huds.insert(n.clone(), Value::Object(flags));
+        }
+        Ok(json!(n))
+    })
+}
+
 pub fn custom_huds() -> Vec<(i64, i64, String, String)> {
     with_ui(|u| {
         u.huds
             .values()
-            .filter(|h| h.get("visible").and_then(Value::as_bool).unwrap_or(true))
+            .filter(|h| h.get("kind").is_none() && h.get("visible").and_then(Value::as_bool).unwrap_or(true))
             .map(|h| {
                 (
                     h.get("section").and_then(Value::as_i64).unwrap_or(0),
@@ -428,6 +487,18 @@ pub fn register(s: &mut Session) {
         .flag(f("affectsActive", "aa", ArgType::Bool, "Selection affects the active list."))
         .flag(f("lockSelection", "lck", ArgType::Bool, "The selection doesn't change on a click.")),
     );
+
+    const HUD_COMMON: &str = "section:s:a block:b:a blockSize:bs:a blockAlignment:ba:a padding:p:a visible:vis:b allowOverlap:ao:b";
+    const HUD_BUTTON: &str = "label:l:a labelFontSize:lfs:a buttonWidth:bw:a buttonShape:bsh:a pressCommand:pc:a releaseCommand:rc:a";
+    const HUD_SLIDER: &str = "label:l:a labelFontSize:lfs:a labelWidth:lw:a type:t:a value:v:a minValue:min:a maxValue:max:a valueAlignment:va:a valueFontSize:vfs:a valueWidth:vw:a sliderLength:sl:a sliderIncrement:si:a decimalPrecision:dp:a internalPadding:ip:a showFrame:sf:b dragCommand:dc:a pressCommand:pc:a releaseCommand:rc:a";
+    const HUD_SLIDER_BUTTON: &str = "sliderLabel:sl:a sliderLabelFontSize:slf:a sliderLabelWidth:slw:a type:t:a value:v:a minValue:min:a maxValue:max:a valueAlignment:va:a valueFontSize:vfs:a valueWidth:vw:a sliderLength:sln:a sliderIncrement:si:a decimalPrecision:dp:a internalPadding:ip:a sliderDragCommand:sdc:a sliderPressCommand:spc:a sliderReleaseCommand:src:a buttonLabel:bl:a buttonLabelFontSize:blf:a buttonWidth:bw:a buttonShape:bsh:a buttonPressCommand:bpc:a buttonReleaseCommand:brc:a";
+    for (kind, spec) in [("hudButton", HUD_BUTTON), ("hudSlider", HUD_SLIDER), ("hudSliderButton", HUD_SLIDER_BUTTON)] {
+        let mut c = Cmd::new(kind, "A control in the heads up display: -section, -block, its label, value and commands. headsUpDisplay -rem removes it.", move |_s, a| hud_control(kind, a)).positional("name").undoable(false);
+        c = crate::scriptui::add_flags(c, spec);
+        c = crate::scriptui::add_flags(c, HUD_COMMON);
+        c = crate::scriptui::add_flags(c, "exists:ex:b query:q:b edit:e:b queried::a");
+        reg(s, c);
+    }
 
     reg(
         s,

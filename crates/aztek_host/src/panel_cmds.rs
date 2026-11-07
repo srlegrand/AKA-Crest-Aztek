@@ -224,8 +224,11 @@ fn get_panel(a: &Args) -> CmdResult {
             v.dedup();
             return Ok(json!(v));
         }
-        if a.bool("allConfigs") || a.has("configWithLabel") {
-            return Ok(Value::Null);
+        if a.bool("allConfigs") {
+            return Ok(json!(crate::script_objects::all_configs()));
+        }
+        if let Some(l) = a.get("configWithLabel").map(text) {
+            return Ok(json!(crate::script_objects::config_with_label(&l).unwrap_or_default()));
         }
         if a.has("atPosition") {
             return Ok(json!(p.focus));

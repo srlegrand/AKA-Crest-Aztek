@@ -15,6 +15,8 @@ mod python_api;
 mod query;
 mod render;
 pub mod script_jobs;
+pub mod attr_ui;
+pub mod script_objects;
 pub mod scriptui;
 pub mod tools;
 pub mod ui_cmds;

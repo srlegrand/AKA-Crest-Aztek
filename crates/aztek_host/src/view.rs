@@ -52,6 +52,21 @@ struct SculptStroke {
     last: Option<DVec3>,
 }
 
+/// A button or slider of the heads up display, placed.
+struct HudPart {
+    name: String,
+    slider: bool,
+    lo: DVec2,
+    hi: DVec2,
+    text: String,
+    text_at: DVec2,
+    min: f64,
+    max: f64,
+    value: f64,
+    int: bool,
+    precision: usize,
+}
+
 pub struct View {
     pub gpu: Gpu,
     pub r: Renderer,
@@ -85,6 +100,8 @@ pub struct View {
     pub brush_dragged: bool,
     /// Tab held: a left drag selects what it passes over.
     pub tab_held: bool,
+    /// The heads up display's control being pressed: its name, and whether it is the slider.
+    hud_grab: Option<(String, bool)>,
     /// A lasso, drag select or paint select in progress.
     lassoing: bool,
     drag_selecting: bool,
@@ -127,6 +144,7 @@ impl View {
             soft_drag: None,
             brush_dragged: false,
             tab_held: false,
+            hud_grab: None,
             lassoing: false,
             drag_selecting: false,
             pick_hist: Vec::new(),
@@ -272,9 +290,102 @@ impl View {
         rows
     }
 
+    /// Where the script-made controls of the heads up display sit: a section's column, a block's row.
+    fn hud_parts(&self) -> Vec<HudPart> {
+        let [_, _, w, h] = self.vp.rect;
+        let s = self.dpr;
+        let size = 9.0 * s;
+        let row_h = 18.0 * s;
+        let num = |c: &Value, k: &str, d: f64| c.get(k).and_then(Value::as_f64).unwrap_or(d);
+        let txt = |c: &Value, k: &str| c.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+        let mut out = Vec::new();
+        for (name, c) in crate::ui_cmds::hud_controls() {
+            let section = num(&c, "section", 0.0) as i64;
+            let block = num(&c, "block", 0.0);
+            let kind = txt(&c, "kind");
+            let label = if kind == "hudSliderButton" { txt(&c, "sliderLabel") } else { txt(&c, "label") };
+            let has_slider = kind != "hudButton";
+            let has_button = kind != "hudSlider";
+            let button_text = if kind == "hudButton" { label.clone() } else { txt(&c, "buttonLabel") };
+            let button_w = num(&c, "buttonWidth", 0.0).max(0.0) * s;
+            let button_w = if button_w > 0.0 { button_w } else { font::width(&button_text, size) + 12.0 * s };
+            let track = if kind == "hudSliderButton" { num(&c, "sliderLength", 80.0) } else { num(&c, "sliderLength", 100.0) } * s;
+            let label_w = if has_slider { font::width(&label, size) + 6.0 * s } else { 0.0 };
+            let total = label_w + if has_slider { track + 52.0 * s } else { 0.0 } + if has_button { button_w + 4.0 * s } else { 0.0 };
+            let x0 = match section % 5 {
+                0 | 1 => 10.0 * s,
+                2 => w * 0.5 - total * 0.5,
+                _ => w - total - 10.0 * s,
+            };
+            let y = if section < 5 { 16.0 * s + block * row_h } else { h - 26.0 * s - block * row_h };
+            let mut x = x0;
+            if has_slider {
+                let at = DVec2::new(x + label_w, y - 5.0 * s);
+                out.push(HudPart { name: name.clone(), slider: true, lo: at, hi: at + DVec2::new(track, 12.0 * s), text: label.clone(), text_at: DVec2::new(x, y), min: num(&c, "minValue", 0.0), max: num(&c, "maxValue", 100.0), value: num(&c, "value", 0.0), int: txt(&c, "type") == "int", precision: num(&c, "decimalPrecision", 2.0) as usize });
+                x += label_w + track + 52.0 * s;
+            }
+            if has_button {
+                let at = DVec2::new(x, y - 7.0 * s);
+                out.push(HudPart { name: name.clone(), slider: false, lo: at, hi: at + DVec2::new(button_w, 14.0 * s), text: button_text, text_at: DVec2::new(x + 6.0 * s, y), min: 0.0, max: 0.0, value: 0.0, int: false, precision: 0 });
+            }
+        }
+        out
+    }
+
+    /// A press, drag or release on the heads up display's controls. True when it was theirs.
+    fn hud_mouse(&mut self, core: &mut Core, kind: i32, button: i32, px: DVec2) -> bool {
+        let run = |core: &mut Core, name: &str, flags: &[&str]| {
+            let c = crate::ui_cmds::hud_controls().into_iter().find(|(n, _)| n == name).map(|x| x.1);
+            for f in flags {
+                if let Some(cb) = c.as_ref().and_then(|c| c.get(*f)).cloned() {
+                    core.run_callback(&cb, &[]);
+                }
+            }
+        };
+        let set = |p: &HudPart, x: f64| {
+            let t = ((x - p.lo.x) / (p.hi.x - p.lo.x).max(1.0)).clamp(0.0, 1.0);
+            let v = p.min + (p.max - p.min) * t;
+            crate::ui_cmds::hud_set_value(&p.name, if p.int { v.round() } else { v });
+        };
+        match kind {
+            0 if button == 1 => {
+                let Some(p) = self.hud_parts().into_iter().find(|p| px.x >= p.lo.x && px.x <= p.hi.x && px.y >= p.lo.y && px.y <= p.hi.y) else { return false };
+                if p.slider {
+                    set(&p, px.x);
+                    run(core, &p.name, &["pressCommand", "sliderPressCommand"]);
+                } else {
+                    run(core, &p.name, &["pressCommand", "buttonPressCommand"]);
+                }
+                self.hud_grab = Some((p.name, p.slider));
+                self.needs_redraw = true;
+                true
+            }
+            1 => {
+                let Some((name, slider)) = self.hud_grab.clone() else { return false };
+                if slider {
+                    if let Some(p) = self.hud_parts().into_iter().find(|p| p.slider && p.name == name) {
+                        set(&p, px.x);
+                        run(core, &name, &["dragCommand", "sliderDragCommand"]);
+                    }
+                }
+                self.needs_redraw = true;
+                true
+            }
+            2 => {
+                let Some((name, slider)) = self.hud_grab.take() else { return false };
+                let flags: [&str; 2] = if slider { ["releaseCommand", "sliderReleaseCommand"] } else { ["releaseCommand", "buttonReleaseCommand"] };
+                run(core, &name, &flags);
+                self.needs_redraw = true;
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Screen-space extras: marquee, lasso, gates, heads up display, axis triad, camera name, numeric readout.
     fn overlay(&mut self, core: &mut Core, items: &[crate::viewport::DrawItem]) {
         let hud = self.hud_rows(core, items);
+        let hud_parts = self.hud_parts();
         let readout = self.readout();
         let gate = self.gate_aspects(core);
         let [_, _, w, h] = self.vp.rect;
@@ -378,6 +489,35 @@ impl View {
                 for (a, b) in font::strokes(t, DVec2::new(x, y), size) {
                     seg(a, b, [230, 230, 230, 255]);
                 }
+            }
+        }
+        // What scripts put there: buttons as boxes, sliders as a track and a handle, drawn in lines like the rest.
+        for p in &hud_parts {
+            let (white, dim) = ([230, 230, 230, 255], [150, 150, 150, 255]);
+            for (a, b) in font::strokes(&p.text, p.text_at, size) {
+                seg(a, b, white);
+            }
+            if p.slider {
+                let mid = (p.lo.y + p.hi.y) * 0.5;
+                seg(DVec2::new(p.lo.x, mid), DVec2::new(p.hi.x, mid), dim);
+                let t = if p.max > p.min { ((p.value - p.min) / (p.max - p.min)).clamp(0.0, 1.0) } else { 0.0 };
+                let x = p.lo.x + (p.hi.x - p.lo.x) * t;
+                let r = 3.0 * s;
+                let (a, b, c, d) = (DVec2::new(x - r, p.lo.y), DVec2::new(x + r, p.lo.y), DVec2::new(x + r, p.hi.y), DVec2::new(x - r, p.hi.y));
+                seg(a, b, white);
+                seg(b, c, white);
+                seg(c, d, white);
+                seg(d, a, white);
+                let value = if p.int { format!("{}", p.value.round() as i64) } else { format!("{:.*}", p.precision, p.value) };
+                for (a, b) in font::strokes(&value, DVec2::new(p.hi.x + 6.0 * s, p.text_at.y), size) {
+                    seg(a, b, white);
+                }
+            } else {
+                let (a, b, c, d) = (p.lo, DVec2::new(p.hi.x, p.lo.y), p.hi, DVec2::new(p.lo.x, p.hi.y));
+                seg(a, b, white);
+                seg(b, c, white);
+                seg(c, d, white);
+                seg(d, a, white);
             }
         }
         // Dimension and annotation labels.
@@ -554,6 +694,9 @@ impl View {
         let gathered = gather(&mut core.s.graph);
         let items = self.vp.filter_items(&core.s.graph, gathered);
         let alt = mods & ALT != 0;
+        if !alt && self.hud_mouse(core, kind, button, px) {
+            return true;
+        }
         if !alt && self.nav.is_none() && (kind != 1 || buttons == 0 || buttons & 1 != 0 || buttons & 2 != 0) {
             if let Some(r) = self.tool_mouse(core, kind, button, px, mods, &items) {
                 return r;

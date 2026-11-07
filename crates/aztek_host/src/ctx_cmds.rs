@@ -383,6 +383,17 @@ pub fn register(s: &mut Session) {
     }
 
     s.register(
+        Cmd::new("toolHasOptions", "Whether a tool context has settings to show.", |_s, a| {
+            let Some(n) = a.pos_str(0) else { fail!("toolHasOptions: name a context.") };
+            let k = with_ctx(|c| c.all.get(n).map(|x| x.kind.clone()));
+            let Some(k) = k else { fail!("toolHasOptions: Object '{n}' not found.") };
+            Ok(json!(!matches!(k.as_str(), "tumbleCtx" | "trackCtx" | "dollyCtx" | "rollCtx" | "boxZoomCtx" | "scriptCtx" | "userCtx")))
+        })
+        .positional("context")
+        .undoable(false),
+    );
+
+    s.register(
         Cmd::new("setToolTo", "Make a tool context current, by name.", |s, a| {
             let Some(n) = a.pos_str(0) else { fail!("setToolTo: name a context.") };
             set_tool_to(s, n)
