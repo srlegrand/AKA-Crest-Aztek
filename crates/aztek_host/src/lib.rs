@@ -1,6 +1,7 @@
 //! The host library the Qt shell links: a C interface over the session, script history, scene snapshots and the
 //! Vulkan model panels. Strings are UTF-8; strings returned are freed with aztek_free. Main thread only.
 
+pub mod axis_orient;
 pub mod camera;
 mod core;
 pub mod ctx_cmds;
@@ -276,6 +277,7 @@ pub extern "C" fn aztek_query(what: *const c_char, arg: *const c_char) -> *mut c
                 panel_cmds::shell_sync(&serde_json::from_str(&arg).unwrap_or(json!({})));
                 Value::Null
             }
+            "uiCustomAxis" => axis_orient::from_selection(&mut c.s, &arg).map_or(Value::Null, |e| json!(e)),
             "nodeManip" => node_manip::fields_json(c),
             "uiShowManip" => {
                 node_manip::show_node(c, &arg);

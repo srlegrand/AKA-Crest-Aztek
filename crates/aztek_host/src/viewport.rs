@@ -344,6 +344,8 @@ pub struct Drag {
     /// Whether a preview command has run and must be undone before the next.
     pub applied: bool,
     pub components: bool,
+    /// Shift+middle-drag: the first few pixels choose the axis.
+    pub choose_axis: bool,
     pub targets: Vec<String>,
     /// World points a point-snapping move can land on.
     pub snap_points: Vec<DVec3>,
@@ -360,6 +362,16 @@ pub struct Viewport {
     pub step_move: f64,
     pub step_rotate: f64,
     pub step_scale: f64,
+    /// Step snap by the offset (relative) or to whole steps of the world (absolute).
+    pub snap_relative: bool,
+    /// Tweak Mode: a drag off the handles picks what is under it and moves it.
+    pub tweak: bool,
+    /// Preserve Children: moving a parent leaves its children where they are.
+    pub preserve_children: bool,
+    /// Scale stops at a small positive size rather than turning inside out.
+    pub prevent_negative: bool,
+    /// Custom axis orientation's axes.
+    pub custom_frame: DMat3,
     /// J held: rotate in discrete steps.
     pub discrete_hold: bool,
     pub disp: Display,
@@ -458,6 +470,11 @@ impl Viewport {
             tool_points: Vec::new(),
             active_handle: None,
             node_lines: Vec::new(),
+            snap_relative: true,
+            tweak: false,
+            preserve_children: false,
+            prevent_negative: true,
+            custom_frame: DMat3::IDENTITY,
         }
     }
 
@@ -1933,6 +1950,10 @@ impl Viewport {
         if self.axis_mode == "world" {
             return;
         }
+        if self.axis_mode == "custom" {
+            self.frame = self.custom_frame;
+            return;
+        }
         let Some(&lead) = g.selection().last() else { return };
         let ortho = |m: &DMat4| {
             let x = m.x_axis.truncate().normalize_or_zero();
@@ -1952,6 +1973,14 @@ impl Viewport {
                 let p = g.parent(lead);
                 if p != NO_NODE {
                     self.frame = ortho(&aztek_scene::rig::world(g, p));
+                }
+            }
+            // The object's world matrix already holds its rotate axis, as Ra comes before R.
+            "rotationAxis" => self.frame = ortho(&aztek_scene::rig::world(g, lead)),
+            "liveObject" => {
+                if let Some(&live) = s.live_surface.first() {
+                    let xf = aztek_scene::dag::transform_of(&s.graph, live);
+                    self.frame = ortho(&aztek_scene::rig::world(&mut s.graph, xf));
                 }
             }
             "component" | "normal" => {
@@ -2187,11 +2216,21 @@ impl Viewport {
                 None => return world,
             },
             _ => {
-                // Tool Settings' step: the offset goes in whole steps.
-                if self.step_move > 0.0 {
-                    return (world / self.step_move).round() * self.step_move;
+                // Tool Settings' step, or a held J: whole steps of the offset, or of the world when absolute.
+                let step = if self.step_move > 0.0 { self.step_move } else if self.discrete_hold { 1.0 } else { 0.0 };
+                if step <= 0.0 {
+                    return world;
                 }
-                return world;
+                if self.snap_relative {
+                    return (world / step).round() * step;
+                }
+                let target = ((d.pivot + world) / step).round() * step;
+                let off = target - d.pivot;
+                return match handle {
+                    Handle::Axis(i) => self.frame.col(i) * off.dot(self.frame.col(i)),
+                    Handle::Plane(i) => off - self.frame.col(i) * off.dot(self.frame.col(i)),
+                    _ => off,
+                };
             }
         };
         let off = target - d.pivot;
@@ -2206,6 +2245,22 @@ impl Viewport {
             }
             _ => off,
         }
+    }
+
+    /// Shift+middle-drag: the axis whose line on screen the drag runs along most closely.
+    pub fn axis_along(&self, pivot: DVec3, delta: DVec2) -> Handle {
+        let screen = self.screen();
+        let Some(c) = screen.project(pivot) else { return Handle::Center };
+        let unit = self.units_per_px(pivot) * 100.0;
+        let mut best = (0.0, Handle::Center);
+        for i in 0..3 {
+            let Some(tip) = screen.project(pivot + self.frame.col(i) * unit) else { continue };
+            let along = (tip - c).normalize_or_zero().dot(delta.normalize_or_zero()).abs();
+            if along > best.0 {
+                best = (along, Handle::Axis(i));
+            }
+        }
+        best.1
     }
 
     /// The tool the manipulator acts as: pivot mode moves pivots whatever the tool.
@@ -2269,11 +2324,17 @@ impl Viewport {
                 };
                 let world = self.snapped(d, world, handle, px);
                 let by = serde_json::json!(world.to_array());
-                Some(if comps {
+                Some(if comps && self.axis_mode == "normal" && !self.pivot_mode {
+                    // Each point along its own U, V and N, as the Normal orientation moves them.
+                    let f = self.frame;
+                    ("moveComponents".into(), serde_json::json!({ "uvn": [world.dot(f.x_axis), world.dot(f.y_axis), world.dot(f.z_axis)] }))
+                } else if comps {
                     ("moveComponents".into(), serde_json::json!({ "by": by }))
                 } else if self.pivot_mode {
                     let pivots: Vec<String> = d.targets.iter().flat_map(|t| [format!("{t}.scalePivot"), format!("{t}.rotatePivot")]).collect();
                     ("move".into(), serde_json::json!({ "args": pivots, "by": by }))
+                } else if self.preserve_children {
+                    ("move".into(), serde_json::json!({ "args": targets, "by": by, "preserveChildPosition": true }))
                 } else {
                     ("move".into(), serde_json::json!({ "args": targets, "by": by }))
                 })
@@ -2319,14 +2380,23 @@ impl Viewport {
                 };
                 Some(if comps {
                     ("rotateComponents".into(), serde_json::json!({ "by": by, "pivot": d.pivot.to_array() }))
+                } else if self.preserve_children {
+                    ("rotate".into(), serde_json::json!({ "args": targets, "by": by, "preserveChildPosition": true }))
                 } else {
                     ("rotate".into(), serde_json::json!({ "args": targets, "by": by }))
                 })
             }
             Tool::Scale => {
-                let mut f = (1.0 + (delta.x - delta.y) / (100.0 * scale)).max(0.001);
-                if self.step_scale > 0.0 {
-                    f = ((f / self.step_scale).round() * self.step_scale).max(0.001);
+                let mut f = 1.0 + (delta.x - delta.y) / (100.0 * scale);
+                if self.prevent_negative {
+                    f = f.max(0.001);
+                }
+                let step = if self.step_scale > 0.0 { self.step_scale } else if self.discrete_hold { 1.0 } else { 0.0 };
+                if step > 0.0 {
+                    f = (f / step).round() * step;
+                    if self.prevent_negative {
+                        f = f.max(0.001);
+                    }
                 }
                 let by = match d.handle {
                     Handle::Axis(i) => {
@@ -2349,6 +2419,8 @@ impl Viewport {
                         call["orient"] = serde_json::json!([e.x, e.y, e.z]);
                     }
                     ("scaleComponents".into(), call)
+                } else if self.preserve_children {
+                    ("scale".into(), serde_json::json!({ "args": targets, "by": by, "preserveChildPosition": true }))
                 } else {
                     ("scale".into(), serde_json::json!({ "args": targets, "by": by }))
                 })

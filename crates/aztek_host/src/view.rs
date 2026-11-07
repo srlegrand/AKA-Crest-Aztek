@@ -558,6 +558,20 @@ impl View {
                 seg(a, b, [230, 230, 230, 255]);
             }
         }
+        // The Normal orientation names its handles.
+        if self.vp.axis_mode == "normal" && self.vp.tool == Tool::Move {
+            if let Some(pv) = self.vp.manip_pivot(&mut core.s, items) {
+                let len = self.vp.handle_len(pv, s);
+                let screen = self.vp.screen();
+                for (i, label) in ["U", "V", "N"].into_iter().enumerate() {
+                    if let Some(at) = screen.project(pv + self.vp.frame.col(i) * len * 1.1) {
+                        for (a, b) in font::strokes(label, at, size) {
+                            seg(a, b, [255, 255, 255, 255]);
+                        }
+                    }
+                }
+            }
+        }
         // What the drag has done so far, by the cursor.
         if let Some((at, t)) = &readout {
             for (a, b) in font::strokes(t, *at + DVec2::new(14.0 * s, -10.0 * s), size) {
@@ -589,7 +603,7 @@ impl View {
             return None;
         }
         let (_, call) = self.last_drag.as_ref()?;
-        let by = call.get("by")?.as_array()?;
+        let by = call.get("by").or_else(|| call.get("uvn"))?.as_array()?;
         let t: Vec<String> = by.iter().filter_map(Value::as_f64).map(|x| format!("{x:.3}")).collect();
         Some((self.vp.screen().project(d.pivot)?, t.join(" ")))
     }
@@ -892,7 +906,18 @@ impl View {
                 }
                 self.vp.update_frame(&mut core.s);
                 let pivot = self.vp.manip_pivot(&mut core.s, &items);
-                let hit = pivot.and_then(|pv| self.vp.manip_hit(pv, px, self.dpr));
+                let mut pivot = pivot;
+                let mut hit = pivot.and_then(|pv| self.vp.manip_hit(pv, px, self.dpr));
+                // Tweak Mode: a press off the handles on something takes it, and the drag moves it.
+                if button == 1 && hit.is_none() && self.vp.tweak && self.vp.tool == Tool::Move && mods & (SHIFT | CTRL) == 0 {
+                    let picked = self.vp.pick(&core.s, &items, px);
+                    if !picked.is_empty() {
+                        select_picked(core, picked, 0);
+                        self.vp.update_frame(&mut core.s);
+                        pivot = self.vp.manip_pivot(&mut core.s, &items);
+                        hit = pivot.map(|_| Handle::Center);
+                    }
+                }
                 // Ctrl-click on a handle sets the constraint rather than dragging.
                 if button == 1 && mods & CTRL != 0 && mods & SHIFT == 0 {
                     if let Some(h) = hit {
@@ -940,7 +965,8 @@ impl View {
                         .filter(|it| crate::viewport::type_category(&core.s.graph, it.node) == "curve")
                         .flat_map(|it| it.segs)
                         .collect();
-                    self.vp.drag = Some(Drag { handle: h, start: px, pivot: pv, applied: false, components: comps, targets, snap_points, snap_curves });
+                    let choose_axis = button == 2 && mods & SHIFT != 0 && hit.is_none();
+                    self.vp.drag = Some(Drag { handle: h, start: px, pivot: pv, applied: false, components: comps, choose_axis, targets, snap_points, snap_curves });
                     self.drag_lines = 0;
                     return true;
                 }
@@ -1140,6 +1166,15 @@ impl View {
                         .map(|it| crate::viewport::DrawItem { shape: it.shape, xf: it.xf, world: it.world, mesh: it.mesh.clone(), smooth: 0 })
                         .collect();
                     self.vp.live_hit = self.vp.raycast(&live, px).map(|h| h.2);
+                }
+                if let Some(d) = self.vp.drag.as_mut().filter(|d| d.choose_axis) {
+                    if (px - d.start).length() < 4.0 * self.dpr {
+                        return false;
+                    }
+                    d.choose_axis = false;
+                    let (pivot, delta) = (d.pivot, px - d.start);
+                    let h = self.vp.axis_along(pivot, delta);
+                    self.vp.drag.as_mut().unwrap().handle = h;
                 }
                 if let Some(d) = &self.vp.drag {
                     if px == d.start {
@@ -1649,6 +1684,14 @@ impl View {
             "stepMove" => self.vp.step_move = v.as_f64().unwrap_or(0.0),
             "stepRotate" => self.vp.step_rotate = v.as_f64().unwrap_or(0.0),
             "stepScale" => self.vp.step_scale = v.as_f64().unwrap_or(0.0),
+            "snapRelative" => self.vp.snap_relative = v.as_bool().unwrap_or(true),
+            "tweakMode" => self.vp.tweak = v.as_bool().unwrap_or(false),
+            "preserveChildren" => self.vp.preserve_children = v.as_bool().unwrap_or(false),
+            "preventNegativeScale" => self.vp.prevent_negative = v.as_bool().unwrap_or(true),
+            "customAxis" => {
+                let e = |i: usize| v.get(i).and_then(Value::as_f64).unwrap_or(0.0);
+                self.vp.custom_frame = crate::axis_orient::frame_from_radians([e(0), e(1), e(2)]);
+            }
             "discreteHold" => self.vp.discrete_hold = v.as_bool().unwrap_or(false),
             "tabHeld" => self.tab_held = v.as_bool().unwrap_or(false),
             "gridSpacing" => {

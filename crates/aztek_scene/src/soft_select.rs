@@ -13,6 +13,8 @@ pub const RADIUS: &str = "/softSelect/radius";
 pub const CURVE: &str = "/softSelect/curve";
 pub const FALLOFF_MODE: &str = "/softSelect/falloffMode";
 pub const USER_PRESETS: &str = "/softSelect/userPresets";
+/// softSelect -ssf's numbers, in order.
+pub const FALLOFFS: [&str; 4] = ["volume", "surface", "global", "object"];
 
 const EPS: f64 = 1e-9;
 
@@ -424,6 +426,10 @@ pub fn register(c: &mut Commands<Session>) {
                     if q.iter().any(|x| x == "softSelectDistance") {
                         return Ok(json!(p.f64("general", RADIUS, 5.0)));
                     }
+                    if q.iter().any(|x| x == "softSelectFalloff") {
+                        let m = p.string("general", FALLOFF_MODE, "volume");
+                        return Ok(json!(FALLOFFS.iter().position(|x| *x == m).unwrap_or(0)));
+                    }
                     return Ok(json!(if p.bool("general", ENABLED, false) { 1 } else { 0 }));
                 }
                 if let Some(v) = a.get("softSelectEnabled") {
@@ -433,13 +439,18 @@ pub fn register(c: &mut Commands<Session>) {
                 if let Some(v) = a.get("softSelectDistance").and_then(Value::as_f64) {
                     p.set("general", RADIUS, json!(v.max(1e-4)), PrefScope::User);
                 }
+                if let Some(v) = a.get("softSelectFalloff").and_then(Value::as_i64) {
+                    let m = FALLOFFS.get(v.max(0) as usize).copied().unwrap_or("volume");
+                    p.set("general", FALLOFF_MODE, json!(m), PrefScope::User);
+                }
                 Ok(Value::Null)
             },
         )
         .undoable(false)
         .flag(f("softSelectEnabled", "sse", T::Any, "1 on, 0 off."))
         .flag(f("softSelectDistance", "ssd", T::Float, "Falloff radius, world units."))
-        .flag(f("softSelectFalloff", "ssf", T::Int, "Accepted for Maya scripts (0 volume, 1 surface)."))
+        .flag(f("softSelectFalloff", "ssf", T::Int, "0 volume, 1 surface, 2 global, 3 object."))
+        .flag(f("edit", "e", T::Bool, "Edit mode."))
         .flag(f("query", "q", T::Bool, "Query mode."))
         .flag(f("queried", "", T::List, "Flags asked about in query mode.")),
     );
@@ -461,8 +472,8 @@ pub fn register(c: &mut Commands<Session>) {
                 }
                 if a.has("falloffMode") {
                     let mode = a.string("falloffMode", "");
-                    if mode != "volume" && mode != "surface" {
-                        fail!("softSelectCurve: falloffMode is volume or surface");
+                    if !FALLOFFS.contains(&mode.as_str()) {
+                        fail!("softSelectCurve: falloffMode is volume, surface, global or object");
                     }
                     PrefStore::get().set("general", FALLOFF_MODE, json!(mode), PrefScope::User);
                 }
@@ -482,14 +493,14 @@ pub fn register(c: &mut Commands<Session>) {
                 let users: Vec<String> = user_presets().into_iter().map(|p| p.name).collect();
                 Ok(json!({
                     "keys": current_curve().to_json(),
-                    "falloffMode": if surface_falloff() { "surface" } else { "volume" },
+                    "falloffMode": PrefStore::get().string("general", FALLOFF_MODE, "volume"),
                     "userPresets": users,
                 }))
             },
         )
         .flag(f("keys", "k", T::List, "Keys as [[pos, value, interp], ...]; interp is linear, smooth, spline or flat."))
         .flag(f("preset", "p", T::String, "Apply a built-in or saved preset by name."))
-        .flag(f("falloffMode", "fm", T::String, "Distance measured through space or along the surface.").choices(&["volume", "surface"]))
+        .flag(f("falloffMode", "fm", T::String, "Distance measured through space or along the surface.").choices(&FALLOFFS))
         .flag(f("save", "", T::String, "Save the current curve (after keys/preset) as a user preset with this name."))
         .flag(f("remove", "", T::String, "Delete the named user preset."))
         .flag(f("rename", "", T::String, "User preset to rename; the new name goes in to."))
