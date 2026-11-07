@@ -75,7 +75,7 @@ fn mel_attribute_and_expression_forms() {
     c.mel("namespace -add rig; namespace -set rig; createNode transform -n t1; namespace -set \":\";");
     assert_eq!(c.mel("objExists rig:t1;"), json!(true));
     assert_eq!(c.mel("namespaceInfo -lon;"), json!(["rig"]));
-    assert_eq!(c.mel("about -linux;"), json!(cfg!(target_os = "linux")));
+    assert_eq!(c.mel("about -linux;"), json!(cfg!(target_os = "linux") as i32));
     c.mel("optionVar -iv \"count\" 5;");
     assert_eq!(c.mel("optionVar -q \"count\";"), json!(5));
     assert_eq!(c.mel("currentUnit -q -l;"), json!("cm"));

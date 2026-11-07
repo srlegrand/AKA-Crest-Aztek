@@ -112,16 +112,89 @@ fixed tangents and infinity modes; `setKeyframe`, `keyframe` (query and edit), `
 `findKeyframe`, `currentTime` (frames), `playbackOptions`, `autoKeyframe`; changed channels hold until the time moves,
 as in Maya. Graph Editor with key picking, dragging, tangent buttons and stats.
 
+Animation in full, as of 06/11/2026: tangents as Maya holds them, a vector of seconds and value, with angles in value per
+second; weighted curves are cubic Beziers in time and value (`keyTangent -wt -iw -ow -ix -iy -ox -oy -l -wl -unify -r`),
+unweighted ones Hermite. `keyframe`, `setKeyframe` (`-i` keeps the curve's shape), `cutKey -o`, `selectKey` with their
+remaining flags. `rotationInterpolation`, `filterCurve` (euler, butterworth, gaussian, keyReducer, keySync, peakRemover,
+resample, simplify), `simplify`, `bufferCurve`, `keyframeStats`, `mute`, `setAttr -k`. `motionPath`, `pathAnimation`,
+`snapshot`, `motionTrail` (drawn in the viewport). `animLayer` with blend node chains, keys resolved through the stack,
+`mergeAnimLayers`. `character`, `currentCharacters`, `clip`, `clipSchedule`, `pose`. `playbackOptions`, `play`,
+`timeControl`, `currentUnit`, ghosting as scene state. Graph Editor menus: infinities, tangents, Euler filter, simplify,
+resample, buffer curves, stacked and normalized views, isolate, copy, paste, snap, retime hotkeys.
+
+Not yet: tangent handles dragged in the Graph Editor; ghosts drawn; `flow` needs the lattice deformer; `-cp` keys no
+control points, which have no channels of their own; the Trax Editor. Bank amount and the unweighted-to-weighted
+conversion of fixed tangents are our reading, not checked against Maya, as are the tangent formulas beyond what its
+documentation states. Clips play through a `clipChannel` node per channel, which Maya does not have.
+
 UVs, as of 06/11/2026: maps (`pCube1.map[3]`) and shells derived from the per-corner UVs and seams; `polyProjection`
 (planar, cylindrical, spherical), `polyAutoProjection`, `u3dUnfold`, `u3dLayout`, `polyMapCut`, `polyMapSew`,
 `polyMapSewMove`, `polyEditUV` (query too), `polyNormalizeUV`, `polyFlipUV`, `polyRotateUVs`, each a history node
 (`polyPlanarProj1`, `polyTweakUV1`, ...). UV Editor.
+
+Skeletons, IK and constraints, as of 06/11/2026: `joint` with its query and edit flags (limits, degrees of freedom,
+preferred angles, zero scale orient), joint labels, segment scale compensate through `inverseScale`, `mirrorJoint`,
+`insertJoint`, `removeJoint`, `connectJoint`, `disconnectJoint`, `reroot`. `ikHandle` query and edit, a real `ikEffector`,
+`ikSolver`, `ikSystem`, `.ikBlend`, `.twist`, `.roll`, chains of any length, solving from the preferred angles within
+joint limits. Handle `weight`, `poWeight`, `priority`, `stickiness` and joint `stiffness` are stored but don't change the
+solve. Constraints: parent, point, orient, scale, aim, `poleVectorConstraint`, `geometryConstraint`, `normalConstraint`,
+`pointOnPolyConstraint` with `-e`, `-q`, `-rm`, skip flags, offsets, rest position, `interpType`, `nodeState` and weight
+attrs `<target>W0`. Not yet: `tangentConstraint` (needs curves), spline IK, an Insert Joint drag tool. Constraint nodes
+are not DAG children of what they drive, as they are in Maya: the graph orders whole nodes, so that would be a cycle.
 
 Rigging and deformers, as of 06/11/2026: `joint` (create, edit with orient, query), `orientJoint`, the joint tool,
 `skinCluster` (closest distance weights, unbind, influence query), `skinPercent`, `parentConstraint`,
 `pointConstraint`, `orientConstraint`, `scaleConstraint`, `aimConstraint` (with maintain offset), `ikHandle` (RP and SC
 solvers, pole vector, twist), `nonLinear` (bend, twist, squash, flare, sine, wave) with handles, `cluster`,
 `blendShape` with a weight per target. Everything saves and loads.
+
+MEL, as of 06/11/2026: a real interpreter (`crates/aztek_host/src/mel/`). Comments, all five types with arrays and
+coercions, globals, top-level variables that stay between runs, operators, control flow, procedures (array arguments by
+reference, local to their file), command and function syntax, backticks, `eval`, `source` and auto-sourcing from
+`AZTEK_SCRIPT_PATH` or `MAYA_SCRIPT_PATH`, `catch`, `python`, `whatIs`, `exists`, `about`, and the standard string, math
+and array functions. Multi-use flags read their arity; query mode gives a flag a value only by a per-command table.
+Differs from Maya: unknown procedures and undeclared variables fail when reached, not before the script starts; errors
+carry a line number only for syntax errors; an array of one element converts to a scalar on assignment.
+
+Deform menu, as of 06/11/2026: `lattice` (`ffd`, `lattice`, `baseLattice`; `ffd1Lattice.pt[s][t][u]` select, move and list with
+`ls -fl`; local influence, outside modes, freeze mapping, `-e -remap`, `-e -resetLattice`), `softMod` (selection or centre,
+volume or surface, `falloffCurve` ramp), `deltaMush`, `tension`, `wrap` (with `deformer -type wrap` and `wrap -e -inf`), `wire`,
+`deformer` (`-type`, `-q -g`, `-q -gi`, `-e -g`, `-e -rm -g`), `percent`, `reorderDeformers`, `listHistory -type`. Deleting a deformer
+closes the chain and takes its handle or lattice. Differences: a deformer on several meshes is one chain node per mesh with the
+first node's settings connected in, so `ls` shows ffd1 and ffd2 where Maya has one node. `wire` follows the driver's points as a
+polyline, so a NURBS curve follows its control points until a sampler is added; the base wire is data on the node, with no
+`curve1BaseWire` shape. Deformer sets are not made; `percent` holds membership as weights.
+
+Files, as of 06/11/2026: `.ma` read and write (`ma_file.rs`) and the `file` command (`-new`, `-open`, `-save`, `-rename`,
+`-import`, `-exportAll`, `-exportSelected`, `-type`, `-q -sn -ex -type`). Reads transforms, joints, locators, meshes
+(`.vt .ed .fc`, UV sets, `.pt`, hard edges), poly creators, `polyTweak` over stored geometry, animCurves (T and U kinds,
+tangents, infinities), skinCluster, dagPose, constraints, RP and SC ikHandle, display layers and user attributes. Other
+history is taken from stored geometry; what cannot be represented is a warning naming its node type. Writes the same,
+meshes baked. Written from knowledge of the format with no Maya to check against; `.kit`/`.kot` codes, `.kix`/`.kiy`
+units and `.xm` xform order are the parts to check first. Not handled: references, instances, NURBS, blendShape and
+cluster (baked with a warning), multiple shapes sharing a skinCluster.
+
+Python API, as of 06/11/2026: `aztek.api.OpenMaya` and `aztek.api.OpenMayaAnim`, also as `maya.api.*`: value classes
+and arrays, `MGlobal`, `MSelectionList`, `MObject`, `MDagPath`, `MPlug`, modifiers, function sets for nodes, transforms,
+meshes (rays and closest points included), curves, sets, attributes, data and components, the selection, DAG, graph and
+mesh iterators, `MFnSkinCluster`, `MAnimControl`, `MFnAnimCurve`. Python plug-ins with `loadPlugin`, `unloadPlugin` and
+`pluginInfo`: `MPxCommand` (runs from `cmds` and MEL, `undoIt` and `redoIt` on the undo stack) and `MPxNode` for plain
+dependency nodes. Differences from Maya: only dependency nodes can come from plug-ins (no `MPxDeformerNode` or
+`MPxLocatorNode`), mesh attributes don't reach `compute`, compound attributes can't be arrays, one UV set (`map1`), one
+path per DAG node, `setKeyable` only on added attributes, `MFnTransform` has no shear, and cycles are refused node by
+node, not plug by plug. MEL can't pass flags to a plug-in command with no syntax. `MRampAttribute` isn't there.
+
+NURBS surfaces, as of 06/11/2026: `nurbsSurface` shape, CVs as `surface1.cv[u][v]` (select, move, undo, tweaks on top of
+history), drawn shaded with isoparms and a CV hull in vertex mode, `selectType -cv`, `displaySmoothness` and the 1, 2, 3
+keys. `sphere`, `nurbsCube`, `cylinder`, `cone`, `torus`, `nurbsPlane` with `make*` nodes. `loft`, `revolve`, `extrude`
+and `planar` make NURBS, polygons with `-po 1`; `boundary`, `square`, `singleProfileBirailSurface`, `rebuildSurface`,
+`reverseSurface`, `insertKnotSurface`, `detachSurface`, `attachSurface`, `offsetSurface`, `closeSurface`, `nurbsToPoly`
+(`nurbsTessellate`), `duplicateCurve` for isoparms, `pointOnSurface`, and the `surfaceInfo`, `closestPointOnSurface` and
+`pointOnSurfaceInfo` nodes. Differs from Maya: no trims, so `planar` makes a surface only for a rectangle and otherwise
+polygons with a warning; non-rational, so a sphere is Maya's cubic approximation only; `-ut` and `-tol` on primitives
+are accepted and ignored; `loft` takes degrees 1 to 3; `attachSurface` copies its second surface rather than following
+it. None of this has been compared with a running Maya: the sphere's CV values, which way U runs on `loft` and `extrude`,
+the direction flags' numbering and the bare commands' axis of 1 0 0 are from memory of Maya's files and docs.
 
 Utility nodes, expressions and core commands, as of 06/11/2026: `multiplyDivide`, `plusMinusAverage`, `condition`,
 `clamp`, `setRange`, `reverse`, `blendColors`, `blendTwoAttr`, `remapValue`, `distanceBetween`, `angleBetween`,
@@ -139,11 +212,10 @@ reason. `parentMatrix` read through a connection includes `offsetParentMatrix` (
 numbers are all doubles, so `1/2` is 0.5. `parent -add` makes an instance through `instance`. `closestPointOnMesh` leaves
 `parameterU` and `parameterV` at 0. Limits apply when the node computes, so a plug reading a limited channel directly can
 see the value before the limit. The defaults of `multiplyDivide.input1`, `condition.colorIfTrue` and `floatMath.floatB`
-were written from memory with no Maya to check against. `Core::mel` moves the switches of move, rotate and scale after
-their values before parsing, since the parser reads a 0 or 1 after a switch as its value.
+were written from memory with no Maya to check against. In MEL a 0 or 1 after a
+switch of move, rotate or scale is a value, not the switch's own, so `move -r 1 0 0` reads as it should.
 
-Not yet in these: `polyEvaluate -b2` and `-bc2`, `select` of `pCube1.vtx[*]`; `displaySmoothness` acts on `-po` only;
-`displayCull`, `snapMode` and the display attributes (`displayHandle`, `displayLocalAxis` and so on) hold their values
+Not yet in these: `polyEvaluate -b2` and `-bc2`, `select` of `pCube1.vtx[*]`; `displayCull`, `snapMode` and the display attributes (`displayHandle`, `displayLocalAxis` and so on) hold their values
 but the viewport does not draw from them.
 
 Not yet: weight painting, lattice, wrap, wire, delta mush, spline IK, set driven keys, NURBS curves, the dope sheet,

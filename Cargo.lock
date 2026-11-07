@@ -92,6 +92,7 @@ dependencies = [
  "aztek_geo",
  "aztek_ops",
  "aztek_scene",
+ "aztek_undo",
  "bytemuck",
  "glam 0.29.3",
  "gpu-allocator",
@@ -100,6 +101,7 @@ dependencies = [
  "pyo3",
  "raw-window-handle",
  "serde_json",
+ "stacker",
 ]
 
 [[package]]

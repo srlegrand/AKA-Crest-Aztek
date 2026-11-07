@@ -125,6 +125,9 @@ pub fn outliner(core: &Core, shapes: bool) -> Value {
 
 /// How the channel box colours a channel: keyed, keyed on this frame, driven by another connection, locked, or "".
 fn channel_state(g: &Graph, p: &PlugRef) -> &'static str {
+    if g.source(p).is_some_and(|x| aztek_scene::anim_filter::is_mute(g, x.node)) {
+        return "muted";
+    }
     if let Some(c) = aztek_scene::anim::curve_of(g, p) {
         let now = aztek_scene::anim::frame(g);
         if g.is_held(p) {
@@ -172,7 +175,11 @@ pub fn anim_curves(core: &Core, arg: &str) -> Value {
                 .map(|i| {
                     let (si, so) = k.slopes(i);
                     let key = &k.keys[i];
-                    json!([key.t, key.v, si, so, key.itt.name(), key.ott.name(), key.breakdown])
+                    // The handles, in frames and value: a third of the tangents.
+                    let f = anim::fps() / 3.0;
+                    let (ix, iy) = k.tangent_xy(i, false);
+                    let (ox, oy) = k.tangent_xy(i, true);
+                    json!([key.t, key.v, si, so, key.itt.name(), key.ott.name(), key.breakdown, ix * f, iy / 3.0, ox * f, oy / 3.0, key.tan_lock, key.weight_lock])
                 })
                 .collect();
             let mut samples = Vec::new();
@@ -183,7 +190,18 @@ pub fn anim_curves(core: &Core, arg: &str) -> Value {
             }
             let a = g.attr(&p);
             let channel = if p.component >= 0 { a.child_names[p.component as usize].clone() } else { a.name.clone() };
-            curves.push(json!({"curve": g.path(c), "channel": channel, "plug": g.plug_name(&p), "component": p.component, "keys": keys, "samples": samples}));
+            // What the buffer holds, sampled the same way.
+            let mut buffer = Vec::new();
+            if let Some(b) = core.s.buffer_curves.get(&c) {
+                let mut held = b.clone();
+                held.weighted = k.weighted;
+                let mut t = start;
+                while !held.keys.is_empty() && t <= end + 1e-9 {
+                    buffer.push(json!([t, held.eval(t, inf(pre), inf(post))]));
+                    t += step;
+                }
+            }
+            curves.push(json!({"curve": g.path(c), "channel": channel, "plug": g.plug_name(&p), "component": p.component, "keys": keys, "samples": samples, "weighted": k.weighted, "buffer": buffer}));
         }
         if !curves.is_empty() {
             out.push(json!({"node": g.path(id), "curves": curves}));
@@ -202,26 +220,19 @@ fn channels(g: &Graph, id: NodeId, all_inputs: bool) -> Vec<Value> {
         if a.flags & (flags::HIDDEN | flags::OUTPUT) != 0 {
             continue;
         }
-        let keyable = a.flags & flags::KEYABLE != 0;
-        let is_vis = a.name == "visibility";
-        // setAttr -k and -cb can show or hide one channel, a child of a Vec3 too.
-        let shown = |p: &PlugRef| {
-            let (k, c) = g.channel_state(p);
-            k || c
-        };
+        // Keyable as this node has it (setAttr -k), or shown by setAttr -cb.
         let whole = PlugRef::new(id, i as i32);
-        let any_child = a.ty == PlugType::Vec3 && (0..3).any(|c| shown(&PlugRef::component(id, i as i32, c)));
-        if !keyable && !is_vis && !shown(&whole) && !any_child && !(all_inputs && matches!(a.ty, PlugType::Bool | PlugType::Int | PlugType::Float | PlugType::Enum | PlugType::String)) {
-            continue;
-        }
-        if !all_inputs && !is_vis && a.ty != PlugType::Vec3 && !shown(&whole) {
+        let vector = a.ty == PlugType::Vec3;
+        let shown = |p: &PlugRef| aztek_scene::anim::is_keyable(g, p) || g.channel_state(p).1;
+        let keyable = !vector && shown(&whole);
+        if !vector && !keyable && !(all_inputs && matches!(a.ty, PlugType::Bool | PlugType::Int | PlugType::Float | PlugType::Enum | PlugType::String)) {
             continue;
         }
         let v = n.value(i);
         match (a.ty, v) {
             (PlugType::Vec3, PlugValue::Vec3(v)) => {
                 for k in 0..3 {
-                    if !all_inputs && !shown(&PlugRef::component(id, i as i32, k as i32)) {
+                    if !shown(&PlugRef::component(id, i as i32, k as i32)) {
                         continue;
                     }
                     let child = if a.child_names[k].is_empty() { format!("{}{}", a.name, ["X", "Y", "Z"][k]) } else { a.child_names[k].clone() };
@@ -385,7 +396,7 @@ pub fn state(core: &Core) -> Value {
         "history": g.construction_history,
         "canUndo": g.undo_stack().can_undo(),
         "canRedo": g.undo_stack().can_redo(),
-        "file": core.current_file,
+        "file": core.s.scene_path,
         "version": core.version,
     })
 }
@@ -441,4 +452,73 @@ pub fn uv_data(core: &mut Core) -> Value {
         ComponentMode::Face => "face",
     };
     json!({"mode": mode, "meshes": out})
+}
+
+/// The Node Editor's graph: the root nodes and what's connected to them, `depth` connections out. arg is JSON:
+/// {"roots": [names], "depth": n}. Node attrs: name, input, output; edges: [source, attr, destination, attr].
+pub fn node_graph(core: &Core, arg: &str) -> Value {
+    let g = &core.s.graph;
+    let parsed: Value = serde_json::from_str(arg).unwrap_or(json!({}));
+    let depth = parsed.get("depth").and_then(Value::as_i64).unwrap_or(1).max(0);
+    let mut set: Vec<NodeId> = Vec::new();
+    for r in parsed.get("roots").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
+        if let Ok(Some(id)) = g.find(r) {
+            if !set.contains(&id) {
+                set.push(id);
+            }
+            // A transform brings its shape, as the editor graphs them.
+            if g.node(id).is_some_and(|n| n.ty().is_a("transform")) {
+                for s in aztek_scene::dag::shapes(g, id, false) {
+                    if !set.contains(&s) {
+                        set.push(s);
+                    }
+                }
+            }
+        }
+    }
+    let conns = g.connections();
+    let touches = |a: NodeId, b: NodeId, set: &[NodeId]| set.contains(&a) || set.contains(&b);
+    for _ in 0..depth {
+        let mut more = Vec::new();
+        for (d, s) in &conns {
+            if touches(d.node, s.node, &set) {
+                for id in [d.node, s.node] {
+                    if !set.contains(&id) && !more.contains(&id) {
+                        more.push(id);
+                    }
+                }
+            }
+        }
+        set.extend(more);
+    }
+    let nodes: Vec<Value> = set
+        .iter()
+        .filter_map(|&id| {
+            let n = g.node(id)?;
+            let attrs: Vec<Value> = n
+                .ty()
+                .attrs
+                .iter()
+                .filter(|a| !a.has(flags::HIDDEN) || conns.iter().any(|(d, s)| (d.node == id && g.attr(d).name == a.name) || (s.node == id && g.attr(s).name == a.name)))
+                .map(|a| json!({"name": a.name, "input": a.has(flags::INPUT), "output": a.has(flags::OUTPUT) || !a.has(flags::INPUT)}))
+                .collect();
+            Some(json!({"name": g.path(id), "type": n.ty().name, "attrs": attrs}))
+        })
+        .collect();
+    let plug_attr = |p: &PlugRef| -> String {
+        let a = g.attr(p);
+        if p.component >= 0 && a.ty == PlugType::Vec3 {
+            a.child_names[p.component as usize].clone()
+        } else if p.element >= 0 {
+            format!("{}[{}]", a.name, p.element)
+        } else {
+            a.name.clone()
+        }
+    };
+    let edges: Vec<Value> = conns
+        .iter()
+        .filter(|(d, s)| set.contains(&d.node) && set.contains(&s.node))
+        .map(|(d, s)| json!([g.path(s.node), plug_attr(s), g.path(d.node), plug_attr(d)]))
+        .collect();
+    json!({"nodes": nodes, "edges": edges})
 }

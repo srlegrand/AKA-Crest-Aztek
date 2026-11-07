@@ -76,6 +76,10 @@ fn circle_has_history() {
     // Without history.
     let r = run(&mut s, "circle", json!({"constructionHistory": false}));
     assert_eq!(r, json!(["nurbsCircle2"]));
+    // With its history baked, a CV moves the curve itself.
+    run(&mut s, "xform", json!({"args": ["nurbsCircle2.cv[0]"], "relative": true, "translation": [0, 0, 3]}));
+    let z = run(&mut s, "xform", json!({"args": ["nurbsCircle2.cv[0]"], "query": true, "translation": true}))[2].as_f64().unwrap();
+    assert!((z - 3.0).abs() < 1e-9, "{z}");
 }
 
 #[test]
@@ -156,7 +160,7 @@ fn meshes_from_curves() {
     assert!((i["worldBoundsMax"][1].as_f64().unwrap() - 6.0).abs() < 1e-6, "{i}");
 
     run(&mut s, "curve", json!({"degree": 1, "point": [[1, 0, 0], [1, 2, 0]], "name": "edge"}));
-    let r = run(&mut s, "revolve", json!({"args": ["edge"], "sections": 12}));
+    let r = run(&mut s, "revolve", json!({"args": ["edge"], "sections": 12, "polygon": 1}));
     assert_eq!(r, json!(["revolvedSurface1", "revolve1"]));
     assert_eq!(faces(&mut s, "revolvedSurface1"), 12);
     run(&mut s, "setAttr", json!({"args": ["revolve1.sections", 6]}));
@@ -165,11 +169,11 @@ fn meshes_from_curves() {
     run(&mut s, "curve", json!({"degree": 1, "point": [[0, 0, 0], [1, 0, 0]], "name": "c1"}));
     run(&mut s, "curve", json!({"degree": 1, "point": [[0, 1, 0], [1, 1, 0]], "name": "c2"}));
     run(&mut s, "curve", json!({"degree": 1, "point": [[0, 2, 0], [1, 2, 0]], "name": "c3"}));
-    run(&mut s, "loft", json!({"args": ["c1", "c2", "c3"]}));
+    run(&mut s, "loft", json!({"args": ["c1", "c2", "c3"], "polygon": 1}));
     assert_eq!(faces(&mut s, "loftedSurface1"), 2);
 
     run(&mut s, "nurbsSquare", json!({"name": "sq"}));
-    run(&mut s, "planar", json!({"args": ["sq"]}));
+    run(&mut s, "planar", json!({"args": ["sq"], "polygon": 1}));
     assert_eq!(faces(&mut s, "planarTrimmedSurface1"), 1);
 
     run(&mut s, "curve", json!({"degree": 1, "point": [[0, 0, 0], [0, 2, 0]], "name": "tube"}));

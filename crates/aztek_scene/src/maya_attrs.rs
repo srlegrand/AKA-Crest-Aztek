@@ -72,7 +72,7 @@ pub(crate) fn maya_type(a: &AttrDef, component: bool) -> &'static str {
         PlugType::Vec3 if component && angular => "doubleAngle",
         PlugType::Vec3 if component && linear => "doubleLinear",
         PlugType::Vec3 if component => "double",
-        PlugType::Vec3 if a.child_names[2].is_empty() => "double2",
+        PlugType::Vec3 if !a.child_names[0].is_empty() && a.child_names[2].is_empty() => "double2",
         PlugType::Vec3 if a.has(flags::COLOR) => "float3",
         PlugType::Vec3 => "double3",
         PlugType::Bool => "bool",
@@ -136,7 +136,7 @@ fn read(g: &mut Graph, p: &PlugRef) -> CmdResult {
     }
     let v = g.value(p)?;
     let a = g.attr(p);
-    if p.component < 0 && a.ty == PlugType::Vec3 && a.child_names[2].is_empty() {
+    if p.component < 0 && a.ty == PlugType::Vec3 && !a.child_names[0].is_empty() && a.child_names[2].is_empty() {
         let x = v.as_vec3();
         return Ok(json!([x.x, x.y]));
     }
@@ -209,7 +209,7 @@ fn read_args(g: &mut Graph, a: &Args) -> CmdResult {
         return Ok(json!(maya_type(&def, p.component >= 0)));
     }
     if a.bool("keyable") {
-        return Ok(json!(g.channel_state(&p).0));
+        return Ok(json!(crate::anim::is_keyable(g, &p)));
     }
     if a.bool("channelBox") {
         return Ok(json!(g.channel_state(&p).1));
@@ -255,9 +255,15 @@ fn set_attr(s: &mut Session, a: &Args, prev: &aztek_ops::RunFn<Session>) -> CmdR
         return Ok(Value::Null);
     }
     let p = s.graph.plug(&name)?;
-    if a.has("keyable") || a.has("channelBox") {
-        let g = &mut s.graph;
-        g.set_channel_state(&p, a.has("keyable").then(|| a.bool("keyable")), a.has("channelBox").then(|| a.bool("channelBox")));
+    if a.has("keyable") {
+        crate::anim::set_keyable(&mut s.graph, &p, a.bool("keyable"))?;
+        // A keyable channel is in the channel box as that; -cb is for the ones that aren't.
+        if a.bool("keyable") {
+            s.graph.set_channel_state(&p, None, Some(false));
+        }
+    }
+    if a.has("channelBox") {
+        s.graph.set_channel_state(&p, None, Some(a.bool("channelBox")));
     }
     if a.has("lock") && !a.bool("lock") {
         s.graph.set_locked(&p, false)?;
@@ -268,6 +274,8 @@ fn set_attr(s: &mut Session, a: &Args, prev: &aztek_ops::RunFn<Session>) -> CmdR
         let flat = number_list(values);
         let mut call = a.clone();
         call.flags.remove("lock");
+        call.flags.remove("keyable");
+        call.flags.remove("channelBox");
         match ty.as_str() {
             "stringArray" | "doubleArray" | "floatArray" | "Int32Array" | "int32Array" | "vectorArray" | "pointArray" => {
                 // MEL and Maya's Python put the count first in some forms: setAttr n.a -type stringArray 2 "x" "y".
@@ -289,7 +297,7 @@ fn set_attr(s: &mut Session, a: &Args, prev: &aztek_ops::RunFn<Session>) -> CmdR
                 // double3, double2, matrix and plain values: gather what the attr holds.
                 let v = match def.ty {
                     _ if p.component >= 0 => flat[0].clone(),
-                    PlugType::Vec3 if def.child_names[2].is_empty() && flat.len() == 2 => {
+                    PlugType::Vec3 if flat.len() == 2 => {
                         json!([flat[0], flat[1], 0.0])
                     }
                     PlugType::Vec3 | PlugType::Matrix if !def.is_array() || p.element >= 0 => Value::Array(flat.clone()),
@@ -333,7 +341,7 @@ fn add_attr_query(s: &mut Session, a: &Args) -> CmdResult {
         "hasMinValue" => json!(def.min_value.is_some()),
         "hasMaxValue" => json!(def.max_value.is_some()),
         "enumName" => json!(def.enum_names.join(":")),
-        "keyable" => json!(g.channel_state(&plug).0),
+        "keyable" => json!(crate::anim::is_keyable(g, &plug)),
         "multi" => json!(def.is_array()),
         "parent" => json!(def.name.split_once('.').map(|x| x.0).unwrap_or("")),
         "exists" => json!(true),
@@ -476,7 +484,7 @@ fn attribute_query(s: &mut Session, a: &Args) -> CmdResult {
     if a.bool("exists") {
         return Ok(json!(found.is_some() || !kids.is_empty()));
     }
-    let channel = |g: &Graph, i: usize, c: i32| node.map(|id| g.channel_state(&PlugRef { node: id, attr: i as i32, component: c, element: -1 }));
+    let part = |i: usize, c: i32| node.map(|id| PlugRef { node: id, attr: i as i32, component: c, element: -1 });
     if !kids.is_empty() {
         if a.bool("listChildren") {
             return Ok(json!(kids.iter().map(|&k| ty.attrs[k].name.rsplit('.').next().unwrap().to_string()).collect::<Vec<_>>()));
@@ -503,9 +511,9 @@ fn attribute_query(s: &mut Session, a: &Args) -> CmdResult {
     };
     let one = |x: Option<f64>| Value::Array(x.map(|v| json!(v)).into_iter().collect());
     Ok(if a.bool("keyable") {
-        json!(channel(g, i, comp).map_or(d.has(flags::KEYABLE), |c| c.0))
+        json!(part(i, comp).map_or(d.has(flags::KEYABLE), |p| crate::anim::is_keyable(g, &p)))
     } else if a.bool("channelBox") {
-        json!(channel(g, i, comp).map_or(d.has(flags::CHANNEL_BOX), |c| c.1))
+        json!(part(i, comp).map_or(d.has(flags::CHANNEL_BOX), |p| g.channel_state(&p).1))
     } else if a.bool("hidden") {
         json!(d.has(flags::HIDDEN))
     } else if a.bool("writable") {
@@ -649,7 +657,7 @@ fn list_attr(s: &mut Session, a: &Args) -> CmdResult {
             continue;
         }
         let consider = |name: String, sn: String, part: PlugRef, is_leaf: bool, out: &mut Vec<String>| {
-            let (k, c) = g.channel_state(&part);
+            let (k, c) = (crate::anim::is_keyable(g, &part), g.channel_state(&part).1);
             if (keyable && !k) || (cb && !c) || (leaf && !is_leaf) {
                 return;
             }

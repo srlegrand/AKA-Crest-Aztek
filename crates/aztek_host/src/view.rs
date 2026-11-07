@@ -27,6 +27,19 @@ struct PaintStroke {
     last: Option<DVec3>,
 }
 
+/// One stroke of a sculpting brush: the points as they build up, undoing as one.
+struct SculptStroke {
+    shape: aztek_scene::plug::NodeId,
+    pos: Vec<DVec3>,
+    base: Vec<DVec3>,
+    mesh: std::sync::Arc<aztek_geo::Mesh>,
+    world: DMat4,
+    applied: bool,
+    invert: bool,
+    smooth: bool,
+    last: Option<DVec3>,
+}
+
 pub struct View {
     pub gpu: Gpu,
     pub r: Renderer,
@@ -36,8 +49,13 @@ pub struct View {
     nav: Option<(i32, DVec2)>,
     marquee: Option<DVec2>,
     joint_press: Option<DVec2>,
+    /// The camera node this view looks through, by name, and what was last read from or written to it.
+    pub cam_node: String,
+    cam_sync: Option<[f64; 9]>,
     /// The modelling tools' state.
     pub ts: crate::tools::ToolState,
+    /// A sculpt stroke in progress.
+    sculpt: Option<SculptStroke>,
     /// A paint stroke in progress.
     stroke: Option<PaintStroke>,
     /// B held with the paint tool: a drag sizes the brush.
@@ -66,7 +84,10 @@ impl View {
             nav: None,
             marquee: None,
             joint_press: None,
+            cam_node: kind.name().to_string(),
+            cam_sync: None,
             ts: Default::default(),
+            sculpt: None,
             stroke: None,
             brush_adjust: false,
             brush_drag: None,
@@ -103,6 +124,7 @@ impl View {
             self.needs_redraw = true;
             return;
         };
+        self.read_camera(core);
         let items = gather(&mut core.s.graph);
         self.vp.show_grid = self.show_grid;
         self.vp.draw(&mut self.gpu, &self.r, &mut core.s, &items, self.dpr);
@@ -156,7 +178,7 @@ impl View {
             }
         }
         // Camera name, bottom centre.
-        let name = self.vp.cam.kind.name();
+        let name = self.cam_node.as_str();
         let size = 10.0 * s;
         let tw = font::width(name, size);
         for (a, b) in font::strokes(name, DVec2::new(w * 0.5 - tw * 0.5, h - 12.0 * s), size) {
@@ -183,6 +205,73 @@ impl View {
     // -----------------------------------------------------------------------------------------------------------------
     // Mouse
 
+    fn camera_state(&self) -> [f64; 9] {
+        let c = &self.vp.cam;
+        let eye = c.eye();
+        [eye.x, eye.y, eye.z, c.yaw, c.pitch, c.distance, c.ortho_width, c.hfov, c.orthographic as i32 as f64]
+    }
+
+    /// Follows the camera node when a script moved it.
+    fn read_camera(&mut self, core: &mut Core) {
+        use aztek_scene::cameras as cam;
+        let g = &mut core.s.graph;
+        let Ok(Some(id)) = g.find(&self.cam_node) else { return };
+        let Some(sh) = cam::shape_of(g, id) else { return };
+        g.evaluate();
+        let tr = aztek_scene::dag::transform_of(g, sh);
+        let w = aztek_scene::rig::world(g, tr);
+        let d = g.node(sh).unwrap().data();
+        let eye = w.w_axis.truncate();
+        let z = w.z_axis.truncate().normalize_or_zero();
+        let fl = d.float(cam::FOCAL_LENGTH);
+        let hfa = d.float(cam::H_APERTURE);
+        let hfov = (2.0 * (hfa * 25.4 * 0.5 / fl.max(1e-6)).atan()).to_degrees();
+        let (ow, coi, ortho) = (d.float(cam::ORTHO_WIDTH), d.float(cam::COI).max(1e-3), d.bool(cam::ORTHOGRAPHIC));
+        let yaw = z.x.atan2(z.z).to_degrees();
+        let pitch = z.y.clamp(-1.0, 1.0).asin().to_degrees();
+        let state = [eye.x, eye.y, eye.z, yaw, pitch, coi, ow, hfov, ortho as i32 as f64];
+        let same = self.cam_sync.is_some_and(|s| s.iter().zip(&state).all(|(a, b)| (a - b).abs() < 1e-6));
+        if same {
+            return;
+        }
+        self.cam_sync = Some(state);
+        let c = &mut self.vp.cam;
+        c.yaw = yaw;
+        c.pitch = pitch;
+        c.distance = coi;
+        c.ortho_width = ow;
+        c.hfov = hfov;
+        c.orthographic = ortho;
+        c.coi = eye - c.dir_to_eye() * coi;
+    }
+
+    /// Writes what the mouse did to the view back to the camera node. Not undoable, as Maya's default.
+    pub fn write_camera(&mut self, core: &mut Core) {
+        use aztek_scene::cameras as cam;
+        use aztek_scene::plug::{PlugRef, PlugValue};
+        use aztek_scene::transform::Transform;
+        let g = &mut core.s.graph;
+        let Ok(Some(id)) = g.find(&self.cam_node) else { return };
+        let Some(sh) = cam::shape_of(g, id) else { return };
+        let tr = aztek_scene::dag::transform_of(g, sh);
+        let (eye, yaw, pitch, dist, ow, ortho) = {
+            let c = &self.vp.cam;
+            (c.eye(), c.yaw, c.pitch, c.distance, c.ortho_width, c.orthographic)
+        };
+        // Driven or locked cameras keep to what drives them.
+        g.without_undo(|g| {
+            let _ = g.set_value(PlugRef::new(tr, Transform::TRANSLATE as i32), PlugValue::Vec3(eye));
+            let _ = g.set_value(PlugRef::new(tr, Transform::ROTATE as i32), PlugValue::Vec3(cam::rotate_for(yaw, pitch)));
+            let _ = g.set_value(PlugRef::new(sh, cam::COI as i32), PlugValue::Float(dist));
+            if ortho {
+                let _ = g.set_value(PlugRef::new(sh, cam::ORTHO_WIDTH as i32), PlugValue::Float(ow));
+            }
+        });
+        // What's written is what's read back, so the next read leaves the view alone.
+        self.cam_sync = None;
+        self.read_camera(core);
+    }
+
     /// kind: 0 press, 1 move, 2 release. button: 1 left, 2 middle, 3 right (0 on moves). buttons: held, bit per button.
     /// Returns whether the view should redraw.
     pub fn mouse(&mut self, core: &mut Core, kind: i32, button: i32, px: DVec2, mods: i32, buttons: i32) -> bool {
@@ -198,6 +287,22 @@ impl View {
                 if alt {
                     self.nav = Some((button, px));
                     return false;
+                }
+                if self.vp.tool == Tool::Sculpt && button == 1 {
+                    if self.brush_adjust {
+                        self.brush_drag = Some((px, core.s.sculpt_ctx.size));
+                        return true;
+                    }
+                    if let Some((i, wp, n)) = self.vp.brush_hit(&core.s, &items, px) {
+                        let shape = items[i].shape;
+                        if let Some(m) = aztek_scene::modifiers::cage(&mut core.s.graph, shape) {
+                            let pos = m.positions().to_vec();
+                            self.sculpt = Some(SculptStroke { shape, base: pos.clone(), pos, mesh: m, world: items[i].world, applied: false, invert: mods & CTRL != 0, smooth: mods & SHIFT != 0, last: None });
+                            self.sculpt_dab(core, wp, n);
+                            self.vp.brush = Some((wp, n));
+                        }
+                    }
+                    return true;
                 }
                 if self.vp.tool == Tool::PaintSkin && button == 1 {
                     if self.brush_adjust {
@@ -276,13 +381,43 @@ impl View {
                         _ => self.vp.cam.dolly((d.x + d.y) / self.dpr),
                     }
                     self.nav = Some((b, px));
+                    self.write_camera(core);
                     return true;
                 }
                 if let Some((start, radius)) = self.brush_drag {
                     let upp = self.vp.cam.units_per_px_at(self.vp.brush.map(|b| b.0).unwrap_or(self.vp.cam.coi), self.vp.rect[3], self.vp.aspect());
                     let next = (radius + (px.x - start.x) * upp).max(1e-3);
-                    let _ = core.exec_silent("artAttrSkinPaintCtx", json!({"edit": true, "radius": next}));
+                    if self.vp.tool == Tool::Sculpt {
+                        core.s.sculpt_ctx.size = next;
+                        core.version += 1;
+                    } else {
+                        let _ = core.exec_silent("artAttrSkinPaintCtx", json!({"edit": true, "radius": next}));
+                    }
                     return true;
+                }
+                if self.sculpt.is_some() {
+                    if let Some((_, wp, n)) = self.vp.brush_hit(&core.s, &items, px) {
+                        self.sculpt_dab(core, wp, n);
+                        self.vp.brush = Some((wp, n));
+                    } else if core.s.sculpt_ctx.tool == "grab" {
+                        // Grab keeps following off the surface, on the plane through the stroke's last point.
+                        if let (Some(l), Some((_, n))) = (self.sculpt.as_ref().and_then(|s| s.last), self.vp.brush) {
+                            let (o, d) = self.vp.cam.ray(px, self.vp.size());
+                            let den = d.dot(n);
+                            if den.abs() > 1e-6 {
+                                let t = (l - o).dot(n) / den;
+                                let wp = o + d * t;
+                                self.sculpt_dab(core, wp, n);
+                                self.vp.brush = Some((wp, n));
+                            }
+                        }
+                    }
+                    return true;
+                }
+                if self.vp.tool == Tool::Sculpt && buttons == 0 {
+                    let was = self.vp.brush.is_some();
+                    self.vp.brush = self.vp.brush_hit(&core.s, &items, px).map(|x| (x.1, x.2));
+                    return was || self.vp.brush.is_some();
                 }
                 if self.stroke.is_some() {
                     if let Some((i, wp, n)) = self.vp.brush_hit(&core.s, &items, px) {
@@ -347,6 +482,10 @@ impl View {
                 if self.brush_drag.take().is_some() {
                     return true;
                 }
+                if self.sculpt.take().is_some() {
+                    core.version += 1;
+                    return true;
+                }
                 if self.stroke.take().is_some() {
                     // The dabs' one undo entry stays; the panels hear of it.
                     core.version += 1;
@@ -387,6 +526,30 @@ impl View {
         }
     }
 
+    fn sculpt_dab(&mut self, core: &mut Core, wp: DVec3, n: DVec3) {
+        let Some(st) = self.sculpt.as_mut() else { return };
+        let ctx = core.s.sculpt_ctx.clone();
+        if ctx.tool == "freeze" {
+            let mut fr = core.s.sculpt_ctx.frozen.remove(&st.shape).unwrap_or_default();
+            aztek_scene::sculpt::paint_freeze(&mut fr, &st.mesh, &st.world, wp, &ctx, st.invert);
+            core.s.sculpt_ctx.frozen.insert(st.shape, fr);
+            return;
+        }
+        let pull = st.last.map(|l| wp - l).unwrap_or(DVec3::ZERO);
+        let frozen = ctx.frozen.get(&st.shape).map(|v| v.as_slice());
+        aztek_scene::sculpt::dab(&mut st.pos, &st.base, &st.mesh, &st.world, wp, n, pull, &ctx, frozen, st.invert, st.smooth);
+        st.last = Some(wp);
+        if st.applied {
+            core.s.undo();
+        }
+        let (shape, pos, mesh) = (st.shape, st.pos.clone(), st.mesh.clone());
+        let ok = aztek_scene::sculpt::commit(&mut core.s, shape, &pos, &mesh).is_ok();
+        if let Some(st) = self.sculpt.as_mut() {
+            st.applied = ok;
+        }
+        core.version += 1;
+    }
+
     /// A dab of the brush, replacing the stroke's previous undo entry so the whole stroke undoes in one step.
     fn paint_dab(&mut self, core: &mut Core, items: &[crate::viewport::DrawItem], i: usize, wp: DVec3, n: DVec3) {
         let Some(st) = self.stroke.as_mut() else { return };
@@ -410,8 +573,9 @@ impl View {
         core.version += 1;
     }
 
-    pub fn wheel(&mut self, delta: f64) {
+    pub fn wheel(&mut self, core: &mut Core, delta: f64) {
         self.vp.cam.dolly(delta * 0.5);
+        self.write_camera(core);
     }
 
     pub fn set(&mut self, core: &mut Core, key: &str, v: &Value) {
@@ -426,6 +590,8 @@ impl View {
                     "scale" => Tool::Scale,
                     "joint" => Tool::Joint,
                     "paintSkin" => Tool::PaintSkin,
+                    "sculpt" => Tool::Sculpt,
+                    "insertJoint" => Tool::InsertJoint,
                     "curveCv" => Tool::CurveCv,
                     "curveEp" => Tool::CurveEp,
                     "multiCut" => Tool::MultiCut,
@@ -444,18 +610,25 @@ impl View {
             "wireOnShaded" => self.vp.wire_on_shaded = v.as_bool().unwrap_or(false),
             "grid" => self.show_grid = v.as_bool().unwrap_or(true),
             "camera" => {
-                if let Some(k) = v.as_str().and_then(CamKind::from_name) {
-                    self.vp.cam = crate::camera::Camera::new(k);
-                    self.vp.reset_grid(&mut self.gpu);
+                if let Some(name) = v.as_str() {
+                    if let Some(k) = CamKind::from_name(name) {
+                        self.vp.cam = crate::camera::Camera::new(k);
+                        self.vp.reset_grid(&mut self.gpu);
+                    }
+                    self.cam_node = name.to_string();
+                    self.cam_sync = None;
+                    self.read_camera(core);
                 }
             }
             "frame" => {
                 let items = gather(&mut core.s.graph);
                 self.vp.frame(&mut core.s, &items, v.as_str() == Some("all"));
+                self.write_camera(core);
             }
             "home" => {
                 let k = self.vp.cam.kind;
                 self.vp.cam = crate::camera::Camera::new(k);
+                self.write_camera(core);
             }
             "dpr" => self.dpr = v.as_f64().unwrap_or(1.0),
             "background" => {
@@ -499,7 +672,7 @@ impl View {
 
     pub fn get(&self, key: &str) -> Value {
         match key {
-            "camera" => json!(self.vp.cam.kind.name()),
+            "camera" => json!(self.cam_node),
             "tool" => json!(format!("{:?}", self.vp.tool).to_lowercase()),
             "wireframe" => json!(self.vp.wireframe),
             "wireOnShaded" => json!(self.vp.wire_on_shaded),

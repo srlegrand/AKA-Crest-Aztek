@@ -817,30 +817,6 @@ fn table() -> Vec<Spec> {
             let o = f(d, "input1") - f(d, "input2");
             set(d, "output", o);
         }),
-        Spec("animBlendNodeAdditive", "utility/general", "inputA * weightA + inputB * weightB.",
-            vec![fin("inputA", "ia", 0.0), fin("inputB", "ib", 0.0), fin("weightA", "wa", 1.0), fin("weightB", "wb", 1.0), fout("output", "o")],
-            |d| {
-                let o = f(d, "inputA") * f(d, "weightA") + f(d, "inputB") * f(d, "weightB");
-                set(d, "output", o);
-            }),
-        Spec("animBlendNodeAdditiveDL", "utility/general", "inputA * weightA + inputB * weightB, linear.",
-            vec![fin("inputA", "ia", 0.0), fin("inputB", "ib", 0.0), fin("weightA", "wa", 1.0), fin("weightB", "wb", 1.0), fout("output", "o")],
-            |d| {
-                let o = f(d, "inputA") * f(d, "weightA") + f(d, "inputB") * f(d, "weightB");
-                set(d, "output", o);
-            }),
-        Spec("animBlendNodeAdditiveDA", "utility/general", "inputA * weightA + inputB * weightB, angular.",
-            vec![fin("inputA", "ia", 0.0), fin("inputB", "ib", 0.0), fin("weightA", "wa", 1.0), fin("weightB", "wb", 1.0), fout("output", "o")],
-            |d| {
-                let o = f(d, "inputA") * f(d, "weightA") + f(d, "inputB") * f(d, "weightB");
-                set(d, "output", o);
-            }),
-        Spec("animBlendNodeAdditiveScale", "utility/general", "Scale layers multiply: inputA * lerp(1, inputB, weightB).",
-            vec![fin("inputA", "ia", 1.0), fin("inputB", "ib", 1.0), fin("weightA", "wa", 1.0), fin("weightB", "wb", 1.0), fout("output", "o")],
-            |d| {
-                let o = (1.0 + (f(d, "inputA") - 1.0) * f(d, "weightA")) * (1.0 + (f(d, "inputB") - 1.0) * f(d, "weightB"));
-                set(d, "output", o);
-            }),
         Spec("rgbToHsv", "utility/color", "RGB to hue (degrees), saturation, value.", vec![cin("inRgb", "ir", [0.0; 3]), vec_kids("outHsv", "oh", [0.0; 3], OUT, HSV)], |d| {
             let o = hsv_of(v(d, "inRgb"));
             set(d, "outHsv", o);

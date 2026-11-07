@@ -845,61 +845,6 @@ fn about(_s: &mut Session, a: &Args) -> CmdResult {
     })
 }
 
-fn current_unit(s: &mut Session, a: &Args) -> CmdResult {
-    const TIMES: [(&str, f64); 12] = [("game", 15.0), ("film", 24.0), ("pal", 25.0), ("ntsc", 30.0), ("show", 48.0), ("palf", 50.0), ("ntscf", 60.0), ("millisec", 1000.0), ("sec", 1.0), ("min", 1.0 / 60.0), ("hour", 1.0 / 3600.0), ("120fps", 120.0)];
-    let long = |u: &str| match u {
-        "cm" => "centimeter",
-        "mm" => "millimeter",
-        "m" => "meter",
-        "km" => "kilometer",
-        "in" => "inch",
-        "ft" => "foot",
-        "yd" => "yard",
-        "mi" => "mile",
-        "deg" => "degree",
-        "rad" => "radian",
-        o => o,
-    }.to_string();
-    let short = |u: &str| match u {
-        "centimeter" => "cm",
-        "millimeter" => "mm",
-        "meter" => "m",
-        "kilometer" => "km",
-        "inch" => "in",
-        "foot" => "ft",
-        "yard" => "yd",
-        "mile" => "mi",
-        "degree" => "deg",
-        "radian" => "rad",
-        o => o,
-    }.to_string();
-    if a.bool("query") {
-        let full = a.bool("fullName");
-        if asked(a, "angle") {
-            return Ok(json!(if full { long(&s.angular_unit) } else { s.angular_unit.clone() }));
-        }
-        if asked(a, "time") {
-            let now = crate::anim::fps();
-            let name = TIMES.iter().find(|t| (t.1 - now).abs() < 1e-9).map(|t| t.0.to_string()).unwrap_or_else(|| format!("{now}fps"));
-            return Ok(json!(name));
-        }
-        return Ok(json!(if full { long(&s.linear_unit) } else { s.linear_unit.clone() }));
-    }
-    if a.has("linear") {
-        s.linear_unit = short(&a.string("linear", "cm"));
-    }
-    if a.has("angle") {
-        s.angular_unit = short(&a.string("angle", "deg"));
-    }
-    if a.has("time") {
-        let t = a.string("time", "film");
-        let rate = TIMES.iter().find(|x| x.0 == t).map(|x| x.1).or_else(|| t.strip_suffix("fps").and_then(|x| x.parse().ok()));
-        let Some(rate) = rate else { fail!("currentUnit: unknown time unit {t}") };
-        run(s, "playbackOptions", json!({"framesPerSecond": rate}))?;
-    }
-    Ok(Value::Null)
-}
-
 fn bounds_of(g: &mut Graph, names: &[String], ignore_invisible: bool) -> CmdResult<Option<(DVec3, DVec3)>> {
     g.evaluate();
     let (mut lo, mut hi) = (DVec3::splat(f64::MAX), DVec3::splat(f64::MIN));
@@ -1416,31 +1361,6 @@ pub fn register(c: &mut Commands<Session>) {
         .flag(f("openWorkspace", "o", S, "Open this project."))
         .undoable(false),
     );
-    c.register(
-        Cmd::new("currentUnit", "The working units: -l linear, -a angle, -t time, -q to ask. Values stay in cm and degrees inside.", current_unit)
-            .flag(f("query", "q", B, "Query."))
-            .flag(f("queried", "", ArgType::List, "What -q asks for."))
-            .flag(f("linear", "l", S, "cm, mm, m, in, ft, yd and so on."))
-            .flag(f("angle", "a", S, "deg or rad."))
-            .flag(f("time", "t", S, "film, ntsc, pal, game, show and so on."))
-            .flag(f("updateAnimation", "ua", B, "Accepted for Maya scripts."))
-            .flag(f("fullName", "f", B, "With -q: the long name."))
-            .undoable(false),
-    );
-    {
-        let mut ds = Cmd::new("displaySmoothness", "Smooth preview by Maya's display flags: -po 3 on, -po 1 off.", |s, a| {
-            if let Some(level) = a.get("polygonObject").and_then(Value::as_i64) {
-                let names = objects(s, a);
-                run(s, "smoothPreview", json!({"args": names, "level": if level >= 3 { 2 } else { 0 }}))?;
-            }
-            Ok(Value::Null)
-        })
-        .positional("objects");
-        for (name, short, ty) in [("polygonObject", "po", ArgType::Int), ("full", "f", B), ("hull", "hl", B), ("rough", "r", B), ("medium", "m", B), ("boundary", "bn", B), ("divisionsU", "du", ArgType::Int), ("divisionsV", "dv", ArgType::Int), ("pointsWire", "pw", ArgType::Int), ("pointsShaded", "ps", ArgType::Int), ("renderTessellation", "rt", B), ("all", "all", B), ("query", "q", B)] {
-            ds = ds.flag(f(name, short, ty, "As in Maya; only -po changes anything here."));
-        }
-        c.register(ds);
-    }
     {
         let mut tg = Cmd::new("toggle", "Turns display switches on the objects on and off: -la, -rp, -sp, -sh, -te; -st for a value, -q to ask.", toggle_cmd).positional("objects");
         for (name, short) in [("localAxis", "la"), ("rotatePivot", "rp"), ("scalePivot", "sp"), ("selectHandle", "sh"), ("template", "te")] {
@@ -1589,27 +1509,6 @@ pub fn register(c: &mut Commands<Session>) {
         .flag(f("back", "b", B, "Last among its siblings."))
         .flag(f("relative", "r", ArgType::Int, "This many places along.")),
     );
-    {
-        let mut st = Cmd::new("selectType", "Which components can be picked: -v vertices, -pe edges, -pf faces; -q to ask.", |s, a| {
-            const KINDS: [(&str, &str); 3] = [("polymeshVertex", "vertex"), ("polymeshEdge", "edge"), ("polymeshFace", "face")];
-            let now = run(s, "selectMode", json!({}))?;
-            if a.bool("query") {
-                return Ok(json!(KINDS.iter().any(|(fl, m)| asked(a, fl) && now == *m)));
-            }
-            for (fl, m) in KINDS {
-                if a.has(fl) {
-                    run(s, "selectMode", json!({"args": [if a.bool(fl) { m } else { "object" }]}))?;
-                }
-            }
-            Ok(Value::Null)
-        })
-        .undoable(false);
-        st = st.flag(f("query", "q", B, "Query.")).flag(f("queried", "", ArgType::List, "What -q asks for."));
-        for (name, short) in [("polymeshVertex", "pv"), ("polymeshEdge", "pe"), ("polymeshFace", "pf"), ("vertex", "v"), ("allObjects", "alc"), ("allComponents", "alo")] {
-            st = st.flag(f(name, short, B, "A kind of thing to pick."));
-        }
-        c.register(st);
-    }
     extend(
         c,
         "selectMode",

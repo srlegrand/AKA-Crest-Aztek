@@ -294,7 +294,7 @@ QWidget* channel_row(const QJsonObject& ch, QWidget* parent, int label_width) {
     // Maya's channel colours: keyed, key on this frame, changed since keyed, driven, locked.
     QString st = ch["state"].toString();
     edit->setObjectName(st == "keyed" ? "channelKeyed" : st == "keyOnFrame" ? "channelKeyOnFrame" : st == "changed" ? "channelChanged"
-                        : st == "locked" ? "channelLocked" : (st == "connected" || ch["connected"].toBool()) ? "channelConnected" : "channelValue");
+                        : st == "muted" ? "channelMuted" : st == "locked" ? "channelLocked" : (st == "connected" || ch["connected"].toBool()) ? "channelConnected" : "channelValue");
     edit->setFixedHeight(18);
     // Right-click is the channel box's menu, not the text field's.
     edit->setContextMenuPolicy(Qt::NoContextMenu);
@@ -355,6 +355,17 @@ ChannelBox::ChannelBox(QWidget* parent) : Panel(parent) {
         };
         m.addAction("Key Selected", [picked] { exec("setKeyframe", QJsonObject{{"attribute", picked}}); })->setEnabled(any);
         m.addAction("Key All", [] { exec("setKeyframe"); });
+        m.addAction("Breakdown Selected", [picked] { exec("setKeyframe", QJsonObject{{"attribute", picked}, {"breakdown", true}}); })->setEnabled(any);
+        m.addAction("Breakdown All", [] { exec("setKeyframe", QJsonObject{{"breakdown", true}}); });
+        m.addSeparator();
+        m.addAction("Mute Selected", [plugs] {
+            for (const QJsonValue& pl : plugs()) exec("mute", QJsonObject{{"args", QJsonArray{pl}}});
+        })->setEnabled(any);
+        m.addAction("Mute All", [] { exec("mute"); });
+        m.addAction("Unmute Selected", [plugs] {
+            for (const QJsonValue& pl : plugs()) exec("mute", QJsonObject{{"args", QJsonArray{pl}}, {"disable", true}, {"force", true}});
+        })->setEnabled(any);
+        m.addAction("Unmute All", [] { exec("mute", QJsonObject{{"disable", true}, {"force", true}}); });
         m.addSeparator();
         m.addAction("Delete Selected Keys", [picked] { exec("cutKey", QJsonObject{{"attribute", picked}}); })->setEnabled(any);
         m.addAction("Break Connections", [plugs] {
@@ -366,6 +377,12 @@ ChannelBox::ChannelBox(QWidget* parent) : Panel(parent) {
         })->setEnabled(any);
         m.addAction("Unlock Selected", [plugs] {
             for (const QJsonValue& pl : plugs()) exec("setAttr", QJsonObject{{"args", QJsonArray{pl}}, {"lock", false}});
+        })->setEnabled(any);
+        m.addAction("Hide Selected", [plugs] {
+            for (const QJsonValue& pl : plugs()) exec("setAttr", QJsonObject{{"args", QJsonArray{pl}}, {"keyable", false}});
+        })->setEnabled(any);
+        m.addAction("Lock and Hide Selected", [plugs] {
+            for (const QJsonValue& pl : plugs()) exec("setAttr", QJsonObject{{"args", QJsonArray{pl}}, {"lock", true}, {"keyable", false}});
         })->setEnabled(any);
         m.addSeparator();
         m.addAction("Select All Channels", [] {

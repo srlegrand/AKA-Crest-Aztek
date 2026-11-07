@@ -1,11 +1,19 @@
-//! The command line's syntax: `polyCube -w 2 -sx 3; select -r pCube1.f[0:3];`, turned into command calls.
-//! Flags are looked up by long or short name; each takes as many values as its type needs.
+//! Command syntax: `polyCube -w 2 -sx 3`, turned into a command call. The interpreter evaluates the arguments to tokens;
+//! flags are looked up by long or short name and each takes as many values as its type or arity needs.
 
-use aztek_ops::{ArgType, Commands};
+use aztek_ops::{ArgType, Commands, FlagDef};
 use aztek_scene::Session;
 use serde_json::{json, Map, Value};
 
-fn tokens(line: &str) -> Vec<String> {
+/// One evaluated argument of a command: a bare word as typed, or a value (quoted strings, variables, expressions).
+/// Only a word can be a flag; function syntax turns "-sl" into a word first.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Tok {
+    Word(String),
+    Val(Value),
+}
+
+fn tokens(line: &str) -> Vec<Tok> {
     let mut out = Vec::new();
     let mut cur = String::new();
     let mut chars = line.chars().peekable();
@@ -28,19 +36,18 @@ fn tokens(line: &str) -> Vec<String> {
                         s.push(c);
                     }
                 }
-                // Quoted: marked so a quoted "-x" isn't read as a flag.
-                out.push(format!("\u{1}{s}"));
+                out.push(Tok::Val(json!(s)));
             }
             c if c.is_whitespace() => {
                 if !cur.is_empty() {
-                    out.push(std::mem::take(&mut cur));
+                    out.push(Tok::Word(std::mem::take(&mut cur)));
                 }
             }
             _ => cur.push(c),
         }
     }
     if !cur.is_empty() {
-        out.push(cur);
+        out.push(Tok::Word(cur));
     }
     out
 }
@@ -64,18 +71,8 @@ pub fn statements(src: &str) -> Vec<String> {
     out.into_iter().map(|s| s.trim().to_string()).filter(|s| !s.is_empty() && !s.starts_with("//")).collect()
 }
 
-fn word(t: &str) -> (&str, bool) {
-    match t.strip_prefix('\u{1}') {
-        Some(s) => (s, true),
-        None => (t, false),
-    }
-}
-
-fn scalar(t: &str) -> Value {
-    let (w, quoted) = word(t);
-    if quoted {
-        return json!(w);
-    }
+/// A bare word's value: on/off words and numbers read as such.
+pub fn word_value(w: &str) -> Value {
     match w {
         "true" | "on" | "yes" => return json!(true),
         "false" | "off" | "no" => return json!(false),
@@ -85,19 +82,60 @@ fn scalar(t: &str) -> Value {
         return json!(i);
     }
     if let Ok(f) = w.parse::<f64>() {
-        return json!(f);
+        if f.is_finite() {
+            return json!(f);
+        }
     }
     json!(w)
 }
 
-fn is_flag(t: &str) -> bool {
-    let (w, quoted) = word(t);
-    !quoted && w.len() > 1 && w.starts_with('-') && w[1..].chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+fn scalar(t: &Tok) -> Value {
+    match t {
+        Tok::Word(w) => word_value(w),
+        Tok::Val(v) => v.clone(),
+    }
 }
 
-fn is_bool_word(t: &str) -> bool {
-    let (w, quoted) = word(t);
-    !quoted && matches!(w, "0" | "1" | "true" | "false" | "on" | "off" | "yes" | "no")
+/// True for text spelled as a flag: a dash then a letter.
+pub fn flag_spelling(w: &str) -> bool {
+    w.len() > 1 && w.starts_with('-') && w[1..].chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+}
+
+fn flag_of(t: &Tok) -> Option<&str> {
+    match t {
+        Tok::Word(w) if flag_spelling(w) => Some(&w[1..]),
+        _ => None,
+    }
+}
+
+fn is_flag(t: &Tok) -> bool {
+    flag_of(t).is_some()
+}
+
+fn is_bool_word(t: &Tok) -> bool {
+    match t {
+        Tok::Word(w) => matches!(w.as_str(), "0" | "1" | "true" | "false" | "on" | "off" | "yes" | "no"),
+        Tok::Val(v) => v.as_i64().is_some_and(|i| i == 0 || i == 1),
+    }
+}
+
+fn bool_of(t: &Tok) -> Value {
+    match scalar(t) {
+        Value::Number(n) => json!(n.as_i64() != Some(0)),
+        v => v,
+    }
+}
+
+/// Flags that take a value in query mode when they come after -q: the value picks what is asked about, as in
+/// `skinPercent -q -t joint1 sk v` or `keyframe -q -at tx -vc pCube1`. All others name what is asked, so a word after
+/// them is the object (`xform -q -ws -t joint1`). A non-boolean flag before -q always takes its value.
+fn query_takes_value(cmd: &str, flag: &str) -> bool {
+    matches!(
+        (cmd, flag),
+        ("skinPercent", "transform" | "ignoreBelow")
+            | ("keyframe", "attribute" | "time" | "index")
+            | ("keyTangent", "attribute" | "time")
+    )
 }
 
 /// A Maya command spelled as one of ours: the command it runs, and its flags (long or short) as ours.
@@ -167,156 +205,196 @@ pub fn is_component(s: &str) -> bool {
     s.ends_with(']') && s.rfind('.').is_some_and(|d| s[d..].contains('['))
 }
 
-/// One statement to (command, call).
+/// One statement of plain command syntax to (command, call).
 pub fn parse(cmds: &Commands<Session>, stmt: &str) -> Result<(String, Value), String> {
     let toks = tokens(stmt);
-    let Some(name) = toks.first() else { return Err("empty".into()) };
-    let typed = word(name).0.to_string();
-    let al = alias(&typed);
-    let name = al.map(|a| a.target.to_string()).unwrap_or(typed.clone());
+    let Some(first) = toks.first() else { return Err("empty".into()) };
+    let typed = match first {
+        Tok::Word(w) => w.clone(),
+        Tok::Val(v) => v.as_str().unwrap_or_default().to_string(),
+    };
+    build(cmds, &typed, &toks[1..])
+}
+
+/// Reads the value of a flag at `toks[*i]` by its arity or type.
+fn flag_value(fd: &FlagDef, name: &str, toks: &[Tok], i: &mut usize) -> Result<Value, String> {
+    let f = &fd.name;
+    if fd.arity > 0 {
+        let mut v = Vec::new();
+        for _ in 0..fd.arity {
+            match toks.get(*i) {
+                Some(t) if !is_flag(t) => v.push(scalar(t)),
+                _ => return Err(format!("{name}: flag -{f} needs {} value(s)", fd.arity)),
+            }
+            *i += 1;
+        }
+        return Ok(Value::Array(v));
+    }
+    Ok(match fd.ty {
+        ArgType::Bool => {
+            // move -r 1 0 0: move, rotate and scale take their values positionally, so a 1 after a switch is a value.
+            if !matches!(name, "move" | "rotate" | "scale") && toks.get(*i).is_some_and(is_bool_word) {
+                *i += 1;
+                bool_of(&toks[*i - 1])
+            } else {
+                json!(true)
+            }
+        }
+        ArgType::Vec3 => {
+            let mut v = Vec::new();
+            for _ in 0..3 {
+                if *i < toks.len() {
+                    v.push(scalar(&toks[*i]));
+                    *i += 1;
+                }
+            }
+            Value::Array(v)
+        }
+        ArgType::List => {
+            // Not multi-use: a run of numbers, the values of an array variable, or one word. What follows is
+            // positional.
+            let mut v = Vec::new();
+            let numbers = toks.get(*i).is_some_and(|t| scalar(t).is_number());
+            while let Some(t) = toks.get(*i) {
+                if is_flag(t) || (numbers && !scalar(t).is_number()) || (!numbers && !v.is_empty() && matches!(t, Tok::Word(_))) {
+                    break;
+                }
+                v.push(scalar(t));
+                *i += 1;
+                if !numbers && matches!(t, Tok::Word(_)) {
+                    break;
+                }
+            }
+            if v.is_empty() {
+                return Err(format!("{name}: flag -{f} needs a value"));
+            }
+            Value::Array(v)
+        }
+        ArgType::Any if *i + 1 < toks.len() && scalar(&toks[*i]).is_number() && scalar(&toks[*i + 1]).is_number() && !is_flag(&toks[*i + 1]) => {
+            // Several numbers: a vector (-ax 1 0 0).
+            let mut v = Vec::new();
+            while *i < toks.len() && !is_flag(&toks[*i]) && scalar(&toks[*i]).is_number() {
+                v.push(scalar(&toks[*i]));
+                *i += 1;
+            }
+            Value::Array(v)
+        }
+        _ => {
+            if *i >= toks.len() {
+                return Err(format!("{name}: flag -{f} needs a value"));
+            }
+            *i += 1;
+            scalar(&toks[*i - 1])
+        }
+    })
+}
+
+/// A command (Maya's spelling or ours) and its evaluated arguments to (command, call).
+pub fn build(cmds: &Commands<Session>, typed: &str, toks: &[Tok]) -> Result<(String, Value), String> {
+    let al = alias(typed);
+    let name = al.map(|a| a.target.to_string()).unwrap_or(typed.to_string());
     let def = cmds.find(&name).ok_or_else(|| format!("Cannot find procedure \"{typed}\"."))?;
     let mut flags = Map::new();
     let mut args = Vec::new();
     let own_query = def.flags.iter().any(|d| d.name == "query");
-    let query = toks.iter().skip(1).any(|t| is_flag(t) && matches!(word(t).0, "-q" | "-query"));
-    let edit = toks.iter().skip(1).any(|t| is_flag(t) && matches!(word(t).0, "-e" | "-edit"));
+    let q_pos = toks.iter().position(|t| matches!(flag_of(t), Some("q" | "query")));
+    let query = q_pos.is_some();
+    let edit = toks.iter().any(|t| matches!(flag_of(t), Some("e" | "edit")));
     let mut asked = Vec::new();
-    let mut i = 1;
+    let mut i = 0;
     while i < toks.len() {
         let t = &toks[i];
-        if is_flag(t) && matches!(word(t).0, "-q" | "-query" | "-e" | "-edit") {
-            i += 1;
-            continue;
-        }
-        if is_flag(t) && query {
-            // Query mode: flags name what is asked, taking a value only when one follows that fits.
-            let f = &word(t).0[1..];
-            let fd = def.flags.iter().find(|d| d.name == f || d.short_name == f);
-            let name_of = fd.map(|d| d.name.clone()).unwrap_or(f.to_string());
-            i += 1;
-            let next = toks.get(i);
-            // Query switches (xform -q -ws -t) are flags of their own.
-            if fd.is_some_and(|d| d.ty == ArgType::Bool) {
-                asked.push(json!(name_of.clone()));
-                flags.insert(name_of, json!(true));
-                continue;
-            }
-            let takes = match (fd.map(|d| d.ty), next) {
-                (_, None) => false,
-                (_, Some(n)) if is_flag(n) => false,
-                // A trailing word is the object queried (xform -q -t joint1), unless the flag names attributes.
-                (Some(ArgType::String) | Some(ArgType::Any), Some(_)) => {
-                    own_query
-                        && !matches!(name_of.as_str(), "outTangentType" | "inTangentType")
-                        && (i + 1 < toks.len() || name_of == "attribute" || scalar(&toks[i]).is_number())
-                }
-                (Some(ArgType::Float) | Some(ArgType::Int), Some(n)) => scalar(n).is_number() && own_query && !matches!(name_of.as_str(), "timeChange" | "valueChange"),
-                _ => false,
-            };
-            if takes {
-                flags.insert(name_of, scalar(&toks[i]));
-                i += 1;
-            } else {
-                asked.push(json!(name_of.clone()));
-                if fd.is_some_and(|d| d.ty == ArgType::Bool) {
-                    flags.insert(name_of, json!(true));
-                }
-            }
-            continue;
-        }
-        if is_flag(t) {
-            let mut f = &word(t).0[1..];
-            if let Some(a) = al {
-                if let Some((_, ours)) = a.flags.iter().find(|(m, _)| *m == f) {
-                    f = ours;
-                }
-            }
-            let Some(fd) = def.flags.iter().find(|d| d.name == f || d.short_name == f) else {
-                // Maya flags with no counterpart that change nothing here: replace-selection, construction history
-                // on, relative moves (Aztek's "by"), world space.
-                if matches!((name.as_str(), f), ("select", "r") | ("select", "replace") | (_, "ws") | (_, "worldSpace") | (_, "os") | (_, "objectSpace")) {
-                    i += 1;
-                    continue;
-                }
-                if matches!(f, "r" | "relative") && matches!(name.as_str(), "move" | "rotate" | "scale") {
-                    flags.insert("_relative".into(), json!(true));
-                    i += 1;
-                    continue;
-                }
-                if matches!(f, "a" | "absolute") && matches!(name.as_str(), "move" | "rotate" | "scale") {
-                    i += 1;
-                    continue;
-                }
-                // Flags Aztek doesn't have yet: skip them and their value rather than refuse the whole line.
-                if f == "ch" || f == "constructionHistory" || f == "kft" || f == "keepFacesTogether" || f == "d" || f == "divisions" {
-                    i += 1;
-                    if i < toks.len() && !is_flag(&toks[i]) && !is_component(word(&toks[i]).0) {
-                        i += 1;
-                    }
-                    continue;
-                }
-                return Err(format!("{typed}: invalid flag -{f}"));
-            };
-            i += 1;
-            let v = match fd.ty {
-                ArgType::Bool => {
-                    if i < toks.len() && is_bool_word(&toks[i]) {
-                        i += 1;
-                        match scalar(&toks[i - 1]) {
-                            Value::Number(n) => json!(n.as_i64() != Some(0)),
-                            v => v,
-                        }
-                    } else {
-                        json!(true)
-                    }
-                }
-                ArgType::Vec3 => {
-                    let mut v = Vec::new();
-                    for _ in 0..3 {
-                        if i < toks.len() {
-                            v.push(scalar(&toks[i]));
-                            i += 1;
-                        }
-                    }
-                    Value::Array(v)
-                }
-                ArgType::List => {
-                    let mut v = Vec::new();
-                    while i < toks.len() && !is_flag(&toks[i]) {
-                        v.push(scalar(&toks[i]));
-                        i += 1;
-                    }
-                    Value::Array(v)
-                }
-                ArgType::Any if i + 1 < toks.len() && scalar(&toks[i]).is_number() && scalar(&toks[i + 1]).is_number() && !is_flag(&toks[i + 1]) => {
-                    // Several numbers: a vector (-ax 1 0 0).
-                    let mut v = Vec::new();
-                    while i < toks.len() && !is_flag(&toks[i]) && scalar(&toks[i]).is_number() {
-                        v.push(scalar(&toks[i]));
-                        i += 1;
-                    }
-                    Value::Array(v)
-                }
-                _ => {
-                    if i >= toks.len() {
-                        return Err(format!("{name}: flag -{f} needs a value"));
-                    }
-                    i += 1;
-                    scalar(&toks[i - 1])
-                }
-            };
-            flags.insert(fd.name.clone(), v);
-        } else {
+        let Some(typed_flag) = flag_of(t) else {
             args.push(scalar(t));
             i += 1;
+            continue;
+        };
+        if matches!(typed_flag, "q" | "query" | "e" | "edit") {
+            i += 1;
+            continue;
         }
+        let mut f = typed_flag;
+        if let Some(a) = al {
+            if let Some((_, ours)) = a.flags.iter().find(|(m, _)| *m == f) {
+                f = ours;
+            }
+        }
+        let fd = def.flags.iter().find(|d| d.name == f || d.short_name == f);
+        if query {
+            let long = fd.map(|d| d.name.clone()).unwrap_or(f.to_string());
+            let before_q = q_pos.is_some_and(|q| i < q);
+            i += 1;
+            // Switches (xform -q -ws -t): on unless given a value that says off.
+            if fd.is_some_and(|d| d.ty == ArgType::Bool) {
+                let on = if toks.get(i).is_some_and(is_bool_word) {
+                    i += 1;
+                    bool_of(&toks[i - 1]) == json!(true)
+                } else {
+                    true
+                };
+                if on {
+                    asked.push(json!(long.clone()));
+                }
+                flags.insert(long, json!(on));
+                continue;
+            }
+            let next_is_value = toks.get(i).is_some_and(|n| !is_flag(n));
+            if next_is_value && fd.is_some() && (before_q || query_takes_value(&name, &long)) {
+                flags.insert(long, scalar(&toks[i]));
+                i += 1;
+            } else {
+                asked.push(json!(long));
+            }
+            continue;
+        }
+        let Some(fd) = fd else {
+            // Maya flags with no counterpart that change nothing here: replace-selection, construction history
+            // on, relative moves (Aztek's "by"), world space.
+            if matches!((name.as_str(), f), ("select", "r") | ("select", "replace") | (_, "ws") | (_, "worldSpace") | (_, "os") | (_, "objectSpace")) {
+                i += 1;
+                continue;
+            }
+            if matches!(f, "r" | "relative") && matches!(name.as_str(), "move" | "rotate" | "scale") {
+                flags.insert("_relative".into(), json!(true));
+                i += 1;
+                continue;
+            }
+            if matches!(f, "a" | "absolute") && matches!(name.as_str(), "move" | "rotate" | "scale") {
+                i += 1;
+                continue;
+            }
+            // Flags Aztek doesn't have yet: skip them and their value rather than refuse the whole line.
+            let skips = f == "ch" || f == "constructionHistory" || f == "kft" || f == "keepFacesTogether" || f == "d" || f == "divisions" || (name == "setAttr" && matches!(f, "type" | "typ"));
+            if skips {
+                i += 1;
+                let comp = match toks.get(i) {
+                    Some(Tok::Word(w)) => is_component(w),
+                    Some(Tok::Val(Value::String(w))) => is_component(w),
+                    _ => false,
+                };
+                if i < toks.len() && !is_flag(&toks[i]) && !comp {
+                    i += 1;
+                }
+                continue;
+            }
+            return Err(format!("{typed}: invalid flag -{f}"));
+        };
+        i += 1;
+        let v = flag_value(fd, &name, toks, &mut i)?;
+        if fd.arity > 0 {
+            // A multi-use flag gathers its uses into one flat list.
+            if let (Some(Value::Array(have)), Value::Array(more)) = (flags.get_mut(&fd.name), &v) {
+                have.extend(more.iter().cloned());
+                continue;
+            }
+        }
+        flags.insert(fd.name.clone(), v);
     }
     // move/rotate/scale take the values first: "move -r 1 0 0 pCube1".
     if matches!(name.as_str(), "move" | "rotate" | "scale") && args.len() >= 3 && args[..3].iter().all(|a| a.is_number()) {
         let v: Vec<Value> = args.drain(..3).collect();
         let rel = flags.remove("_relative").is_some();
-        let key = if rel || (name == "move" && false) { "by" } else { "to" };
-        flags.insert(key.into(), Value::Array(v));
+        flags.insert(if rel { "by" } else { "to" }.into(), Value::Array(v));
     }
     flags.remove("_relative");
     if !args.is_empty() {
@@ -413,14 +491,16 @@ fn show(v: &Value) -> String {
     match v {
         Value::String(s) if s.contains(' ') || s.is_empty() => format!("\"{s}\""),
         Value::String(s) => s.clone(),
-        // Six decimals at most, trailing zeros dropped, as Maya prints.
-        Value::Number(n) if n.is_f64() => {
-            let f = n.as_f64().unwrap();
-            let t = format!("{f:.6}");
-            let t = t.trim_end_matches('0').trim_end_matches('.').to_string();
-            if t == "-0" { "0".into() } else { t }
-        }
+        Value::Number(n) if n.is_f64() => super::value::fmt_float(n.as_f64().unwrap()),
         v => v.to_string(),
+    }
+}
+
+fn plain(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.clone(),
+        Value::Bool(b) => (*b as i32).to_string(),
+        v => show(v),
     }
 }
 
@@ -428,7 +508,7 @@ fn show(v: &Value) -> String {
 pub fn result(v: &Value) -> Option<String> {
     match v {
         Value::Null => None,
-        Value::Array(a) => Some(format!("// Result: {} //", a.iter().map(show).collect::<Vec<_>>().join(" "))),
-        v => Some(format!("// Result: {} //", show(v))),
+        Value::Array(a) => Some(format!("// Result: {} //", a.iter().map(plain).collect::<Vec<_>>().join(" "))),
+        v => Some(format!("// Result: {} //", plain(v))),
     }
 }

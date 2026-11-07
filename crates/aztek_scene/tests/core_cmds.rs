@@ -710,8 +710,6 @@ fn undo_info_and_friends() {
     assert_eq!(run(&mut s, "currentUnit", json!({"q": true, "queried": ["linear"]})), "cm");
     assert_eq!(run(&mut s, "currentUnit", json!({"q": true, "queried": ["angle"]})), "deg");
     assert_eq!(run(&mut s, "currentUnit", json!({"q": true, "queried": ["angle"], "f": true})), "degree");
-    run(&mut s, "currentUnit", json!({"l": "meter"}));
-    assert_eq!(run(&mut s, "currentUnit", json!({"q": true, "queried": ["linear"]})), "m");
     assert!(run(&mut s, "workspace", json!({"q": true, "queried": ["rootDirectory"]})).as_str().unwrap().ends_with('/'));
     assert_eq!(run(&mut s, "getModifiers", json!({})), 0);
     run(&mut s, "refresh", json!({"f": true}));
@@ -765,7 +763,7 @@ fn display_and_order_commands() {
     run(&mut s, "selectMode", json!({"co": true}));
     assert_eq!(run(&mut s, "selectMode", json!({"q": true, "queried": ["component"]})), true);
     run(&mut s, "selectType", json!({"pe": true}));
-    assert_eq!(run(&mut s, "selectType", json!({"q": true, "queried": ["polymeshEdge"]})), true);
+    assert_eq!(run(&mut s, "selectType", json!({"q": true, "pe": true})), true);
     run(&mut s, "selectMode", json!({"o": true}));
     assert_eq!(run(&mut s, "selectMode", json!({"q": true, "queried": ["object"]})), true);
     run(&mut s, "snapMode", json!({"gr": true}));

@@ -57,16 +57,33 @@ pub struct Core {
     pub log_read: usize,
     /// Bumped whenever anything may have changed; panels refresh when it moves.
     pub version: u64,
-    pub current_file: Option<String>,
     /// The undo entry the last silent command made, which `retract_preview` may take back.
     preview: Vec<u64>,
+    /// MEL's globals, procedures and top-level variables.
+    pub mel_state: mel::MelState,
 }
 
 impl Core {
     pub fn new() -> Core {
-        let mut c = Core { s: Session::new(), log: Vec::new(), log_read: 0, version: 1, current_file: None, preview: Vec::new() };
+        let mut c = Core { s: Session::new(), log: Vec::new(), log_read: 0, version: 1, preview: Vec::new(), mel_state: Default::default() };
         register_ui_commands(&mut c.s);
+        c.ensure_defaults();
+        #[cfg(feature = "python")]
+        crate::python::register_commands(&mut c.s);
         c
+    }
+
+    /// A core around a session moved here while Python is called back from inside a command: no UI commands of its own.
+    #[cfg(feature = "python")]
+    pub(crate) fn nested(s: Session) -> Core {
+        Core { s, log: Vec::new(), log_read: 0, version: 1, preview: Vec::new(), mel_state: Default::default() }
+    }
+
+    /// A new scene has the default cameras and sets, as Maya's does. Cheap when they're there.
+    pub fn ensure_defaults(&mut self) {
+        if !self.s.graph.undo_stack().can_undo() {
+            aztek_scene::cameras::make_defaults(&mut self.s.graph);
+        }
     }
 
     pub fn push(&mut self, text: impl Into<String>, kind: LineKind) {
@@ -74,6 +91,10 @@ impl Core {
     }
 
     fn drain_captured(&mut self) {
+        #[cfg(feature = "python")]
+        for (t, k) in crate::python::take_deferred() {
+            self.push(t, k);
+        }
         let lines: Vec<(log::Level, String)> = CAPTURED.lock().map(|mut c| std::mem::take(&mut *c)).unwrap_or_default();
         for (lvl, t) in lines {
             let kind = if lvl == log::Level::Error { LineKind::Error } else { LineKind::Warning };
@@ -102,6 +123,7 @@ impl Core {
     pub fn exec_quiet(&mut self, name: &str, call: Value, src: CallSource) -> Result<Value, String> {
         let (name, call) = pivot_move(name, call);
         let r = execute(&mut self.s, &name, &call, src);
+        self.ensure_defaults();
         self.version += 1;
         self.drain_captured();
         match r {
@@ -139,50 +161,42 @@ impl Core {
         self.version += 1;
     }
 
-    /// MEL-style source: statements run in turn. Returns the last result.
+    /// Runs MEL source: echoes each statement and prints its result. An error goes to the history, ends the run and
+    /// gives null. Otherwise returns the value of the last statement.
     pub fn mel(&mut self, src: &str) -> Value {
-        let mut last = Value::Null;
-        for stmt in mel::statements(src) {
-            let stmt = switches_last(&stmt);
-            match mel::parse(&self.s.commands, &stmt) {
-                Ok((name, mut call)) => {
-                    self.push(format!("{stmt};"), LineKind::Echo);
-                    let qe = call.as_object_mut().and_then(|o| {
-                        o.remove("_query").map(|a| (true, a)).or_else(|| o.remove("_edit").map(|a| (false, a)))
-                    });
-                    if let Some((query, asked)) = qe {
-                        let o = call.as_object_mut().unwrap();
-                        let args: Vec<Value> = o.remove("args").and_then(|a| a.as_array().cloned()).unwrap_or_default();
-                        let mut flags = o.clone();
-                        for a in asked.as_array().into_iter().flatten() {
-                            if let Some(n) = a.as_str() {
-                                flags.insert(n.to_string(), Value::Null);
-                            }
-                        }
-                        match self.query_edit(&name, args, flags, query) {
-                            Ok(v) => {
-                                if let Some(t) = mel::result(&v) {
-                                    self.push(t, LineKind::Result);
-                                }
-                                last = v;
-                            }
-                            Err(e) => self.push(format!("// Error: {e} //"), LineKind::Error),
-                        }
-                        continue;
-                    }
-                    let (name, call) = self.components_first(name, call);
-                    if let Ok(v) = self.exec_quiet(&name, call, CallSource::Script) {
-                        last = v;
-                    }
-                }
-                Err(e) => {
-                    self.push(format!("{stmt};"), LineKind::Echo);
-                    self.push(format!("// Error: {e} //"), LineKind::Error);
+        mel::run(self, src).unwrap_or(Value::Null)
+    }
+
+    /// As `mel`, with the error back to the caller as well.
+    pub fn mel_checked(&mut self, src: &str) -> Result<Value, String> {
+        mel::run(self, src)
+    }
+
+    /// One command from MEL: no history lines; the interpreter reports the result or error as fits the statement.
+    pub(crate) fn run_mel_command(&mut self, typed: &str, toks: &[mel::Tok]) -> Result<Value, String> {
+        let (name, mut call) = mel::build(&self.s.commands, typed, toks)?;
+        let qe = call.as_object_mut().and_then(|o| o.remove("_query").map(|a| (true, a)).or_else(|| o.remove("_edit").map(|a| (false, a))));
+        if let Some((query, asked)) = qe {
+            let o = call.as_object_mut().unwrap();
+            let args: Vec<Value> = o.remove("args").and_then(|a| a.as_array().cloned()).unwrap_or_default();
+            let mut flags = o.clone();
+            for a in asked.as_array().into_iter().flatten() {
+                if let Some(n) = a.as_str() {
+                    flags.insert(n.to_string(), Value::Null);
                 }
             }
+            return self.query_edit(&name, args, flags, query);
         }
+        let (name, call) = self.components_first(name, call);
+        self.exec_plain(&name, call)
+    }
+
+    fn exec_plain(&mut self, name: &str, call: Value) -> Result<Value, String> {
+        let (name, call) = pivot_move(name, call);
+        let r = execute(&mut self.s, &name, &call, CallSource::Script);
         self.version += 1;
-        last
+        self.drain_captured();
+        r.map_err(|e| e.to_string())
     }
 
     /// Maya's component arguments (polyExtrudeFacet pCube1.f[2]): Aztek's component commands work on the selection,
@@ -214,8 +228,7 @@ impl Core {
                 o.retain(|k, _| matches!(k.as_str(), "by" | "args" | "pivot"));
             }
         }
-        let _ = self.exec_quiet("select", json!({ "args": comps }), CallSource::Script);
-        // The select's own result line isn't wanted.
+        let _ = self.exec_plain("select", json!({ "args": comps }));
         if let Some(o) = call.as_object_mut() {
             if rest.is_empty() {
                 o.remove("args");
@@ -231,6 +244,7 @@ impl Core {
         let before = self.s.graph.undo_stack().newest_id();
         let (name, call) = pivot_move(name, call);
         let r = execute(&mut self.s, &name, &call, CallSource::Script);
+        self.ensure_defaults();
         let after = self.s.graph.undo_stack().newest_id();
         if after != before {
             self.preview.push(after);
@@ -375,6 +389,7 @@ impl Core {
     }
 
     pub fn take_log(&mut self) -> Value {
+        self.drain_captured();
         let start = self.log_read.min(self.log.len());
         let lines: Vec<Value> = self.log[start..].iter().map(|l| json!({"text": l.text, "kind": l.kind as i32})).collect();
         self.log_read = self.log.len();
@@ -385,36 +400,26 @@ impl Core {
         Value::Array(lines)
     }
 
+    /// Saves in the format the path's extension names: `.ma` or Aztek's own.
     pub fn save(&mut self, path: &str) -> Result<(), String> {
-        self.s.graph.evaluate();
-        let mut doc = aztek_scene::scene_file::serialize(&self.s.graph, false);
-        let r = aztek_scene::anim::range();
-        doc["playbackOptions"] = json!({"minTime": r.min, "maxTime": r.max, "animationStartTime": r.anim_start, "animationEndTime": r.anim_end, "framesPerSecond": aztek_scene::anim::fps(), "currentTime": aztek_scene::anim::frame(&self.s.graph)});
-        let text = serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())?;
-        std::fs::write(path, text).map_err(|e| format!("{path}: {e}"))?;
-        self.current_file = Some(path.to_string());
+        aztek_scene::ma_file::save_scene(&mut self.s, path, aztek_scene::ma_file::Format::of_path(path))?;
+        self.drain_captured();
+        self.version += 1;
         self.push(format!("// Saved {path} //"), LineKind::Info);
         Ok(())
     }
 
     pub fn open(&mut self, path: &str) -> Result<(), String> {
-        let text = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
-        let doc: Value = serde_json::from_str(&text).map_err(|e| format!("{path}: {e}"))?;
-        let _ = execute(&mut self.s, "newScene", &json!({}), CallSource::Script);
-        let warnings = aztek_scene::scene_file::deserialize(&mut self.s.graph, &doc).map_err(|e| format!("{path}: {e}"))?;
-        for w in warnings {
-            self.push(format!("// Warning: {w} //"), LineKind::Warning);
-        }
-        if let Some(p) = doc.get("playbackOptions").and_then(Value::as_object) {
-            let mut call = p.clone();
-            let now = call.remove("currentTime");
-            let _ = execute(&mut self.s, "playbackOptions", &Value::Object(call), CallSource::Script);
-            if let Some(t) = now {
-                let _ = execute(&mut self.s, "currentTime", &json!({"args": [t]}), CallSource::Script);
+        let warnings = aztek_scene::ma_file::open_scene(&mut self.s, path)?;
+        // Files older than the default cameras, and .ma files, which leave them out, get them now.
+        aztek_scene::cameras::make_defaults(&mut self.s.graph);
+        // Warnings from a .ma file arrive through the log.
+        self.drain_captured();
+        if aztek_scene::ma_file::Format::of_path(path) != aztek_scene::ma_file::Format::MayaAscii {
+            for w in warnings {
+                self.push(format!("// Warning: {w} //"), LineKind::Warning);
             }
         }
-        let _ = execute(&mut self.s, "flushUndo", &json!({}), CallSource::Script);
-        self.current_file = Some(path.to_string());
         self.version += 1;
         self.push(format!("// Opened {path} //"), LineKind::Info);
         Ok(())
@@ -422,8 +427,19 @@ impl Core {
 
     pub fn new_scene(&mut self) {
         let _ = self.exec("newScene", json!({}));
-        self.current_file = None;
+        self.s.scene_path = None;
     }
+}
+
+/// MEL's python("..."): runs Python and gives back the value of a lone expression.
+#[cfg(feature = "python")]
+pub(crate) fn python_from_mel(core: &mut Core, src: &str) -> Result<Value, String> {
+    crate::python::eval_from_mel(core, src)
+}
+
+#[cfg(not(feature = "python"))]
+pub(crate) fn python_from_mel(_core: &mut Core, _src: &str) -> Result<Value, String> {
+    Err("python: this build has no Python.".into())
 }
 
 /// Windows and tools scripts open by Maya's runtime command names; the UI takes them from `take_ui_requests`.
@@ -431,6 +447,7 @@ static UI_REQUESTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 pub const UI_COMMANDS: &[(&str, &str)] = &[
     ("GraphEditor", "Open the Graph Editor."),
+    ("NodeEditorWindow", "Open the Node Editor."),
     ("DopeSheetEditor", "Open the Dope Sheet."),
     ("SetDrivenKeyOptions", "Open the Set Driven Key window."),
     ("ScriptEditor", "Open the Script Editor."),
@@ -444,6 +461,8 @@ pub const UI_COMMANDS: &[(&str, &str)] = &[
     ("FrameAll", "Frame everything in the active view."),
     ("PlaybackToggle", "Start or stop playback."),
     ("JointTool", "The joint tool: click to place joints."),
+    ("InsertJointTool", "The insert joint tool: drag from a joint to add one on the bone."),
+    ("SculptMeshActivateBrushSculpt", "The sculpt brush."),
     ("MultiCutTool", "The Multi-Cut tool."),
     ("SplitEdgeRingTool", "The Insert Edge Loop tool."),
     ("OffsetEdgeLoopTool", "The Offset Edge Loop tool."),
@@ -481,25 +500,6 @@ fn register_ui_commands(s: &mut Session) {
 
 pub fn take_ui_requests() -> Value {
     json!(std::mem::take(&mut *UI_REQUESTS.lock().unwrap()))
-}
-
-/// move, rotate and scale take their values positionally, and a switch before them must not read a value as its own
-/// (`move -r -os 1 0 0 pCube1`): the switches go after the values.
-fn switches_last(stmt: &str) -> String {
-    const SWITCHES: &[&str] = &[
-        "-r", "-relative", "-a", "-absolute", "-ws", "-worldSpace", "-os", "-objectSpace", "-ls", "-localSpace", "-pa", "-parent", "-wd", "-worldSpaceDistance", "-pcp", "-preserveChildPosition",
-        "-pgp", "-preserveGeometryPosition", "-rpr", "-rotatePivotRelative", "-spr", "-scalePivotRelative", "-xy", "-xz", "-yz", "-xyz", "-moveXY", "-moveXZ", "-moveYZ", "-moveXYZ", "-rotateXY",
-        "-rotateXZ", "-rotateYZ", "-rotateXYZ", "-scaleXY", "-scaleXZ", "-scaleYZ", "-scaleXYZ", "-eu", "-euler", "-fo", "-forceOrderXYZ", "-ocp", "-objectCenterPivot", "-dph", "-deletePriorHistory",
-    ];
-    let Some(first) = stmt.split_whitespace().next() else { return stmt.to_string() };
-    if !matches!(first, "move" | "rotate" | "scale") || stmt.contains('"') {
-        return stmt.to_string();
-    }
-    let (switches, rest): (Vec<&str>, Vec<&str>) = stmt.split_whitespace().skip(1).partition(|t| SWITCHES.contains(t));
-    let mut out = vec![first];
-    out.extend(rest);
-    out.extend(switches);
-    out.join(" ")
 }
 
 /// Maya moves pivots with move on obj.scalePivot / obj.rotatePivot: that is movePivot here.

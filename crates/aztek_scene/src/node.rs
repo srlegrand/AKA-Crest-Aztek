@@ -348,6 +348,13 @@ impl NodeData {
     pub fn set_output(&mut self, attr: usize, v: impl Into<PlugValue>) {
         self.values[attr] = v.into();
     }
+    /// Writes an array output's elements, by ascending index.
+    pub fn set_output_elements(&mut self, attr: usize, els: Vec<(i32, PlugValue)>) {
+        if self.elements.len() <= attr {
+            self.elements.resize(attr + 1, Vec::new());
+        }
+        self.elements[attr] = els;
+    }
 }
 
 /// What a node type does. `compute` runs on a worker thread and may only read this node's values (inputs are already
@@ -361,6 +368,12 @@ pub trait NodeBehavior: Send + Sync + 'static {
     }
     /// Republishes what `playback_extra` returned, in place of a `compute`. Called on a worker thread.
     fn restore_playback_extra(&mut self, _data: Option<&Arc<dyn Any + Send + Sync>>) {}
+
+    /// Told the node's id once it is created.
+    fn set_node_id(&mut self, _id: NodeId) {}
+
+    /// Told the node's name just before `compute`.
+    fn set_node_name(&mut self, _name: &str) {}
 
     /// Trait bits, so code can tell a node's kind without downcasting.
     fn traits(&self) -> u32 {
