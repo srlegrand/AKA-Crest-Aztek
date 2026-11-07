@@ -33,11 +33,40 @@ _before_call = []
 _plain_arg_commands = set()
 
 
+# Callables given to commands (button commands, scriptJobs) stay here; the core holds their numbers.
+_callbacks = {}
+_callback_ids = {}
+
+
+def _keep_callable(fn):
+    # The same function given twice is one entry; partials and lambdas each get their own.
+    key = id(fn)
+    cid = _callback_ids.get(key)
+    if cid is None or _callbacks.get(cid) is not fn:
+        cid = len(_callbacks) + 1
+        _callbacks[cid] = fn
+        _callback_ids[key] = cid
+    return cid
+
+
 def _plain(v):
     if isinstance(v, (list, tuple)):
         return [_plain(x) for x in v]
     if isinstance(v, dict):
         return {k: _plain(x) for k, x in v.items()}
+    if callable(v):
+        return {"__pycb__": _keep_callable(v)}
+    return v
+
+
+def _unplain(v):
+    if isinstance(v, list):
+        return [_unplain(x) for x in v]
+    if isinstance(v, dict):
+        if "__pycb__" in v:
+            return _callbacks.get(v["__pycb__"])
+        if "__pysrc__" in v:
+            return v["__pysrc__"]
     return v
 
 
@@ -62,6 +91,8 @@ def _command(name):
         result = json.loads(out)
         if isinstance(result, dict) and "__error__" in result:
             raise RuntimeError(result["__error__"])
+        if '"__py' in out:
+            result = _unplain(result)
         # Maya returns compound attributes as a list of one tuple; a multi attribute of as many elements stays a list.
         if name == "getAttr" and isinstance(result, list) and len(result) in (2, 3, 4) and all(isinstance(x, (int, float)) for x in result) and not (kwargs or {}).get("mi", (kwargs or {}).get("multiIndices")):
             size = json.loads(_aztek.call("getAttr", json.dumps(_plain(flat)), json.dumps({"size": True})))
@@ -111,6 +142,65 @@ sys.modules["aztek"] = aztek
 sys.modules["aztek.cmds"] = cmds
 sys.modules["aztek.mel"] = mel
 
+
+def _message(args):
+    return " ".join(str(a) for a in args)
+
+
+def _warning(*args, **kwargs):
+    _aztek.write("# Warning: %s #" % _message(args), 4)
+
+
+def _error(*args, **kwargs):
+    raise RuntimeError(_message(args))
+
+
+def _print(*args, **kwargs):
+    sys.stdout.write(_message(args))
+
+
+def _what_is(name):
+    return _mel_eval('whatIs "%s"' % name)
+
+
+def _eval_deferred(*args, **kwargs):
+    # MEL's evalDeferred is the interpreter's; from Python it waits for the next idle step.
+    if not args and not kwargs.get("ls", kwargs.get("list")):
+        raise RuntimeError("evalDeferred: give a script.")
+    src = args[0] if len(args) == 1 else " ".join(str(a) for a in args)
+    return _command("deferScript")(*([src] if args else []), **kwargs)
+
+
+cmds.warning = _warning
+cmds.error = _error
+setattr(cmds, "print", _print)
+cmds.whatIs = _what_is
+cmds.evalDeferred = _eval_deferred
+
+
+def _execute_deferred(fn, *args, **kwargs):
+    import functools
+
+    if args or kwargs:
+        fn = functools.partial(fn, *args, **kwargs)
+    _eval_deferred(fn)
+
+
+def _in_main_thread(fn, *args, **kwargs):
+    return fn(*args, **kwargs)
+
+
+def _process_idle():
+    _aztek.call("flushIdleQueue", "[]", "{}")
+
+
+utils = types.ModuleType("aztek.utils")
+utils.executeDeferred = _execute_deferred
+utils.executeInMainThreadWithResult = _in_main_thread
+utils.processIdleEvents = _process_idle
+aztek.utils = utils
+sys.modules["aztek.utils"] = utils
+
 # Scripts written for Maya import maya.cmds and maya.mel; both are Aztek's.
 maya = types.ModuleType("maya")
 maya.__path__ = []
@@ -119,6 +209,8 @@ maya.mel = mel
 sys.modules["maya"] = maya
 sys.modules["maya.cmds"] = cmds
 sys.modules["maya.mel"] = mel
+maya.utils = utils
+sys.modules["maya.utils"] = utils
 
 import __main__
 
@@ -211,5 +303,49 @@ def _eval_from_mel(src):
         sys.stderr.flush()
 
 
+def _report_exception(e):
+    import traceback
+
+    lines = traceback.format_exception(type(e), e, e.__traceback__)
+    for l in "".join(lines[1:-1]).rstrip().splitlines():
+        _aztek.write("# " + l, 2)
+    _aztek.write("# Error: %s: %s #" % (type(e).__name__, e), 2)
+
+
+def _finish_callback():
+    if _before_call:
+        try:
+            _before_call[0]()
+        except Exception as e:
+            _aztek.write("# Error: %s #" % (e,), 2)
+    sys.stdout.flush()
+    sys.stderr.flush()
+
+
+def _fire(cid, args):
+    """A callable kept for a control or job, with what Maya passes it."""
+    fn = _callbacks.get(cid)
+    if fn is None:
+        return
+    try:
+        fn(*json.loads(args))
+    except Exception as e:
+        _report_exception(e)
+    finally:
+        _finish_callback()
+
+
+def _fire_source(src):
+    """Python source given as a callback, run in __main__."""
+    try:
+        exec(compile(src, "<callback>", "exec"), __main__.__dict__)
+    except Exception as e:
+        _report_exception(e)
+    finally:
+        _finish_callback()
+
+
+__main__.__dict__["_aztek_fire"] = _fire
+__main__.__dict__["_aztek_fire_source"] = _fire_source
 __main__.__dict__["_aztek_run"] = _run
 __main__.__dict__["_aztek_eval"] = _eval_from_mel

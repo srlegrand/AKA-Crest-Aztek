@@ -32,6 +32,7 @@ pub mod constraint;
 pub mod components;
 pub mod error;
 pub mod expression;
+pub mod script_node;
 pub mod extrude_modifier;
 pub mod graph;
 pub mod hik;

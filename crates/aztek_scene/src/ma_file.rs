@@ -964,7 +964,7 @@ const XFORM_CHANNELS: &[&str] = &[
 
 /// Nodes written and read attribute by attribute, with their connections: utility nodes and expressions.
 fn is_plain_node(ty: &str) -> bool {
-    ty == "expression" || (ty != "unitConversion" && crate::utility_nodes::classification(ty).is_some())
+    ty == "expression" || ty == crate::script_node::TYPE || (ty != "unitConversion" && crate::utility_nodes::classification(ty).is_some())
 }
 const LINEAR_CHANNELS: &[&str] = &["translate", "rotatePivot", "scalePivot", "rotatePivotTranslate", "scalePivotTranslate"];
 const ANGLE_CHANNELS: &[&str] = &["rotate", "rotateAxis", "jointOrient"];
@@ -2320,7 +2320,8 @@ fn build(s: &mut Session, doc: &Doc, import: bool) -> Vec<String> {
         b.create_dag(i);
     }
     for i in 0..count {
-        if is_plain_node(&doc.nodes[i].ty) {
+        // Maya's own configuration scripts stay out: their content is read above and their MEL is for its interface.
+        if is_plain_node(&doc.nodes[i].ty) && !matches!(doc.nodes[i].name.as_str(), "sceneConfigurationScriptNode" | "uiConfigurationScriptNode") {
             b.create_plain(i);
         }
     }

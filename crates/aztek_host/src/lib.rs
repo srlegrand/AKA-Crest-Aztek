@@ -3,15 +3,19 @@
 
 mod camera;
 mod core;
+pub mod ctx_cmds;
 mod font;
 mod gpu;
 pub mod mel;
+pub mod panel_cmds;
 #[cfg(feature = "python")]
 mod python;
 #[cfg(feature = "python")]
 mod python_api;
 mod query;
 mod render;
+pub mod script_jobs;
+pub mod scriptui;
 pub mod tools;
 pub mod ui_cmds;
 pub mod view;
@@ -46,17 +50,42 @@ pub(crate) struct Host {
 
 thread_local! {
     static HOST: RefCell<Option<Host>> = const { RefCell::new(None) };
+    /// The host, for calls that arrive while a command is suspended in a shell hook.
+    static LIVE: std::cell::Cell<*mut Host> = const { std::cell::Cell::new(std::ptr::null_mut()) };
 }
 
+/// The host. A dialog a command opens runs the shell's event loop on top of that command, whose frames hold the host: the
+/// shell's calls from that loop take it from `LIVE`. Those frames are suspended in the hook call and touch nothing until
+/// it returns. Any other second borrow is a bug, and panics.
 pub(crate) fn with<R>(f: impl FnOnce(&mut Host) -> R) -> R {
-    HOST.with(|h| {
-        let mut h = h.borrow_mut();
-        if h.is_none() {
-            crate::core::install_logger();
-            *h = Some(Host { core: Core::new(), views: HashMap::new(), next_view: 1, shared: None });
+    HOST.with(|h| match h.try_borrow_mut() {
+        Ok(mut b) => {
+            if b.is_none() {
+                crate::core::install_logger();
+                *b = Some(Host { core: Core::new(), views: HashMap::new(), next_view: 1, shared: None });
+            }
+            let host = b.as_mut().unwrap();
+            LIVE.with(|l| l.set(host as *mut Host));
+            f(host)
         }
-        f(h.as_mut().unwrap())
+        Err(_) => {
+            assert!(scriptui::in_hook(), "the host was entered twice");
+            let host = unsafe { &mut *LIVE.with(std::cell::Cell::get) };
+            lend_session(host, f)
+        }
     })
+}
+
+#[cfg(feature = "python")]
+fn lend_session<R>(host: &mut Host, f: impl FnOnce(&mut Host) -> R) -> R {
+    let hp: *mut Host = host;
+    // The core is reached again through `hp` inside, so the closure gets the whole host with the session in place.
+    python::with_lent_session(&mut host.core, |_| f(unsafe { &mut *hp }))
+}
+
+#[cfg(not(feature = "python"))]
+fn lend_session<R>(host: &mut Host, f: impl FnOnce(&mut Host) -> R) -> R {
+    f(host)
 }
 
 fn cstr(p: *const c_char) -> String {
@@ -189,6 +218,14 @@ pub extern "C" fn aztek_query(what: *const c_char, arg: *const c_char) -> *mut c
                 Value::Null
             }
             "runtimeCommands" => ui_cmds::runtime_commands(),
+            "panelSync" => {
+                panel_cmds::shell_sync(&serde_json::from_str(&arg).unwrap_or(json!({})));
+                Value::Null
+            }
+            "uiToolChanged" => {
+                ctx_cmds::shell_tool_changed(&arg);
+                Value::Null
+            }
             "melEcho" => {
                 let p: Value = serde_json::from_str(&arg).unwrap_or(json!({}));
                 json!(mel::echo(p["name"].as_str().unwrap_or(""), &p["call"]))
@@ -208,6 +245,53 @@ pub extern "C" fn aztek_query(what: *const c_char, arg: *const c_char) -> *mut c
             _ => Value::Null,
         })
     })
+}
+
+/// Script UI: the operations waiting for the shell, as a JSON array, or null when there are none.
+#[no_mangle]
+pub extern "C" fn aztek_ui_take_ops() -> *mut c_char {
+    let ops = scriptui::take_ops();
+    if ops.is_empty() {
+        return std::ptr::null_mut();
+    }
+    out_json(Value::Array(ops))
+}
+
+/// Script UI: what the user did. See `scriptui::shell_event`.
+#[no_mangle]
+pub extern "C" fn aztek_ui_event(ev: *const c_char) {
+    let ev: Value = serde_json::from_str(&cstr(ev)).unwrap_or(Value::Null);
+    with(|h| h.core.ui_event(&ev));
+}
+
+/// Script UI: how commands reach the shell for what must answer at once (dialogs, playblast).
+#[no_mangle]
+pub extern "C" fn aztek_ui_set_hook(hook: Option<scriptui::UiHook>) {
+    scriptui::set_hook(hook);
+}
+
+/// The hook's answer, as JSON. No answer means the shell didn't handle it.
+#[no_mangle]
+pub extern "C" fn aztek_ui_answer(json: *const c_char) {
+    scriptui::set_hook_answer(cstr(json));
+}
+
+/// The Cancel button of a progress window. Needs no host: a command is running under it.
+#[no_mangle]
+pub extern "C" fn aztek_ui_progress_cancel() {
+    scriptui::progress_cancelled();
+}
+
+/// Whether a command is suspended in the hook, with the shell's event loop on top of it.
+#[no_mangle]
+pub extern "C" fn aztek_ui_in_hook() -> i32 {
+    scriptui::in_hook() as i32
+}
+
+/// One idle step: script jobs and deferred scripts.
+#[no_mangle]
+pub extern "C" fn aztek_idle() {
+    with(|h| h.core.idle());
 }
 
 /// File operations: "new", "open" path, "save" path. Returns an error message or empty.
