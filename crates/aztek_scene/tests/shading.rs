@@ -426,3 +426,52 @@ fn native_scene_files_keep_shading() {
     assert_eq!(run(&mut b, "listConnections", json!({"args": ["lambert2SG.surfaceShader"]})), json!(["lambert2"]));
     assert_eq!(run(&mut b, "listConnections", json!({"args": ["lambert2SG.dagSetMembers"]})), json!(["pCube1"]));
 }
+
+#[test]
+fn an_extrusions_new_faces_go_with_the_face_they_grew_from() {
+    let mut s = scene();
+    let c = cube(&mut s);
+    run(&mut s, "shadingNode", json!({"args": ["lambert"], "asShader": true}));
+    run(&mut s, "select", json!({"args": [format!("{c}.f[1]")]}));
+    run(&mut s, "hyperShade", json!({"assign": "lambert2"}));
+    run(&mut s, "polyExtrudeFacet", json!({"localTranslateZ": 0.5}));
+    let id = s.graph.find("pCubeShape1").unwrap().unwrap();
+    let mesh = aztek_scene::components::mesh_of(&mut s.graph, id).unwrap();
+    let groups = shading::membership(&s.graph).remove(&id).unwrap();
+    let green = groups.iter().position(|g| g.1.as_ref().is_some_and(|f| f == &vec![1])).unwrap();
+    let out = shading::face_groups(&mesh, &groups);
+    assert_eq!(out.iter().filter(|&&k| k == green).count(), 5, "{out:?}");
+}
+
+#[test]
+fn faces_follow_a_deletion_with_history() {
+    let mut s = scene();
+    let c = cube(&mut s);
+    run(&mut s, "shadingNode", json!({"args": ["lambert"], "asShader": true}));
+    run(&mut s, "select", json!({"args": [format!("{c}.f[5]")]}));
+    run(&mut s, "hyperShade", json!({"assign": "lambert2"}));
+    run(&mut s, "polyDelFacet", json!({"args": [format!("{c}.f[0]")]}));
+    let held = run(&mut s, "sets", json!({"args": ["lambert2SG"], "q": true}));
+    assert_eq!(held, json!(["pCube1.f[4]"]));
+}
+
+#[test]
+fn exporting_an_object_takes_its_material_and_leaves_others() {
+    let mut s = scene();
+    let c = cube(&mut s);
+    cube(&mut s);
+    run(&mut s, "shadingNode", json!({"args": ["phong"], "asShader": true, "name": "kept"}));
+    run(&mut s, "shadingNode", json!({"args": ["phong"], "asShader": true, "name": "left"}));
+    run(&mut s, "shadingNode", json!({"args": ["file"], "asTexture": true, "name": "keptFile"}));
+    run(&mut s, "connectAttr", json!({"args": ["keptFile.outColor", "kept.color"]}));
+    run(&mut s, "select", json!({"args": [c.clone()]}));
+    run(&mut s, "hyperShade", json!({"assign": "kept"}));
+    run(&mut s, "select", json!({"args": ["pCube2"]}));
+    run(&mut s, "hyperShade", json!({"assign": "left"}));
+    let id = s.graph.find(&c).unwrap().unwrap();
+    let (text, _) = aztek_scene::ma_file::write_text(&mut s, "x.ma", Some(&[id]));
+    assert!(text.contains("createNode phong -n \"kept\";"), "{text}");
+    assert!(text.contains("createNode file -n \"keptFile\";"), "{text}");
+    assert!(text.contains("createNode shadingEngine -n \"keptSG\";"), "{text}");
+    assert!(!text.contains("\"left\""), "{text}");
+}

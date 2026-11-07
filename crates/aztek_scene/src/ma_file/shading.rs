@@ -110,7 +110,9 @@ impl Build<'_> {
             }
             let (Some(sg), Some(shape)) = (self.id(c.dst), self.id(c.src)) else { continue };
             let g = &mut self.s.graph;
-            if !shading::is_shading_group(g, sg) || !g.node(shape).is_some_and(|n| n.ty().is_a("mesh") || n.ty().is_a("nurbsSurface")) {
+            // An intermediate shape's place in a group is never drawn, and isn't written back.
+            let drawn = g.node(shape).is_some_and(|n| (n.ty().is_a("mesh") || n.ty().is_a("nurbsSurface")) && !n.bool(DagNode::INTERMEDIATE_OBJECT));
+            if !shading::is_shading_group(g, sg) || !drawn {
                 continue;
             }
             let member = if is_group_plug(&plain_attr(&c.src_attr)) {

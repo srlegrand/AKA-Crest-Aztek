@@ -3,7 +3,7 @@
 Generated from the command registry by `cargo run -p aztek_host --example gen_commands`; do not edit by hand.
 Commands take Maya's flags, long or short, in MEL and in Python (`aztek.cmds` or `maya.cmds`).
 
-801 commands.
+907 commands.
 
 ## AppendToPolygonTool
 
@@ -344,6 +344,93 @@ The rotation from -v1 to -v2: axis and angle in degrees, or -er Euler angles.
 | `euler` | `er` | Euler angles instead. |
 | `constructionHistory` | `ch` | Accepted for Maya scripts. |
 
+## animCurveEditor
+
+Script UI: animCurveEditor, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `areCurvesSelected` | `acs` |  |
+| `autoFit` | `af` |  |
+| `autoFitTime` | `aft` |  |
+| `classicMode` | `cm` |  |
+| `clipTime` | `ct` |  |
+| `constrainDrag` | `cd` |  |
+| `curvesShown` | `cs` |  |
+| `denormalizeCurvesCommand` | `dcc` |  |
+| `displayActiveKeyTangents` | `dat` |  |
+| `displayActiveKeys` | `dak` |  |
+| `displayInfinities` | `di` |  |
+| `displayKeys` | `dk` |  |
+| `displayNormalized` | `dn` |  |
+| `displayTangents` | `dtn` |  |
+| `displayValues` | `dv` |  |
+| `keyingTime` | `kt` |  |
+| `lookAt` | `la` |  |
+| `menu` | `m` |  |
+| `normalizeCurvesCommand` | `ncc` |  |
+| `outliner` | `o` |  |
+| `preSelectionHighlight` | `psh` |  |
+| `renormalizeCurves` | `rnc` |  |
+| `resultSamples` | `rs` |  |
+| `resultScreenSamples` | `rss` |  |
+| `resultUpdate` | `ru` |  |
+| `showActiveCurveNames` | `acn` |  |
+| `showBufferCurves` | `sb` |  |
+| `showCurveNames` | `scn` |  |
+| `showResults` | `sr` |  |
+| `showUpstreamCurves` | `suc` |  |
+| `simpleKeyView` | `skv` |  |
+| `smoothness` | `s` |  |
+| `snapTime` | `st` |  |
+| `snapValue` | `sv` |  |
+| `stackedCurves` | `sc` |  |
+| `stackedCurvesMax` | `scx` |  |
+| `stackedCurvesMin` | `scm` |  |
+| `stackedCurvesSpace` | `scs` |  |
+| `valueLinesToggle` | `vlt` |  |
+| `control` | `ctl` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `filter` | `f` |  |
+| `forceMainConnection` | `fmc` |  |
+| `highlightConnection` | `hlc` |  |
+| `lockMainConnection` | `lck` |  |
+| `mainListConnection` | `mlc` |  |
+| `panel` | `pnl` |  |
+| `selectionConnection` | `slc` |  |
+| `stateString` | `sts` |  |
+| `unParent` | `up` |  |
+| `unlockMainConnection` | `ulk` |  |
+| `updateMainConnection` | `upd` |  |
+| `useTemplate` | `ut` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
 ## animDisplay
 
 How animation shows, kept for scripts: -upd, -tc, -tco, -rae; -q reads.
@@ -473,6 +560,50 @@ Arguments: the tool's name
 | `edit` | `e` | Edit mode. |
 | `query` | `q` | Query mode. |
 
+## artAttrPaintVertexCtx
+
+A artAttrPaintVertexCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `colorRGBValue` | `cl3` |  |
+| `colorAlphaValue` | `cl4` |  |
+| `paintRGB` | `pc3` |  |
+| `paintAlpha` | `pa` |  |
+| `paintoperationtype` | `pot` |  |
+| `selectedattroper` | `sao` |  |
+| `radius` | `r` |  |
+| `lowerradius` | `lr` |  |
+| `opacity` | `op` |  |
+| `value` | `val` |  |
+| `stampProfile` | `stP` |  |
+| `accopacity` | `aco` |  |
+| `minvalue` | `mnv` |  |
+| `maxvalue` | `mxv` |  |
+| `clamp` | `cl` |  |
+| `clamplower` | `cll` |  |
+| `clampupper` | `clu` |  |
+| `colorfeedback` | `cf` |  |
+| `mappressure` | `mp` |  |
+| `reflection` | `rfl` |  |
+| `reflectionaxis` | `ra` |  |
+| `outline` | `o` |  |
+| `tablet` | `tab` |  |
+| `flood` | `fl` |  |
+| `floodselect` | `fs` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## artAttrSkinPaintCtx
 
 The paint skin weights tool's settings. Edit and query: -val value, -op opacity, -r radius, -sao the operation (absolute, additive, scale, smooth), -stP the stamp (gaussian, poly, solid, square), -inf the influence. -clear floods the mesh with the value.
@@ -491,6 +622,53 @@ Arguments: the tool's name
 | `clear` | `clr` | Flood: paint the value over the selection's points. |
 | `edit` | `e` | Edit mode. |
 | `query` | `q` | Query mode. |
+
+## artPuttyCtx
+
+A artPuttyCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `mouldtypehead` | `mth` |  |
+| `mouldtypemouse` | `mtm` |  |
+| `mouldtypesmooth` | `mts` |  |
+| `dispdecr` | `dde` |  |
+| `dispincr` | `din` |  |
+| `invertrefvector` | `irv` |  |
+| `maxdisp` | `md` |  |
+| `refvector` | `rv` |  |
+| `stampDepth` | `sd` |  |
+| `radius` | `r` |  |
+| `lowerradius` | `lr` |  |
+| `opacity` | `op` |  |
+| `value` | `val` |  |
+| `stampProfile` | `stP` |  |
+| `accopacity` | `aco` |  |
+| `minvalue` | `mnv` |  |
+| `maxvalue` | `mxv` |  |
+| `clamp` | `cl` |  |
+| `clamplower` | `cll` |  |
+| `clampupper` | `clu` |  |
+| `colorfeedback` | `cf` |  |
+| `mappressure` | `mp` |  |
+| `reflection` | `rfl` |  |
+| `reflectionaxis` | `ra` |  |
+| `outline` | `o` |  |
+| `tablet` | `tab` |  |
+| `flood` | `fl` |  |
+| `floodselect` | `fs` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
 
 ## artSelectCtx
 
@@ -523,11 +701,100 @@ Arguments: [name]
 | `history` | `ch` |  |
 | `dragSlider` | `ds` |  |
 
+## artSetPaintCtx
+
+A artSetPaintCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `settomodify` | `stm` |  |
+| `setcolorfeedback` | `scf` |  |
+| `setdisplaycvs` | `dcv` |  |
+| `setopertype` | `sot` |  |
+| `radius` | `r` |  |
+| `lowerradius` | `lr` |  |
+| `opacity` | `op` |  |
+| `value` | `val` |  |
+| `stampProfile` | `stP` |  |
+| `accopacity` | `aco` |  |
+| `minvalue` | `mnv` |  |
+| `maxvalue` | `mxv` |  |
+| `clamp` | `cl` |  |
+| `clamplower` | `cll` |  |
+| `clampupper` | `clu` |  |
+| `colorfeedback` | `cf` |  |
+| `mappressure` | `mp` |  |
+| `reflection` | `rfl` |  |
+| `reflectionaxis` | `ra` |  |
+| `outline` | `o` |  |
+| `tablet` | `tab` |  |
+| `flood` | `fl` |  |
+| `floodselect` | `fs` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## artSetToolAndSelectAttr
 
 Picks the paint attribute tool and what it paints: artSetToolAndSelectAttr artAttrCtx cluster.cluster1.weights.
 
 Arguments: the tool, then nodeType.node.attribute
+
+## artUserPaintCtx
+
+A artUserPaintCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `toolSetupCmd` | `tsc` |  |
+| `toolCleanupCmd` | `tcc` |  |
+| `initializeCmd` | `ic` |  |
+| `finalizeCmd` | `fc` |  |
+| `setValueCommand` | `svc` |  |
+| `getValueCommand` | `gvc` |  |
+| `setArrayValueCommand` | `sac` |  |
+| `getArrayAttrCommand` | `gac` |  |
+| `getSurfaceCommand` | `gsc` |  |
+| `radius` | `r` |  |
+| `lowerradius` | `lr` |  |
+| `opacity` | `op` |  |
+| `value` | `val` |  |
+| `stampProfile` | `stP` |  |
+| `accopacity` | `aco` |  |
+| `minvalue` | `mnv` |  |
+| `maxvalue` | `mxv` |  |
+| `clamp` | `cl` |  |
+| `clamplower` | `cll` |  |
+| `clampupper` | `clu` |  |
+| `colorfeedback` | `cf` |  |
+| `mappressure` | `mp` |  |
+| `reflection` | `rfl` |  |
+| `reflectionaxis` | `ra` |  |
+| `outline` | `o` |  |
+| `tablet` | `tab` |  |
+| `flood` | `fl` |  |
+| `floodselect` | `fs` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
 
 ## attachCurve
 
@@ -562,6 +829,784 @@ Arguments: two surfaces (the selection when none)
 | `name` | `n` | Name of a new surface. |
 | `object` | `o` | Accepted for Maya scripts. |
 | `polygon` | `po` | Accepted for Maya scripts. |
+
+## attrColorSliderGrp
+
+attrColorSliderGrp: a control bound to the attribute given by -attribute; it shows the plug, sets it undoably, and follows it.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `rgbValue` | `rgb` |  |
+| `hsvValue` | `hsv` |  |
+| `showButton` | `sb` |  |
+| `attrNavDecision` | `nd` |  |
+| `hideButton` | `hb` |  |
+| `attribute` | `at` |  |
+| `label` | `l` |  |
+| `changeCommand` | `cc` |  |
+| `extraButton` | `eb` |  |
+| `extraButtonCommand` | `ebc` |  |
+| `extraButtonIcon` | `ebi` |  |
+| `extraLabel` | `el` |  |
+| `forceAddMapButton` | `fmb` |  |
+| `hideMapButton` | `hmb` |  |
+| `adjustableColumn` | `adj` |  |
+| `columnWidth` | `cw` |  |
+| `columnAlign` | `cal` |  |
+| `columnAttach` | `cat` |  |
+| `rowAttach` | `rat` |  |
+| `vertical` | `vr` |  |
+| `precision` | `pre` |  |
+| `field` | `f` |  |
+| `value` | `v` |  |
+| `minValue` | `min` |  |
+| `maxValue` | `max` |  |
+| `fieldMinValue` | `fmn` |  |
+| `fieldMaxValue` | `fmx` |  |
+| `sliderStep` | `ss` |  |
+| `step` | `s` |  |
+| `fieldStep` | `fs` |  |
+| `dragCommand` | `dc` |  |
+| `numberOfFields` | `nf` |  |
+| `value1` | `v1` |  |
+| `value2` | `v2` |  |
+| `value3` | `v3` |  |
+| `value4` | `v4` |  |
+| `changeCommand1` | `cc1` |  |
+| `changeCommand2` | `cc2` |  |
+| `changeCommand3` | `cc3` |  |
+| `changeCommand4` | `cc4` |  |
+| `dragCommand1` | `dc1` |  |
+| `dragCommand2` | `dc2` |  |
+| `dragCommand3` | `dc3` |  |
+| `dragCommand4` | `dc4` |  |
+| `enable1` | `en1` |  |
+| `enable2` | `en2` |  |
+| `enable3` | `en3` |  |
+| `enable4` | `en4` |  |
+| `columnWidth1` | `cw1` |  |
+| `columnAlign1` | `cl1` |  |
+| `columnAttach1` | `ct1` |  |
+| `columnOffset1` | `co1` |  |
+| `columnWidth2` | `cw2` |  |
+| `columnAlign2` | `cl2` |  |
+| `columnAttach2` | `ct2` |  |
+| `columnOffset2` | `co2` |  |
+| `adjustableColumn2` | `ad2` |  |
+| `columnWidth3` | `cw3` |  |
+| `columnAlign3` | `cl3` |  |
+| `columnAttach3` | `ct3` |  |
+| `columnOffset3` | `co3` |  |
+| `adjustableColumn3` | `ad3` |  |
+| `columnWidth4` | `cw4` |  |
+| `columnAlign4` | `cl4` |  |
+| `columnAttach4` | `ct4` |  |
+| `columnOffset4` | `co4` |  |
+| `adjustableColumn4` | `ad4` |  |
+| `columnWidth5` | `cw5` |  |
+| `columnAlign5` | `cl5` |  |
+| `columnAttach5` | `ct5` |  |
+| `columnOffset5` | `co5` |  |
+| `adjustableColumn5` | `ad5` |  |
+| `columnWidth6` | `cw6` |  |
+| `columnAlign6` | `cl6` |  |
+| `columnAttach6` | `ct6` |  |
+| `columnOffset6` | `co6` |  |
+| `adjustableColumn6` | `ad6` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## attrControlGrp
+
+attrControlGrp: a control bound to the attribute given by -attribute; it shows the plug, sets it undoably, and follows it.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `attribute` | `a` |  |
+| `enable` | `en` |  |
+| `label` | `l` |  |
+| `changeCommand` | `cc` |  |
+| `extraButton` | `eb` |  |
+| `extraButtonCommand` | `ebc` |  |
+| `extraButtonIcon` | `ebi` |  |
+| `extraLabel` | `el` |  |
+| `forceAddMapButton` | `fmb` |  |
+| `hideMapButton` | `hmb` |  |
+| `adjustableColumn` | `adj` |  |
+| `columnWidth` | `cw` |  |
+| `columnAlign` | `cal` |  |
+| `columnAttach` | `cat` |  |
+| `rowAttach` | `rat` |  |
+| `vertical` | `vr` |  |
+| `precision` | `pre` |  |
+| `field` | `f` |  |
+| `value` | `v` |  |
+| `minValue` | `min` |  |
+| `maxValue` | `max` |  |
+| `fieldMinValue` | `fmn` |  |
+| `fieldMaxValue` | `fmx` |  |
+| `sliderStep` | `ss` |  |
+| `step` | `s` |  |
+| `fieldStep` | `fs` |  |
+| `dragCommand` | `dc` |  |
+| `numberOfFields` | `nf` |  |
+| `value1` | `v1` |  |
+| `value2` | `v2` |  |
+| `value3` | `v3` |  |
+| `value4` | `v4` |  |
+| `changeCommand1` | `cc1` |  |
+| `changeCommand2` | `cc2` |  |
+| `changeCommand3` | `cc3` |  |
+| `changeCommand4` | `cc4` |  |
+| `dragCommand1` | `dc1` |  |
+| `dragCommand2` | `dc2` |  |
+| `dragCommand3` | `dc3` |  |
+| `dragCommand4` | `dc4` |  |
+| `enable1` | `en1` |  |
+| `enable2` | `en2` |  |
+| `enable3` | `en3` |  |
+| `enable4` | `en4` |  |
+| `columnWidth1` | `cw1` |  |
+| `columnAlign1` | `cl1` |  |
+| `columnAttach1` | `ct1` |  |
+| `columnOffset1` | `co1` |  |
+| `columnWidth2` | `cw2` |  |
+| `columnAlign2` | `cl2` |  |
+| `columnAttach2` | `ct2` |  |
+| `columnOffset2` | `co2` |  |
+| `adjustableColumn2` | `ad2` |  |
+| `columnWidth3` | `cw3` |  |
+| `columnAlign3` | `cl3` |  |
+| `columnAttach3` | `ct3` |  |
+| `columnOffset3` | `co3` |  |
+| `adjustableColumn3` | `ad3` |  |
+| `columnWidth4` | `cw4` |  |
+| `columnAlign4` | `cl4` |  |
+| `columnAttach4` | `ct4` |  |
+| `columnOffset4` | `co4` |  |
+| `adjustableColumn4` | `ad4` |  |
+| `columnWidth5` | `cw5` |  |
+| `columnAlign5` | `cl5` |  |
+| `columnAttach5` | `ct5` |  |
+| `columnOffset5` | `co5` |  |
+| `adjustableColumn5` | `ad5` |  |
+| `columnWidth6` | `cw6` |  |
+| `columnAlign6` | `cl6` |  |
+| `columnAttach6` | `ct6` |  |
+| `columnOffset6` | `co6` |  |
+| `adjustableColumn6` | `ad6` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## attrEnumOptionMenu
+
+attrEnumOptionMenu: a control bound to the attribute given by -attribute; it shows the plug, sets it undoably, and follows it.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `enumeratedItem` | `ei` |  |
+| `value` | `v` |  |
+| `select` | `sl` |  |
+| `attribute` | `at` |  |
+| `label` | `l` |  |
+| `changeCommand` | `cc` |  |
+| `extraButton` | `eb` |  |
+| `extraButtonCommand` | `ebc` |  |
+| `extraButtonIcon` | `ebi` |  |
+| `extraLabel` | `el` |  |
+| `forceAddMapButton` | `fmb` |  |
+| `hideMapButton` | `hmb` |  |
+| `adjustableColumn` | `adj` |  |
+| `columnWidth` | `cw` |  |
+| `columnAlign` | `cal` |  |
+| `columnAttach` | `cat` |  |
+| `rowAttach` | `rat` |  |
+| `vertical` | `vr` |  |
+| `precision` | `pre` |  |
+| `field` | `f` |  |
+| `minValue` | `min` |  |
+| `maxValue` | `max` |  |
+| `fieldMinValue` | `fmn` |  |
+| `fieldMaxValue` | `fmx` |  |
+| `sliderStep` | `ss` |  |
+| `step` | `s` |  |
+| `fieldStep` | `fs` |  |
+| `dragCommand` | `dc` |  |
+| `numberOfFields` | `nf` |  |
+| `value1` | `v1` |  |
+| `value2` | `v2` |  |
+| `value3` | `v3` |  |
+| `value4` | `v4` |  |
+| `changeCommand1` | `cc1` |  |
+| `changeCommand2` | `cc2` |  |
+| `changeCommand3` | `cc3` |  |
+| `changeCommand4` | `cc4` |  |
+| `dragCommand1` | `dc1` |  |
+| `dragCommand2` | `dc2` |  |
+| `dragCommand3` | `dc3` |  |
+| `dragCommand4` | `dc4` |  |
+| `enable1` | `en1` |  |
+| `enable2` | `en2` |  |
+| `enable3` | `en3` |  |
+| `enable4` | `en4` |  |
+| `columnWidth1` | `cw1` |  |
+| `columnAlign1` | `cl1` |  |
+| `columnAttach1` | `ct1` |  |
+| `columnOffset1` | `co1` |  |
+| `columnWidth2` | `cw2` |  |
+| `columnAlign2` | `cl2` |  |
+| `columnAttach2` | `ct2` |  |
+| `columnOffset2` | `co2` |  |
+| `adjustableColumn2` | `ad2` |  |
+| `columnWidth3` | `cw3` |  |
+| `columnAlign3` | `cl3` |  |
+| `columnAttach3` | `ct3` |  |
+| `columnOffset3` | `co3` |  |
+| `adjustableColumn3` | `ad3` |  |
+| `columnWidth4` | `cw4` |  |
+| `columnAlign4` | `cl4` |  |
+| `columnAttach4` | `ct4` |  |
+| `columnOffset4` | `co4` |  |
+| `adjustableColumn4` | `ad4` |  |
+| `columnWidth5` | `cw5` |  |
+| `columnAlign5` | `cl5` |  |
+| `columnAttach5` | `ct5` |  |
+| `columnOffset5` | `co5` |  |
+| `adjustableColumn5` | `ad5` |  |
+| `columnWidth6` | `cw6` |  |
+| `columnAlign6` | `cl6` |  |
+| `columnAttach6` | `ct6` |  |
+| `columnOffset6` | `co6` |  |
+| `adjustableColumn6` | `ad6` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## attrEnumOptionMenuGrp
+
+attrEnumOptionMenuGrp: a control bound to the attribute given by -attribute; it shows the plug, sets it undoably, and follows it.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `enumeratedItem` | `ei` |  |
+| `value` | `v` |  |
+| `select` | `sl` |  |
+| `attribute` | `at` |  |
+| `label` | `l` |  |
+| `changeCommand` | `cc` |  |
+| `extraButton` | `eb` |  |
+| `extraButtonCommand` | `ebc` |  |
+| `extraButtonIcon` | `ebi` |  |
+| `extraLabel` | `el` |  |
+| `forceAddMapButton` | `fmb` |  |
+| `hideMapButton` | `hmb` |  |
+| `adjustableColumn` | `adj` |  |
+| `columnWidth` | `cw` |  |
+| `columnAlign` | `cal` |  |
+| `columnAttach` | `cat` |  |
+| `rowAttach` | `rat` |  |
+| `vertical` | `vr` |  |
+| `precision` | `pre` |  |
+| `field` | `f` |  |
+| `minValue` | `min` |  |
+| `maxValue` | `max` |  |
+| `fieldMinValue` | `fmn` |  |
+| `fieldMaxValue` | `fmx` |  |
+| `sliderStep` | `ss` |  |
+| `step` | `s` |  |
+| `fieldStep` | `fs` |  |
+| `dragCommand` | `dc` |  |
+| `numberOfFields` | `nf` |  |
+| `value1` | `v1` |  |
+| `value2` | `v2` |  |
+| `value3` | `v3` |  |
+| `value4` | `v4` |  |
+| `changeCommand1` | `cc1` |  |
+| `changeCommand2` | `cc2` |  |
+| `changeCommand3` | `cc3` |  |
+| `changeCommand4` | `cc4` |  |
+| `dragCommand1` | `dc1` |  |
+| `dragCommand2` | `dc2` |  |
+| `dragCommand3` | `dc3` |  |
+| `dragCommand4` | `dc4` |  |
+| `enable1` | `en1` |  |
+| `enable2` | `en2` |  |
+| `enable3` | `en3` |  |
+| `enable4` | `en4` |  |
+| `columnWidth1` | `cw1` |  |
+| `columnAlign1` | `cl1` |  |
+| `columnAttach1` | `ct1` |  |
+| `columnOffset1` | `co1` |  |
+| `columnWidth2` | `cw2` |  |
+| `columnAlign2` | `cl2` |  |
+| `columnAttach2` | `ct2` |  |
+| `columnOffset2` | `co2` |  |
+| `adjustableColumn2` | `ad2` |  |
+| `columnWidth3` | `cw3` |  |
+| `columnAlign3` | `cl3` |  |
+| `columnAttach3` | `ct3` |  |
+| `columnOffset3` | `co3` |  |
+| `adjustableColumn3` | `ad3` |  |
+| `columnWidth4` | `cw4` |  |
+| `columnAlign4` | `cl4` |  |
+| `columnAttach4` | `ct4` |  |
+| `columnOffset4` | `co4` |  |
+| `adjustableColumn4` | `ad4` |  |
+| `columnWidth5` | `cw5` |  |
+| `columnAlign5` | `cl5` |  |
+| `columnAttach5` | `ct5` |  |
+| `columnOffset5` | `co5` |  |
+| `adjustableColumn5` | `ad5` |  |
+| `columnWidth6` | `cw6` |  |
+| `columnAlign6` | `cl6` |  |
+| `columnAttach6` | `ct6` |  |
+| `columnOffset6` | `co6` |  |
+| `adjustableColumn6` | `ad6` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## attrFieldGrp
+
+attrFieldGrp: a control bound to the attribute given by -attribute; it shows the plug, sets it undoably, and follows it.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `minValue` | `min` |  |
+| `maxValue` | `max` |  |
+| `step` | `s` |  |
+| `numberOfFields` | `nf` |  |
+| `attribute` | `at` |  |
+| `label` | `l` |  |
+| `changeCommand` | `cc` |  |
+| `extraButton` | `eb` |  |
+| `extraButtonCommand` | `ebc` |  |
+| `extraButtonIcon` | `ebi` |  |
+| `extraLabel` | `el` |  |
+| `forceAddMapButton` | `fmb` |  |
+| `hideMapButton` | `hmb` |  |
+| `adjustableColumn` | `adj` |  |
+| `columnWidth` | `cw` |  |
+| `columnAlign` | `cal` |  |
+| `columnAttach` | `cat` |  |
+| `rowAttach` | `rat` |  |
+| `vertical` | `vr` |  |
+| `precision` | `pre` |  |
+| `field` | `f` |  |
+| `value` | `v` |  |
+| `fieldMinValue` | `fmn` |  |
+| `fieldMaxValue` | `fmx` |  |
+| `sliderStep` | `ss` |  |
+| `fieldStep` | `fs` |  |
+| `dragCommand` | `dc` |  |
+| `value1` | `v1` |  |
+| `value2` | `v2` |  |
+| `value3` | `v3` |  |
+| `value4` | `v4` |  |
+| `changeCommand1` | `cc1` |  |
+| `changeCommand2` | `cc2` |  |
+| `changeCommand3` | `cc3` |  |
+| `changeCommand4` | `cc4` |  |
+| `dragCommand1` | `dc1` |  |
+| `dragCommand2` | `dc2` |  |
+| `dragCommand3` | `dc3` |  |
+| `dragCommand4` | `dc4` |  |
+| `enable1` | `en1` |  |
+| `enable2` | `en2` |  |
+| `enable3` | `en3` |  |
+| `enable4` | `en4` |  |
+| `columnWidth1` | `cw1` |  |
+| `columnAlign1` | `cl1` |  |
+| `columnAttach1` | `ct1` |  |
+| `columnOffset1` | `co1` |  |
+| `columnWidth2` | `cw2` |  |
+| `columnAlign2` | `cl2` |  |
+| `columnAttach2` | `ct2` |  |
+| `columnOffset2` | `co2` |  |
+| `adjustableColumn2` | `ad2` |  |
+| `columnWidth3` | `cw3` |  |
+| `columnAlign3` | `cl3` |  |
+| `columnAttach3` | `ct3` |  |
+| `columnOffset3` | `co3` |  |
+| `adjustableColumn3` | `ad3` |  |
+| `columnWidth4` | `cw4` |  |
+| `columnAlign4` | `cl4` |  |
+| `columnAttach4` | `ct4` |  |
+| `columnOffset4` | `co4` |  |
+| `adjustableColumn4` | `ad4` |  |
+| `columnWidth5` | `cw5` |  |
+| `columnAlign5` | `cl5` |  |
+| `columnAttach5` | `ct5` |  |
+| `columnOffset5` | `co5` |  |
+| `adjustableColumn5` | `ad5` |  |
+| `columnWidth6` | `cw6` |  |
+| `columnAlign6` | `cl6` |  |
+| `columnAttach6` | `ct6` |  |
+| `columnOffset6` | `co6` |  |
+| `adjustableColumn6` | `ad6` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## attrFieldSliderGrp
+
+attrFieldSliderGrp: a control bound to the attribute given by -attribute; it shows the plug, sets it undoably, and follows it.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `minValue` | `min` |  |
+| `maxValue` | `max` |  |
+| `fieldMinValue` | `fmn` |  |
+| `fieldMaxValue` | `fmx` |  |
+| `sliderMinValue` | `smn` |  |
+| `sliderMaxValue` | `smx` |  |
+| `step` | `s` |  |
+| `fieldStep` | `fs` |  |
+| `sliderStep` | `ss` |  |
+| `value` | `v` |  |
+| `attribute` | `at` |  |
+| `label` | `l` |  |
+| `changeCommand` | `cc` |  |
+| `extraButton` | `eb` |  |
+| `extraButtonCommand` | `ebc` |  |
+| `extraButtonIcon` | `ebi` |  |
+| `extraLabel` | `el` |  |
+| `forceAddMapButton` | `fmb` |  |
+| `hideMapButton` | `hmb` |  |
+| `adjustableColumn` | `adj` |  |
+| `columnWidth` | `cw` |  |
+| `columnAlign` | `cal` |  |
+| `columnAttach` | `cat` |  |
+| `rowAttach` | `rat` |  |
+| `vertical` | `vr` |  |
+| `precision` | `pre` |  |
+| `field` | `f` |  |
+| `dragCommand` | `dc` |  |
+| `numberOfFields` | `nf` |  |
+| `value1` | `v1` |  |
+| `value2` | `v2` |  |
+| `value3` | `v3` |  |
+| `value4` | `v4` |  |
+| `changeCommand1` | `cc1` |  |
+| `changeCommand2` | `cc2` |  |
+| `changeCommand3` | `cc3` |  |
+| `changeCommand4` | `cc4` |  |
+| `dragCommand1` | `dc1` |  |
+| `dragCommand2` | `dc2` |  |
+| `dragCommand3` | `dc3` |  |
+| `dragCommand4` | `dc4` |  |
+| `enable1` | `en1` |  |
+| `enable2` | `en2` |  |
+| `enable3` | `en3` |  |
+| `enable4` | `en4` |  |
+| `columnWidth1` | `cw1` |  |
+| `columnAlign1` | `cl1` |  |
+| `columnAttach1` | `ct1` |  |
+| `columnOffset1` | `co1` |  |
+| `columnWidth2` | `cw2` |  |
+| `columnAlign2` | `cl2` |  |
+| `columnAttach2` | `ct2` |  |
+| `columnOffset2` | `co2` |  |
+| `adjustableColumn2` | `ad2` |  |
+| `columnWidth3` | `cw3` |  |
+| `columnAlign3` | `cl3` |  |
+| `columnAttach3` | `ct3` |  |
+| `columnOffset3` | `co3` |  |
+| `adjustableColumn3` | `ad3` |  |
+| `columnWidth4` | `cw4` |  |
+| `columnAlign4` | `cl4` |  |
+| `columnAttach4` | `ct4` |  |
+| `columnOffset4` | `co4` |  |
+| `adjustableColumn4` | `ad4` |  |
+| `columnWidth5` | `cw5` |  |
+| `columnAlign5` | `cl5` |  |
+| `columnAttach5` | `ct5` |  |
+| `columnOffset5` | `co5` |  |
+| `adjustableColumn5` | `ad5` |  |
+| `columnWidth6` | `cw6` |  |
+| `columnAlign6` | `cl6` |  |
+| `columnAttach6` | `ct6` |  |
+| `columnOffset6` | `co6` |  |
+| `adjustableColumn6` | `ad6` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## attrNavigationControlGrp
+
+attrNavigationControlGrp: a control bound to the attribute given by -attribute; it shows the plug, sets it undoably, and follows it.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `attrNavDecision` | `nd` |  |
+| `connectToExisting` | `ce` |  |
+| `createNew` | `cn` |  |
+| `defaultTraversal` | `dtv` |  |
+| `delete` | `d` |  |
+| `disconnect` | `dn` |  |
+| `ignoreNotSupported` | `ins` |  |
+| `noIgnorableMenu` | `nim` |  |
+| `relatedNodes` | `ren` |  |
+| `text` | `tx` |  |
+| `unignore` | `u` |  |
+| `attribute` | `at` |  |
+| `label` | `l` |  |
+| `changeCommand` | `cc` |  |
+| `extraButton` | `eb` |  |
+| `extraButtonCommand` | `ebc` |  |
+| `extraButtonIcon` | `ebi` |  |
+| `extraLabel` | `el` |  |
+| `forceAddMapButton` | `fmb` |  |
+| `hideMapButton` | `hmb` |  |
+| `adjustableColumn` | `adj` |  |
+| `columnWidth` | `cw` |  |
+| `columnAlign` | `cal` |  |
+| `columnAttach` | `cat` |  |
+| `rowAttach` | `rat` |  |
+| `vertical` | `vr` |  |
+| `precision` | `pre` |  |
+| `field` | `f` |  |
+| `value` | `v` |  |
+| `minValue` | `min` |  |
+| `maxValue` | `max` |  |
+| `fieldMinValue` | `fmn` |  |
+| `fieldMaxValue` | `fmx` |  |
+| `sliderStep` | `ss` |  |
+| `step` | `s` |  |
+| `fieldStep` | `fs` |  |
+| `dragCommand` | `dc` |  |
+| `numberOfFields` | `nf` |  |
+| `value1` | `v1` |  |
+| `value2` | `v2` |  |
+| `value3` | `v3` |  |
+| `value4` | `v4` |  |
+| `changeCommand1` | `cc1` |  |
+| `changeCommand2` | `cc2` |  |
+| `changeCommand3` | `cc3` |  |
+| `changeCommand4` | `cc4` |  |
+| `dragCommand1` | `dc1` |  |
+| `dragCommand2` | `dc2` |  |
+| `dragCommand3` | `dc3` |  |
+| `dragCommand4` | `dc4` |  |
+| `enable1` | `en1` |  |
+| `enable2` | `en2` |  |
+| `enable3` | `en3` |  |
+| `enable4` | `en4` |  |
+| `columnWidth1` | `cw1` |  |
+| `columnAlign1` | `cl1` |  |
+| `columnAttach1` | `ct1` |  |
+| `columnOffset1` | `co1` |  |
+| `columnWidth2` | `cw2` |  |
+| `columnAlign2` | `cl2` |  |
+| `columnAttach2` | `ct2` |  |
+| `columnOffset2` | `co2` |  |
+| `adjustableColumn2` | `ad2` |  |
+| `columnWidth3` | `cw3` |  |
+| `columnAlign3` | `cl3` |  |
+| `columnAttach3` | `ct3` |  |
+| `columnOffset3` | `co3` |  |
+| `adjustableColumn3` | `ad3` |  |
+| `columnWidth4` | `cw4` |  |
+| `columnAlign4` | `cl4` |  |
+| `columnAttach4` | `ct4` |  |
+| `columnOffset4` | `co4` |  |
+| `adjustableColumn4` | `ad4` |  |
+| `columnWidth5` | `cw5` |  |
+| `columnAlign5` | `cl5` |  |
+| `columnAttach5` | `ct5` |  |
+| `columnOffset5` | `co5` |  |
+| `adjustableColumn5` | `ad5` |  |
+| `columnWidth6` | `cw6` |  |
+| `columnAlign6` | `cl6` |  |
+| `columnAttach6` | `ct6` |  |
+| `columnOffset6` | `co6` |  |
+| `adjustableColumn6` | `ad6` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
 
 ## attrPaintStamp
 
@@ -752,6 +1797,25 @@ Arguments: objects or plugs (the selection when none)
 | `controlPoints` | `cp` | Accepted for Maya scripts. |
 | `shape` | `s` | Accepted for Maya scripts. |
 
+## baseTemplate
+
+Base node templates: -load -fileName, -unload, -exists. Their contents are not read here: the name is kept.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `exists` | `ex` |  |
+| `fileName` | `fn` |  |
+| `force` | `f` |  |
+| `load` | `l` |  |
+| `matchFile` | `mf` |  |
+| `silent` | `si` |  |
+| `unload` | `u` |  |
+| `viewList` | `vl` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
 ## bevel
 
 A bevelled wall round a curve: -w width, -d depth, -ed wall depth, -bst 1 straight or 2 arc. Returns [surface, node].
@@ -902,6 +1966,88 @@ Arguments: targets, then the base; the blendShape with -e and -q
 | `foreignObject` | `fg` | Targets need not match the base: points are taken by number as far as they go. |
 | `ignoreSelected` | `ie` | Use only the objects named, not the selection. |
 
+## blendShapeEditor
+
+Script UI: blendShapeEditor, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `targetControlList` | `tcl` |  |
+| `targetList` | `tl` |  |
+| `verticalSliders` | `vs` |  |
+| `control` | `ctl` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `filter` | `f` |  |
+| `forceMainConnection` | `fmc` |  |
+| `highlightConnection` | `hlc` |  |
+| `lockMainConnection` | `lck` |  |
+| `mainListConnection` | `mlc` |  |
+| `panel` | `pnl` |  |
+| `selectionConnection` | `slc` |  |
+| `stateString` | `sts` |  |
+| `unParent` | `up` |  |
+| `unlockMainConnection` | `ulk` |  |
+| `updateMainConnection` | `upd` |  |
+| `useTemplate` | `ut` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## blendShapePanel
+
+A panel holding an editor of its kind: the editor has the panel's name.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `blendShapeEditor` | `be` |  |
+| `label` | `l` |  |
+| `parent` | `p` |  |
+| `control` | `ctl` |  |
+| `copy` | `cp` |  |
+| `createString` | `cs` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `editString` | `es` |  |
+| `exists` | `ex` |  |
+| `init` | `in` |  |
+| `isUnique` | `iu` |  |
+| `menuBarVisible` | `mbv` |  |
+| `needsInit` | `ni` |  |
+| `popupMenuProcedure` | `pmp` |  |
+| `replacePanel` | `rp` |  |
+| `tearOff` | `to` |  |
+| `tearOffCopy` | `toc` |  |
+| `unParent` | `up` |  |
+| `useTemplate` | `ut` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
 ## boundary
 
 A surface inside three or four curves, in order round the edge. Returns [boundarySurface1, boundary1].
@@ -918,6 +2064,27 @@ Arguments: three or four curves (the selection when none)
 | `range` | `rn` | Accepted for Maya scripts. |
 | `name` | `n` | Name of the new object. |
 | `object` | `o` | Accepted for Maya scripts. |
+
+## boxDollyCtx
+
+A boxDollyCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `alternateContext` | `ac` |  |
+| `toolName` | `tn` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
 
 ## boxZoomCtx
 
@@ -1346,6 +2513,53 @@ Arguments: the character (the current one when none)
 | `allSourceClips` | `asc` | Query: the source clips. |
 | `remove` | `rm` | Take the clip off the schedule. |
 
+## clipEditor
+
+Clips are not available here: warns, and opens the Dope Sheet.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `allTrackHeights` | `th` |  |
+| `autoFit` | `af` |  |
+| `autoFitTime` | `aft` |  |
+| `clipDropCmd` | `cd` |  |
+| `clipStyle` | `cs` |  |
+| `deleteCmd` | `dlc` |  |
+| `deselectAll` | `da` |  |
+| `displayActiveKeyTangents` | `dat` |  |
+| `displayActiveKeys` | `dak` |  |
+| `displayInfinities` | `di` |  |
+| `displayKeys` | `dk` |  |
+| `displayTangents` | `dtn` |  |
+| `displayValues` | `dv` |  |
+| `frameAll` | `fa` |  |
+| `frameRange` | `fr` |  |
+| `highlightConnection` | `hlc` |  |
+| `highlightedBlend` | `hb` |  |
+| `highlightedClip` | `hc` |  |
+| `initialized` | `in` |  |
+| `listAllCharacters` | `lac` |  |
+| `listCurrentCharacters` | `lc` |  |
+| `lockMainConnection` | `lck` |  |
+| `lookAt` | `la` |  |
+| `mainListConnection` | `mlc` |  |
+| `manageSequencer` | `ms` |  |
+| `menuContext` | `mc` |  |
+| `parent` | `p` |  |
+| `selectBlend` | `sb` |  |
+| `selectClip` | `sc` |  |
+| `selectionConnection` | `slc` |  |
+| `snapTime` | `st` |  |
+| `snapValue` | `sv` |  |
+| `stateString` | `sts` |  |
+| `useTemplate` | `ut` |  |
+| `defineTemplate` | `dt` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
 ## clipMatching
 
 Line a clip up with another at a frame each: -cs clip frame, -cd clip frame, -mt and -mr which channels (translate by default).
@@ -1663,6 +2877,70 @@ Arguments: name
 | `query` | `q` |  |
 | `edit` | `e` |  |
 
+## componentEditor
+
+Script UI: componentEditor, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `floatField` | `ff` |  |
+| `floatSlider` | `fs` |  |
+| `hidePathName` | `hpn` |  |
+| `hideZeroColumns` | `hzc` |  |
+| `lockInput` | `lck` |  |
+| `newTab` | `nt` |  |
+| `operationCount` | `oc` |  |
+| `operationLabels` | `ol` |  |
+| `operationType` | `ot` |  |
+| `precision` | `pre` |  |
+| `removeTab` | `rt` |  |
+| `selected` | `sl` |  |
+| `setOperationLabel` | `sol` |  |
+| `showObjects` | `so` |  |
+| `showSelected` | `ss` |  |
+| `sortAlpha` | `sa` |  |
+| `control` | `ctl` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `filter` | `f` |  |
+| `forceMainConnection` | `fmc` |  |
+| `highlightConnection` | `hlc` |  |
+| `lockMainConnection` | `lck` |  |
+| `mainListConnection` | `mlc` |  |
+| `panel` | `pnl` |  |
+| `selectionConnection` | `slc` |  |
+| `stateString` | `sts` |  |
+| `unParent` | `up` |  |
+| `unlockMainConnection` | `ulk` |  |
+| `updateMainConnection` | `upd` |  |
+| `useTemplate` | `ut` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
 ## componentInfo
 
 Positions, normals and adjacency of a mesh's components in bulk. Faces: center, normal, area, points, edges, neighbors (faces across each edge). Edges: points, center, length, faces, border. Vertices: position, normal, edges, neighbors (points), faces. World space unless space='object'. ids= picks some (default: the selected ones of that kind, or all).
@@ -1735,6 +3013,19 @@ Arguments: src dst
 | `nextAvailable` | `na` | The next free element of a multi attribute. |
 | `lock` | `l` | Lock the destination afterwards. |
 | `referenceDest` | `rd` | Accepted for Maya scripts. |
+
+## connectControl
+
+connectControl [-index n] control attribute...: binds a control to plugs. The control shows the plug, sets it undoably, and follows it. On a group, -index 1 is its label, 2 its first field.
+
+Arguments: control attribute...
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `index` | `in` | Which part of a group. |
+| `fileName` | `fi` | A file name attribute. |
+| `preventContextualMenu` | `pcm` | Accepted for Maya scripts. |
+| `preventOverride` | `po` | Accepted for Maya scripts. |
 
 ## connectJoint
 
@@ -2006,6 +3297,59 @@ Arguments: type
 | `skipSelect` | `ss` | Don't select the new node. |
 | `shared` | `s` | Reuse a node of that name when there is one. |
 
+## createPolyCubeCtx
+
+A createPolyCubeCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `width` | `w` |  |
+| `height` | `h` |  |
+| `depth` | `d` |  |
+| `subdivisionsX` | `sx` |  |
+| `subdivisionsY` | `sy` |  |
+| `subdivisionsZ` | `sz` |  |
+| `axis` | `ax` |  |
+| `createUVs` | `cuv` |  |
+| `doSubdivisionsCapsUI` | `dsc` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## createPolyPlaneCtx
+
+A createPolyPlaneCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `width` | `w` |  |
+| `height` | `h` |  |
+| `subdivisionsX` | `sx` |  |
+| `subdivisionsY` | `sy` |  |
+| `axis` | `ax` |  |
+| `createUVs` | `cuv` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## createSet
 
 Create an object set holding the members (the selected components in component mode, else the selected objects). Members are object names or components like pCube1.vtx[0:3], pCube1.e[5], pCube1.f[2]. Returns its name.
@@ -2017,6 +3361,14 @@ Arguments: members
 | `name` | `n` | Name; set1 when empty, made unique. |
 | `quickSelect` | `qs` | Make it a quick select set (Edit > Quick Select Sets). |
 | `empty` | `e` | Make it with no members, whatever is selected. |
+
+## ctxAbort
+
+Drops what the current tool has so far.
+
+## ctxCompletion
+
+Tells the current tool to finish, as Enter does.
 
 ## ctxEditMode
 
@@ -2062,6 +3414,25 @@ Arguments: frame
 | `time` | `t` | The frame to go to. |
 | `update` | `u` | Whether to evaluate now (on by default); either way the scene is up to date when asked. |
 
+## currentTimeCtx
+
+A currentTimeCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## currentUnit
 
 The scene's units: -t time (film, pal, ntsc, game, show, palf, ntscf or Nfps), -l linear, -a angle. Changing the time unit keeps keys at the same moments unless -ua is off, which keeps their frame numbers.
@@ -2095,6 +3466,47 @@ Arguments: a curve, with -a or -r
 | `worldSpace` | `ws` | Accepted for Maya scripts. |
 | `objectSpace` | `os` | Accepted for Maya scripts. |
 | `name` | `n` | Name of the transform. |
+
+## curveAddPtCtx
+
+A curveAddPtCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## curveBezierCtx
+
+A curveBezierCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `degree` | `d` |  |
+| `manipMode` | `mm` |  |
+| `preserveShape` | `ps` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
 
 ## curveCVCtx
 
@@ -2148,6 +3560,29 @@ Arguments: [name]
 | `history` | `ch` |  |
 | `dragSlider` | `ds` |  |
 
+## curveEditorCtx
+
+A curveEditorCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `direction` | `dir` |  |
+| `relativeTangentSize` | `rts` |  |
+| `tangentScale` | `ts` |  |
+| `tangentTension` | `tt` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## curveIntersect
 
 Where two curves cross, as text: "u1 u2 u1 u2 ..." on the first and second. -ud -d flattens along a direction first; -tol how close.
@@ -2160,6 +3595,25 @@ Arguments: two curves
 | `useDirection` | `ud` | Flatten along -d first. |
 | `direction` | `d` | Which way. |
 | `constructionHistory` | `ch` | Accepted for Maya scripts. |
+
+## curveMoveEPCtx
+
+A curveMoveEPCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
 
 ## curveOnSurface
 
@@ -2298,6 +3752,26 @@ Arguments: joints or a dagPose (the selection when none)
 | `name` | `n` | Name of a saved pose. |
 | `edit` | `e` | Edit mode. |
 | `query` | `q` | Query mode. |
+
+## defaultNavigation
+
+Connects as dropping one node on another does: -connectToExisting -source file1 -destination lambert2.color. Plugs left out take the node's usual one.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `connectToExisting` | `ce` | Connect the source to the destination. |
+| `source` | `s` | Node or plug to connect from. |
+| `destination` | `d` | Node or plug to connect to. |
+| `force` | `f` | Accepted: a connection is always replaced. |
+| `quiet` | `qt` | Accepted for scripts. |
+| `createNew` | `cn` | Accepted for scripts. |
+| `defaultTraversal` | `dtv` | Accepted for scripts. |
+| `defaultAttribute` | `da` | Accepted for scripts. |
+| `navigatorDecisionString` | `nds` | Accepted for scripts. |
+| `relatedNodes` | `ren` | Accepted for scripts. |
+| `ignore` | `i` | Accepted for scripts. |
+| `unignore` | `u` | Accepted for scripts. |
+| `delete` | `del` | Accepted for scripts. |
 
 ## deferScript
 
@@ -2549,6 +4023,27 @@ A stub: nothing is timed here. -on, -off, -reset are accepted, every result is 0
 | `threshold` | `th` | Accepted. |
 | `timerType` | `tt` | Accepted. |
 | `uniqueName` | `un` | Accepted. |
+
+## directKeyCtx
+
+A directKeyCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `option` | `o` |  |
+| `selectedOnly` | `slo` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
 
 ## disconnectAttr
 
@@ -2808,6 +4303,72 @@ Arguments: [name]
 | `history` | `ch` |  |
 | `dragSlider` | `ds` |  |
 
+## dopeSheetEditor
+
+Script UI: dopeSheetEditor, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `autoFit` | `af` |  |
+| `autoFitTime` | `aft` |  |
+| `displayActiveKeyTangents` | `dat` |  |
+| `displayActiveKeys` | `dak` |  |
+| `displayInfinities` | `di` |  |
+| `displayKeys` | `dk` |  |
+| `displayTangents` | `dtn` |  |
+| `displayValues` | `dv` |  |
+| `dropCommand` | `dc` |  |
+| `hierarchyBelow` | `hb` |  |
+| `lookAt` | `la` |  |
+| `outliner` | `o` |  |
+| `selectionWindow` | `sel` |  |
+| `showScene` | `sc` |  |
+| `showSummary` | `ss` |  |
+| `showTicks` | `stk` |  |
+| `snapTime` | `st` |  |
+| `snapValue` | `sv` |  |
+| `control` | `ctl` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `filter` | `f` |  |
+| `forceMainConnection` | `fmc` |  |
+| `highlightConnection` | `hlc` |  |
+| `lockMainConnection` | `lck` |  |
+| `mainListConnection` | `mlc` |  |
+| `panel` | `pnl` |  |
+| `selectionConnection` | `slc` |  |
+| `stateString` | `sts` |  |
+| `unParent` | `up` |  |
+| `unlockMainConnection` | `ulk` |  |
+| `updateMainConnection` | `upd` |  |
+| `useTemplate` | `ut` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
 ## dropoffLocator
 
 Mark a wire's dropoff at a point: dropoff percent wire.u[...]. Returns the locator. The wire's falloff stays as it is.
@@ -2909,6 +4470,45 @@ Edit keys picked by curve and index: -dt/-dv move them, -t/-v set them, -itt/-ot
 | `outTangentType` | `ott` | Tangent out of them. |
 | `breakdown` | `bd` | Make them breakdowns, or normal keys. |
 | `delete` | `del` | Remove them. |
+
+## editorTemplate
+
+Inside an AE<type>Template procedure: lays out the Attribute Editor with -beginLayout, -addControl, -suppress, -addSeparator, -addExtraControls, -callCustom.
+
+Arguments: [attribute]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `addAdskAssetControl` | `aac` |  |
+| `addComponents` | `acm` |  |
+| `addControl` | `ac` |  |
+| `addDynamicControl` | `adc` |  |
+| `addExtraControls` | `aec` |  |
+| `addSeparator` | `as` |  |
+| `annotation` | `ann` |  |
+| `beginLayout` | `bl` |  |
+| `beginNoOptimize` | `bno` |  |
+| `beginScrollLayout` | `bsl` |  |
+| `callCustom` | `ccu` |  |
+| `callback` | `cb` |  |
+| `collapse` | `cl` |  |
+| `debugMode` | `dbm` |  |
+| `dimControl` | `dc` |  |
+| `endLayout` | `el` |  |
+| `endNoOptimize` | `eno` |  |
+| `endScrollLayout` | `esl` |  |
+| `extraControlsLabel` | `ecl` |  |
+| `interruptOptimize` | `io` |  |
+| `label` | `l` |  |
+| `listExtraAttributes` | `lea` |  |
+| `preventOverride` | `po` |  |
+| `queryControl` | `qc` |  |
+| `queryLabel` | `ql` |  |
+| `queryName` | `qn` |  |
+| `removeControl` | `rc` |  |
+| `suppress` | `s` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
 
 ## encodeString
 
@@ -3516,6 +5116,96 @@ Arguments: name
 | `query` | `q` |  |
 | `edit` | `e` |  |
 
+## floatSliderButtonGrp
+
+Script UI: floatSliderButtonGrp, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `precision` | `pre` |  |
+| `showTrailingZeros` | `tze` |  |
+| `buttonLabel` | `bl` |  |
+| `buttonCommand` | `bc` |  |
+| `symbolButtonCommand` | `sbc` |  |
+| `symbolButtonDisplay` | `sbd` |  |
+| `image` | `i` |  |
+| `label` | `l` |  |
+| `field` | `f` |  |
+| `value` | `v` |  |
+| `minValue` | `min` |  |
+| `maxValue` | `max` |  |
+| `fieldMinValue` | `fmn` |  |
+| `fieldMaxValue` | `fmx` |  |
+| `sliderStep` | `ss` |  |
+| `step` | `s` |  |
+| `fieldStep` | `fs` |  |
+| `extraLabel` | `el` |  |
+| `changeCommand` | `cc` |  |
+| `dragCommand` | `dc` |  |
+| `columnWidth1` | `cw1` |  |
+| `columnAlign1` | `cl1` |  |
+| `columnAttach1` | `ct1` |  |
+| `columnOffset1` | `co1` |  |
+| `columnWidth2` | `cw2` |  |
+| `columnAlign2` | `cl2` |  |
+| `columnAttach2` | `ct2` |  |
+| `columnOffset2` | `co2` |  |
+| `adjustableColumn2` | `ad2` |  |
+| `columnWidth3` | `cw3` |  |
+| `columnAlign3` | `cl3` |  |
+| `columnAttach3` | `ct3` |  |
+| `columnOffset3` | `co3` |  |
+| `adjustableColumn3` | `ad3` |  |
+| `columnWidth4` | `cw4` |  |
+| `columnAlign4` | `cl4` |  |
+| `columnAttach4` | `ct4` |  |
+| `columnOffset4` | `co4` |  |
+| `adjustableColumn4` | `ad4` |  |
+| `columnWidth5` | `cw5` |  |
+| `columnAlign5` | `cl5` |  |
+| `columnAttach5` | `ct5` |  |
+| `columnOffset5` | `co5` |  |
+| `adjustableColumn5` | `ad5` |  |
+| `columnWidth6` | `cw6` |  |
+| `columnAlign6` | `cl6` |  |
+| `columnAttach6` | `ct6` |  |
+| `columnOffset6` | `co6` |  |
+| `adjustableColumn6` | `ad6` |  |
+| `adjustableColumn` | `adj` |  |
+| `columnWidth` | `cw` |  |
+| `columnAlign` | `cal` |  |
+| `columnAttach` | `cat` |  |
+| `rowAttach` | `rat` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
 ## floatSliderGrp
 
 Script UI: floatSliderGrp, with create, edit and query as in Maya's command.
@@ -3945,6 +5635,63 @@ Arguments: surfaces
 | `tolerance` | `tol` | Accepted for Maya scripts. |
 | `polygon` | `po` | 0 NURBS, 1 polygons. |
 
+## graphDollyCtx
+
+A graphDollyCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## graphSelectContext
+
+A graphSelectContext tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## graphTrackCtx
+
+A graphTrackCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## gridLayout
 
 Script UI: gridLayout, with create, edit and query as in Maya's command.
@@ -4160,6 +5907,124 @@ Bind a key: -k the key, -alt -ctl -sht modifiers, -n the name command for press,
 | `shiftModifier` | `sht` | With Shift. |
 | `name` | `n` | The name command for press. |
 | `releaseName` | `rn` | The name command for release. |
+
+## hudButton
+
+A control in the heads up display: -section, -block, its label, value and commands. headsUpDisplay -rem removes it.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `label` | `l` |  |
+| `labelFontSize` | `lfs` |  |
+| `buttonWidth` | `bw` |  |
+| `buttonShape` | `bsh` |  |
+| `pressCommand` | `pc` |  |
+| `releaseCommand` | `rc` |  |
+| `section` | `s` |  |
+| `block` | `b` |  |
+| `blockSize` | `bs` |  |
+| `blockAlignment` | `ba` |  |
+| `padding` | `p` |  |
+| `visible` | `vis` |  |
+| `allowOverlap` | `ao` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## hudSlider
+
+A control in the heads up display: -section, -block, its label, value and commands. headsUpDisplay -rem removes it.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `label` | `l` |  |
+| `labelFontSize` | `lfs` |  |
+| `labelWidth` | `lw` |  |
+| `type` | `t` |  |
+| `value` | `v` |  |
+| `minValue` | `min` |  |
+| `maxValue` | `max` |  |
+| `valueAlignment` | `va` |  |
+| `valueFontSize` | `vfs` |  |
+| `valueWidth` | `vw` |  |
+| `sliderLength` | `sl` |  |
+| `sliderIncrement` | `si` |  |
+| `decimalPrecision` | `dp` |  |
+| `internalPadding` | `ip` |  |
+| `showFrame` | `sf` |  |
+| `dragCommand` | `dc` |  |
+| `pressCommand` | `pc` |  |
+| `releaseCommand` | `rc` |  |
+| `section` | `s` |  |
+| `block` | `b` |  |
+| `blockSize` | `bs` |  |
+| `blockAlignment` | `ba` |  |
+| `padding` | `p` |  |
+| `visible` | `vis` |  |
+| `allowOverlap` | `ao` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## hudSliderButton
+
+A control in the heads up display: -section, -block, its label, value and commands. headsUpDisplay -rem removes it.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `sliderLabel` | `sl` |  |
+| `sliderLabelFontSize` | `slf` |  |
+| `sliderLabelWidth` | `slw` |  |
+| `type` | `t` |  |
+| `value` | `v` |  |
+| `minValue` | `min` |  |
+| `maxValue` | `max` |  |
+| `valueAlignment` | `va` |  |
+| `valueFontSize` | `vfs` |  |
+| `valueWidth` | `vw` |  |
+| `sliderLength` | `sln` |  |
+| `sliderIncrement` | `si` |  |
+| `decimalPrecision` | `dp` |  |
+| `internalPadding` | `ip` |  |
+| `sliderDragCommand` | `sdc` |  |
+| `sliderPressCommand` | `spc` |  |
+| `sliderReleaseCommand` | `src` |  |
+| `buttonLabel` | `bl` |  |
+| `buttonLabelFontSize` | `blf` |  |
+| `buttonWidth` | `bw` |  |
+| `buttonShape` | `bsh` |  |
+| `buttonPressCommand` | `bpc` |  |
+| `buttonReleaseCommand` | `brc` |  |
+| `section` | `s` |  |
+| `block` | `b` |  |
+| `blockSize` | `bs` |  |
+| `blockAlignment` | `ba` |  |
+| `padding` | `p` |  |
+| `visible` | `vis` |  |
+| `allowOverlap` | `ao` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## hyperShade
+
+Materials and what wears them: -assign gives the selection (objects or faces) a material, making its shading group if need be; -objects selects what wears one; -smn selects the materials of the selection; -lun and -ldn list a network's nodes.
+
+Arguments: objects, for -assign
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `assign` | `a` | The material to give the selection. |
+| `objects` | `o` | The material whose objects to select; empty for the selected one. |
+| `shaderNetworksSelectMaterialNodes` | `smn` | Select the materials of the selected objects. |
+| `listUpstreamNodes` | `lun` | The nodes upstream of this one. |
+| `listDownstreamNodes` | `ldn` | The nodes downstream of this one. |
 
 ## iconTextButton
 
@@ -5053,6 +6918,38 @@ Arguments: panel
 | `removeDagObject` | `rdo` |  |
 | `viewObjects` | `vo` |  |
 
+## itemFilter
+
+A named test of nodes for editors and lsThroughFilter: -byName, -byType, -union, -intersect, -difference, -negate.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `byName` | `bn` |  |
+| `byType` | `bt` |  |
+| `byBin` | `bk` |  |
+| `byScript` | `bs` |  |
+| `secondScript` | `ss` |  |
+| `classification` | `cls` |  |
+| `clearByBin` | `cbk` |  |
+| `clearByType` | `cbt` |  |
+| `category` | `cat` |  |
+| `customCategory` | `ctg` |  |
+| `difference` | `di` |  |
+| `intersect` | `in` |  |
+| `union` | `un` |  |
+| `negate` | `neg` |  |
+| `listBuiltInFilters` | `lbf` |  |
+| `listOtherFilters` | `lof` |  |
+| `listUserFilters` | `luf` |  |
+| `parent` | `p` |  |
+| `text` | `t` |  |
+| `uniqueNodeNames` | `unn` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
 ## jiggle
 
 Jiggle: points lag and overshoot, a frame at a time from the start frame. Returns [jiggle1].
@@ -5260,6 +7157,225 @@ Arguments: objects, plugs or curves (the selection when none)
 | `adjustBreakdown` | `abd` | Breakdowns keep their place between keys that move (on by default). |
 | `tickDrawSpecial` | `tds` | Query or set the special tick colour of keys. |
 
+## keyframeOutliner
+
+Script UI: keyframeOutliner, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `animCurve` | `an` |  |
+| `display` | `dsp` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## keyframeRegionCurrentTimeCtx
+
+A keyframeRegionCurrentTimeCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## keyframeRegionDirectKeyCtx
+
+A keyframeRegionDirectKeyCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `option` | `o` |  |
+| `selectedOnly` | `slo` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## keyframeRegionDollyCtx
+
+A keyframeRegionDollyCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `scale` | `s` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## keyframeRegionInsertKeyCtx
+
+A keyframeRegionInsertKeyCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `breakdown` | `bd` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## keyframeRegionMoveKeyCtx
+
+A keyframeRegionMoveKeyCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `moveFunction` | `mf` |  |
+| `option` | `o` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## keyframeRegionScaleKeyCtx
+
+A keyframeRegionScaleKeyCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `scaleSpecifiedKeys` | `ssk` |  |
+| `type` | `typ` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## keyframeRegionSelectKeyCtx
+
+A keyframeRegionSelectKeyCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## keyframeRegionSetKeyCtx
+
+A keyframeRegionSetKeyCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `breakdown` | `bd` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## keyframeRegionTrackCtx
+
+A keyframeRegionTrackCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `scale` | `s` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## keyframeStats
 
 The Graph Editor's stats fields: -q -ta the selected keys' frame, -q -va their value, blank when they differ.
@@ -5342,6 +7458,60 @@ Arguments: meshes or vertices (the selection when none); the ffd or lattice with
 | `latticeReset` | `ltr` | With -e: the same as -resetLattice. |
 | `removeTweaks` | `rt` | With -e: the same as -resetLattice. |
 | `geometry` | `g` | Query: the deformed shapes. |
+
+## layerButton
+
+Script UI: layerButton, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `label` | `l` |  |
+| `name` | `n` |  |
+| `changedCommand` | `cc` |  |
+| `color` | `cl` |  |
+| `command` | `c` |  |
+| `current` | `cr` |  |
+| `doubleClickCommand` | `dcc` |  |
+| `hideOnPlaybackCommand` | `hpc` |  |
+| `identification` | `id` |  |
+| `labelWidth` | `lw` |  |
+| `layerHideOnPlayback` | `lhp` |  |
+| `layerState` | `ls` |  |
+| `layerVisible` | `lv` |  |
+| `renameCommand` | `rc` |  |
+| `select` | `s` |  |
+| `transparent` | `t` |  |
+| `typeCommand` | `tc` |  |
+| `visibleCommand` | `vc` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
 
 ## layout
 
@@ -5500,6 +7670,9 @@ Every object set's name in creation order. quickSelect=True lists only quick sel
 | `quickSelect` | `qs` | Only quick select sets (True) or only plain sets (False). |
 | `object` | `o` | Only sets holding this object, whole or by its components. |
 | `info` | `i` | Return each set as a dict instead of its name. |
+| `type` | `t` | 1 for rendering sets, 2 for deformer sets. |
+| `allSets` | `as` | Every set, rendering sets too. |
+| `extendToShape` | `ets` | With -object: a transform stands for its shapes. |
 
 ## loadPlugin
 
@@ -5590,10 +7763,26 @@ Arguments: names or patterns
 | `intermediateObjects` | `io` | Only intermediate objects. |
 | `hilite` | `hl` | The hilited objects. |
 | `sets` | `set` | Only sets. |
+| `materials` | `mat` | Only materials. |
+| `textures` | `tex` | Only textures. |
 | `showType` | `st` | Each name followed by its type. |
 | `head` | `hd` | Only the first n. |
 | `tail` | `tl` | Only the last n. |
 | `uuid` | `uid` | UUIDs rather than names. |
+
+## lsThroughFilter
+
+The nodes a filter passes: -item limits it to those named, -selection to the selected, -sort, -reverse.
+
+Arguments: filter
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `item` | `it` |  |
+| `nodeArray` | `na` |  |
+| `reverse` | `rv` |  |
+| `selection` | `sl` |  |
+| `sort` | `so` |  |
 
 ## makeIdentity
 
@@ -5695,6 +7884,53 @@ Arguments: [name]
 | `name` | `n` |  |
 | `history` | `ch` |  |
 | `dragSlider` | `ds` |  |
+
+## manipOptions
+
+How manipulators look and work: -scale, -handleSize and so on.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `enableSmartDuplicate` | `esd` |  |
+| `enableSmartExtrude` | `ese` |  |
+| `forceRefresh` | `fr` |  |
+| `handleSize` | `hs` |  |
+| `hideManipOnCtrl` | `hmc` |  |
+| `hideManipOnShift` | `hms` |  |
+| `hideManipOnShiftCtrl` | `hsc` |  |
+| `linePick` | `lp` |  |
+| `lineSize` | `ls` |  |
+| `pivotRotateHandleOffset` | `pro` |  |
+| `planeHandleOffset` | `pho` |  |
+| `pointSize` | `ps` |  |
+| `preselectHighlight` | `psh` |  |
+| `refreshMode` | `rm` |  |
+| `relative` | `r` |  |
+| `rememberActiveHandle` | `rah` |  |
+| `rememberActiveHandleAfterToolSwitch` | `raa` |  |
+| `scale` | `s` |  |
+| `showExtrudeSliders` | `ses` |  |
+| `showPivotRotateHandle` | `spr` |  |
+| `showPlaneHandles` | `spl` |  |
+| `smartDuplicateType` | `sdt` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## manipPivot
+
+Puts the manipulator somewhere else until the selection changes: -p the place, -o the orientation, -reset, -q.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `position` | `p` |  |
+| `orientation` | `o` |  |
+| `pinPivot` | `pin` |  |
+| `reset` | `r` |  |
+| `resetOrientation` | `ro` |  |
+| `resetPosition` | `rp` |  |
+| `valid` | `v` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
 
 ## manipRotateContext
 
@@ -6030,6 +8266,27 @@ Arguments: joints
 | `mirrorXZ` | `mxz` | Across the XZ plane. |
 | `mirrorBehavior` | `mb` | Mirror the behaviour, not the orientation. |
 | `searchReplace` | `sr` | Two strings: replace the first with the second in the new names. |
+
+## modelCurrentTimeCtx
+
+A modelCurrentTimeCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `percent` | `per` |  |
+| `snap` | `sn` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
 
 ## modelEditor
 
@@ -6421,6 +8678,133 @@ Arguments: mesh
 ## newScene
 
 Clear the scene. Not undoable.
+
+## nodeEditor
+
+Script UI: nodeEditor, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `addNewNodes` | `ann` |  |
+| `addNode` | `an` |  |
+| `additiveGraphingMode` | `agm` |  |
+| `allAttributes` | `ala` |  |
+| `allNodes` | `aln` |  |
+| `autoSizeNodes` | `asn` |  |
+| `beginCreateNode` | `bcn` |  |
+| `consistentNameSize` | `cns` |  |
+| `createNodeCommand` | `cnc` |  |
+| `customAttributeListEdit` | `cal` |  |
+| `cycleHUD` | `ch` |  |
+| `defaultPinnedState` | `dps` |  |
+| `deleteSelected` | `dsl` |  |
+| `downstream` | `ds` |  |
+| `dotFormat` | `dot` |  |
+| `duplicateSelected` | `dup` |  |
+| `errorCallback` | `ecb` |  |
+| `extendToShapes` | `ets` |  |
+| `feedbackConnection` | `fbc` |  |
+| `feedbackNode` | `fbn` |  |
+| `feedbackPlug` | `fbp` |  |
+| `feedbackTabIndex` | `fbi` |  |
+| `feedbackType` | `fbt` |  |
+| `filterCreateNodeTypes` | `fcn` |  |
+| `focusCommand` | `fc` |  |
+| `frameAll` | `fa` |  |
+| `frameModelSelection` | `fms` |  |
+| `frameSelected` | `fs` |  |
+| `getNodeList` | `gnl` |  |
+| `graphSelectedConnections` | `gsc` |  |
+| `graphSelection` | `gs` |  |
+| `gridSnap` | `gsn` |  |
+| `gridVisibility` | `gv` |  |
+| `hasWatchpoint` | `hw` |  |
+| `hudMessage` | `hm` |  |
+| `ignoreAssets` | `ia` |  |
+| `island` | `isl` |  |
+| `keyPressCommand` | `kp` |  |
+| `keyReleaseCommand` | `kr` |  |
+| `layout` | `lay` |  |
+| `layoutCommand` | `lc` |  |
+| `nodeSwatchSize` | `nss` |  |
+| `nodeTitleMode` | `ntm` |  |
+| `nodeViewMode` | `nvm` |  |
+| `panView` | `pv` |  |
+| `pinSelectedNodes` | `psn` |  |
+| `popupMenuScript` | `pms` |  |
+| `redockSelectedNodes` | `rsn` |  |
+| `removeDownstream` | `rd` |  |
+| `removeNode` | `rem` |  |
+| `removeUnselected` | `run` |  |
+| `removeUpstream` | `ru` |  |
+| `rootNode` | `rn` |  |
+| `rootsFromSelection` | `rfs` |  |
+| `scaleView` | `sv` |  |
+| `selectAll` | `sa` |  |
+| `selectConnectionNodes` | `scn` |  |
+| `selectDownstream` | `sdn` |  |
+| `selectFeedbackConnection` | `sfc` |  |
+| `selectNode` | `sln` |  |
+| `selectUpstream` | `su` |  |
+| `setWatchpoint` | `sw` |  |
+| `settingsChangedCallback` | `scc` |  |
+| `shaderNetworks` | `sn` |  |
+| `showAllNodeAttributes` | `saa` |  |
+| `showNamespace` | `sns` |  |
+| `showSGShapes` | `ssg` |  |
+| `showShapes` | `ss` |  |
+| `showTransforms` | `st` |  |
+| `showUnitConversions` | `suc` |  |
+| `syncedSelection` | `ssl` |  |
+| `toggleAttrFilter` | `taf` |  |
+| `toggleSelectedPins` | `tsp` |  |
+| `toggleSwatchSize` | `tss` |  |
+| `toolTipCommand` | `ttc` |  |
+| `traversalDepthLimit` | `tdl` |  |
+| `updateNodeAdded` | `una` |  |
+| `upstream` | `ups` |  |
+| `useAssets` | `ua` |  |
+| `control` | `ctl` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `filter` | `f` |  |
+| `forceMainConnection` | `fmc` |  |
+| `highlightConnection` | `hlc` |  |
+| `lockMainConnection` | `lck` |  |
+| `mainListConnection` | `mlc` |  |
+| `panel` | `pnl` |  |
+| `selectionConnection` | `slc` |  |
+| `stateString` | `sts` |  |
+| `unParent` | `up` |  |
+| `unlockMainConnection` | `ulk` |  |
+| `updateMainConnection` | `upd` |  |
+| `useTemplate` | `ut` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
 
 ## nodeType
 
@@ -6838,6 +9222,29 @@ Arguments: [camera]
 | `verticalAngle` | `va` |  |
 | `pivotPoint` | `pp` |  |
 
+## orbitCtx
+
+A orbitCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `alternateContext` | `ac` |  |
+| `localOrbit` | `lo` |  |
+| `orbitScale` | `os` |  |
+| `toolName` | `tn` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## orientConstraint
 
 Constrain the object named (or selected) last to the targets before it; a second call adds targets. -mo keeps the current offset; -w sets the targets' weight; -e and -q work on the constraint or the object it drives. Returns [constraint].
@@ -6878,6 +9285,163 @@ Arguments: order (xyz), then joints
 | `zeroScaleOrient` | `zso` | Set rotateAxis to zero; jointOrient takes the change. |
 | `children` | `ch` | The joints below too (default on). |
 
+## outlinerEditor
+
+Script UI: outlinerEditor, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `alwaysToggleSelect` | `ats` |  |
+| `animLayerFilterOptions` | `alf` |  |
+| `attrAlphaOrder` | `aao` |  |
+| `attrFilter` | `af` |  |
+| `autoExpand` | `xpd` |  |
+| `autoExpandLayers` | `ael` |  |
+| `autoSelectNewObjects` | `aso` |  |
+| `containersIgnoreFilters` | `cif` |  |
+| `directSelect` | `ds` |  |
+| `displayMode` | `dm` |  |
+| `doNotSelectNewObjects` | `dns` |  |
+| `dropIsParent` | `dip` |  |
+| `editAttrName` | `ean` |  |
+| `expandAllItems` | `eai` |  |
+| `expandAllSelectedItems` | `eas` |  |
+| `expandAttribute` | `xta` |  |
+| `expandConnections` | `xc` |  |
+| `expandObjects` | `eo` |  |
+| `feedbackItemName` | `fbn` |  |
+| `feedbackRowNumber` | `fbr` |  |
+| `getCurrentSetOfItem` | `gcs` |  |
+| `highlightActive` | `ha` |  |
+| `highlightSecondary` | `hs` |  |
+| `ignoreDagHierarchy` | `hir` |  |
+| `ignoreHiddenAttribute` | `iha` |  |
+| `ignoreOutlinerColor` | `ioc` |  |
+| `isChildSelected` | `ics` |  |
+| `isSet` | `isSet` |  |
+| `isSetMember` | `ism` |  |
+| `lineHeight` | `lh` |  |
+| `longNames` | `ln` |  |
+| `niceNames` | `nn` |  |
+| `object` | `obj` |  |
+| `organizeByClip` | `obc` |  |
+| `organizeByLayer` | `obl` |  |
+| `parentObject` | `po` |  |
+| `pinPlug` | `pin` |  |
+| `refresh` | `rfs` |  |
+| `removeFromCurrentSet` | `rcs` |  |
+| `renameItem` | `rni` |  |
+| `renameSelectedItem` | `rsi` |  |
+| `renderFilterActive` | `rfa` |  |
+| `renderFilterIndex` | `rfi` |  |
+| `renderFilterVisible` | `rfv` |  |
+| `selectCommand` | `sec` |  |
+| `setDefaultFilter` | `sdf` |  |
+| `setFilter` | `sf` |  |
+| `setsIgnoreFilters` | `sif` |  |
+| `showAnimCurvesOnly` | `aco` |  |
+| `showAnimLayerWeight` | `salw` |  |
+| `showAssets` | `a` |  |
+| `showAssignedMaterials` | `am` |  |
+| `showAttrValues` | `av` |  |
+| `showAttributes` | `sat` |  |
+| `showCompounds` | `cmp` |  |
+| `showConnected` | `sc` |  |
+| `showContainedOnly` | `sco` |  |
+| `showContainerContents` | `scc` |  |
+| `showDagOnly` | `dag` |  |
+| `showLeafs` | `laf` |  |
+| `showMuteInfo` | `smi` |  |
+| `showNamespace` | `sn` |  |
+| `showNumericAttrsOnly` | `num` |  |
+| `showParentContainers` | `spc` |  |
+| `showPinIcons` | `spi` |  |
+| `showPublishedAsConnected` | `spu` |  |
+| `showReferenceMembers` | `srm` |  |
+| `showReferenceNodes` | `rn` |  |
+| `showSelected` | `ssd` |  |
+| `showSetMembers` | `ssm` |  |
+| `showShapes` | `shp` |  |
+| `showTextureNodesOnly` | `tno` |  |
+| `showTimeEditor` | `ste` |  |
+| `showUVAttrsOnly` | `uv` |  |
+| `showUnitlessCurves` | `su` |  |
+| `showUpstreamCurves` | `suc` |  |
+| `sortOrder` | `so` |  |
+| `transmitFilters` | `tf` |  |
+| `control` | `ctl` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `filter` | `f` |  |
+| `forceMainConnection` | `fmc` |  |
+| `highlightConnection` | `hlc` |  |
+| `lockMainConnection` | `lck` |  |
+| `mainListConnection` | `mlc` |  |
+| `panel` | `pnl` |  |
+| `selectionConnection` | `slc` |  |
+| `stateString` | `sts` |  |
+| `unParent` | `up` |  |
+| `unlockMainConnection` | `ulk` |  |
+| `updateMainConnection` | `upd` |  |
+| `useTemplate` | `ut` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## outlinerPanel
+
+A panel holding an editor of its kind: the editor has the panel's name.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `outlinerEditor` | `oe` |  |
+| `label` | `l` |  |
+| `parent` | `p` |  |
+| `control` | `ctl` |  |
+| `copy` | `cp` |  |
+| `createString` | `cs` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `editString` | `es` |  |
+| `exists` | `ex` |  |
+| `init` | `in` |  |
+| `isUnique` | `iu` |  |
+| `menuBarVisible` | `mbv` |  |
+| `needsInit` | `ni` |  |
+| `popupMenuProcedure` | `pmp` |  |
+| `replacePanel` | `rp` |  |
+| `tearOff` | `to` |  |
+| `tearOffCopy` | `toc` |  |
+| `unParent` | `up` |  |
+| `useTemplate` | `ut` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
 ## pairBlend
 
 Put a pairBlend on translates or rotates: -nd node -at attr. What drove the attribute feeds input 1. Returns the node; -q -in1 -in2 -at read its connections.
@@ -6893,6 +9457,22 @@ Arguments: pairBlend, with -q
 | `input1` | `i1` | With -q: what feeds the first pair. |
 | `input2` | `i2` | With -q: what feeds the second pair. |
 | `name` | `n` | The node's name. |
+
+## panZoom
+
+panZoom [camera]: -left -right -up -down slide the camera, -zoomRatio scales what it sees. It moves the camera; there is no 2D film pan here.
+
+Arguments: [camera]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `left` | `l` |  |
+| `right` | `r` |  |
+| `up` | `u` |  |
+| `down` | `d` |  |
+| `zoomRatio` | `zr` |  |
+| `absolute` | `abs` |  |
+| `relative` | `rel` |  |
 
 ## paneLayout
 
@@ -6974,6 +9554,40 @@ Arguments: name
 | `tearOffCopy` | `toc` |  |
 | `unParent` | `up` |  |
 | `useTemplate` | `ut` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## panelConfiguration
+
+A named arrangement of panels: -addPanel (fixed, type, label, create, edit), -configString, -label; getPanel -allConfigs lists them.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `addPanel` | `ap` |  |
+| `configString` | `cfs` |  |
+| `defaultImage` | `dimg` |  |
+| `image` | `img` |  |
+| `label` | `l` |  |
+| `labelStrings` | `lbl` |  |
+| `createStrings` | `ccs` |  |
+| `editStrings` | `ecs` |  |
+| `typeStrings` | `tys` |  |
+| `isFixedState` | `ifs` |  |
+| `numberOfPanels` | `np` |  |
+| `removeAllPanels` | `rap` |  |
+| `removeLastPanel` | `rlp` |  |
+| `replaceCreateString` | `rcs` |  |
+| `replaceEditString` | `res` |  |
+| `replaceFixedState` | `rfs` |  |
+| `replaceLabel` | `rl` |  |
+| `replaceTypeString` | `rts` |  |
+| `sceneConfig` | `sc` |  |
+| `userCreated` | `uc` |  |
+| `defineTemplate` | `dt` |  |
+| `useTemplate` | `ut` |  |
+| `exists` | `ex` |  |
 | `query` | `q` |  |
 | `edit` | `e` |  |
 
@@ -7143,6 +9757,12 @@ Arguments: name
 World position of an object's rotate pivot.
 
 Arguments: object
+
+## pixelMove
+
+pixelMove x y: moves the selection this many pixels in the view's plane.
+
+Arguments: x y
 
 ## planar
 
@@ -8377,6 +10997,27 @@ Arguments: edges (the selection when none)
 | `nodeState` | `nds` | Accepted; see the command reference. |
 | `frozen` | `fzn` | Accepted; see the command reference. |
 
+## polyCreaseCtx
+
+A polyCreaseCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `extendSelection` | `es` |  |
+| `relative` | `r` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## polyCreateFacet
 
 Create one face through -p points as a new mesh. Returns [transform, node].
@@ -9280,6 +11921,36 @@ Arguments: components or meshes (the selection when none)
 | `nodeState` | `nds` | Accepted; see the command reference. |
 | `frozen` | `fzn` | Accepted; see the command reference. |
 
+## polyMergeEdgeCtx
+
+A polyMergeEdgeCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `activeNodes` | `anq` |  |
+| `firstEdge` | `fe` |  |
+| `secondEdge` | `se` |  |
+| `immediate` | `im` |  |
+| `mergeMode` | `mm` |  |
+| `mergeTexture` | `mt` |  |
+| `nodeType` | `nt` |  |
+| `previous` | `pvs` |  |
+| `reset` | `rs` |  |
+| `toolNode` | `tnq` |  |
+| `caching` | `cch` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## polyMergeFacet
 
 Join two faces of different shells with the same number of corners: -ff -sf name them. -mm 0 moves the second to the first, 1 both to the average, 2 the first to the second, 6 nothing. Returns the node.
@@ -9296,6 +11967,35 @@ Arguments: components or meshes (the selection when none)
 | `caching` | `cch` | Accepted; see the command reference. |
 | `nodeState` | `nds` | Accepted; see the command reference. |
 | `frozen` | `fzn` | Accepted; see the command reference. |
+
+## polyMergeFacetCtx
+
+A polyMergeFacetCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `activeNodes` | `anq` |  |
+| `firstFacet` | `ff` |  |
+| `secondFacet` | `sf` |  |
+| `immediate` | `im` |  |
+| `mergeMode` | `mm` |  |
+| `nodeType` | `nt` |  |
+| `previous` | `pvs` |  |
+| `reset` | `rs` |  |
+| `toolNode` | `tnq` |  |
+| `caching` | `cch` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
 
 ## polyMergeUV
 
@@ -10300,6 +13000,26 @@ Arguments: components or meshes (the selection when none)
 | `nodeState` | `nds` | Accepted; see the command reference. |
 | `frozen` | `fzn` | Accepted; see the command reference. |
 
+## polySelectCtx
+
+A polySelectCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `mode` | `m` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## polySelectEditCtx
 
 A polySelectEditCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
@@ -10816,6 +13536,27 @@ Arguments: components or meshes (the selection when none)
 | `nodeState` | `nds` | Accepted; see the command reference. |
 | `frozen` | `fzn` | Accepted; see the command reference. |
 
+## polySuperCtx
+
+A polySuperCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `attach` | `a` |  |
+| `enable` | `en` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## polySuperShape
 
 Create a SuperShape mesh. Returns [mesh, generator] (generator is None with generator=False).
@@ -11144,6 +13885,88 @@ Arguments: the character (the current one when none)
 | `name` | `n` | The pose. |
 | `apply` | `a` | Apply the pose. |
 | `allPoses` | `ap` | Query: all poses. |
+
+## poseEditor
+
+Script UI: poseEditor, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `targetControlList` | `tcl` |  |
+| `targetList` | `tl` |  |
+| `verticalSliders` | `vs` |  |
+| `control` | `ctl` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `filter` | `f` |  |
+| `forceMainConnection` | `fmc` |  |
+| `highlightConnection` | `hlc` |  |
+| `lockMainConnection` | `lck` |  |
+| `mainListConnection` | `mlc` |  |
+| `panel` | `pnl` |  |
+| `selectionConnection` | `slc` |  |
+| `stateString` | `sts` |  |
+| `unParent` | `up` |  |
+| `unlockMainConnection` | `ulk` |  |
+| `updateMainConnection` | `upd` |  |
+| `useTemplate` | `ut` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## posePanel
+
+A panel holding an editor of its kind: the editor has the panel's name.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `poseEditor` | `pe` |  |
+| `label` | `l` |  |
+| `parent` | `p` |  |
+| `control` | `ctl` |  |
+| `copy` | `cp` |  |
+| `createString` | `cs` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `editString` | `es` |  |
+| `exists` | `ex` |  |
+| `init` | `in` |  |
+| `isUnique` | `iu` |  |
+| `menuBarVisible` | `mbv` |  |
+| `needsInit` | `ni` |  |
+| `popupMenuProcedure` | `pmp` |  |
+| `replacePanel` | `rp` |  |
+| `tearOff` | `to` |  |
+| `tearOffCopy` | `toc` |  |
+| `unParent` | `up` |  |
+| `useTemplate` | `ut` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
 
 ## prefixHierarchy
 
@@ -11491,6 +14314,45 @@ Arguments: name
 | `edit` | `e` |  |
 | `defineTemplate` | `dt` |  |
 | `useTemplate` | `ut` |  |
+
+## rangeControl
+
+Script UI: rangeControl, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `minRange` | `min` |  |
+| `maxRange` | `max` |  |
+| `changedCommand` | `cc` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
 
 ## rebuildCurve
 
@@ -12159,6 +15021,52 @@ Arguments: [name]
 | `history` | `ch` |  |
 | `dragSlider` | `ds` |  |
 
+## scriptCtx
+
+A scriptCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `toolStart` | `ts` |  |
+| `toolFinish` | `tf` |  |
+| `finalCommandScript` | `fcs` |  |
+| `setSelectionCount` | `ssc` |  |
+| `setAllowExcessCount` | `sae` |  |
+| `setAutoToggleSelection` | `sat` |  |
+| `setAutoComplete` | `sac` |  |
+| `setDoneSelectionPrompt` | `dsp` |  |
+| `setNoSelectionPrompt` | `nsp` |  |
+| `setNoSelectionHeadsUp` | `nsh` |  |
+| `setSelectionPrompt` | `ssp` |  |
+| `setSelectionHeadsUp` | `ssh` |  |
+| `totalSelectionSets` | `tss` |  |
+| `exitUponCompletion` | `euc` |  |
+| `enableRootSelection` | `ers` |  |
+| `ignoreInvalidItems` | `iii` |  |
+| `cumulativeLists` | `cls` |  |
+| `expandSelectionList` | `esl` |  |
+| `showManipulators` | `sm` |  |
+| `baseClassName` | `bcn` |  |
+| `toolCursorType` | `tct` |  |
+| `allComponents` | `alc` |  |
+| `vertex` | `v` |  |
+| `edge` | `eg` |  |
+| `facet` | `fc` |  |
+| `curve` | `c` |  |
+| `polymesh` | `pl` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## scriptJob
 
 Run a script when something happens: -e event script, -ct -cf -cc condition script, -ac attribute script, -nd node script, -uid control script, -tc script, -ie script. -ro once, -kws with the scene, -p with a control, -k -ka kill, -lj list. Returns the job number.
@@ -12214,6 +15122,69 @@ Arguments: name
 | `executeBefore` | `eb` |  |
 | `executeAfter` | `ea` |  |
 | `ignoreReferenceEdit` | `ire` |  |
+
+## scriptTable
+
+Script UI: scriptTable, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `rows` | `r` |  |
+| `columns` | `c` |  |
+| `label` | `l` |  |
+| `columnWidth` | `cw` |  |
+| `rowHeight` | `rh` |  |
+| `getCellCmd` | `gcc` |  |
+| `cellChangedCmd` | `ccc` |  |
+| `afterCellChangedCmd` | `acc` |  |
+| `selectionChangedCmd` | `scc` |  |
+| `selectedRow` | `sr` |  |
+| `selectedRows` | `srs` |  |
+| `selectedColumns` | `scs` |  |
+| `selectedCells` | `sc` |  |
+| `clearTable` | `clr` |  |
+| `clearRow` | `cr` |  |
+| `deleteRow` | `dr` |  |
+| `insertRow` | `ir` |  |
+| `excludingHeaders` | `eh` |  |
+| `multiEditEnabled` | `mee` |  |
+| `underPointerRow` | `upr` |  |
+| `underPointerColumn` | `upc` |  |
+| `useDoubleClickEdit` | `dce` |  |
+| `sortEnabled` | `se` |  |
+| `cellIndex` | `ci` |  |
+| `cellValue` | `cv` |  |
+| `cellBackgroundColor` | `cbc` |  |
+| `cellForegroundColor` | `cfc` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
 
 ## scriptedPanel
 
@@ -12879,6 +15850,42 @@ The selection as full paths: -do leaves out what isn't in the DAG.
 | --- | --- | --- |
 | `dagObjects` | `do` | Only DAG objects. |
 
+## selectionConnection
+
+A named list of objects for editors to show and follow: -activeList is the scene's selection, -worldList the scene, -objectList its own.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `activeList` | `act` |  |
+| `modelList` | `mdl` |  |
+| `keyframeList` | `key` |  |
+| `worldList` | `wl` |  |
+| `objectList` | `ol` |  |
+| `highlightList` | `hl` |  |
+| `connectionList` | `crl` |  |
+| `characterList` | `cl` |  |
+| `setList` | `sl` |  |
+| `addScript` | `as` |  |
+| `removeScript` | `rs` |  |
+| `addTo` | `add` |  |
+| `clear` | `clr` |  |
+| `deselect` | `d` |  |
+| `select` | `s` |  |
+| `remove` | `rm` |  |
+| `object` | `obj` |  |
+| `filter` | `f` |  |
+| `findObject` | `fo` |  |
+| `global` | `g` |  |
+| `identify` | `id` |  |
+| `lock` | `lck` |  |
+| `parent` | `p` |  |
+| `switch` | `sw` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
 ## separator
 
 Script UI: separator, with create, edit and query as in Maya's command.
@@ -12968,6 +15975,26 @@ Arguments: the driven object or channels (the selection when none)
 | `driven` | `dn` | Query: the driver's driven channels. |
 | `query` | `q` | Query mode. |
 | `edit` | `e` | Edit mode. |
+
+## setEditCtx
+
+A setEditCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `setName` | `sn` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
 
 ## setFocus
 
@@ -13144,6 +16171,20 @@ Arguments: [template]
 | `query` | `q` |  |
 | `edit` | `e` |  |
 
+## setXformManip
+
+The manipulator's settings: -showUnits, -suppress, -useRotatePivot, -useScalePivot, -worldSpace. Held; the views go by the tools' own.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `showUnits` | `su` |  |
+| `suppress` | `s` |  |
+| `useRotatePivot` | `urp` |  |
+| `useScalePivot` | `usp` |  |
+| `worldSpace` | `ws` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
 ## sets
 
 Maya's object set command: create, add to, take from, list and combine sets.
@@ -13169,11 +16210,12 @@ Arguments: items, or a set with -q
 | `size` | `s` | With -q: how many. |
 | `flatten` | `fl` | Accepted for Maya scripts. |
 | `noWarnings` | `nw` | Accepted for Maya scripts. |
-| `renderable` | `r` | Accepted for Maya scripts. |
 | `vertices` | `v` | Accepted for Maya scripts. |
 | `edges` | `ed` | Accepted for Maya scripts. |
 | `facets` | `fc` | Accepted for Maya scripts. |
 | `text` | `t` | Accepted for Maya scripts. |
+| `noSurfaceShader` | `nss` | With -renderable: leave the new shading group with no material, rather than lambert1. |
+| `renderable` | `r` | Make a shading group; with -q, whether the set is one. |
 
 ## shadingNode
 
@@ -13304,6 +16346,69 @@ Arguments: name
 | `query` | `q` |  |
 | `edit` | `e` |  |
 
+## shelfTabLayout
+
+Script UI: shelfTabLayout, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `tabLabel` | `tl` |  |
+| `tabLabelIndex` | `tli` |  |
+| `selectTabIndex` | `sti` |  |
+| `selectTab` | `st` |  |
+| `changeCommand` | `cc` |  |
+| `selectCommand` | `sc` |  |
+| `preSelectCommand` | `psc` |  |
+| `doubleClickCommand` | `dcc` |  |
+| `tabsVisible` | `tv` |  |
+| `innerMarginWidth` | `imw` |  |
+| `innerMarginHeight` | `imh` |  |
+| `scrollable` | `scr` |  |
+| `childResizable` | `cr` |  |
+| `horizontalScrollBarThickness` | `hst` |  |
+| `verticalScrollBarThickness` | `vst` |  |
+| `moveTab` | `mt` |  |
+| `newTabCommand` | `ntc` |  |
+| `showNewTab` | `snt` |  |
+| `tabPosition` | `tp` |  |
+| `tabTooltip` | `tt` |  |
+| `tabsClosable` | `tc` |  |
+| `closeTabCommand` | `ctc` |  |
+| `minChildWidth` | `mcw` |  |
+| `image` | `i` |  |
+| `imageVisible` | `iv` |  |
+| `childArray` | `ca` |  |
+| `numberOfChildren` | `nch` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
 ## show
 
 Show objects. all=True shows every hidden object.
@@ -13329,6 +16434,34 @@ Arguments: objects
 ## showLastHidden
 
 Show the objects the last hide (or hiding toggle) hid. Returns them.
+
+## showManipCtx
+
+A showManipCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `currentNodeName` | `cnn` |  |
+| `incSnap` | `is` |  |
+| `incSnapRelative` | `isr` |  |
+| `incSnapUI` | `isu` |  |
+| `incSnapValue` | `isv` |  |
+| `lockSelection` | `ls` |  |
+| `toggleIncSnap` | `tis` |  |
+| `toolFinish` | `tf` |  |
+| `toolStart` | `ts` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
 
 ## showWindow
 
@@ -13582,6 +16715,28 @@ Move snapping switches: -grid, -point, -curve; -q to ask.
 | `meshCenter` | `mc` | This snap. |
 | `query` | `q` | Query. |
 
+## snapTogetherCtx
+
+A snapTogetherCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `clearSelection` | `cs` |  |
+| `setOrientation` | `so` |  |
+| `snapPolygonFace` | `spf` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## snapshot
 
 Copies of objects at every -i frames from -st to -et, in a group. Returns the group and the snapshot node. With -mt, makes a motion trail instead.
@@ -13666,6 +16821,27 @@ Set or query the soft select falloff curve (weight against distance from the sel
 | `rename` |  | User preset to rename; the new name goes in to. |
 | `to` |  | New name for rename. |
 
+## softSelectOptionsCtx
+
+A softSelectOptionsCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `buttonDown` | `btd` |  |
+| `buttonUp` | `btu` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## solidify
 
 Solidify: the mesh keeps its rest shape, fitted to what comes in. Returns [solidify1].
@@ -13733,6 +16909,64 @@ Arguments: modifier or mesh
 Show a splitRings modifier's input mesh (it and later modifiers pass through) with the edges or faces it splits selected, so they can be changed with the normal selection tools. Finish with splitRingsApplySelection or splitRingsCancelSelection.
 
 Arguments: modifier or mesh
+
+## spreadSheetEditor
+
+Script UI: spreadSheetEditor, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `attrRegExp` | `are` |  |
+| `execute` | `exe` |  |
+| `fixedAttrList` | `fal` |  |
+| `header` | `hdr` |  |
+| `keyableOnly` | `ko` |  |
+| `longNames` | `ln` |  |
+| `niceNames` | `nn` |  |
+| `precision` | `pre` |  |
+| `selectedAttr` | `sla` |  |
+| `showShapes` | `ssh` |  |
+| `control` | `ctl` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `filter` | `f` |  |
+| `forceMainConnection` | `fmc` |  |
+| `highlightConnection` | `hlc` |  |
+| `lockMainConnection` | `lck` |  |
+| `mainListConnection` | `mlc` |  |
+| `panel` | `pnl` |  |
+| `selectionConnection` | `slc` |  |
+| `stateString` | `sts` |  |
+| `unParent` | `up` |  |
+| `unlockMainConnection` | `ulk` |  |
+| `updateMainConnection` | `upd` |  |
+| `useTemplate` | `ut` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
 
 ## square
 
@@ -14157,6 +17391,290 @@ Arguments: meshes or vertices (the selection when none); the deformer with -e an
 | `squashConstraint` | `sqc` | Stops squashed edges relaxing: 0 free, 1 not at all. |
 | `stretchConstraint` | `stc` | Stops stretched edges relaxing: 0 free, 1 not at all. |
 
+## texCutContext
+
+A texCutContext tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `adjustSize` | `as` |  |
+| `displayShellBorders` | `dsb` |  |
+| `edgeSelectSensitive` | `ess` |  |
+| `mode` | `m` |  |
+| `moveRatio` | `mr` |  |
+| `showTextureBorders` | `stb` |  |
+| `size` | `sz` |  |
+| `steadyStroke` | `ss` |  |
+| `steadyStrokeDistance` | `ssd` |  |
+| `touchToSew` | `tts` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## texLatticeDeformContext
+
+A texLatticeDeformContext tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `envelope` | `ev` |  |
+| `height` | `h` |  |
+| `width` | `w` |  |
+| `latticeColumns` | `lc` |  |
+| `latticeRows` | `lr` |  |
+| `snapPixelMode` | `spm` |  |
+| `useBoundingRect` | `ubr` |  |
+| `showMoveManipulator` | `smm` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## texMoveContext
+
+A texMoveContext tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `snap` | `s` |  |
+| `snapValue` | `sv` |  |
+| `snapComponentsRelative` | `scr` |  |
+| `position` | `p` |  |
+| `editPivotMode` | `epm` |  |
+| `editPivotPosition` | `epp` |  |
+| `tweakMode` | `twk` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## texMoveUVShellContext
+
+A texMoveUVShellContext tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `iterations` | `it` |  |
+| `mask` | `m` |  |
+| `position` | `p` |  |
+| `shellBorder` | `sb` |  |
+| `tolerance` | `to` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## texRotateContext
+
+A texRotateContext tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `snap` | `s` |  |
+| `snapValue` | `sv` |  |
+| `snapComponentsRelative` | `scr` |  |
+| `position` | `p` |  |
+| `editPivotMode` | `epm` |  |
+| `editPivotPosition` | `epp` |  |
+| `tweakMode` | `twk` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## texScaleContext
+
+A texScaleContext tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `snap` | `s` |  |
+| `snapValue` | `sv` |  |
+| `snapComponentsRelative` | `scr` |  |
+| `position` | `p` |  |
+| `editPivotMode` | `epm` |  |
+| `editPivotPosition` | `epp` |  |
+| `tweakMode` | `twk` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## texSelectContext
+
+A texSelectContext tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## texSelectShortestPathCtx
+
+A texSelectShortestPathCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## texSmoothContext
+
+A texSmoothContext tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## texSmudgeUVContext
+
+A texSmudgeUVContext tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `dragSlider` | `ds` |  |
+| `effectType` | `et` |  |
+| `functionType` | `ft` |  |
+| `pressure` | `prs` |  |
+| `radius` | `r` |  |
+| `smudgeIsMiddle` | `sim` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+
+## texTweakUVContext
+
+A texTweakUVContext tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `position` | `p` |  |
+| `tolerance` | `to` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## texWinToolCtx
+
+A texWinToolCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `alternateContext` | `ac` |  |
+| `boxzoom` | `bz` |  |
+| `dolly` | `do` |  |
+| `toolName` | `tn` |  |
+| `track` | `tr` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## text
 
 Script UI: text, with create, edit and query as in Maya's command.
@@ -14506,6 +18024,165 @@ Arguments: what to deform, and any target last (the selection when none); the de
 | `noiseAmplitude` | `na` | How strong the procedural texture is (1). |
 | `pointSpace` | `ps` | 0 world, 1 local. |
 
+## textureLassoContext
+
+A textureLassoContext tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `drawClosed` | `dc` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
+## textureWindow
+
+Script UI: textureWindow, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `capture` | `cpt` |  |
+| `changeCommand` | `cc` |  |
+| `checkerColor1` | `cc1` |  |
+| `checkerColor2` | `cc2` |  |
+| `checkerDensity` | `cd` |  |
+| `clearImage` | `ci` |  |
+| `cmEnabled` | `cme` |  |
+| `displayAxes` | `dax` |  |
+| `displayCheckered` | `dc` |  |
+| `displayDistortion` | `dcd` |  |
+| `displayDivisionLines` | `ddl` |  |
+| `displayGridLines` | `dgl` |  |
+| `displayImage` | `di` |  |
+| `displayLabels` | `dl` |  |
+| `displayPreselection` | `dpr` |  |
+| `displaySolidMap` | `dsm` |  |
+| `displayStyle` | `dst` |  |
+| `displayUVShaded` | `dus` |  |
+| `displayUVWireframe` | `duw` |  |
+| `distortionAlpha` | `dal` |  |
+| `distortionPerObject` | `dpo` |  |
+| `divisions` | `d` |  |
+| `doubleBuffer` | `dbf` |  |
+| `drawAxis` | `da` |  |
+| `drawSubregions` | `dsr` |  |
+| `exposure` | `exp` |  |
+| `frameAll` | `fa` |  |
+| `frameSelected` | `fs` |  |
+| `frontFacingColor` | `ffc` |  |
+| `gamma` | `ga` |  |
+| `gridLinesColor` | `glc` |  |
+| `gridNumbersColor` | `gnc` |  |
+| `imageBaseColor` | `ibc` |  |
+| `imageDim` | `imd` |  |
+| `imageDisplay` | `id` |  |
+| `imageNames` | `imn` |  |
+| `imageNumber` | `in` |  |
+| `imagePixelSnap` | `ip` |  |
+| `imageRatio` | `imr` |  |
+| `imageRatioValue` | `irv` |  |
+| `imageSize` | `is` |  |
+| `imageTileRange` | `itr` |  |
+| `imageUnfiltered` | `iuf` |  |
+| `internalFaces` | `if` |  |
+| `labelPosition` | `lp` |  |
+| `loadImage` | `li` |  |
+| `maxResolution` | `mrs` |  |
+| `multiColorAlpha` | `mca` |  |
+| `nbImages` | `nim` |  |
+| `nextView` | `nv` |  |
+| `numUvSets` | `nuv` |  |
+| `numberOfImages` | `ni` |  |
+| `numberOfTextures` | `nt` |  |
+| `previousView` | `pv` |  |
+| `realSize` | `rs` |  |
+| `refresh` | `rf` |  |
+| `relativeHandleSize` | `rhs` |  |
+| `removeAllImages` | `rai` |  |
+| `removeImage` | `ri` |  |
+| `rendererString` | `rst` |  |
+| `reset` | `r` |  |
+| `saveImage` | `si` |  |
+| `selectInternalFaces` | `sif` |  |
+| `selectRelated` | `sr` |  |
+| `setUvSet` | `suv` |  |
+| `singleBuffer` | `sbf` |  |
+| `size` | `s` |  |
+| `solidMap3dView` | `sm3` |  |
+| `solidMapColorSeed` | `smc` |  |
+| `solidMapPerShell` | `smp` |  |
+| `spacing` | `sp` |  |
+| `style` | `st` |  |
+| `subdivisionLinesColor` | `slc` |  |
+| `textureBorder` | `tb` |  |
+| `textureBorderColor` | `tbc` |  |
+| `textureBorderWidth` | `tbw` |  |
+| `textureNames` | `tn` |  |
+| `textureNumber` | `tx` |  |
+| `tileLabels` | `tlb` |  |
+| `tileLinesColor` | `tlc` |  |
+| `toggle` | `tgl` |  |
+| `toggleExposure` | `txp` |  |
+| `toggleGamma` | `tgm` |  |
+| `useFaceGroup` | `ufg` |  |
+| `usedPercentageHUD` | `upp` |  |
+| `uvSets` | `uvs` |  |
+| `viewPortImage` | `vpi` |  |
+| `viewTransformName` | `vtn` |  |
+| `wireframeComponentColor` | `wcc` |  |
+| `wireframeObjectColor` | `woc` |  |
+| `writeImage` | `wi` |  |
+| `control` | `ctl` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `filter` | `f` |  |
+| `forceMainConnection` | `fmc` |  |
+| `highlightConnection` | `hlc` |  |
+| `lockMainConnection` | `lck` |  |
+| `mainListConnection` | `mlc` |  |
+| `panel` | `pnl` |  |
+| `selectionConnection` | `slc` |  |
+| `stateString` | `sts` |  |
+| `unParent` | `up` |  |
+| `unlockMainConnection` | `ulk` |  |
+| `updateMainConnection` | `upd` |  |
+| `useTemplate` | `ut` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
 ## threadCount
 
 Threads to evaluate with, kept for scripts: -n count, 0 for the machine's; -q -n asks.
@@ -14539,6 +18216,27 @@ Arguments: the node, with -q
 | `spans` | `sp` | Accepted for Maya scripts. |
 | `radius` | `r` | With -q: the radius. |
 
+## threePointArcCtx
+
+A threePointArcCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `degree` | `d` |  |
+| `spans` | `s` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## tickDrawSpecial
 
 Draw keys' ticks in the special colour on the time slider: -sp on or off (on), -t which keys.
@@ -14571,6 +18269,83 @@ Arguments: the slider's name, accepted for Maya scripts
 | `beginScrub` | `bs` | Accepted for Maya scripts. |
 | `endScrub` | `es` | Accepted for Maya scripts. |
 | `forceRedraw` | `fr` | Accepted for Maya scripts. |
+
+## timePort
+
+Script UI: timePort, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `globalTime` | `gt` |  |
+| `snap` | `sn` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## timeRangeControl
+
+Script UI: timeRangeControl, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `minRange` | `min` |  |
+| `maxRange` | `max` |  |
+| `changedCommand` | `cc` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
 
 ## timeWarp
 
@@ -14631,6 +18406,85 @@ Arguments: objects
 Toggle visibility (the H key). Defaults to the selection. Every object ends up the same: hidden if most were visible (a tie hides), shown otherwise. Returns the new visibility.
 
 Arguments: objects
+
+## toolButton
+
+Script UI: toolButton, with create, edit and query as in Maya's command.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `tool` | `t` |  |
+| `allowMultipleTools` | `amt` |  |
+| `collection` | `cl` |  |
+| `select` | `sl` |  |
+| `changeCommand` | `cc` |  |
+| `onCommand` | `onc` |  |
+| `offCommand` | `ofc` |  |
+| `doubleClickCommand` | `dcc` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `imageOverlayLabel` | `iol` |  |
+| `style` | `st` |  |
+| `popupIndicatorVisible` | `pin` |  |
+| `toolArray` | `ta` |  |
+| `toolCount` | `tc` |  |
+| `version` | `ver` |  |
+| `ltVersion` | `lt` |  |
+| `annotation` | `ann` |  |
+| `backgroundColor` | `bgc` |  |
+| `defineTemplate` | `dt` |  |
+| `docTag` | `dtg` |  |
+| `dragCallback` | `dgc` |  |
+| `dropCallback` | `dpc` |  |
+| `enable` | `en` |  |
+| `enableBackground` | `ebg` |  |
+| `enableKeyboardFocus` | `ekf` |  |
+| `exists` | `ex` |  |
+| `fullPathName` | `fpn` |  |
+| `height` | `h` |  |
+| `highlightColor` | `hlc` |  |
+| `isObscured` | `io` |  |
+| `manage` | `m` |  |
+| `noBackground` | `nbg` |  |
+| `numberOfPopupMenus` | `npm` |  |
+| `parent` | `p` |  |
+| `popupMenuArray` | `pma` |  |
+| `preventOverride` | `po` |  |
+| `statusBarMessage` | `sbm` |  |
+| `useTemplate` | `ut` |  |
+| `visible` | `vis` |  |
+| `visibleChangeCommand` | `vcc` |  |
+| `width` | `w` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
+## toolCollection
+
+A set of radio items, one selected.
+
+Arguments: name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `select` | `sl` |  |
+| `collectionItemArray` | `cia` |  |
+| `numberOfCollectionItems` | `nci` |  |
+| `global` | `gl` |  |
+| `parent` | `p` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `defineTemplate` | `dt` |  |
+| `useTemplate` | `ut` |  |
+
+## toolHasOptions
+
+Whether a tool context has settings to show.
+
+Arguments: context
 
 ## torus
 
@@ -14818,6 +18672,20 @@ Arguments: a surface, then curves on it
 | `tolerance` | `tol` | Accepted for Maya scripts. |
 | `polygon` | `po` | 0 NURBS, 1 polygons. |
 
+## tumble
+
+Turn a camera about a point: -aa azimuth, -ea elevation, -ra both, -pp the point.
+
+Arguments: [camera]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `azimuthAngle` | `aa` |  |
+| `elevationAngle` | `ea` |  |
+| `localTumble` | `lt` |  |
+| `pivotPoint` | `pp` |  |
+| `rotationAngles` | `ra` |  |
+
 ## tumbleCtx
 
 A tumbleCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
@@ -14861,6 +18729,27 @@ A circular arc between -p1 and -p2 with radius -r on the side -dv's normal gives
 | `constructionHistory` | `ch` | Keep the node (on by default). |
 | `name` | `n` | The curve's name. |
 | `object` | `o` | Accepted for Maya scripts. |
+
+## twoPointArcCtx
+
+A twoPointArcCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `degree` | `d` |  |
+| `spans` | `s` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
 
 ## u3dAutoSeam
 
@@ -15063,6 +18952,52 @@ The scene's up axis: -ax y or z, -rv moves the default cameras with it (on by de
 | `axis` | `ax` | y or z. |
 | `rotateView` | `rv` | Turn the default cameras too. |
 
+## userCtx
+
+A userCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `toolStart` | `ts` |  |
+| `toolFinish` | `tf` |  |
+| `finalCommandScript` | `fcs` |  |
+| `setSelectionCount` | `ssc` |  |
+| `setAllowExcessCount` | `sae` |  |
+| `setAutoToggleSelection` | `sat` |  |
+| `setAutoComplete` | `sac` |  |
+| `setDoneSelectionPrompt` | `dsp` |  |
+| `setNoSelectionPrompt` | `nsp` |  |
+| `setNoSelectionHeadsUp` | `nsh` |  |
+| `setSelectionPrompt` | `ssp` |  |
+| `setSelectionHeadsUp` | `ssh` |  |
+| `totalSelectionSets` | `tss` |  |
+| `exitUponCompletion` | `euc` |  |
+| `enableRootSelection` | `ers` |  |
+| `ignoreInvalidItems` | `iii` |  |
+| `cumulativeLists` | `cls` |  |
+| `expandSelectionList` | `esl` |  |
+| `showManipulators` | `sm` |  |
+| `baseClassName` | `bcn` |  |
+| `toolCursorType` | `tct` |  |
+| `allComponents` | `alc` |  |
+| `vertex` | `v` |  |
+| `edge` | `eg` |  |
+| `facet` | `fc` |  |
+| `curve` | `c` |  |
+| `polymesh` | `pl` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
+
 ## uvSnapshot
 
 Write the UV wireframe to an image: -n file, -xr -yr, -r -g -b the line colour, -um -uM -vm -vM the range, -o overwrites. PNG, or PPM with -ff ppm.
@@ -15144,6 +19079,37 @@ Arguments: [camera]
 | --- | --- | --- |
 | `position` | `pos` |  |
 
+## viewManip
+
+The view's orientation aid: -visible shows or hides the axes in the corner, -goHome, -fitToView; the rest are held.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `bottomLeft` | `bl` |  |
+| `bottomRight` | `br` |  |
+| `compassAngle` | `ca` |  |
+| `dragSnap` | `ds` |  |
+| `drawCompass` | `dc` |  |
+| `fitToView` | `ftv` |  |
+| `frontParameter` | `fp` |  |
+| `goDefault` | `gd` |  |
+| `goHome` | `gh` |  |
+| `homeParameter` | `hp` |  |
+| `levelCamera` | `lc` |  |
+| `minOpacity` | `mo` |  |
+| `postCommand` | `pc` |  |
+| `preCommand` | `prc` |  |
+| `restoreCenter` | `rc` |  |
+| `selectionLockParameter` | `slp` |  |
+| `setHome` | `sh` |  |
+| `size` | `s` |  |
+| `topLeft` | `tl` |  |
+| `topRight` | `tr` |  |
+| `visible` | `v` |  |
+| `zoomToFitScene` | `zf` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+
 ## viewPlace
 
 Place a camera: -eye -la look at -up, -fov degrees, -o orthographic, -p perspective, -ow its width.
@@ -15199,6 +19165,32 @@ The wait cursor: -state on or off.
 | --- | --- | --- |
 | `state` | `st` |  |
 | `query` | `q` |  |
+
+## walkCtx
+
+A walkCtx tool context: create by name, -e and -q its settings. setToolTo makes it current.
+
+Arguments: [name]
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `alternateContext` | `ac` |  |
+| `crouchCount` | `crc` |  |
+| `toolName` | `tn` |  |
+| `walkHeight` | `wh` |  |
+| `walkSensitivity` | `wsn` |  |
+| `walkSpeed` | `ws` |  |
+| `walkToolHud` | `wth` |  |
+| `image1` | `i1` |  |
+| `image2` | `i2` |  |
+| `image3` | `i3` |  |
+| `title` | `t` |  |
+| `exists` | `ex` |  |
+| `query` | `q` |  |
+| `edit` | `e` |  |
+| `name` | `n` |  |
+| `history` | `ch` |  |
+| `dragSlider` | `ds` |  |
 
 ## weightHammerVerts
 

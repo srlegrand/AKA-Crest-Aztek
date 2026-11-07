@@ -1186,18 +1186,23 @@ pub fn face_groups(mesh: &Mesh, groups: &[(NodeId, Option<Vec<u32>>)]) -> Vec<us
     if groups.is_empty() {
         return out;
     }
-    let mut front: Vec<u32> = (0..count as u32).filter(|&f| mesh.face_valid(f) && out[f as usize] != usize::MAX).collect();
-    while let Some(f) = front.pop() {
-        let k = out[f as usize];
-        for c in mesh.face_corners(f) {
-            let mut r = mesh.corner_radial(c);
-            while r != c && r != aztek_geo::INVALID {
-                let n = mesh.corner_face(r);
-                if out[n as usize] == usize::MAX {
-                    out[n as usize] = k;
-                    front.push(n);
+    // The group holding the fewest faces spreads first: what an edit grew from a few assigned faces, as an extrusion's
+    // sides, goes with them and not with the rest of the mesh.
+    let mut order: Vec<usize> = (0..groups.len()).collect();
+    order.sort_by_key(|&k| groups[k].1.as_ref().map_or(usize::MAX, Vec::len));
+    for k in order {
+        let mut front: Vec<u32> = (0..count as u32).filter(|&f| mesh.face_valid(f) && out[f as usize] == k).collect();
+        while let Some(f) = front.pop() {
+            for c in mesh.face_corners(f) {
+                let mut r = mesh.corner_radial(c);
+                while r != c && r != aztek_geo::INVALID {
+                    let n = mesh.corner_face(r);
+                    if out[n as usize] == usize::MAX {
+                        out[n as usize] = k;
+                        front.push(n);
+                    }
+                    r = mesh.corner_radial(r);
                 }
-                r = mesh.corner_radial(r);
             }
         }
     }

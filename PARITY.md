@@ -417,3 +417,67 @@ Less than Maya does, in these:
 Deformers save and load in `.ma` as Maya lays them out: Orig shape, groupParts and groupId, the deformer, its objectSet, `.wl` weights, `.gm`. blendShape uses `.it[g].itg[i].iti[k].ipt/.ict`, `.tw`, `.bw` and `attributeAlias`; live targets connect at `.igt`. cluster and nonLinear handles are a transform with Maya's shape (clusterHandle, deformBend and so on), with nonlinear settings on the shape. A deformer on several meshes reads from `.ip[n]`/`.og[n]` into one node per mesh, with the followers linked to the leader. Point moves in a `tweak` node go into the Orig geometry; a polyTweak below a deformer stays in the chain. Data that Maya's attributes can't hold goes in an added string attribute, aztekState. Other history below a deformer still bakes, with a warning.
 
 To check against Maya: the `.cc` lattice layout, whether a file opens without a set for every deformer, the skinCluster's own groupParts, and scripted reading of a real rig.
+
+### Materials, texturing and viewport textures (07/11/2026)
+
+Nodes (`aztek_scene/src/shading.rs`): `lambert`, `reflect` (abstract), `phong`, `blinn`, `phongE`, `anisotropic`,
+`surfaceShader`, `standardSurface`, `shadingEngine` (an `objectSet`), `materialInfo`, `file`, `place2dTexture`, `bump2d`,
+with Maya's long and short names and defaults; `ls -type lambert` finds the ones built on it. Every scene has `lambert1`,
+`initialShadingGroup` and `initialMaterialInfo`, which can't be deleted or renamed. A new mesh joins
+`initialShadingGroup` in the undo step that made it; a duplicate keeps its material.
+
+Membership is a shading group's member list (shapes, or a mesh's faces, one group to a face), mirrored in real
+connections: `shape.instObjGroups[0]` or `shape.instObjGroups[0].objectGroups[k]` to `SG.dagSetMembers`. Scripts that
+connect or disconnect those by hand move the member list with them. Members follow history and direct edits. A face no
+group names, as an extrusion's sides, takes the group of its neighbour, the group with fewest faces first.
+
+Commands: `shadingNode`, `sets -renderable -noSurfaceShader -empty -name`, `sets -e -forceElement` on objects and faces,
+`sets -q -renderable`, `hyperShade -assign -objects -shaderNetworksSelectMaterialNodes -listUpstreamNodes
+-listDownstreamNodes`, `defaultNavigation -connectToExisting`, `ls -mat -tex`, `listSets -type -allSets -object
+-extendToShape`, `listConnections`, `getAttr`, `setAttr`, undo. `select` of objects now replaces picked components.
+
+`.ma` (`ma_file/shading.rs`): `.iog` and `.iog.og[k]` to `.dsm`, faces from `.iog[0].og[k].gcl` or the groupParts behind
+its groupId, `.gid`, `.gco`, `.gn`, `.ss`, materials and textures attribute by attribute with short names, `select -ne
+:lambert1`, and on writing what Maya's file also has: `.pa` to `:renderPartition.st`, `:defaultShaderList1.s`,
+`:defaultTextureList1.tx`, `:defaultRenderUtilityList1.u`, `lightLinker1` and its `relationship` lines. Exporting a
+selection takes its materials along.
+
+Texture paths: as written; relative to the project and the scene; what follows `sourceimages/` in the path; then by file
+name, any case, beside the scene and in the sourceimages folders. A missing or broken image is one warning in the script
+history, and the material draws the file node's default colour.
+
+Viewport: `textures.rs` decodes png, jpeg, tga, bmp and tiff in Rust, uploads with a mip chain, and keeps one cache per
+device keyed by path and colour space, reloading when the file's time changes. Triangles are batched per shading group, so
+per-face assignments draw; smooth preview keeps them. Shaded (5) draws each material's colour, diffuse, ambient and
+incandescence; Textured (6, Shading > Hardware Texturing, the panel button, `modelEditor -displayTextures`) samples the
+colour's file through coverage, translateFrame, rotateFrame, repeat, offset, rotateUV, wrap and mirror, with colorGain and
+colorOffset. Transparency, flat or from a file's alpha (luminance when the image has none), blends after everything solid,
+far meshes first. `modelEditor -useDefaultMaterial` draws grey. A shape no group holds draws green.
+
+Interface: Lighting/Shading menu; Assign New Material, Assign Existing Material and Material Attributes on the object
+marking menu, applying to picked faces in face mode; Attribute Editor tabs for the shading groups and materials of a mesh,
+colour swatches, a texture slot that browses for an image and builds file and place2dTexture, goes to what is connected,
+and breaks the connection on right click; the file node's path with browse and where it was found. Windows > Rendering
+Editors > Hypershade: materials, textures and utilities with swatches; create, assign to selection, select objects,
+attributes, graph, rename, delete. The UV Editor draws the image behind the UVs, with an Image button to hide it.
+
+Checked: the tests in `aztek_scene/tests/shading.rs` and `aztek_host/tests/shading_mel.rs`; screenshots of hand-made
+scenes and of one real rig. None of it has been read back by a real copy of Maya.
+
+Shallower than Maya:
+
+- No highlights, reflections, bump or real lights in the viewport: every material is lit by the same two fixed lights.
+  Specular attributes are stored and saved only.
+- Only `uv0` is sampled; `uvChooser` and other UV sets aren't. No `layeredTexture`, ramp or procedural textures: a node
+  Aztek doesn't know is reported "not represented", and a shader it doesn't know draws as `lambert1`.
+- A file reached through utility nodes draws the file alone, ignoring what they do. `stagger`, `noiseUV`, `filterType`,
+  `exposure` and `invert` are stored and not drawn. A material's alpha map uses its colour map's placement when it has both.
+- `colorSpace` is sRGB or not; no OCIO, no view transform. Frame sequences and UDIM tiles aren't read.
+- `file.outColor` as a plug is the default colour: the node never samples its image outside the viewport.
+- Transparent meshes sort as wholes, not by triangle, and don't sort within a mesh.
+- The shape's instance number is not kept: membership is per shape, and an instance draws its source's material.
+- `polyUnite` and `polySeparate` don't carry per-face assignments: the result goes in `initialShadingGroup`. `createNode
+  mesh` also joins it, where Maya leaves the mesh unassigned.
+- A written deformed mesh with per-face materials has `.gcl` but no groupParts in its chain: unchecked in Maya.
+- No lights, light linking commands, `Create Render Node` window or material favourites. Hypershade has no work area;
+  Graph opens the Node Editor. Assign Existing is a plain popup, not a submenu of the marking menu.

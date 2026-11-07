@@ -329,6 +329,10 @@ fn node_attrs(g: &Graph, id: NodeId) -> Value {
         if a.flags & flags::HIDDEN != 0 || matches!(a.ty, PlugType::Mesh | PlugType::Data) {
             continue;
         }
+        // A shading node's results aren't settings.
+        if a.flags & flags::OUTPUT != 0 && aztek_scene::shading::classification(&n.ty().name).is_some() {
+            continue;
+        }
         attrs.push(json!({
             "attr": a.name,
             "plug": format!("{path}.{}", a.name),
