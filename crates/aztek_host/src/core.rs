@@ -444,7 +444,10 @@ pub(crate) fn python_from_mel(_core: &mut Core, _src: &str) -> Result<Value, Str
 }
 
 /// Windows and tools scripts open by Maya's runtime command names; the UI takes them from `take_ui_requests`.
-static UI_REQUESTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+thread_local! {
+    // Per thread, as the host is: one UI thread in the app, and tests in parallel don't take each other's.
+    static UI_REQUESTS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
 
 pub const UI_COMMANDS: &[(&str, &str)] = &[
     ("GraphEditor", "Open the Graph Editor."),
@@ -499,7 +502,7 @@ fn register_ui_commands(s: &mut Session) {
                 let names = a.named();
                 let Some(attr) = names.last().filter(|_| names.len() >= 2) else { aztek_ops::fail!("artSetToolAndSelectAttr: give the tool and nodeType.node.attribute") };
                 aztek_scene::deform_paint::select_attr(s, attr)?;
-                UI_REQUESTS.lock().unwrap().push("ArtPaintAttrTool".to_string());
+                UI_REQUESTS.with(|q| q.borrow_mut().push("ArtPaintAttrTool".to_string()));
                 Ok(Value::Null)
             },
         )
@@ -510,7 +513,7 @@ fn register_ui_commands(s: &mut Session) {
         let n = name.to_string();
         s.register(
             aztek_ops::CommandDef::<Session>::new(name, doc, move |_s, _a| {
-                UI_REQUESTS.lock().unwrap().push(n.clone());
+                UI_REQUESTS.with(|q| q.borrow_mut().push(n.clone()));
                 Ok(Value::Null)
             })
             .undoable(false),
@@ -520,11 +523,11 @@ fn register_ui_commands(s: &mut Session) {
 
 /// Asks the shell to do something, by runtime command name or "name|payload".
 pub fn push_ui_request(r: String) {
-    UI_REQUESTS.lock().unwrap().push(r);
+    UI_REQUESTS.with(|q| q.borrow_mut().push(r));
 }
 
 pub fn take_ui_requests() -> Value {
-    json!(std::mem::take(&mut *UI_REQUESTS.lock().unwrap()))
+    json!(UI_REQUESTS.with(|q| std::mem::take(&mut *q.borrow_mut())))
 }
 
 /// Maya moves pivots with move on obj.scalePivot / obj.rotatePivot: that is movePivot here.
