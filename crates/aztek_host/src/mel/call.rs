@@ -183,7 +183,7 @@ pub fn takes_components(name: &str) -> bool {
 }
 
 pub fn is_component(s: &str) -> bool {
-    s.ends_with(']') && s.rfind('.').is_some_and(|d| s[d..].contains('['))
+    s.ends_with(']') && s.find('[').is_some_and(|o| s[..o].contains('.'))
 }
 
 /// One statement of plain command syntax to (command, call).

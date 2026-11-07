@@ -276,6 +276,12 @@ fn cycle_check(s: &mut Session, a: &Args) -> CmdResult {
         s.extras.cycle_check = Some(on_off(v) || v.as_str() == Some("on"));
         return Ok(Value::Null);
     }
+    // Maya's -e here is evaluation: cycleCheck -e on, or -e alone for on.
+    if a.bool("edit") {
+        let off = matches!(a.positional.first(), Some(v) if v.as_str() == Some("off") || v == &json!(false) || v == &json!(0));
+        s.extras.cycle_check = Some(!off);
+        return Ok(Value::Null);
+    }
     let g = &s.graph;
     let names = a.named();
     let ids: Vec<NodeId> = names.iter().filter_map(|n| g.find(n).ok().flatten()).collect();

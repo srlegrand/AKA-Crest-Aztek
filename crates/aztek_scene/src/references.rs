@@ -439,6 +439,9 @@ pub fn ma_statements(s: &Session) -> (String, String) {
 /// `file -r` from a `.ma` while it's read: an entry to load now, with edits arriving as the file's later lines.
 pub fn from_ma(s: &mut Session, path: &str, ns: &str, rfn: Option<&str>, deferred: bool) -> Result<(), String> {
     let at = add_entry(s, path, ns, rfn);
+    if !std::path::Path::new(path).exists() {
+        return Err("no such file".to_string());
+    }
     if deferred {
         return Ok(());
     }

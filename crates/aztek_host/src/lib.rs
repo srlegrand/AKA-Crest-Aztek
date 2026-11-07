@@ -3,7 +3,7 @@
 
 mod camera;
 mod core;
-mod font;
+use aztek_geo::stroke_font as font;
 mod gpu;
 pub mod mel;
 #[cfg(feature = "python")]

@@ -328,7 +328,8 @@ pub fn parse(g: &Graph, items: &[String]) -> Result<Vec<Member>, String> {
             out.push(Member::object(n));
             continue;
         }
-        let dot = item.rfind('.');
+        // A parameter has a point of its own: curve1.u[0.5].
+        let dot = item[..item.find('[').unwrap_or(item.len())].rfind('.');
         let open = item[dot.unwrap_or(0)..].find('[').map(|i| i + dot.unwrap_or(0));
         let (Some(dot), Some(open)) = (dot, open) else { return Err(format!("no object named {item}")) };
         if !item.ends_with(']') {
@@ -343,6 +344,13 @@ pub fn parse(g: &Graph, items: &[String]) -> Result<Vec<Member>, String> {
         // A surface's CVs too, by cv[u][v].
         if let Some(sh) = crate::surfaces::as_surface(g, n) {
             if suffix != "cv" {
+                let inner = &item[open + 1..item.len() - 1];
+                if let Some(ids) = crate::nurbs_components::parse_surface(g, sh, suffix, inner) {
+                    out = merged(out, &[Member { node: sh, kind: ComponentMode::Vertex, ids }]);
+                    continue;
+                }
+            }
+            if suffix != "cv" {
                 return Err(format!("unknown component '{suffix}' in {item} (cv)"));
             }
             let Some(ids) = crate::surfaces::parse_cv_ranges(g, sh, &item[open + 1..item.len() - 1]) else {
@@ -353,6 +361,13 @@ pub fn parse(g: &Graph, items: &[String]) -> Result<Vec<Member>, String> {
         }
         // A curve's CVs are its vertex components.
         if let Some(c) = crate::curves::as_curve(g, n) {
+            if suffix != "cv" {
+                let inner = &item[open + 1..item.len() - 1];
+                if let Some(ids) = crate::nurbs_components::parse_curve(g, c, suffix, inner) {
+                    out = merged(out, &[Member { node: c, kind: ComponentMode::Vertex, ids }]);
+                    continue;
+                }
+            }
             if suffix != "cv" {
                 return Err(format!("unknown component '{suffix}' in {item} (cv)"));
             }

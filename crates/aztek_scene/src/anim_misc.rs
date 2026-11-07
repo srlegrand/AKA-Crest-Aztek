@@ -22,7 +22,7 @@ use crate::system_cmds::{q_flags, setting_store, Def};
 use crate::transform::Transform;
 
 type Cmd = CommandDef<Session>;
-use ArgType::{Bool as B, Float as F, Int as I, String as S};
+use ArgType::{Bool as B, Int as I, String as S};
 
 // ---------------------------------------------------------------------------------------------------------------------
 // timeWarp
@@ -30,7 +30,6 @@ use ArgType::{Bool as B, Float as F, Int as I, String as S};
 const TW_APPLY: usize = 0;
 const TW_ORIG: usize = 1;
 const TW_WARPED: usize = 2;
-const TW_INTERP: usize = 3;
 const TW_OUT: usize = 4;
 
 struct TimeWarpNode;
@@ -555,5 +554,4 @@ pub fn register(c: &mut Commands<Session>) {
             .flag(f("mapNode", "mn", ArgType::List, "Accepted for Maya scripts.").multi(2))
             .flag(f("unmapNode", "un", ArgType::List, "Accepted for Maya scripts.").multi(2)),
     );
-    let _ = F;
 }

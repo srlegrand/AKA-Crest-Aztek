@@ -182,7 +182,7 @@ pub(crate) fn set_curve_data(g: &mut Graph, shape: NodeId, c: NurbsCurve) -> Cmd
     set_cached(g, shape, c)
 }
 
-fn set_cached(g: &mut Graph, shape: NodeId, c: NurbsCurve) -> CmdResult<()> {
+pub(crate) fn set_cached(g: &mut Graph, shape: NodeId, c: NurbsCurve) -> CmdResult<()> {
     g.set_value(plug(shape, CurveShape::CACHED), to_value(c))?;
     Ok(())
 }
@@ -231,9 +231,15 @@ fn register_provider() {
         node_type: SHAPE_TYPE.into(),
         points: Some(Arc::new(|g: &mut Graph, node: NodeId| {
             let Some(c) = local_curve(g, node) else { return Vec::new() };
-            c.distinct_cvs().iter().enumerate().map(|(i, p)| (i as u32, *p)).collect()
+            let mut out: Vec<(u32, DVec3)> = c.distinct_cvs().iter().enumerate().map(|(i, p)| (i as u32, *p)).collect();
+            out.extend(c.edit_points().into_iter().enumerate().map(|(i, p)| (crate::nurbs_components::EP | i as u32, p)));
+            out
         })),
-        set_points: Some(Arc::new(|g: &mut Graph, node: NodeId, pts: &[(u32, DVec3)]| move_cvs(g, node, pts))),
+        set_points: Some(Arc::new(|g: &mut Graph, node: NodeId, pts: &[(u32, DVec3)]| {
+            let Some(c) = local_curve(g, node) else { return };
+            let moves = crate::nurbs_components::curve_moves(&c, pts);
+            move_cvs(g, node, &moves)
+        })),
         edit_plug: None,
         frames: None,
         bake: Some(Arc::new(|g: &mut Graph, node: NodeId, m: &DMat4| {
@@ -501,7 +507,7 @@ impl NodeBehavior for SurfNode {
                         reverse_normals: d.bool(S_P + 6),
                     },
                 ),
-                SurfKind::Planar => curves.first().and_then(crate::surfaces::rectangle_surface),
+                SurfKind::Planar => curves.first().and_then(|c| crate::surfaces::rectangle_surface(c).or_else(|| crate::nurbs_ops::trimmed_plane(c))),
                 SurfKind::Sweep => None,
             };
             d.set_output(S_OUT_SURFACE, surface.map(crate::surfaces::to_value).unwrap_or(PlugValue::Data(None)));
@@ -872,7 +878,7 @@ pub(crate) fn create_curve_node(g: &mut Graph, name: &str, c: NurbsCurve) -> Cmd
     create_curve(g, name, c, false)
 }
 
-fn curve_arg(g: &Graph, name: &str, cmd: &str) -> CmdResult<NodeId> {
+pub(crate) fn curve_arg(g: &Graph, name: &str, cmd: &str) -> CmdResult<NodeId> {
     let id = find(g, name, cmd)?;
     match as_curve(g, id) {
         Some(c) => Ok(c),
@@ -881,7 +887,7 @@ fn curve_arg(g: &Graph, name: &str, cmd: &str) -> CmdResult<NodeId> {
 }
 
 /// Puts a history node above a curve shape; returns the node. The shape's tweaks go into the input so they aren't lost.
-fn insert_op(g: &mut Graph, shape: NodeId, ty: &str, set: &[(usize, PlugValue)]) -> CmdResult<NodeId> {
+pub(crate) fn insert_op(g: &mut Graph, shape: NodeId, ty: &str, set: &[(usize, PlugValue)]) -> CmdResult<NodeId> {
     let current = local_curve(g, shape).unwrap_or_default();
     let t = types::find(ty).ok_or_else(|| aztek_ops::CommandError::new(format!("no node type {ty}")))?;
     let node = g.create_node(&t, &format!("{ty}1"), NO_NODE, true)?;
@@ -902,7 +908,7 @@ fn insert_op(g: &mut Graph, shape: NodeId, ty: &str, set: &[(usize, PlugValue)])
     Ok(node)
 }
 
-fn with_common(c: Cmd) -> Cmd {
+pub(crate) fn with_common(c: Cmd) -> Cmd {
     c.flag(f("constructionHistory", "ch", ArgType::Bool, "Keep a history node (on by default)."))
         .flag(f("replaceOriginal", "rpo", ArgType::Bool, "Change the curve itself (on by default)."))
         .flag(f("name", "n", ArgType::String, "Name of a new curve."))
@@ -910,7 +916,7 @@ fn with_common(c: Cmd) -> Cmd {
 }
 
 /// Runs a curve op on the curves named or selected, with Maya's -ch and -rpo. Returns [curve, node].
-fn run_op(s: &mut Session, a: &Args, cmd: &str, ty: &str, set: &[(usize, PlugValue)]) -> CmdResult {
+pub(crate) fn run_op(s: &mut Session, a: &Args, cmd: &str, ty: &str, set: &[(usize, PlugValue)]) -> CmdResult {
     let names = objects(s, a);
     if names.is_empty() {
         fail!("{cmd}: name or select a curve");
@@ -1585,18 +1591,14 @@ pub fn register(c: &mut Commands<Session>) {
     c.register(surf_flags(
         Cmd::new(
             "planar",
-            "A surface filling a closed curve. Trims aren't modelled: a rectangle makes an untrimmed surface, anything else a polygon \
-             face with a warning, as does -po 1. Returns [planarTrimmedSurface1, planarTrim1].",
+            "A surface filling a closed curve: a rectangle makes a plain patch, anything else a plane trimmed to it; -po 1 a polygon \
+             face. Returns [planarTrimmedSurface1, planarTrim1].",
             |s, a| {
                 let names = objects(s, a);
                 let g = &mut s.graph;
                 let Some(n) = names.first() else { fail!("planar: name or select a closed curve") };
                 let shape = curve_arg(g, n, "planar")?;
-                let mut polygon = a.int("polygon", 0) == 1;
-                if !polygon && world_curve(g, shape).and_then(|c| crate::surfaces::rectangle_surface(&c)).is_none() {
-                    log::warn!("planar: trimmed surfaces aren't supported; {n} isn't a rectangle, so this makes polygons");
-                    polygon = true;
-                }
+                let polygon = a.int("polygon", 0) == 1;
                 let (tr, node) = surf_output(g, "planarTrim", &a.string("name", "planarTrimmedSurface1"), "planarTrim1", &[shape], &[], polygon)?;
                 finish_surf(g, a, tr, node)
             },

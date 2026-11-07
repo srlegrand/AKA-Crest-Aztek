@@ -1535,6 +1535,17 @@ pub fn component_strings(g: &Graph, flatten: bool) -> Vec<String> {
             continue;
         }
         let path = display_path(g, node);
+        // Edit points, curve points, isoparms and patches of NURBS shapes spell themselves.
+        let (special, plain): (Vec<u32>, Vec<u32>) = ids.iter().partition(|&&i| crate::nurbs_components::is_encoded(i));
+        for &i in &special {
+            if let Some(t) = crate::nurbs_components::format_id(g, node, i) {
+                out.push(format!("{path}.{t}"));
+            }
+        }
+        if plain.is_empty() {
+            continue;
+        }
+        let ids = &plain;
         if let Some(dims) = point_grid(g, node) {
             out.extend(grid_strings(&path, dims, ids, flatten));
             continue;
@@ -1571,12 +1582,17 @@ pub fn component_strings(g: &Graph, flatten: bool) -> Vec<String> {
 
 /// Whether a name is a component string (pCube1.f[0:3]) rather than a node or plug.
 pub fn is_component_string(name: &str) -> bool {
-    name.ends_with(']') && name.rfind('.').is_some_and(|d| name[d..].contains('['))
+    // A parameter has a point of its own: curve1.u[0.5].
+    name.ends_with(']') && name.find('[').is_some_and(|o| name[..o].contains('.'))
 }
 
 /// select's component half: members from component strings, combined with the current component selection by mode.
 pub fn select_strings(g: &mut Graph, items: &[String], how: crate::graph::SelectMode) -> Result<Option<ComponentMode>, String> {
     use crate::graph::SelectMode as M;
+    // NURBS components count against what's evaluated.
+    if items.iter().any(|i| is_component_string(i)) {
+        g.evaluate();
+    }
     let members = crate::object_sets::parse(g, items)?;
     let mut sets = [selected_all(g, ComponentMode::Vertex).clone(), selected_all(g, ComponentMode::Edge).clone(), selected_all(g, ComponentMode::Face).clone()];
     if how == M::Replace {

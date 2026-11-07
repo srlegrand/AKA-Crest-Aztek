@@ -1445,7 +1445,8 @@ impl Build<'_> {
         let Some(id) = self.id(i) else { return };
         let n = &self.doc.nodes[i];
         for a in &n.adds {
-            if !a.parent.is_empty() {
+            // The trim is read with the surface.
+            if !a.parent.is_empty() || a.long == "aztekTrim" {
                 continue;
             }
             let at = a.at.as_str();
@@ -1685,7 +1686,8 @@ impl Build<'_> {
                         if stride == 3 && count == nu * nv {
                             // U is the outer loop in the file, as in NurbsSurface.
                             let cvs: Vec<DVec3> = v[cv_at + 1..cv_at + 1 + count * 3].chunks(3).map(|c| DVec3::new(c[0], c[1], c[2])).collect();
-                            made = Some(NurbsSurface { degree_u: du, degree_v: dv, form_u: Form::from_index(v[2] as i64), form_v: Form::from_index(v[3] as i64), nu, nv, cvs, knots_u: v[5..kv_at].to_vec(), knots_v: v[kv_at + 1..cv_at].to_vec() });
+                            let trim = n.text(&["aztekTrim"]).and_then(|t| serde_json::from_str::<Value>(t).ok()).map(|j| crate::surfaces::trim_from_json(&j)).unwrap_or_default();
+                            made = Some(NurbsSurface { degree_u: du, degree_v: dv, form_u: Form::from_index(v[2] as i64), form_v: Form::from_index(v[3] as i64), nu, nv, cvs, knots_u: v[5..kv_at].to_vec(), knots_v: v[kv_at + 1..cv_at].to_vec(), trim });
                         }
                     }
                 }
@@ -2547,7 +2549,7 @@ pub fn read_text(s: &mut Session, text: &str, import: bool) -> Vec<String> {
     let mut before = Vec::new();
     for (path, ns, rfn, deferred) in &doc.refs {
         if let Err(e) = crate::references::from_ma(s, path, ns, rfn.as_deref(), *deferred) {
-            before.push(e);
+            before.push(format!("reference skipped: {path}: {e}"));
         }
     }
     if doc.up_z && !import {
@@ -3010,6 +3012,11 @@ impl Writer<'_> {
             }
         }
         let _ = writeln!(self.out, "\t\t;");
+        // Maya's own trim format isn't written: an attribute of ours holds the regions, which Maya keeps but doesn't draw.
+        if !c.trim.is_empty() {
+            let _ = writeln!(self.out, "\taddAttr -ci true -sn \"aztekTrim\" -ln \"aztekTrim\" -dt \"string\";");
+            let _ = writeln!(self.out, "\tsetAttr \".aztekTrim\" -type \"string\" {};", quoted(&crate::surfaces::trim_to_json(&c.trim).to_string()));
+        }
     }
 
     fn write_camera(&mut self, shape: NodeId) {
@@ -4060,14 +4067,14 @@ fn file_query(s: &Session, a: &Args, path: Option<&str>) -> Value {
     if a.bool("exists") {
         return json!(path.map(str::to_string).or_else(|| s.scene_path.clone()).is_some_and(|p| std::path::Path::new(&p).exists()));
     }
-    if a.has("type") {
+    if a.has("type") || crate::maya_core::asked(a, "type") {
         let t = s.scene_type.or(s.scene_path.as_deref().map(Format::of_path)).unwrap_or(Format::MayaAscii);
         return json!([t.type_name()]);
     }
     if a.bool("modified") {
         return json!(s.graph.undo_stack().can_undo());
     }
-    if a.has("options") {
+    if a.has("options") || crate::maya_core::asked(a, "options") {
         return json!("");
     }
     let name = s.scene_path.clone().unwrap_or_default();

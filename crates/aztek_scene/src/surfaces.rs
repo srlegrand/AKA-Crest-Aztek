@@ -1,7 +1,7 @@
 //! NURBS surfaces: the nurbsSurface shape with its CVs as components (`surface1.cv[u][v]`), the primitives' make* nodes,
 //! the surface edit commands, each a history node as in Maya, the info nodes, and nurbsToPoly's nurbsTessellate node.
-//! The shape outputs a tessellated mesh and isoparm lines for the viewport. Trims aren't modelled: planar makes a surface
-//! only for a rectangle, and curveOnSurface, projectCurve, trim, bevel and bevelPlus aren't here yet.
+//! The shape outputs a tessellated mesh and isoparm lines for the viewport. Trims travel on the surface itself; the commands
+//! that make them are in nurbs_ops.rs.
 
 use std::any::Any;
 use std::sync::Arc;
@@ -37,7 +37,7 @@ impl crate::plug::Data for SurfaceData {
         let s = &self.0;
         json!({"kind": "nurbsSurfaceData", "degreeU": s.degree_u, "degreeV": s.degree_v, "formU": s.form_u.index(), "formV": s.form_v.index(),
                "nu": s.nu, "nv": s.nv, "cvs": s.cvs.iter().flat_map(|p| [p.x, p.y, p.z]).collect::<Vec<f64>>(),
-               "knotsU": s.knots_u, "knotsV": s.knots_v})
+               "knotsU": s.knots_u, "knotsV": s.knots_v, "trim": trim_to_json(&s.trim)})
     }
     fn bytes(&self) -> usize {
         self.0.cvs.len() * 24 + (self.0.knots_u.len() + self.0.knots_v.len()) * 8
@@ -60,7 +60,29 @@ fn surface_from_json(j: &Value) -> NurbsSurface {
         cvs: nums("cvs").chunks(3).filter(|c| c.len() == 3).map(|c| DVec3::new(c[0], c[1], c[2])).collect(),
         knots_u: nums("knotsU"),
         knots_v: nums("knotsV"),
+        trim: trim_from_json(j.get("trim").unwrap_or(&Value::Null)),
     }
+}
+
+pub(crate) fn trim_to_json(trim: &[nurbs::TrimRegion]) -> Value {
+    Value::Array(trim.iter().map(|r| json!({"keepOdd": r.keep_odd, "loops": r.loops.iter().map(|l| l.iter().flat_map(|p| [p.x, p.y]).collect::<Vec<f64>>()).collect::<Vec<_>>()})).collect())
+}
+
+pub(crate) fn trim_from_json(j: &Value) -> Vec<nurbs::TrimRegion> {
+    j.as_array()
+        .into_iter()
+        .flatten()
+        .map(|r| nurbs::TrimRegion {
+            keep_odd: r.get("keepOdd").and_then(Value::as_bool).unwrap_or(true),
+            loops: r
+                .get("loops")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .map(|l| l.as_array().map(|a| a.chunks(2).filter(|c| c.len() == 2).filter_map(|c| Some(glam::DVec2::new(c[0].as_f64()?, c[1].as_f64()?))).collect()).unwrap_or_default())
+                .collect(),
+        })
+        .collect()
 }
 
 pub(crate) fn surface_value(v: &PlugValue) -> Option<&NurbsSurface> {
@@ -93,7 +115,7 @@ impl crate::plug::Data for WireData {
     }
 }
 
-fn surface_attr(name: &str, short: &str, fl: u32, doc: &str) -> AttrDef {
+pub(crate) fn surface_attr(name: &str, short: &str, fl: u32, doc: &str) -> AttrDef {
     AttrDef { name: name.into(), short_name: short.into(), ty: PlugType::Data, default_value: PlugValue::Data(None), flags: fl, doc: doc.into(), ..Default::default() }
 }
 
@@ -242,7 +264,7 @@ pub fn drawn_cvs(n: &crate::node::Node) -> Option<(Vec<DVec3>, usize)> {
     Some(((0..du).flat_map(|u| (0..dv).map(move |v| s.cv(u, v))).collect(), dv))
 }
 
-fn set_cached(g: &mut Graph, shape: NodeId, s: NurbsSurface) -> CmdResult<()> {
+pub(crate) fn set_cached(g: &mut Graph, shape: NodeId, s: NurbsSurface) -> CmdResult<()> {
     g.set_value(plug(shape, SurfaceShape::CACHED), to_value(s))?;
     Ok(())
 }
@@ -358,9 +380,15 @@ fn register_provider() {
         points: Some(Arc::new(|g: &mut Graph, node: NodeId| {
             let Some(s) = local_surface(g, node) else { return Vec::new() };
             let (du, dv) = (s.distinct_u(), s.distinct_v());
-            (0..du).flat_map(|u| (0..dv).map(move |v| (u, v))).map(|(u, v)| ((u * dv + v) as u32, s.cv(u, v))).collect()
+            let mut out: Vec<(u32, DVec3)> = (0..du).flat_map(|u| (0..dv).map(move |v| (u, v))).map(|(u, v)| ((u * dv + v) as u32, s.cv(u, v))).collect();
+            out.extend(crate::nurbs_components::surface_edit_points(&s));
+            out
         })),
-        set_points: Some(Arc::new(|g: &mut Graph, node: NodeId, pts: &[(u32, DVec3)]| move_cvs(g, node, pts))),
+        set_points: Some(Arc::new(|g: &mut Graph, node: NodeId, pts: &[(u32, DVec3)]| {
+            let Some(s) = local_surface(g, node) else { return };
+            let moves = crate::nurbs_components::surface_moves(&s, pts);
+            move_cvs(g, node, &moves)
+        })),
         edit_plug: None,
         frames: None,
         bake: Some(Arc::new(|g: &mut Graph, node: NodeId, m: &DMat4| {
@@ -780,6 +808,7 @@ impl NodeBehavior for OpNode {
             d.set_output(OUT, to_value(s));
             return;
         }
+        let (trim, domain) = (s.trim.clone(), (s.domain_u(), s.domain_v()));
         let out = match self.kind {
             Op::Rebuild => {
                 let dir = d.int(P0 + 5);
@@ -833,6 +862,11 @@ impl NodeBehavior for OpNode {
                 _ => s.closed_u(),
             },
         };
+        // A trim stays with the parameters it was made in.
+        let mut out = out;
+        if out.trim.is_empty() && (out.domain_u(), out.domain_v()) == domain {
+            out.trim = trim;
+        }
         d.set_output(OUT, to_value(out));
     }
     fn as_any(&self) -> &dyn Any {
@@ -1069,7 +1103,7 @@ impl NodeBehavior for SurfaceInfoNode {
     }
 }
 
-fn register_one(t: NodeType) {
+pub(crate) fn register_one(t: NodeType) {
     let name = t.name.clone();
     types::register_type(t).expect(&name);
 }
@@ -1299,7 +1333,7 @@ pub fn register_types() {
 
 type Cmd = CommandDef<Session>;
 
-fn surface_arg(g: &Graph, name: &str, cmd: &str) -> CmdResult<NodeId> {
+pub(crate) fn surface_arg(g: &Graph, name: &str, cmd: &str) -> CmdResult<NodeId> {
     let id = find(g, name, cmd)?;
     match as_surface(g, id) {
         Some(s) => Ok(s),
@@ -1307,7 +1341,7 @@ fn surface_arg(g: &Graph, name: &str, cmd: &str) -> CmdResult<NodeId> {
     }
 }
 
-fn curve_shape(g: &Graph, name: &str, cmd: &str) -> CmdResult<NodeId> {
+pub(crate) fn curve_shape(g: &Graph, name: &str, cmd: &str) -> CmdResult<NodeId> {
     let id = find(g, name, cmd)?;
     match crate::curves::as_curve(g, id) {
         Some(c) => Ok(c),
@@ -1351,7 +1385,7 @@ pub fn surface_history(g: &Graph, shape: NodeId) -> Vec<NodeId> {
 }
 
 /// Puts a history node above a shape; returns the node. Tweaks go into the input so they aren't lost.
-fn insert_op(g: &mut Graph, shape: NodeId, ty: &str, set: &[(usize, PlugValue)]) -> CmdResult<NodeId> {
+pub(crate) fn insert_op(g: &mut Graph, shape: NodeId, ty: &str, set: &[(usize, PlugValue)]) -> CmdResult<NodeId> {
     let current = local_surface(g, shape).unwrap_or_default();
     let t = types::find(ty).ok_or_else(|| aztek_ops::CommandError::new(format!("no node type {ty}")))?;
     let node = g.create_node(&t, &format!("{ty}1"), NO_NODE, true)?;
@@ -1372,17 +1406,17 @@ fn insert_op(g: &mut Graph, shape: NodeId, ty: &str, set: &[(usize, PlugValue)])
     Ok(node)
 }
 
-fn create_surface(g: &mut Graph, name: &str, s: NurbsSurface) -> CmdResult<(NodeId, NodeId)> {
+pub(crate) fn create_surface(g: &mut Graph, name: &str, s: NurbsSurface) -> CmdResult<(NodeId, NodeId)> {
     let (tr, sh) = crate::dag::create_with_shape(g, SHAPE_TYPE, name, NO_NODE)?;
     set_cached(g, sh, s)?;
     Ok((tr, sh))
 }
 
-fn wants_history(g: &Graph, a: &Args) -> bool {
+pub(crate) fn wants_history(g: &Graph, a: &Args) -> bool {
     a.get("constructionHistory").and_then(Value::as_bool).unwrap_or(g.construction_history)
 }
 
-fn with_common(c: Cmd) -> Cmd {
+pub(crate) fn with_common(c: Cmd) -> Cmd {
     c.flag(f("constructionHistory", "ch", ArgType::Bool, "Keep a history node (on by default)."))
         .flag(f("replaceOriginal", "rpo", ArgType::Bool, "Change the surface itself (on by default)."))
         .flag(f("name", "n", ArgType::String, "Name of a new surface."))
@@ -1391,7 +1425,7 @@ fn with_common(c: Cmd) -> Cmd {
 }
 
 /// Runs an edit on the surfaces named or selected, with Maya's -ch and -rpo. Returns [surface, node].
-fn run_op(s: &mut Session, a: &Args, cmd: &str, ty: &str, set: &[(usize, PlugValue)]) -> CmdResult {
+pub(crate) fn run_op(s: &mut Session, a: &Args, cmd: &str, ty: &str, set: &[(usize, PlugValue)]) -> CmdResult {
     let names = objects(s, a);
     if names.is_empty() {
         fail!("{cmd}: name or select a surface");
@@ -1421,7 +1455,7 @@ fn run_op(s: &mut Session, a: &Args, cmd: &str, ty: &str, set: &[(usize, PlugVal
 }
 
 /// A mesh transform fed by a surface plug through a nurbsTessellate node.
-fn tessellate_plug(g: &mut Graph, src: &crate::plug::PlugRef, name: &str, set: &[(usize, PlugValue)]) -> CmdResult<(NodeId, NodeId)> {
+pub(crate) fn tessellate_plug(g: &mut Graph, src: &crate::plug::PlugRef, name: &str, set: &[(usize, PlugValue)]) -> CmdResult<(NodeId, NodeId)> {
     let t = types::find("nurbsTessellate").expect("nurbsTessellate");
     let node = g.create_node(&t, "nurbsTessellate1", NO_NODE, true)?;
     g.connect(src, &plug(node, 0), false)?;
@@ -1435,7 +1469,7 @@ fn tessellate_plug(g: &mut Graph, src: &crate::plug::PlugRef, name: &str, set: &
 
 const PER_SPAN: [(usize, i64); 2] = [(2, 2), (3, 1)];
 
-fn per_span_settings() -> Vec<(usize, PlugValue)> {
+pub(crate) fn per_span_settings() -> Vec<(usize, PlugValue)> {
     PER_SPAN.iter().map(|&(a, v)| (a, PlugValue::Int(v))).collect()
 }
 
@@ -1579,7 +1613,7 @@ fn multi_params(a: &Args) -> Vec<f64> {
 }
 
 /// surface.u[0.5] or surface.v[1]: the shape, 0 for U or 1 for V, and the parameter.
-fn parse_isoparm(g: &Graph, name: &str) -> Option<(NodeId, i64, f64)> {
+pub(crate) fn parse_isoparm(g: &Graph, name: &str) -> Option<(NodeId, i64, f64)> {
     // The parameter may have a decimal point of its own, so the dot wanted is the one before the bracket.
     let (head, rest) = name.split_once('[')?;
     let (obj, kind) = head.rsplit_once('.')?;

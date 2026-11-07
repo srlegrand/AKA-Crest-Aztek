@@ -182,6 +182,9 @@ pub fn register(c: &mut Commands<Session>) {
                 g.evaluate();
                 let local = a.bool("local");
                 if components::is_component_string(&n) {
+                    if let Some(q) = crate::nurbs_components::point_of(g, &n, local) {
+                        return Ok(json!([q.x, q.y, q.z]));
+                    }
                     if let Some((node, ids, at)) = provided_points(g, std::slice::from_ref(&n)).into_iter().next() {
                         let Some(q) = ids.first().and_then(|id| at.get(id)) else { fail!("pointPosition: no point {n}") };
                         let w = crate::rig::world(g, crate::dag::transform_of(g, node));
@@ -219,6 +222,11 @@ fn xform_cvs(g: &mut crate::graph::Graph, a: &aztek_ops::Args, named: &[String],
     for n in named {
         let Some((obj, comp)) = n.split_once('.') else { continue };
         let Ok(Some(id)) = g.find(obj) else { continue };
+        if let Some(values) = crate::nurbs_components::xform(g, a, id, comp, ws) {
+            any = true;
+            out.extend(values?);
+            continue;
+        }
         if let Some(shape) = crate::surfaces::as_surface(g, id) {
             any = true;
             let inner = comp.split_once('[').map(|x| x.1.trim_end_matches(']')).unwrap_or("");

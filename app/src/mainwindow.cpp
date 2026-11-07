@@ -177,6 +177,7 @@ QMenu* MainWindow::create_menu() {
                 P{"Plane", "polyPlane"}, P{"Disc", "polyDisc"}, P{"Pipe", "polyPipe"}, P{"Capsule", "polyCapsule"}, P{"Platonic Solid", "polyIcoSphere"},
                 P{"Quad Sphere", "polyQuadSphere"}})
         cmd(polys, p.label, p.cmd, {}, QString(), true);
+    cmd(m, "Text", "textCurves", QJsonObject{{"text", "Text"}});
     QMenu* nurbs = m->addMenu("NURBS Primitives");
     const QJsonArray up{0, 1, 0};
     cmd(nurbs, "Sphere", "sphere", QJsonObject{{"axis", up}}, QString(), true);
