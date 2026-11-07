@@ -104,7 +104,17 @@ fn ensure_built_in(m: &mut Model) {
         return;
     }
     m.built_in = true;
-    for (kind, name) in [("mainWindow", MAIN_WINDOW), ("progressBar", MAIN_PROGRESS)] {
+    // The application's own editors, under the names Maya gives them, so scripts can set them up.
+    for (kind, name) in [
+        ("mainWindow", MAIN_WINDOW),
+        ("progressBar", MAIN_PROGRESS),
+        ("outlinerEditor", "outlinerPanel1"),
+        ("animCurveEditor", "graphEditor1GraphEd"),
+        ("outlinerEditor", "graphEditor1OutlineEd"),
+        ("dopeSheetEditor", "dopeSheetPanel1DopeSheetEd"),
+        ("outlinerEditor", "dopeSheetPanel1OutlineEd"),
+        ("nodeEditor", "nodeEditorPanel1NodeEditorEd"),
+    ] {
         m.next += 1;
         m.controls.insert(m.next, Control { kind: kind.into(), name: name.into(), path: name.into(), parent: None, children: Vec::new(), props: Map::new() });
     }
@@ -384,10 +394,24 @@ const KINDS: &[(&str, &str)] = &[
     ("scriptTable", "rows:r:a columns:c:a label:l:a2 columnWidth:cw:a2 rowHeight:rh:a getCellCmd:gcc:a cellChangedCmd:ccc:a afterCellChangedCmd:acc:a selectionChangedCmd:scc:a selectedRow:sr:b selectedRows:srs:a selectedColumns:scs:a selectedCells:sc:a clearTable:clr:b clearRow:cr:a deleteRow:dr:a insertRow:ir:a excludingHeaders:eh:b multiEditEnabled:mee:b underPointerRow:upr:b underPointerColumn:upc:b useDoubleClickEdit:dce:b sortEnabled:se:b cellIndex:ci:a cellValue:cv:a cellBackgroundColor:cbc:a cellForegroundColor:cfc:a"),
     ("layerButton", "label:l:a name:n:a changedCommand:cc:a color:cl:a command:c:a current:cr:b doubleClickCommand:dcc:a hideOnPlaybackCommand:hpc:a identification:id:a labelWidth:lw:a layerHideOnPlayback:lhp:b layerState:ls:a layerVisible:lv:b renameCommand:rc:a select:s:b transparent:t:b typeCommand:tc:a visibleCommand:vc:a"),
     ("toolButton", "tool:t:a1 allowMultipleTools:amt:b collection:cl:a select:sl:b changeCommand:cc:a onCommand:onc:a offCommand:ofc:a doubleClickCommand:dcc:a image1:i1:a image2:i2:a image3:i3:a imageOverlayLabel:iol:a style:st:a popupIndicatorVisible:pin:b toolArray:ta:b toolCount:tc:b version:ver:a ltVersion:lt:a"),
+    ("outlinerEditor", "alwaysToggleSelect:ats:b animLayerFilterOptions:alf:a attrAlphaOrder:aao:a attrFilter:af:a autoExpand:xpd:b autoExpandLayers:ael:b autoSelectNewObjects:aso:b containersIgnoreFilters:cif:b directSelect:ds:b displayMode:dm:a doNotSelectNewObjects:dns:b dropIsParent:dip:b editAttrName:ean:b expandAllItems:eai:b expandAllSelectedItems:eas:b expandAttribute:xta:b expandConnections:xc:b expandObjects:eo:b feedbackItemName:fbn:b feedbackRowNumber:fbr:b getCurrentSetOfItem:gcs:a highlightActive:ha:b highlightSecondary:hs:b ignoreDagHierarchy:hir:b ignoreHiddenAttribute:iha:b ignoreOutlinerColor:ioc:b isChildSelected:ics:a isSet:isSet:a isSetMember:ism:a lineHeight:lh:a longNames:ln:b niceNames:nn:b object:obj:a organizeByClip:obc:b organizeByLayer:obl:b parentObject:po:b pinPlug:pin:a refresh:rfs:b removeFromCurrentSet:rcs:a renameItem:rni:a renameSelectedItem:rsi:b renderFilterActive:rfa:b renderFilterIndex:rfi:a renderFilterVisible:rfv:b selectCommand:sec:a setDefaultFilter:sdf:b setFilter:sf:a setsIgnoreFilters:sif:b showAnimCurvesOnly:aco:b showAnimLayerWeight:salw:b showAssets:a:b showAssignedMaterials:am:b showAttrValues:av:b showAttributes:sat:b showCompounds:cmp:b showConnected:sc:b showContainedOnly:sco:b showContainerContents:scc:b showDagOnly:dag:b showLeafs:laf:b showMuteInfo:smi:b showNamespace:sn:b showNumericAttrsOnly:num:b showParentContainers:spc:b showPinIcons:spi:b showPublishedAsConnected:spu:b showReferenceMembers:srm:b showReferenceNodes:rn:b showSelected:ssd:b showSetMembers:ssm:b showShapes:shp:b showTextureNodesOnly:tno:b showTimeEditor:ste:b showUVAttrsOnly:uv:b showUnitlessCurves:su:b showUpstreamCurves:suc:b sortOrder:so:a transmitFilters:tf:b control:ctl:b defineTemplate:dt:a docTag:dtg:a filter:f:a forceMainConnection:fmc:a highlightConnection:hlc:a lockMainConnection:lck:b mainListConnection:mlc:a panel:pnl:a selectionConnection:slc:a stateString:sts:b unParent:up:b unlockMainConnection:ulk:b updateMainConnection:upd:b useTemplate:ut:a"),
+    ("nodeEditor", "addNewNodes:ann:b addNode:an:a1 additiveGraphingMode:agm:b allAttributes:ala:b allNodes:aln:b autoSizeNodes:asn:b beginCreateNode:bcn:b consistentNameSize:cns:b createNodeCommand:cnc:a customAttributeListEdit:cal:a cycleHUD:ch:b defaultPinnedState:dps:b deleteSelected:dsl:b downstream:ds:b dotFormat:dot:a duplicateSelected:dup:b errorCallback:ecb:a extendToShapes:ets:b feedbackConnection:fbc:b feedbackNode:fbn:b feedbackPlug:fbp:b feedbackTabIndex:fbi:b feedbackType:fbt:b filterCreateNodeTypes:fcn:a focusCommand:fc:a frameAll:fa:b frameModelSelection:fms:b frameSelected:fs:b getNodeList:gnl:b graphSelectedConnections:gsc:b graphSelection:gs:b gridSnap:gsn:b gridVisibility:gv:b hasWatchpoint:hw:b hudMessage:hm:a ignoreAssets:ia:b island:isl:b keyPressCommand:kp:a keyReleaseCommand:kr:a layout:lay:b layoutCommand:lc:a nodeSwatchSize:nss:a nodeTitleMode:ntm:a nodeViewMode:nvm:a panView:pv:a pinSelectedNodes:psn:b popupMenuScript:pms:a redockSelectedNodes:rsn:b removeDownstream:rd:b removeNode:rem:a1 removeUnselected:run:b removeUpstream:ru:b rootNode:rn:a1 rootsFromSelection:rfs:b scaleView:sv:a selectAll:sa:b selectConnectionNodes:scn:b selectDownstream:sdn:b selectFeedbackConnection:sfc:b selectNode:sln:a1 selectUpstream:su:b setWatchpoint:sw:b settingsChangedCallback:scc:a shaderNetworks:sn:b showAllNodeAttributes:saa:a showNamespace:sns:b showSGShapes:ssg:b showShapes:ss:b showTransforms:st:b showUnitConversions:suc:b syncedSelection:ssl:b toggleAttrFilter:taf:b toggleSelectedPins:tsp:b toggleSwatchSize:tss:b toolTipCommand:ttc:a traversalDepthLimit:tdl:a updateNodeAdded:una:b upstream:ups:b useAssets:ua:b control:ctl:b defineTemplate:dt:a docTag:dtg:a filter:f:a forceMainConnection:fmc:a highlightConnection:hlc:a lockMainConnection:lck:b mainListConnection:mlc:a panel:pnl:a selectionConnection:slc:a stateString:sts:b unParent:up:b unlockMainConnection:ulk:b updateMainConnection:upd:b useTemplate:ut:a"),
+    ("dopeSheetEditor", "autoFit:af:a autoFitTime:aft:a displayActiveKeyTangents:dat:a displayActiveKeys:dak:a displayInfinities:di:a displayKeys:dk:a displayTangents:dtn:a displayValues:dv:a dropCommand:dc:a hierarchyBelow:hb:b lookAt:la:a outliner:o:a selectionWindow:sel:a showScene:sc:b showSummary:ss:b showTicks:stk:b snapTime:st:a snapValue:sv:a control:ctl:b defineTemplate:dt:a docTag:dtg:a filter:f:a forceMainConnection:fmc:a highlightConnection:hlc:a lockMainConnection:lck:b mainListConnection:mlc:a panel:pnl:a selectionConnection:slc:a stateString:sts:b unParent:up:b unlockMainConnection:ulk:b updateMainConnection:upd:b useTemplate:ut:a"),
+    ("animCurveEditor", "areCurvesSelected:acs:b autoFit:af:a autoFitTime:aft:a classicMode:cm:b clipTime:ct:a constrainDrag:cd:a curvesShown:cs:b denormalizeCurvesCommand:dcc:a displayActiveKeyTangents:dat:a displayActiveKeys:dak:a displayInfinities:di:a displayKeys:dk:a displayNormalized:dn:b displayTangents:dtn:a displayValues:dv:a keyingTime:kt:a lookAt:la:a menu:m:a normalizeCurvesCommand:ncc:a outliner:o:a preSelectionHighlight:psh:b renormalizeCurves:rnc:b resultSamples:rs:a resultScreenSamples:rss:a resultUpdate:ru:a showActiveCurveNames:acn:b showBufferCurves:sb:a showCurveNames:scn:b showResults:sr:a showUpstreamCurves:suc:b simpleKeyView:skv:a smoothness:s:a snapTime:st:a snapValue:sv:a stackedCurves:sc:b stackedCurvesMax:scx:a stackedCurvesMin:scm:a stackedCurvesSpace:scs:a valueLinesToggle:vlt:a control:ctl:b defineTemplate:dt:a docTag:dtg:a filter:f:a forceMainConnection:fmc:a highlightConnection:hlc:a lockMainConnection:lck:b mainListConnection:mlc:a panel:pnl:a selectionConnection:slc:a stateString:sts:b unParent:up:b unlockMainConnection:ulk:b updateMainConnection:upd:b useTemplate:ut:a"),
+    ("blendShapeEditor", "targetControlList:tcl:b targetList:tl:b verticalSliders:vs:b control:ctl:b defineTemplate:dt:a docTag:dtg:a filter:f:a forceMainConnection:fmc:a highlightConnection:hlc:a lockMainConnection:lck:b mainListConnection:mlc:a panel:pnl:a selectionConnection:slc:a stateString:sts:b unParent:up:b unlockMainConnection:ulk:b updateMainConnection:upd:b useTemplate:ut:a"),
+    ("poseEditor", "targetControlList:tcl:b targetList:tl:b verticalSliders:vs:b control:ctl:b defineTemplate:dt:a docTag:dtg:a filter:f:a forceMainConnection:fmc:a highlightConnection:hlc:a lockMainConnection:lck:b mainListConnection:mlc:a panel:pnl:a selectionConnection:slc:a stateString:sts:b unParent:up:b unlockMainConnection:ulk:b updateMainConnection:upd:b useTemplate:ut:a"),
+    ("componentEditor", "floatField:ff:a floatSlider:fs:a hidePathName:hpn:b hideZeroColumns:hzc:b lockInput:lck:b newTab:nt:a3 operationCount:oc:b operationLabels:ol:b operationType:ot:a precision:pre:a removeTab:rt:a selected:sl:b setOperationLabel:sol:a2 showObjects:so:a showSelected:ss:b sortAlpha:sa:b control:ctl:b defineTemplate:dt:a docTag:dtg:a filter:f:a forceMainConnection:fmc:a highlightConnection:hlc:a lockMainConnection:lck:b mainListConnection:mlc:a panel:pnl:a selectionConnection:slc:a stateString:sts:b unParent:up:b unlockMainConnection:ulk:b updateMainConnection:upd:b useTemplate:ut:a"),
+    ("spreadSheetEditor", "attrRegExp:are:a execute:exe:a fixedAttrList:fal:a1 header:hdr:b keyableOnly:ko:b longNames:ln:b niceNames:nn:b precision:pre:a selectedAttr:sla:b showShapes:ssh:b control:ctl:b defineTemplate:dt:a docTag:dtg:a filter:f:a forceMainConnection:fmc:a highlightConnection:hlc:a lockMainConnection:lck:b mainListConnection:mlc:a panel:pnl:a selectionConnection:slc:a stateString:sts:b unParent:up:b unlockMainConnection:ulk:b updateMainConnection:upd:b useTemplate:ut:a"),
+    ("keyframeOutliner", "animCurve:an:a display:dsp:a"),
     ("timePort", "globalTime:gt:b snap:sn:b"),
     ("rangeControl", "minRange:min:a maxRange:max:a changedCommand:cc:a"),
     ("timeRangeControl", "minRange:min:a maxRange:max:a changedCommand:cc:a"),
 ];
+
+/// Editors can be made with no layout to go in, and put in one later with -e -parent.
+fn is_editor(kind: &str) -> bool {
+    matches!(kind, "outlinerEditor" | "nodeEditor" | "dopeSheetEditor" | "animCurveEditor" | "blendShapeEditor" | "poseEditor" | "componentEditor" | "spreadSheetEditor" | "keyframeOutliner")
+}
 
 /// The widget a command makes, when it is another command's with more on it.
 fn display_of(cmd: &str) -> &str {
@@ -442,7 +466,7 @@ fn is_group(kind: &str) -> bool {
 // ---------------------------------------------------------------------------------------------------------------------
 // Applying flags
 
-const META: &[&str] = &["query", "edit", "queried", "exists", "parent", "defineTemplate", "useTemplate", "fullPathName", "isObscured", "numberOfPopupMenus", "popupMenuArray", "childArray", "numberOfChildren"];
+const META: &[&str] = &["query", "edit", "queried", "exists", "parent", "unParent", "defineTemplate", "useTemplate", "fullPathName", "isObscured", "numberOfPopupMenus", "popupMenuArray", "childArray", "numberOfChildren"];
 
 fn is_int_kind(kind: &str) -> bool {
     matches!(kind, "intField" | "intSlider" | "intScrollBar" | "intSliderGrp" | "intFieldGrp" | "colorIndexSliderGrp")
@@ -1003,6 +1027,21 @@ fn default_value(c: &Control, key: &str) -> Value {
         ("floatSliderGrp" | "intSliderGrp" | "colorIndexSliderGrp" | "floatSliderButtonGrp", "minValue") => zero(&c.kind),
         ("floatSliderGrp" | "intSliderGrp" | "floatSliderButtonGrp", "maxValue") => ten(&c.kind),
         ("scriptTable", "rows" | "columns") => json!(0),
+        ("outlinerEditor", "mainListConnection") => json!("worldList"),
+        ("dopeSheetEditor" | "animCurveEditor", "mainListConnection") => json!("animationList"),
+        ("nodeEditor", "mainListConnection") => json!(""),
+        (k, "selectionConnection") if is_editor(k) => json!("modelList"),
+        (k, "highlightConnection" | "forceMainConnection" | "filter") if is_editor(k) => json!(""),
+        (k, "panel") if is_editor(k) => json!(c.name),
+        (k, "control") if is_editor(k) => json!(true),
+        (k, "lockMainConnection") if is_editor(k) => json!(false),
+        ("nodeEditor", "traversalDepthLimit") => json!(-1),
+        ("nodeEditor", "nodeTitleMode") => json!("name"),
+        ("outlinerEditor", "displayMode") => json!("DAG"),
+        ("outlinerEditor", "showShapes" | "showAttributes" | "showDagOnly" | "showConnected" | "showAnimCurvesOnly") => json!(c.kind == "outlinerEditor" && key == "showDagOnly"),
+        ("componentEditor", "precision") => json!(3),
+        ("spreadSheetEditor", "precision") => json!(3),
+        ("spreadSheetEditor", "keyableOnly" | "longNames") => json!(key == "keyableOnly"),
         ("toolButton", "select") => json!(false),
         ("layerButton", "select" | "current" | "transparent") => json!(false),
         ("layerButton", "layerVisible") => json!(true),
@@ -1237,6 +1276,14 @@ fn run_query(cmd: &str, a: &Args) -> CmdResult {
 fn run_edit(cmd: &str, a: &Args) -> CmdResult {
     let out = with_model(|m| -> Result<Value, String> {
         let id = target(m, a, cmd)?;
+        if m.get(id).is_some_and(|c| is_editor(&c.kind)) {
+            if a.bool("unParent") {
+                move_editor(m, id, None);
+            } else if let Some(p) = a.get("parent").map(text).filter(|p| !p.is_empty()) {
+                let to = m.find(&p).ok_or_else(|| format!("Object '{p}' not found."))?;
+                move_editor(m, id, Some(to));
+            }
+        }
         let changed = apply(m, id, &a.flags)?;
         let c = m.get(id).unwrap();
         let (is_table, path) = (c.kind == "scriptTable", c.path.clone());
@@ -1273,8 +1320,33 @@ fn parent_for(m: &Model, cmd: &str, a: &Args) -> Result<Option<Id>, String> {
             }
             m.parent.and_then(|i| m.window_of(i)).map(Some).ok_or_else(|| "No window found.".to_string())
         }
+        _ if is_editor(cmd) => Ok(m.parent),
         _ => m.parent.map(Some).ok_or_else(|| "No window found.".to_string()),
     }
+}
+
+/// -e -parent or -unParent on an editor: it moves, and the shell makes its widget again in the new place.
+fn move_editor(m: &mut Model, id: Id, parent: Option<Id>) {
+    let Some(c) = m.get(id).cloned() else { return };
+    op(json!({"op": "delete", "path": c.path}));
+    if let Some(p) = c.parent.and_then(|p| m.controls.get_mut(&p)) {
+        p.children.retain(|k| *k != id);
+    }
+    let path = match parent.and_then(|p| m.get(p)) {
+        Some(p) => format!("{}|{}", p.path, c.name),
+        None => c.name.clone(),
+    };
+    let parent_path = parent.and_then(|p| m.get(p)).map(|p| p.path.clone());
+    if let Some(p) = parent.and_then(|p| m.controls.get_mut(&p)) {
+        p.children.push(id);
+    }
+    if let Some(x) = m.controls.get_mut(&id) {
+        x.parent = parent;
+        x.path = path.clone();
+    }
+    let mut props = c.props.clone();
+    props.insert("name".to_string(), json!(c.name));
+    op(json!({"op": "create", "path": path, "kind": c.kind, "parent": parent_path, "props": props}));
 }
 
 fn create(cmd: &str, a: &Args) -> CmdResult {

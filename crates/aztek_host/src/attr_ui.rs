@@ -365,11 +365,22 @@ fn write_edits(s: &mut Session, name: &str) {
 
 /// Answers a query the model can't: a range control follows the playback range until a script gives it its own.
 pub(crate) fn live_query(s: &mut Session, cmd: &str, a: &Args) -> Option<Value> {
-    if !a.bool("query") || !matches!(cmd, "rangeControl" | "timeRangeControl") {
+    if !a.bool("query") {
+        return None;
+    }
+    let asked = a.get("queried").and_then(Value::as_array).and_then(|q| q.first()).and_then(Value::as_str).map(str::to_string).or_else(|| a.flags.keys().find(|k| !matches!(k.as_str(), "query" | "queried")).cloned())?;
+    if cmd == "animCurveEditor" {
+        return match asked.as_str() {
+            // The curves of the selection, which is what the editor shows.
+            "curvesShown" => Some(s.run("keyframe", json!({"query": true, "name": true})).unwrap_or(json!([]))),
+            "areCurvesSelected" => Some(json!(false)),
+            _ => None,
+        };
+    }
+    if !matches!(cmd, "rangeControl" | "timeRangeControl") {
         return None;
     }
     let name = a.pos_str(0)?;
-    let asked = a.get("queried").and_then(Value::as_array).and_then(|q| q.first()).and_then(Value::as_str).map(str::to_string).or_else(|| a.flags.keys().find(|k| !matches!(k.as_str(), "query" | "queried")).cloned())?;
     let flag = match asked.as_str() {
         "minRange" => "minTime",
         "maxRange" => "maxTime",
@@ -404,6 +415,19 @@ pub(crate) fn after_command(s: &mut Session, cmd: &str, a: &Args, made: &CmdResu
             write_edits(s, &n);
         }
     }
+}
+
+/// clipEditor: there is no Time Editor here. The nearest window is the Dope Sheet.
+fn clip_editor(a: &Args) -> CmdResult {
+    if a.bool("exists") {
+        return Ok(json!(false));
+    }
+    if a.bool("query") {
+        return Ok(Value::Null);
+    }
+    crate::script_jobs::warn_once("clipEditor", "clipEditor: clips are not available here; opening the Dope Sheet, the nearest window.");
+    crate::core::push_ui_request("DopeSheetEditor".to_string());
+    Ok(json!(a.pos_str(0).unwrap_or("clipEditor1")))
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -788,6 +812,10 @@ pub(crate) fn register(s: &mut Session) {
         c = add_flags(c, COMMON);
         s.register(c);
     }
+    s.register(add_flags(
+        Cmd::new("clipEditor", "Clips are not available here: warns, and opens the Dope Sheet.", |_s, a| clip_editor(a)).positional("[name]").undoable(false),
+        "allTrackHeights:th:a autoFit:af:a autoFitTime:aft:a clipDropCmd:cd:a clipStyle:cs:a deleteCmd:dlc:a deselectAll:da:b displayActiveKeyTangents:dat:a displayActiveKeys:dak:a displayInfinities:di:a displayKeys:dk:a displayTangents:dtn:a displayValues:dv:a frameAll:fa:b frameRange:fr:a highlightConnection:hlc:a highlightedBlend:hb:a highlightedClip:hc:a initialized:in:b listAllCharacters:lac:b listCurrentCharacters:lc:b lockMainConnection:lck:b lookAt:la:a mainListConnection:mlc:a manageSequencer:ms:b menuContext:mc:b parent:p:a selectBlend:sb:a selectClip:sc:a selectionConnection:slc:a snapTime:st:a snapValue:sv:a stateString:sts:b useTemplate:ut:a defineTemplate:dt:a exists:ex:b query:q:b edit:e:b queried::a",
+    ));
     s.register(
         CommandDef::new("connectControl", "connectControl [-index n] control attribute...: binds a control to plugs. The control shows the plug, sets it undoably, and follows it. On a group, -index 1 is its label, 2 its first field.", connect_control)
             .positional("control attribute...")

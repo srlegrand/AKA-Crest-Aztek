@@ -327,6 +327,69 @@ fn filters_connections_configurations_and_templates() {
 }
 
 #[test]
+fn editors_scripts_make() {
+    let mut c = Core::new();
+    ok(&mut c, "polyCube -n box; window w; columnLayout col;");
+    assert_eq!(ok(&mut c, "outlinerEditor -showShapes 1 -showDagOnly 0 -mlc \"worldList\" oe;"), json!("w|col|oe"));
+    assert_eq!(ok(&mut c, "outlinerEditor -q -showShapes oe;"), json!(true));
+    assert_eq!(ok(&mut c, "outlinerEditor -q -dag oe;"), json!(false));
+    assert_eq!(ok(&mut c, "outlinerEditor -q -mlc oe;"), json!("worldList"));
+    ok(&mut c, "outlinerEditor -e -shp 0 oe;");
+    assert_eq!(ok(&mut c, "outlinerEditor -q -shp oe;"), json!(false));
+    assert_eq!(ok(&mut c, "outlinerEditor -ex oe;"), json!(true));
+    assert_eq!(ok(&mut c, "control -q -ex oe;"), json!(true));
+    // The application's own, under Maya's names.
+    ok(&mut c, "outlinerEditor -e -showShapes 1 outlinerPanel1;");
+    assert_eq!(ok(&mut c, "outlinerEditor -q -showShapes outlinerPanel1;"), json!(true));
+    assert_eq!(ok(&mut c, "outlinerPanel -q -outlinerEditor outlinerPanel1;"), json!("outlinerPanel1"));
+
+    // Panels with editors in them.
+    assert_eq!(ok(&mut c, "outlinerPanel op;"), json!("op"));
+    assert_eq!(ok(&mut c, "outlinerPanel -q -oe op;"), json!("op"));
+    assert_eq!(ok(&mut c, "outlinerEditor -q -ex op;"), json!(true));
+    assert!(ok(&mut c, "getPanel -typ \"outlinerPanel\";").as_array().unwrap().contains(&json!("op")));
+    ok(&mut c, "blendShapePanel bp; posePanel pp;");
+    assert_eq!(ok(&mut c, "blendShapePanel -q -be bp;"), json!("bp"));
+    assert_eq!(ok(&mut c, "posePanel -q -pe pp;"), json!("pp"));
+
+    assert_eq!(ok(&mut c, "nodeEditor -gv 1 -ntm \"short\" ne;"), json!("w|col|ne"));
+    assert_eq!(ok(&mut c, "nodeEditor -q -ntm ne;"), json!("short"));
+    ok(&mut c, "select box; nodeEditor -e -rfs ne;");
+    assert_eq!(ok(&mut c, "dopeSheetEditor -stk 1 de;"), json!("w|col|de"));
+    assert_eq!(ok(&mut c, "dopeSheetEditor -q -stk de;"), json!(true));
+    ok(&mut c, "animCurveEditor -dk \"on\" ce;");
+    assert_eq!(ok(&mut c, "animCurveEditor -q -dk ce;"), json!("on"));
+    ok(&mut c, "setKeyframe box.tx;");
+    assert_eq!(ok(&mut c, "animCurveEditor -q -cs ce;"), json!(["box_translateX"]));
+    assert_eq!(ok(&mut c, "animCurveEditor -q -ex ce;"), json!(true));
+    ok(&mut c, "blendShapeEditor -vs 1 be; poseEditor pe;");
+    assert_eq!(ok(&mut c, "blendShapeEditor -q -vs be;"), json!(true));
+    ok(&mut c, "componentEditor -pre 4 ce2; spreadSheetEditor -ko 0 se;");
+    assert_eq!(ok(&mut c, "componentEditor -q -pre ce2;"), json!(4));
+    assert_eq!(ok(&mut c, "spreadSheetEditor -q -ko se;"), json!(false));
+    ok(&mut c, "keyframeOutliner -an \"box_translateX\" ko;");
+    assert_eq!(ok(&mut c, "keyframeOutliner -q -an ko;"), json!("box_translateX"));
+
+    // Made with no layout, put in one later.
+    ok(&mut c, "setParent -top; deleteUI w;");
+    assert_eq!(ok(&mut c, "outlinerEditor loose;"), json!("loose"));
+    ok(&mut c, "window w2; columnLayout col2;");
+    ok(&mut c, "outlinerEditor -e -p col2 loose;");
+    assert_eq!(ok(&mut c, "control -q -fpn loose;"), json!("w2|col2|loose"));
+    ok(&mut c, "outlinerEditor -e -up loose;");
+    assert_eq!(ok(&mut c, "control -q -fpn loose;"), json!("loose"));
+
+    // No clips here: a plain warning, and the Dope Sheet opens.
+    c.take_log();
+    aztek_host::take_ui_requests_for_tests();
+    assert_eq!(ok(&mut c, "clipEditor;"), json!("clipEditor1"));
+    assert!(aztek_host::take_ui_requests_for_tests().to_string().contains("DopeSheetEditor"));
+    assert!(c.take_log().to_string().contains("clips are not available"));
+    assert_eq!(ok(&mut c, "clipEditor -ex x;"), json!(false));
+    errors(&mut c);
+}
+
+#[test]
 fn names_and_paths_as_maya_returns_them() {
     let mut c = Core::new();
     assert_eq!(ok(&mut c, "window;"), json!("window1"));

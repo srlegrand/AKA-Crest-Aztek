@@ -3,6 +3,12 @@
 #include "host.h"
 #include "viewport.h"
 #include "widgets.h"
+#include "panels.h"
+#include "grapheditor.h"
+#include "dopesheet.h"
+#include "nodeeditor.h"
+#include "shapeeditor.h"
+#include "editors.h"
 
 #include <QAction>
 #include <QActionGroup>
@@ -371,6 +377,14 @@ void ScriptUi::set_main(QMainWindow* w, std::function<ViewportWidget*(const QStr
     it->w = w;
     it->bar = w->menuBar();
     items_.insert(it->path, it);
+}
+
+void ScriptUi::add_builtin_editor(const QString& name, const QString& kind, QWidget* w) {
+    auto* it = new Item();
+    it->path = it->name = name;
+    it->kind = kind;
+    it->w = w;
+    items_.insert(name, it);
 }
 
 ViewportWidget* ScriptUi::embedded_view(const QString& panel) const {
@@ -1129,6 +1143,66 @@ void ScriptUi::build_control(Item* it, const QJsonObject& props) {
         f->installEventFilter(this);
         f->setMinimumSize(20, 20);
         it->w = f;
+    } else if (k == "outlinerEditor") {
+        auto* o = new Outliner();
+        o->setMinimumSize(120, 80);
+        it->w = o;
+    } else if (k == "nodeEditor") {
+        auto* n = new NodeEditor();
+        n->setMinimumSize(200, 120);
+        it->w = n;
+    } else if (k == "dopeSheetEditor") {
+        auto* d = new DopeSheet();
+        d->setMinimumSize(200, 120);
+        d->refresh();
+        it->w = d;
+    } else if (k == "animCurveEditor") {
+        auto* g = new GraphEditor();
+        g->setMinimumSize(200, 120);
+        g->refresh();
+        it->w = g;
+    } else if (k == "blendShapeEditor") {
+        auto* b = new ShapeEditor();
+        b->setMinimumSize(160, 80);
+        it->w = b;
+    } else if (k == "componentEditor" || k == "spreadSheetEditor") {
+        QWidget* e = make_editor_window(k == "componentEditor" ? "componentEditor" : "spreadSheet", nullptr);
+        if (e) {
+            // A window made to stand alone, here in a layout.
+            e->setWindowFlags(Qt::Widget);
+            e->setMinimumSize(200, 100);
+        }
+        it->w = e ? e : new QWidget();
+    } else if (k == "poseEditor") {
+        auto* l = new QListWidget();
+        l->setMinimumSize(160, 80);
+        auto update = [l] {
+            QStringList names;
+            for (const QJsonValue& v : ask("ls", QJsonObject{{"type", "poseInterpolator"}}).toArray()) names << v.toString();
+            if (names.isEmpty()) names << "No pose interpolators in the scene.";
+            l->clear();
+            l->addItems(names);
+        };
+        update();
+        connect(Host::get(), &Host::sceneChanged, l, update);
+        it->w = l;
+    } else if (k == "keyframeOutliner") {
+        auto* l = new QListWidget();
+        l->setMinimumSize(120, 60);
+        QString curve_path = path;
+        auto update = [this, l, curve_path] {
+            auto* i = items_.value(curve_path);
+            if (!i) return;
+            QString curve = i->prop("animCurve").toString();
+            l->clear();
+            if (curve.isEmpty()) return;
+            QJsonArray t = ask("keyframe", QJsonObject{{"args", QJsonArray{curve}}, {"query", true}, {"timeChange", true}}).toArray();
+            QJsonArray v = ask("keyframe", QJsonObject{{"args", QJsonArray{curve}}, {"query", true}, {"valueChange", true}}).toArray();
+            for (int n = 0; n < t.size() && n < v.size(); ++n) l->addItem(QString("%1: %2").arg(t[n].toDouble()).arg(v[n].toDouble()));
+        };
+        connect(Host::get(), &Host::sceneChanged, l, update);
+        QTimer::singleShot(0, l, update);
+        it->w = l;
     } else if (k == "toolButton") {
         auto* b = new QToolButton();
         b->setCheckable(true);
@@ -1555,6 +1629,19 @@ void ScriptUi::apply_control(Item* it, const QJsonObject& props) {
     if (k == "button" || k == "iconTextButton" || k == "shelfButton" || k == "iconTextCheckBox" || k == "iconTextRadioButton") {
         if (props.contains("label")) {
             if (auto* b = qobject_cast<QAbstractButton*>(w)) b->setText(props["label"].toString());
+        }
+    }
+    if (k == "outlinerEditor") {
+        if (auto* o = qobject_cast<Outliner*>(w)) o->set_editor_options(props);
+    } else if (k == "nodeEditor") {
+        if (auto* n = qobject_cast<NodeEditor*>(w)) {
+            if (as_bool(props["rootsFromSelection"])) n->graph_selection(as_bool(it->prop("upstream")) || as_bool(it->prop("downstream")) ? 2 : 1);
+            if (props.contains("addNode")) n->add_nodes(strings(props["addNode"]));
+            if (props.contains("rootNode")) {
+                n->clear_graph();
+                n->add_nodes(strings(props["rootNode"]));
+            }
+            n->refresh();
         }
     }
     if (k == "toolButton") {

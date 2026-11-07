@@ -26,6 +26,8 @@ public:
     explicit NodeEditor(QWidget* parent = nullptr);
     void graph_selection(int depth);
     void add_selected();
+    // Puts the named nodes in the graph, as -addNode does.
+    void add_nodes(const QStringList& names);
     void clear_graph();
     void refresh();
 protected:

@@ -702,6 +702,7 @@ void MainWindow::build_docks() {
     outliner_dock_ = new QDockWidget("Outliner", this);
     outliner_dock_->setObjectName("outlinerDock");
     outliner_dock_->setWidget(new Outliner(outliner_dock_));
+    ScriptUi::get()->add_builtin_editor("outlinerPanel1", "outlinerEditor", outliner_dock_->widget());
     addDockWidget(Qt::LeftDockWidgetArea, outliner_dock_);
     resizeDocks({outliner_dock_}, {220}, Qt::Horizontal);
 

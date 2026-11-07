@@ -35,7 +35,16 @@ thread_local! {
 }
 
 fn with<R>(f: impl FnOnce(&mut Objects) -> R) -> R {
-    OBJECTS.with(|o| f(&mut o.borrow_mut()))
+    OBJECTS.with(|o| {
+        let mut o = o.borrow_mut();
+        // The lists Maya has from the start.
+        if o.connections.is_empty() {
+            for k in ["worldList", "modelList", "keyframeList", "highlightList", "activeList"] {
+                o.connections.insert(k.to_string(), Connection { kind: k.to_string(), ..Default::default() });
+            }
+        }
+        f(&mut o)
+    })
 }
 
 fn add(mut c: Cmd, spec: &str) -> Cmd {

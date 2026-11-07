@@ -376,7 +376,7 @@ fn panel_common(kind: &'static str, a: &Args) -> CmdResult {
             Ok(match q.as_str() {
                 "camera" => json!(x.camera),
                 "label" => json!(x.label),
-                "modelEditor" => json!(x.name),
+                "modelEditor" | "outlinerEditor" | "blendShapeEditor" | "poseEditor" => json!(x.name),
                 "control" => json!(x.parent),
                 "parent" => json!(x.parent),
                 "type" => json!(x.scripted_type),
@@ -436,8 +436,12 @@ fn panel_common(kind: &'static str, a: &Args) -> CmdResult {
     let mut panel = if kind == "modelPanel" { model_panel(&n, &label, &cam, true) } else { other_panel(&n, kind, &label, &a.string("type", "")) };
     panel.parent = parent.clone();
     with_panels(|p| p.all.push(panel));
-    if matches!(kind, "modelPanel" | "scriptedPanel") {
-        crate::scriptui::embed_panel(kind, &n, Some(&parent), &cam);
+    match kind {
+        "modelPanel" | "scriptedPanel" => crate::scriptui::embed_panel(kind, &n, Some(&parent), &cam),
+        "outlinerPanel" => crate::scriptui::embed_panel("outlinerEditor", &n, Some(&parent), ""),
+        "blendShapePanel" => crate::scriptui::embed_panel("blendShapeEditor", &n, Some(&parent), ""),
+        "posePanel" => crate::scriptui::embed_panel("poseEditor", &n, Some(&parent), ""),
+        _ => {}
     }
     Ok(json!(n))
 }
@@ -734,6 +738,11 @@ pub fn register(s: &mut Session) {
 
     let spec = "camera:cam:a modelEditor:me:b label:l:a parent:p:a control:ctl:b copy:cp:a createString:cs:b defineTemplate:dt:a docTag:dtg:a editString:es:b exists:ex:b init:in:b isUnique:iu:b menuBarVisible:mbv:b needsInit:ni:b popupMenuProcedure:pmp:a replacePanel:rp:a tearOff:to:b tearOffCopy:toc:a unParent:up:b useTemplate:ut:a barLayout:bl:b query:q:b edit:e:b queried::a";
     s.register(add_spec(Cmd::new("modelPanel", "A panel holding a view: -q -cam, -e -cam, -me its editor.", |_s, a| panel_common("modelPanel", a)).positional("name").undoable(false), spec));
+    for (name, editor) in [("outlinerPanel", "outlinerEditor:oe:b"), ("blendShapePanel", "blendShapeEditor:be:b"), ("posePanel", "poseEditor:pe:b")] {
+        let kind: &'static str = name;
+        let c = Cmd::new(kind, "A panel holding an editor of its kind: the editor has the panel's name.", move |_s, a| panel_common(kind, a)).positional("name").undoable(false);
+        s.register(add_spec(add_spec(c, editor), "label:l:a parent:p:a control:ctl:b copy:cp:a createString:cs:b defineTemplate:dt:a docTag:dtg:a editString:es:b exists:ex:b init:in:b isUnique:iu:b menuBarVisible:mbv:b needsInit:ni:b popupMenuProcedure:pmp:a replacePanel:rp:a tearOff:to:b tearOffCopy:toc:a unParent:up:b useTemplate:ut:a query:q:b edit:e:b queried::a"));
+    }
     s.register(add_spec(Cmd::new("panel", "Any panel: -ex, -l, -ctl, -p.", |_s, a| panel_common("panel", a)).positional("name").undoable(false), "label:l:a parent:p:a control:ctl:b copy:cp:a createString:cs:b defineTemplate:dt:a docTag:dtg:a editString:es:b exists:ex:b init:in:b isUnique:iu:b menuBarVisible:mbv:b needsInit:ni:b popupMenuProcedure:pmp:a replacePanel:rp:a tearOff:to:b tearOffCopy:toc:a unParent:up:b useTemplate:ut:a query:q:b edit:e:b queried::a"));
     s.register(add_spec(
         Cmd::new("scriptedPanel", "A panel of a scripted type: -typ the type, -l, -p. The type's callbacks build it.", |_s, a| scripted_panel(a)).positional("name").undoable(false),

@@ -35,6 +35,8 @@ public:
     // A view shown in a script's layout, by panel name.
     ViewportWidget* embedded_view(const QString& panel) const;
     void show_in_view_message(const QJsonObject& o);
+    // One of the application's own editors, for scripts to set up by Maya's name for it.
+    void add_builtin_editor(const QString& name, const QString& kind, QWidget* w);
     void hook(const QString& kind, const QJsonObject& payload);
 protected:
     bool eventFilter(QObject* o, QEvent* e) override;
