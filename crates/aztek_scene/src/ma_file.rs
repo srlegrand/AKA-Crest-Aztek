@@ -14,6 +14,7 @@
 //! units (radians on angle curves); tangent codes in .kit and .kot are the file's own (see `tangent_code`).
 
 mod deformers;
+mod shading;
 mod nurbs;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -536,12 +537,21 @@ impl Doc {
         for (a, b) in raw_conns {
             let (Some((sn, sa)), Some((dn, da))) = (a.split_once('.'), b.split_once('.')) else { continue };
             // Plugs on default nodes the file never touched are of no interest: only nodes it knows connect.
-            let from_ref = |d: &Doc, n: &str| n.contains(':') && d.find(n).is_none_or(|i| d.nodes[i].default);
+            let from_ref = |d: &Doc, n: &str| n.contains(':') && !shading::is_named_default(n) && d.find(n).is_none_or(|i| d.nodes[i].default);
             if from_ref(&d, sn) || from_ref(&d, dn) {
                 d.ref_conns.push((a.clone(), b.clone()));
                 continue;
             }
-            let (Some(src), Some(dst)) = (d.find(sn), d.find(dn)) else { continue };
+            // A connection to lambert1 or initialShadingGroup holds even if the file never selected it.
+            let dst = match d.find(dn) {
+                None if shading::is_named_default(dn) => d.find_or_default(dn),
+                found => found,
+            };
+            let src = match d.find(sn) {
+                None if shading::is_named_default(sn) => d.find_or_default(sn),
+                found => found,
+            };
+            let (Some(src), Some(dst)) = (src, dst) else { continue };
             d.conns.push(Conn { src, src_attr: sa.to_string(), dst, dst_attr: da.to_string() });
         }
         // The script node Maya keeps a Z up scene's axis in.
@@ -1559,17 +1569,19 @@ impl Build<'_> {
     fn create_plain(&mut self, i: usize) {
         let n = &self.doc.nodes[i];
         self.used[i] = true;
-        let Some(t) = types::find(&n.ty) else { return };
         let id = match self.ids[i] {
-            // A shape create_dag made under its transform.
+            // A shape create_dag made under its transform, or a default node.
             Some(id) => id,
-            None => match self.s.graph.create_node(&t, &n.name, NO_NODE, false) {
-                Ok(id) => id,
-                Err(e) => {
-                    self.warnings.push(format!("{}: {e}", n.name));
-                    return;
+            None => {
+                let Some(t) = types::find(&n.ty) else { return };
+                match self.s.graph.create_node(&t, &n.name, NO_NODE, false) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        self.warnings.push(format!("{}: {e}", n.name));
+                        return;
+                    }
                 }
-            },
+            }
         };
         self.ids[i] = Some(id);
         let node_path = self.s.graph.path(id);
@@ -2493,6 +2505,10 @@ fn plug_value(def: &AttrDef, comp: i32, values: &[Tok], factor: f64) -> Option<P
         PlugType::Int | PlugType::Enum => PlugValue::Int(f0.num()? as i64),
         PlugType::Bool => PlugValue::Bool(f0.truth()?),
         PlugType::Vec3 => {
+            // A compound of two floats: repeatUV, offset.
+            if values.len() == 2 {
+                return Some(PlugValue::Vec3(DVec3::new(values[0].num()?, values[1].num()?, 0.0) * factor));
+            }
             if values.len() < 3 {
                 return None;
             }
@@ -2555,6 +2571,7 @@ fn build(s: &mut Session, doc: &Doc, import: bool) -> Vec<String> {
     for i in 0..count {
         b.create_dag(i);
     }
+    b.create_shading_groups(import);
     for i in 0..count {
         // Maya's own configuration scripts stay out: their content is read above and their MEL is for its interface.
         if is_plain_node(&doc.nodes[i].ty) && !matches!(doc.nodes[i].name.as_str(), "sceneConfigurationScriptNode" | "uiConfigurationScriptNode") {
@@ -2640,6 +2657,7 @@ fn build(s: &mut Session, doc: &Doc, import: bool) -> Vec<String> {
         b.apply_locks(i);
     }
     b.instances();
+    b.read_shading_members();
     b.reference_edits();
     for i in 0..count {
         if doc.nodes[i].locked {
@@ -2697,6 +2715,7 @@ pub fn read_text(s: &mut Session, text: &str, import: bool) -> Vec<String> {
         crate::system_cmds::rotate_cameras(s, true);
     }
     let mut warnings = build(s, &doc, import);
+    crate::shading::scene_was_read(s);
     warnings.extend(before);
     for w in &warnings {
         log::warn!("{w}");
@@ -2944,6 +2963,9 @@ struct Writer<'a> {
     pending: Vec<String>,
     /// Solver nodes already written.
     solvers: HashSet<String>,
+    /// Shading groups the light linker has to name, and its lines.
+    needs_links: Vec<String>,
+    links_text: String,
 }
 
 impl Writer<'_> {
@@ -3186,8 +3208,8 @@ impl Writer<'_> {
         let g = &mut self.s.graph;
         let path = g.path(shape);
         let out_plug = PlugRef::new(shape, MeshNode::OUT_MESH as i32);
-        self.shading.push(format!("connectAttr {} \":initialShadingGroup.dsm\" -na;", quoted(&format!("{path}.iog"))));
         let chain = self.deformer_chain(shape);
+        self.write_membership(shape, &path, chain.len());
         match chain.first().copied() {
             Some(first) => {
                 let t = self.s.graph.node(first).unwrap().type_arc().clone();
@@ -3618,11 +3640,17 @@ impl Writer<'_> {
         let t = n.type_arc().clone();
         let mut text = String::new();
         let line = |p: &PlugRef, v: &PlugValue, out: &mut String| {
-            let name = g.plug_name(p);
+            let name = if shading::writes_short(g, p.node) { shading::short_plug(g, p) } else { g.plug_name(p) };
             let attr = name.split_once('.').map_or("", |x| x.1);
             match v {
                 PlugValue::Vec3(x) => {
-                    let _ = writeln!(out, "\tsetAttr \".{attr}\" -type \"double3\" {} ;", vec_text(*x));
+                    let def = g.attr(p);
+                    if !def.child_names[0].is_empty() && def.child_names[2].is_empty() {
+                        let _ = writeln!(out, "\tsetAttr \".{attr}\" -type \"float2\" {} {} ;", fmt_num(x.x), fmt_num(x.y));
+                    } else {
+                        let ty = if def.has(flags::COLOR) { "float3" } else { "double3" };
+                        let _ = writeln!(out, "\tsetAttr \".{attr}\" -type \"{ty}\" {} ;", vec_text(*x));
+                    }
                 }
                 PlugValue::Float(x) => {
                     let _ = writeln!(out, "\tsetAttr \".{attr}\" {x};");
@@ -3671,11 +3699,16 @@ impl Writer<'_> {
             if !self.keep.contains(&dst.node) || !self.keep.contains(&src.node) {
                 continue;
             }
-            let (dt, st) = (dn.ty(), sn.ty());
-            if crate::deform::is_deformer(&dt.name) || crate::deform::is_deformer(&st.name) {
+            let deforms = crate::deform::is_deformer(&dn.ty().name) || crate::deform::is_deformer(&sn.ty().name);
+            if deforms {
                 self.deformer_connection(src, dst);
                 continue;
             }
+            if self.shading_connection(src, dst) {
+                continue;
+            }
+            let g = &self.s.graph;
+            let (dt, st) = (g.node(dst.node).unwrap().ty(), g.node(src.node).unwrap().ty());
             let plain = |t: &NodeType| is_plain_node(&t.name) || t.name == "unitConversion";
             if plain(dt) || plain(st) {
                 // By full attribute name. Maya's matrix outputs are arrays: worldMatrix[0].
@@ -3817,6 +3850,7 @@ fn closure(g: &Graph, roots: &[NodeId]) -> HashSet<NodeId> {
             }
         }
     }
+    shading::keep_shading(g, &mut keep);
     // Everything else that only serves what is kept.
     for id in g.nodes() {
         let Some(n) = g.node(id) else { continue };
@@ -3850,7 +3884,7 @@ pub fn write_text(s: &mut Session, file_name: &str, only: Option<&[NodeId]>) -> 
     let (ref_head, ref_tail) = crate::references::ma_statements(s);
     let used: HashSet<String> = g.nodes().iter().filter_map(|&id| g.node(id).map(|n| n.name().to_string())).collect();
     let roots = g.roots().to_vec();
-    let mut w = Writer { s, out: String::new(), conns: Vec::new(), shading: Vec::new(), warnings: Vec::new(), used, keep, preferred: HashMap::new(), pending: Vec::new(), solvers: HashSet::new(), chain_written: HashSet::new() };
+    let mut w = Writer { s, out: String::new(), conns: Vec::new(), shading: Vec::new(), warnings: Vec::new(), used, keep, preferred: HashMap::new(), pending: Vec::new(), solvers: HashSet::new(), chain_written: HashSet::new(), needs_links: Vec::new(), links_text: String::new() };
 
     // Preferred angles from the chains the IK solvers remember.
     let g = &w.s.graph;
@@ -3888,6 +3922,9 @@ pub fn write_text(s: &mut Session, file_name: &str, only: Option<&[NodeId]>) -> 
     let mut unwritten: BTreeMap<String, usize> = BTreeMap::new();
     for id in w.s.graph.nodes() {
         if !w.keep.contains(&id) {
+            continue;
+        }
+        if w.s.graph.node(id).is_some() && !w.dag_written(id) && w.write_shading_node(id) {
             continue;
         }
         let Some(n) = w.s.graph.node(id) else { continue };
@@ -3944,6 +3981,7 @@ pub fn write_text(s: &mut Session, file_name: &str, only: Option<&[NodeId]>) -> 
         w.warnings.push(format!("{ty}: {count} not written; meshes are baked, other nodes omitted"));
     }
 
+    w.write_light_links();
     w.write_connections();
     w.out.push_str(&ref_tail);
 
@@ -3964,13 +4002,15 @@ pub fn write_text(s: &mut Session, file_name: &str, only: Option<&[NodeId]>) -> 
     let _ = writeln!(w.out, "select -ne :time1;");
     let _ = writeln!(w.out, "\tsetAttr \".o\" {frame};");
     let _ = writeln!(w.out, "\tsetAttr \".unw\" {frame};");
-    let shading_count = w.shading.iter().filter(|l| l.contains(":initialShadingGroup")).count();
+    let shading_count = w.shading.iter().filter(|l| l.contains(":initialShadingGroup.dsm")).count();
     if shading_count > 0 {
         let _ = writeln!(w.out, "select -ne :initialShadingGroup;");
         let _ = writeln!(w.out, "\tsetAttr -s {shading_count} \".dsm\";");
         let _ = writeln!(w.out, "\tsetAttr \".ro\" yes;");
     }
 
+    let links = std::mem::take(&mut w.links_text);
+    w.out.push_str(&links);
     let mut lines = std::mem::take(&mut w.conns);
     lines.sort();
     lines.dedup();
@@ -4120,6 +4160,7 @@ pub fn open_scene(s: &mut Session, path: &str) -> Result<Vec<String>, String> {
     };
     let _ = s.run("flushUndo", json!({}));
     s.scene_path = Some(path.to_string());
+    crate::shading::scene_was_read(s);
     Ok(warnings)
 }
 

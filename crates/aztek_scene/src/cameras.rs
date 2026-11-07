@@ -85,6 +85,7 @@ pub fn rotate_for(yaw: f64, pitch: f64) -> DVec3 {
 
 /// Makes persp, top, front and side, hidden as Maya's are, plus the default sets. None of it goes on the undo stack.
 pub fn make_defaults(g: &mut Graph) {
+    crate::shading::make_defaults(g);
     if g.find("persp").ok().flatten().is_some() {
         return;
     }

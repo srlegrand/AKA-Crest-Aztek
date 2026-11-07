@@ -669,7 +669,7 @@ g2 = om.MItDependencyGraph(sh.getDependNode(0), om.MFn.kPolyCube, om.MItDependen
             "['grp', 'pCube1', 'pCubeShape1']",
             "j1 True",
             "True",
-            "['polyCube1', 'pCubeShape1']",
+            "['polyCube1', 'pCubeShape1', 'initialShadingGroup', 'initialMaterialInfo']",
             "polyCube1 True",
         ],
     );

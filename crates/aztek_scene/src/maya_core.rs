@@ -297,6 +297,8 @@ fn ls(s: &mut Session, a: &aztek_ops::Args) -> CmdResult {
             && (!a.bool("noIntermediate") || !is_intermediate(g, id))
             && (!a.bool("intermediateObjects") || is_intermediate(g, id))
             && (!a.bool("sets") || ty.is_a("objectSet"))
+            && (!a.bool("materials") || crate::shading::is_material_type(ty))
+            && (!a.bool("textures") || crate::shading::is_texture_type(ty))
     });
     if a.bool("selection") && !a.bool("objectsOnly") && comps.is_empty() && false {
         let _ = ComponentMode::Object;
@@ -363,6 +365,8 @@ pub fn register(c: &mut Commands<Session>) {
             .flag(f("intermediateObjects", "io", ArgType::Bool, "Only intermediate objects."))
             .flag(f("hilite", "hl", ArgType::Bool, "The hilited objects."))
             .flag(f("sets", "set", ArgType::Bool, "Only sets."))
+            .flag(f("materials", "mat", ArgType::Bool, "Only materials."))
+            .flag(f("textures", "tex", ArgType::Bool, "Only textures."))
             .flag(f("showType", "st", ArgType::Bool, "Each name followed by its type."))
             .flag(f("head", "hd", ArgType::Int, "Only the first n."))
             .flag(f("tail", "tl", ArgType::Int, "Only the last n.")),

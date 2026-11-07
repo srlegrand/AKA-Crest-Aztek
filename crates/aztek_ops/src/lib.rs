@@ -297,6 +297,10 @@ impl<C> Default for Commands<C> {
 }
 
 impl<C> Commands<C> {
+    /// How many commands are running, one inside another.
+    pub fn depth(&self) -> i32 {
+        self.depth
+    }
     /// Registering a name again replaces it.
     pub fn register(&mut self, def: CommandDef<C>) {
         self.registry.insert(def.name.clone(), def);

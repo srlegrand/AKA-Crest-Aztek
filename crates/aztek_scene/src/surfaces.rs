@@ -1147,6 +1147,8 @@ pub fn register_types() {
                 store_bool("dispHull", false, "Show the hull."),
                 store_bool("dispEP", false, "Show edit points."),
                 store_bool("dispGeometry", true, "Show the surface."),
+                crate::shading::inst_obj_groups(),
+                crate::shading::object_groups(),
             ],
             create: Some(Arc::new(|| Box::<SurfaceShape>::default())),
             ..Default::default()

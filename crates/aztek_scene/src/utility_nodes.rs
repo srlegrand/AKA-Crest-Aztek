@@ -901,7 +901,7 @@ fn table() -> Vec<Spec> {
 
 /// classification, by type: for shadingNode and getClassification.
 pub fn classification(type_name: &str) -> Option<&'static str> {
-    table().into_iter().find(|s| s.0 == type_name).map(|s| s.1)
+    table().into_iter().find(|s| s.0 == type_name).map(|s| s.1).or_else(|| crate::shading::classification(type_name))
 }
 
 pub fn register_types() {

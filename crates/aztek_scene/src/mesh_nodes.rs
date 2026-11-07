@@ -44,7 +44,11 @@ impl MeshNode {
     pub const RADIAL_CENTER: usize = Shape::COUNT + 13;
     pub const RETOPO_GUIDES: usize = Shape::COUNT + 14;
     pub const RETOPO_CONSTRUCTS: usize = Shape::COUNT + 15;
-    pub const COUNT: usize = Shape::COUNT + 16;
+    /// instObjGroups: connected to a shading group's dagSetMembers when the whole mesh is its member.
+    pub const INST_OBJ_GROUPS: usize = Shape::COUNT + 16;
+    /// instObjGroups.objectGroups: the same for some of its faces.
+    pub const OBJECT_GROUPS: usize = Shape::COUNT + 17;
+    pub const COUNT: usize = Shape::COUNT + 18;
 
     pub fn make_type(base: Arc<NodeType>) -> NodeType {
         let stored = flags::INPUT | flags::STORABLE;
@@ -169,6 +173,8 @@ impl MeshNode {
                     "Live topology constructs (patches, strips, cylinders...) and their settings: JSON, object space.",
                     "",
                 ),
+                crate::shading::inst_obj_groups(),
+                crate::shading::object_groups(),
             ],
             create: Some(Arc::new(|| Box::new(MeshNode))),
             ..Default::default()

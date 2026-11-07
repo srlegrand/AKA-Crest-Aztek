@@ -175,7 +175,11 @@ fn lookup(g: &Graph, set_namespace: &str, b: &Binding) -> Option<NodeId> {
 /// lookup() that also refreshes the entry's cache.
 fn bind(g: &Graph, set_namespace: &str, e: &Entry) -> Option<NodeId> {
     let mut b = e.bound.lock().unwrap();
-    let n = lookup(g, set_namespace, &b)?;
+    let mut n = lookup(g, set_namespace, &b)?;
+    // Components saved under their transform's name belong to its shape.
+    if e.kind != ComponentMode::Object {
+        n = crate::components::as_mesh(g, n).unwrap_or(n);
+    }
     b.id = n;
     b.name = g.path(n);
     b.referenced = g.node(n).unwrap().reference_id() != 0;
@@ -482,6 +486,9 @@ pub fn create(g: &mut Graph, name: &str, list: &[Member], quick_select: bool) ->
 }
 
 pub fn add(g: &mut Graph, set: NodeId, list: &[Member]) -> CmdResult<()> {
+    if crate::shading::is_shading_group(g, set) {
+        return crate::shading::assign(g, set, list);
+    }
     let deformer = crate::deform_sets::deformer_of_set(g, set);
     let converted = if deformer.is_some() { crate::deform_sets::as_points(g, list) } else { Vec::new() };
     let list = if deformer.is_some() { &converted[..] } else { list };
@@ -503,6 +510,9 @@ pub(crate) fn set_members_raw(g: &mut Graph, set: NodeId, list: &[Member]) -> Cm
 
 /// An object member removes the node with all its components; a component member removes just those ids.
 pub fn remove(g: &mut Graph, set: NodeId, list: &[Member]) -> CmdResult<()> {
+    if crate::shading::is_shading_group(g, set) {
+        return crate::shading::unassign(g, set, list);
+    }
     let deformer = crate::deform_sets::deformer_of_set(g, set);
     let converted = if deformer.is_some() { crate::deform_sets::as_points(g, list) } else { Vec::new() };
     let list = if deformer.is_some() { &converted[..] } else { list };
@@ -647,7 +657,7 @@ pub fn register_types() {
             },
             AttrDef {
                 name: "members".into(),
-                short_name: "dsm".into(),
+                short_name: "mem".into(),
                 ty: PlugType::Data,
                 default_value: PlugValue::Data(None),
                 flags: flags::INPUT | flags::STORABLE | flags::HIDDEN,

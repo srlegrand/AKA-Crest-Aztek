@@ -162,6 +162,10 @@ fn attr_part(a: &AttrDef, p: &PlugRef) -> String {
     if p.element < 0 {
         return a.name.clone();
     }
+    // Maya's name: the object group's index is the second, under instance 0.
+    if a.name == "instObjGroups.objectGroups" {
+        return format!("instObjGroups[0].objectGroups[{}]", p.element);
+    }
     let index = format!("[{}]", p.element);
     match a.name.find('.') {
         None => format!("{}{index}", a.name),
@@ -1256,6 +1260,10 @@ impl Graph {
     }
 
     /// Gives a node the identity it had when saved. Not undoable.
+    pub fn next_node_id(&self) -> NodeId {
+        self.next_id
+    }
+
     pub fn set_uuid(&mut self, id: NodeId, uuid: &str) {
         if let Some(n) = self.nodes.get_mut(&id) {
             n.uuid = uuid.to_string();
@@ -1741,6 +1749,16 @@ impl Graph {
             .ok_or_else(|| GraphError::invalid(format!("no node named '{node_part}'")))?;
         let n = self.node(id).unwrap();
         let mut attr_name: String = path[dot + 1..].to_string();
+        // instObjGroups[0].objectGroups[3]: an object group's index is the one that counts, the instance's is left out.
+        if let Some(rest) = attr_name.strip_prefix("iog[").or_else(|| attr_name.strip_prefix("instObjGroups[")) {
+            if let Some((_, tail)) = rest.split_once("].") {
+                if tail.starts_with("og[") {
+                    attr_name = format!("iog.{tail}");
+                } else if tail.starts_with("objectGroups[") {
+                    attr_name = format!("instObjGroups.{tail}");
+                }
+            }
+        }
         let mut element = -1;
         if let Some(close) = attr_name.find("].") {
             // group[3].child names the child attr "group.child", element 3.

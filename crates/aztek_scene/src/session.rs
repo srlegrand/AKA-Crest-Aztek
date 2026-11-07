@@ -71,6 +71,8 @@ pub struct Session {
     pub scene_type: Option<crate::ma_file::Format>,
     /// Scene settings and references: see system_cmds.
     pub extras: crate::system_cmds::Extras,
+    /// The first node id the running top-level command could have made, while new meshes are to join the default shading group.
+    pub(crate) new_nodes_from: Option<NodeId>,
 }
 
 impl Default for Session {
@@ -104,6 +106,7 @@ impl Session {
             scene_path: None,
             scene_type: None,
             extras: Default::default(),
+            new_nodes_from: None,
         };
         crate::commands::register(&mut s.commands);
         crate::components::register(&mut s.commands);
@@ -162,6 +165,7 @@ impl Session {
         crate::anim_misc::register(&mut s.commands);
         crate::uv_misc::register(&mut s.commands);
         crate::nurbs_ops::register(&mut s.commands);
+        crate::shading::register(&mut s.commands);
         // Last: history node types take their attributes from the commands registered above.
         crate::history::register(&mut s.commands);
         crate::instancing::install(&mut s.graph);
@@ -196,6 +200,7 @@ impl Session {
             current_characters: Default::default(),
             option_vars: BTreeMap::new(),
             snap_modes: BTreeMap::new(),
+            new_nodes_from: None,
         }
     }
 
@@ -242,9 +247,16 @@ impl CommandHost for Session {
             .collect()
     }
     fn open_undo_chunk(&mut self, label: &str) {
+        if self.commands.depth() == 1 {
+            self.new_nodes_from = Some(self.graph.next_node_id());
+        }
         self.graph.open_chunk(label);
     }
     fn close_undo_chunk(&mut self) {
+        // Still inside the command's undo step: undoing it takes the membership with the mesh.
+        if self.commands.depth() == 1 {
+            crate::shading::adopt_new_meshes(self);
+        }
         self.graph.close_chunk();
     }
     fn running_args_changed(&mut self, args: Option<&aztek_ops::Args>) {
