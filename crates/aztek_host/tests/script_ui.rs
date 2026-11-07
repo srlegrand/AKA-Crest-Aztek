@@ -389,6 +389,181 @@ fn editors_scripts_make() {
     errors(&mut c);
 }
 
+fn requests() -> Vec<String> {
+    aztek_host::take_ui_requests_for_tests().as_array().unwrap().iter().filter_map(|r| r.as_str().map(str::to_string)).collect()
+}
+
+#[test]
+fn contexts_reach_the_tools_that_serve_them() {
+    let mut c = Core::new();
+    requests();
+    for (cmd, want) in [
+        ("orbitCtx", "setTool|camTumble"),
+        ("boxDollyCtx", "setTool|camBoxDolly"),
+        ("walkCtx", "setTool|camWalk"),
+        ("modelCurrentTimeCtx", "setTool|modelTime"),
+        ("curveAddPtCtx", "setTool|curveAddPt"),
+        ("curveMoveEPCtx", "setTool|move"),
+        ("curveBezierCtx", "setTool|curveBezier"),
+        ("twoPointArcCtx", "setTool|arcTwo"),
+        ("threePointArcCtx", "setTool|arcThree"),
+        ("polySelectCtx", "setTool|select"),
+        ("polySuperCtx", "setTool|select"),
+        ("polyCreaseCtx", "setTool|crease"),
+        ("polyMergeEdgeCtx", "setTool|mergeEdge"),
+        ("polyMergeFacetCtx", "setTool|mergeFacet"),
+        ("createPolyCubeCtx", "setTool|createCube"),
+        ("createPolyPlaneCtx", "setTool|createPlane"),
+        ("snapTogetherCtx", "setTool|snapTogether"),
+        ("showManipCtx", "ShowManipulators"),
+        ("setEditCtx", "setTool|editMembership"),
+        ("artSetPaintCtx", "setTool|paintSelect"),
+        ("artUserPaintCtx", "setTool|paintSelect"),
+        ("artAttrPaintVertexCtx", "setTool|paintSelect"),
+        ("artPuttyCtx", "setTool|sculpt"),
+        ("graphDollyCtx", "keyTool|dolly"),
+        ("graphTrackCtx", "keyTool|track"),
+        ("graphSelectContext", "keyTool|select"),
+        ("directKeyCtx", "keyTool|move"),
+        ("currentTimeCtx", "keyTool|time"),
+        ("curveEditorCtx", "keyTool|move"),
+        ("setKeyCtx", "keyTool|set"),
+        ("keyframeRegionMoveKeyCtx", "keyTool|move"),
+        ("keyframeRegionScaleKeyCtx", "keyTool|scale"),
+        ("keyframeRegionSelectKeyCtx", "keyTool|select"),
+        ("keyframeRegionSetKeyCtx", "keyTool|set"),
+        ("keyframeRegionInsertKeyCtx", "keyTool|insert"),
+        ("keyframeRegionDirectKeyCtx", "keyTool|move"),
+        ("keyframeRegionDollyCtx", "keyTool|dolly"),
+        ("keyframeRegionTrackCtx", "keyTool|track"),
+        ("keyframeRegionCurrentTimeCtx", "keyTool|time"),
+        ("texRotateContext", "uvTool|rotate"),
+        ("texScaleContext", "uvTool|scale"),
+        ("texSelectContext", "uvTool|select"),
+        ("texMoveUVShellContext", "uvTool|shell"),
+        ("texCutContext", "uvTool|cut"),
+        ("texSmoothContext", "uvTool|smooth"),
+        ("texTweakUVContext", "uvTool|tweak"),
+        ("texSelectShortestPathCtx", "uvTool|path"),
+        ("textureLassoContext", "uvTool|lasso"),
+        ("texWinToolCtx", "uvTool|window"),
+    ] {
+        let n = format!("{cmd}Made");
+        ok(&mut c, &format!("{cmd} {n}; setToolTo {n};"));
+        assert_eq!(ok(&mut c, "currentCtx;"), json!(n));
+        let r = requests();
+        assert!(r.iter().any(|x| x == want), "{cmd}: {r:?}");
+    }
+    // A curve can take a key from the tools by the curve's own name.
+    ok(&mut c, "polyCube -n keyed; setKeyframe keyed.tx;");
+    let plugs = ok(&mut c, "listConnections -p 1 -d 1 -s 0 keyed_translateX;");
+    assert_eq!(plugs, json!(["keyed.translateX"]));
+    ok(&mut c, "setKeyframe -t 10 -i keyed.translateX;");
+    assert_eq!(ok(&mut c, "keyframe -q -kc keyed_translateX;"), json!(2));
+    // Maya's own names for the UV tools work from the start.
+    ok(&mut c, "setToolTo texMoveContext;");
+    assert!(requests().iter().any(|x| x == "uvTool|move"));
+    // Those with nothing behind them say so, once.
+    c.take_log();
+    ok(&mut c, "texSmudgeUVContext sm; setToolTo sm; texLatticeDeformContext lt; setToolTo lt; setToolTo sm;");
+    let log = c.take_log().to_string();
+    assert_eq!(log.matches("texSmudgeUVContext: this tool").count(), 1, "{log}");
+    assert_eq!(log.matches("texLatticeDeformContext: this tool").count(), 1, "{log}");
+    assert_eq!(ok(&mut c, "toolHasOptions sm;"), json!(true));
+    errors(&mut c);
+}
+
+#[test]
+fn view_commands_for_cameras_and_manipulators() {
+    let mut c = Core::new();
+    ok(&mut c, "polyCube -n box;");
+    let before = ok(&mut c, "getAttr persp.tx;");
+    ok(&mut c, "tumble -aa 30 -ea 10 persp;");
+    assert_ne!(ok(&mut c, "getAttr persp.tx;"), before);
+    let before = ok(&mut c, "getAttr persp.tx;");
+    ok(&mut c, "panZoom -r 2 persp;");
+    assert_ne!(ok(&mut c, "getAttr persp.tx;"), before);
+
+    assert_eq!(ok(&mut c, "manipPivot -q -v;"), json!(false));
+    ok(&mut c, "select box; manipPivot -p 1 2 3;");
+    assert_eq!(ok(&mut c, "manipPivot -q -p;"), json!([1.0, 2.0, 3.0]));
+    assert_eq!(ok(&mut c, "manipPivot -q -v;"), json!(true));
+    c.idle();
+    ok(&mut c, "select -cl;");
+    c.idle();
+    assert_eq!(ok(&mut c, "manipPivot -q -v;"), json!(false));
+    ok(&mut c, "manipPivot -p 1 0 0; manipPivot -r;");
+    assert_eq!(ok(&mut c, "manipPivot -q -v;"), json!(false));
+
+    requests();
+    ok(&mut c, "manipOptions -s 2;");
+    assert_eq!(ok(&mut c, "manipOptions -q -s;"), json!(2));
+    assert!(requests().iter().any(|x| x.contains("manipSize")));
+    assert_eq!(ok(&mut c, "setXformManip -q -ws;"), json!(true));
+    ok(&mut c, "setXformManip -ws 0;");
+    assert_eq!(ok(&mut c, "setXformManip -q -ws;"), json!(false));
+    ok(&mut c, "viewManip -v 0;");
+    assert_eq!(ok(&mut c, "viewManip -q -v;"), json!(false));
+    ok(&mut c, "viewManip -v 1;");
+    requests();
+    ok(&mut c, "pixelMove 3 4;");
+    assert!(requests().iter().any(|x| x.starts_with("pixelMove|")));
+    ok(&mut c, "softSelectOptionsCtx so; setToolTo so; softSelectOptionsCtx -e -btd 1 so;");
+    assert!(requests().iter().any(|x| x.contains("brushAdjust")));
+    errors(&mut c);
+}
+
+#[test]
+fn script_contexts_run_on_what_is_picked() {
+    let mut c = Core::new();
+    ok(&mut c, "polyCube -n a; polyCube -n b; select -cl;");
+    ok(&mut c, "global string $gStarted = \"\"; global string $gPicked = \"\"; global string $gDone = \"\";");
+    ok(&mut c, "scriptCtx -ts \"global string $gStarted; $gStarted = \\\"yes\\\";\" -tf \"global string $gDone; $gDone = \\\"yes\\\";\" -ssc 2 -sac 1 -euc 0 -fcs \"global string $gPicked; $gPicked = stringArrayToString($Selection1, \\\",\\\");\" pick;");
+    ok(&mut c, "setToolTo pick;");
+    c.idle();
+    assert_eq!(ok(&mut c, "global string $gStarted; $x = $gStarted;"), json!("yes"));
+    ok(&mut c, "select a;");
+    c.idle();
+    assert_eq!(ok(&mut c, "global string $gPicked; $x = $gPicked;"), json!(""));
+    ok(&mut c, "select -add b;");
+    c.idle();
+    assert_eq!(ok(&mut c, "global string $gPicked; $x = $gPicked;"), json!("a,b"));
+    assert_eq!(ok(&mut c, "ls -sl;"), json!([]));
+    // Leaving runs the finish script.
+    ok(&mut c, "setToolTo selectSuperContext;");
+    c.idle();
+    assert_eq!(ok(&mut c, "global string $gDone; $x = $gDone;"), json!("yes"));
+    // Enter finishes one that does not complete by itself.
+    ok(&mut c, "scriptCtx -ssc 1 -fcs \"global string $gPicked; $gPicked = \\\"enter\\\";\" pick2; setToolTo pick2; select a;");
+    c.idle();
+    assert_ne!(ok(&mut c, "global string $gPicked; $x = $gPicked;"), json!("enter"));
+    ok(&mut c, "ctxCompletion;");
+    c.idle();
+    assert_eq!(ok(&mut c, "global string $gPicked; $x = $gPicked;"), json!("enter"));
+    errors(&mut c);
+}
+
+#[test]
+fn paint_contexts_act_on_what_the_brush_takes() {
+    let mut c = Core::new();
+    ok(&mut c, "polyCube -n a; sets -em -n mine; select -cl;");
+    ok(&mut c, "artSetPaintCtx -stm mine ps; setToolTo ps;");
+    c.idle();
+    ok(&mut c, "select a.vtx[0];");
+    c.idle();
+    assert!(ok(&mut c, "sets -q mine;").to_string().contains("vtx[0]"));
+    ok(&mut c, "select -cl; setToolTo selectSuperContext;");
+    c.idle();
+    ok(&mut c, "global int $gSeen = -1; global proc setVal(int $s, int $v, float $x) { global int $gSeen; $gSeen = $v; }");
+    ok(&mut c, "artUserPaintCtx -svc \"setVal\" up; setToolTo up;");
+    c.idle();
+    ok(&mut c, "select a.vtx[3];");
+    c.idle();
+    assert_eq!(ok(&mut c, "global int $gSeen; $x = $gSeen;"), json!(3));
+    ok(&mut c, "select -cl; artPuttyCtx -r 2.5 -mtm \"smooth\" pt; setToolTo pt;");
+    errors(&mut c);
+}
+
 #[test]
 fn names_and_paths_as_maya_returns_them() {
     let mut c = Core::new();
@@ -1054,8 +1229,8 @@ fn tool_contexts() {
     assert!(has("setTool|multiCut") && has("setTool|createPolygon") && has("setTool|targetWeld") && has("setTool|shortestPath") && has("setTool|curveEp") && has("setTool|insertJoint") && has("setTool|paintSelect"), "{reqs}");
     // No tool yet: one warning per kind.
     let warnings: Vec<String> = c.take_log().as_array().unwrap().iter().filter(|l| l["kind"] == 4).map(|l| l["text"].as_str().unwrap().to_string()).collect();
-    assert_eq!(warnings.iter().filter(|w| w.contains("setKeyCtx")).count(), 1, "{warnings:?}");
-    ok(&mut c, "setToolTo setKeyCtxMine;");
+    assert_eq!(warnings.iter().filter(|w| w.contains("ikHandleCtx")).count(), 1, "{warnings:?}");
+    ok(&mut c, "setToolTo ikHandleCtxMine;");
     let warnings: Vec<String> = c.take_log().as_array().unwrap().iter().filter(|l| l["kind"] == 4).map(|l| l["text"].as_str().unwrap().to_string()).collect();
     assert!(warnings.is_empty(), "{warnings:?}");
     assert!(c.mel_checked("setToolTo nothingLikeIt;").is_err());

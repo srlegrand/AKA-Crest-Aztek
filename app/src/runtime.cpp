@@ -1,6 +1,9 @@
 // Named actions (Maya's runtime commands), the hotkey table that runs them and the Hotkey Editor. A hotkey runs a named
 // action or MEL; bindings the user changes are saved in the settings over the defaults.
 #include "mainwindow.h"
+#include "uveditor.h"
+#include "grapheditor.h"
+#include "dopesheet.h"
 #include "aztek.h"
 #include "host.h"
 #include "markingmenu.h"
@@ -255,6 +258,8 @@ void MainWindow::build_runtime() {
     r("FinishTool", "Tools", "Finish the current tool", [this] {
         if (tool_ == "joint") { exec("select", QJsonObject{{"clear", true}}); return; }
         for (ViewportWidget* v : panels_->views()) v->set("finishTool", "true");
+        // A scripted tool finishes at its next idle.
+        exec_quiet("ctxCompletion");
         Host::get()->poke();
     });
     r("CancelPlayback", "Animation", "Stop playback", [this] { stop_play(); });
@@ -651,6 +656,17 @@ void MainWindow::handle_ui_request(const QString& r) {
         python(payload);
     } else if (name == "setTool") {
         set_tool(payload);
+    } else if (name == "ctxCompleted") {
+        for (ViewportWidget* v : panels_->views()) v->set("finishTool", "true");
+    } else if (name == "uvTool") {
+        UvEditor::set_tool_everywhere(payload);
+    } else if (name == "keyTool") {
+        CurveCanvas::set_tool(payload);
+        DopeCanvas::set_tool(payload);
+        help_line_->setText(QString("Key tool: %1").arg(payload));
+    } else if (name == "pixelMove") {
+        QJsonObject o = parse(payload).toObject();
+        nudge(int(o["x"].toDouble()), int(o["y"].toDouble()));
     } else if (name == "panelSet") {
         QJsonObject o = parse(payload).toObject();
         if (ViewportWidget* v = view_for_panel(o["panel"].toString())) {

@@ -204,6 +204,7 @@ pub(crate) fn idle(core: &mut Core) {
     }
     sync_tool_buttons();
     fill_tables(core);
+    crate::ctx_cmds::idle(core);
 }
 
 fn sync_tool_buttons() {

@@ -30,6 +30,8 @@ public:
     void frame_all();
     void set_row_height(int h) { row_h_ = h; update(); }
     void set_scroll(int y) { scroll_ = y; update(); }
+    // What a left drag does here, as the key contexts set it.
+    static void set_tool(const QString& t);
 signals:
     void edited();
 protected:

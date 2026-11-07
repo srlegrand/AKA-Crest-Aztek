@@ -9,6 +9,7 @@
 #include "nodeeditor.h"
 #include "shapeeditor.h"
 #include "editors.h"
+#include "uveditor.h"
 
 #include <QAction>
 #include <QActionGroup>
@@ -884,6 +885,9 @@ void ScriptUi::place(Item* parent, Item* child) {
         ++parent->next_cell;
     } else if (k == "flowLayout" || k == "shelfLayout" || k == "menuBarLayout" || k == "frameLayout" || k == "scrollLayout") {
         parent->layout->addWidget(w);
+        // A frame fills with an editor rather than keeping it at the top.
+        const QString& ck = child->kind;
+        if (k == "frameLayout" && (ck.endsWith("Editor") || ck == "keyframeOutliner" || ck == "textureWindow")) parent->layout->setAlignment(Qt::Alignment());
     } else if (k == "tabLayout") {
         QJsonObject labels = parent->prop("tabLabels").toObject();
         QSignalBlocker block(parent->tabs);
@@ -1173,6 +1177,11 @@ void ScriptUi::build_control(Item* it, const QJsonObject& props) {
             e->setMinimumSize(200, 100);
         }
         it->w = e ? e : new QWidget();
+    } else if (k == "textureWindow") {
+        auto* u = new UvEditor();
+        u->setMinimumSize(240, 200);
+        u->refresh();
+        it->w = u;
     } else if (k == "poseEditor") {
         auto* l = new QListWidget();
         l->setMinimumSize(160, 80);
@@ -1631,7 +1640,9 @@ void ScriptUi::apply_control(Item* it, const QJsonObject& props) {
             if (auto* b = qobject_cast<QAbstractButton*>(w)) b->setText(props["label"].toString());
         }
     }
-    if (k == "outlinerEditor") {
+    if (k == "textureWindow") {
+        if (auto* u = qobject_cast<UvEditor*>(w)) u->apply_flags(props);
+    } else if (k == "outlinerEditor") {
         if (auto* o = qobject_cast<Outliner*>(w)) o->set_editor_options(props);
     } else if (k == "nodeEditor") {
         if (auto* n = qobject_cast<NodeEditor*>(w)) {

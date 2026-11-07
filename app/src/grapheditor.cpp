@@ -268,11 +268,50 @@ QPair<int, int> CurveCanvas::key_at(QPointF pos) const {
     return best;
 }
 
+// What an animation curve drives, as setKeyframe takes it.
+static QJsonArray plugs_of_curve(const QString& curve) {
+    return ask("listConnections", QJsonObject{{"args", QJsonArray{curve}}, {"plugs", true}, {"destination", true}, {"source", false}}).toArray();
+}
+
+static QString g_curve_tool = "select";
+
+void CurveCanvas::set_tool(const QString& t) { g_curve_tool = t; }
+QString CurveCanvas::tool() { return g_curve_tool; }
+
 void CurveCanvas::mousePressEvent(QMouseEvent* e) {
     press_ = last_ = e->position();
     bool alt = e->modifiers() & Qt::AltModifier;
     if (alt && e->button() == Qt::MiddleButton) mode_ = Mode::Pan;
     else if (alt && e->button() == Qt::RightButton) mode_ = Mode::Zoom;
+    else if (e->button() == Qt::LeftButton && g_curve_tool == "dolly") mode_ = Mode::Zoom;
+    else if (e->button() == Qt::LeftButton && g_curve_tool == "track") mode_ = Mode::Pan;
+    else if (e->button() == Qt::LeftButton && g_curve_tool == "time") {
+        mode_ = Mode::Scrub;
+        emit timeDragged(std::round(to_graph(e->position()).x()));
+    } else if (e->button() == Qt::LeftButton && (g_curve_tool == "move") && !sel_.isEmpty() && key_at(e->position()).first < 0) {
+        // The move tool drags the picked keys from anywhere.
+        mode_ = Mode::Move;
+        drag_applied_ = false;
+        axis_lock_ = (e->modifiers() & Qt::ShiftModifier) ? -1 : 0;
+    } else if (e->button() == Qt::LeftButton && (g_curve_tool == "set" || g_curve_tool == "insert") && !curves_.isEmpty()) {
+        // A key on the nearest curve at this frame: insert keeps the curve's shape, set puts the key where the click is.
+        QPointF g = to_graph(e->position());
+        int best = -1;
+        double bd = 1e300;
+        for (int i = 0; i < curves_.size(); ++i)
+            for (const QPointF& s : curves_[i].samples) {
+                double d = QLineF(curve_point(i, s.x(), s.y()), e->position()).length();
+                if (d < bd) bd = d, best = i;
+            }
+        if (best >= 0) {
+            const double t = std::round(g.x());
+            QJsonObject call{{"args", plugs_of_curve(curves_[best].curve)}, {"time", t}};
+            if (g_curve_tool == "insert") call["insert"] = true;
+            else call["value"] = g.y();
+            exec("setKeyframe", call);
+            emit keysChanged();
+        }
+    }
     else if (e->button() == Qt::LeftButton && e->position().y() < 16) {
         mode_ = Mode::Scrub;
         emit timeDragged(std::round(to_graph(e->position()).x()));

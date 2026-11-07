@@ -6,7 +6,10 @@ use std::collections::BTreeMap;
 
 use aztek_ops::{fail, ArgType, Args, CmdResult, CommandDef, CommandError, FlagDef};
 use aztek_scene::Session;
+use glam::DVec3;
 use serde_json::{json, Map, Value};
+
+use crate::core::Core;
 
 type Cmd = CommandDef<Session>;
 
@@ -23,6 +26,17 @@ struct Contexts {
     counters: BTreeMap<String, u32>,
     ready: bool,
     edit_mode: bool,
+    /// The context `idle` last saw as current, for its start and finish scripts.
+    active: String,
+    /// The selection as `idle` last saw it.
+    last_selection: Vec<String>,
+    /// ctxCompletion was asked for: the current tool finishes at the next idle.
+    completing: bool,
+    /// What manipPivot set, until the selection changes.
+    manip_pivot: Option<[f64; 3]>,
+    pivot_pinned: bool,
+    /// Flags of manipOptions, setXformManip and viewManip.
+    settings: BTreeMap<String, Map<String, Value>>,
 }
 
 thread_local! {
@@ -42,7 +56,7 @@ const BUILT_IN: &[(&str, &str)] = &[
     ("lassoContext", "lassoContext"),
     ("artSelectContext", "artSelectCtx"),
     ("selectContext", "selectSuperContext"),
-    ("ShowManips", "selectSuperContext"),
+    ("ShowManips", "showManipCtx"),
     ("tumbleContext", "tumbleCtx"),
     ("trackContext", "trackCtx"),
     ("dollyContext", "dollyCtx"),
@@ -61,6 +75,17 @@ const BUILT_IN: &[(&str, &str)] = &[
     ("targetWeldContext", "targetWeldCtx"),
     ("polySelectEditContext", "polySelectEditCtx"),
     ("polyShortestPathContext", "polyShortestPathCtx"),
+    ("texMoveContext", "texMoveContext"),
+    ("texRotateContext", "texRotateContext"),
+    ("texScaleContext", "texScaleContext"),
+    ("texSelectContext", "texSelectContext"),
+    ("texMoveUVShellContext", "texMoveUVShellContext"),
+    ("texCutContext", "texCutContext"),
+    ("texSmoothContext", "texSmoothContext"),
+    ("texTweakUVContext", "texTweakUVContext"),
+    ("texSelectShortestPathCtx", "texSelectShortestPathCtx"),
+    ("textureLassoContext", "textureLassoContext"),
+    ("texWinToolCtx", "texWinToolCtx"),
 ];
 
 /// A context type to the view's tool name; None when the views have no such tool yet.
@@ -87,7 +112,48 @@ fn tool_of(kind: &str) -> Option<&'static str> {
         "polyAppendFacetCtx" => "appendPolygon",
         "targetWeldCtx" => "targetWeld",
         "polyShortestPathCtx" => "shortestPath",
-        "sculptMeshCacheCtx" => "sculpt",
+        "sculptMeshCacheCtx" | "artPuttyCtx" => "sculpt",
+        "orbitCtx" => "camTumble",
+        "boxDollyCtx" => "camBoxDolly",
+        "walkCtx" => "camWalk",
+        "modelCurrentTimeCtx" => "modelTime",
+        "curveAddPtCtx" => "curveAddPt",
+        "curveMoveEPCtx" => "move",
+        "curveBezierCtx" => "curveBezier",
+        "twoPointArcCtx" => "arcTwo",
+        "threePointArcCtx" => "arcThree",
+        "polySelectCtx" | "polySuperCtx" | "showManipCtx" | "scriptCtx" | "userCtx" => "select",
+        "polyCreaseCtx" => "crease",
+        "polyMergeEdgeCtx" => "mergeEdge",
+        "polyMergeFacetCtx" => "mergeFacet",
+        "createPolyCubeCtx" => "createCube",
+        "createPolyPlaneCtx" => "createPlane",
+        "snapTogetherCtx" => "snapTogether",
+        "setEditCtx" => "editMembership",
+        "artSetPaintCtx" | "artUserPaintCtx" | "artAttrPaintVertexCtx" => "paintSelect",
+        // Soft select's hold key: the tool stays what it was.
+        "softSelectOptionsCtx" => "keep",
+        // The Graph Editor's and Dope Sheet's.
+        "setKeyCtx" | "keyframeRegionSetKeyCtx" => "key:set",
+        "insertKeyCtx" | "keyframeRegionInsertKeyCtx" => "key:insert",
+        "moveKeyCtx" | "keyframeRegionMoveKeyCtx" | "directKeyCtx" | "keyframeRegionDirectKeyCtx" | "curveEditorCtx" => "key:move",
+        "scaleKeyCtx" | "keyframeRegionScaleKeyCtx" => "key:scale",
+        "selectKeyCtx" | "graphSelectContext" | "keyframeRegionSelectKeyCtx" => "key:select",
+        "graphDollyCtx" | "keyframeRegionDollyCtx" => "key:dolly",
+        "graphTrackCtx" | "keyframeRegionTrackCtx" => "key:track",
+        "currentTimeCtx" | "keyframeRegionCurrentTimeCtx" => "key:time",
+        // The UV Editor's.
+        "texMoveContext" => "uv:move",
+        "texRotateContext" => "uv:rotate",
+        "texScaleContext" => "uv:scale",
+        "texSelectContext" => "uv:select",
+        "texMoveUVShellContext" => "uv:shell",
+        "texCutContext" => "uv:cut",
+        "texSmoothContext" => "uv:smooth",
+        "texTweakUVContext" => "uv:tweak",
+        "texSelectShortestPathCtx" => "uv:path",
+        "textureLassoContext" => "uv:lasso",
+        "texWinToolCtx" => "uv:window",
         _ => return None,
     })
 }
@@ -157,6 +223,10 @@ pub fn shell_tool_changed(tool: &str) {
     });
 }
 
+fn add_ctx_flags(c: Cmd, spec: &str) -> Cmd {
+    crate::scriptui::add_flags(c, spec)
+}
+
 fn f(name: &str, short: &str, ty: ArgType) -> FlagDef {
     FlagDef::new(name, short, ty, Value::Null, "")
 }
@@ -197,6 +267,60 @@ const TYPES: &[(&str, &str)] = &[
     ("dollyCtx", "scale:s:a localDolly:ld:b centerOfInterestDolly:cd:b boxDollyType:bdt:a dollyTowardsCenter:dtc:b alternateContext:ac:b toolName:tn:a"),
     ("rollCtx", "rollScale:rs:a alternateContext:ac:b"),
     ("boxZoomCtx", "zoomScale:zs:a"),
+    ("orbitCtx", "alternateContext:ac:b localOrbit:lo:b orbitScale:os:a toolName:tn:a"),
+    ("boxDollyCtx", "alternateContext:ac:b toolName:tn:a"),
+    ("walkCtx", "alternateContext:ac:b crouchCount:crc:a toolName:tn:a walkHeight:wh:a walkSensitivity:wsn:a walkSpeed:ws:a walkToolHud:wth:b"),
+    ("curveAddPtCtx", ""),
+    ("curveMoveEPCtx", ""),
+    ("curveBezierCtx", "degree:d:a manipMode:mm:a preserveShape:ps:b"),
+    ("twoPointArcCtx", "degree:d:a spans:s:a"),
+    ("threePointArcCtx", "degree:d:a spans:s:a"),
+    ("polySelectCtx", "mode:m:a"),
+    ("polySuperCtx", "attach:a:a enable:en:b"),
+    ("polyCreaseCtx", "extendSelection:es:b relative:r:b"),
+    ("polyMergeEdgeCtx", "activeNodes:anq:b firstEdge:fe:a secondEdge:se:a immediate:im:b mergeMode:mm:a mergeTexture:mt:b nodeType:nt:a previous:pvs:b reset:rs:b toolNode:tnq:b caching:cch:b"),
+    ("polyMergeFacetCtx", "activeNodes:anq:b firstFacet:ff:a secondFacet:sf:a immediate:im:b mergeMode:mm:a nodeType:nt:a previous:pvs:b reset:rs:b toolNode:tnq:b caching:cch:b"),
+    ("createPolyCubeCtx", "width:w:a height:h:a depth:d:a subdivisionsX:sx:a subdivisionsY:sy:a subdivisionsZ:sz:a axis:ax:a createUVs:cuv:a doSubdivisionsCapsUI:dsc:b"),
+    ("createPolyPlaneCtx", "width:w:a height:h:a subdivisionsX:sx:a subdivisionsY:sy:a axis:ax:a createUVs:cuv:a"),
+    ("snapTogetherCtx", "clearSelection:cs:b setOrientation:so:b snapPolygonFace:spf:b"),
+    ("showManipCtx", "currentNodeName:cnn:b incSnap:is:a incSnapRelative:isr:a incSnapUI:isu:b incSnapValue:isv:a lockSelection:ls:b toggleIncSnap:tis:b toolFinish:tf:a toolStart:ts:a"),
+    ("setEditCtx", "setName:sn:a"),
+    ("softSelectOptionsCtx", "buttonDown:btd:b buttonUp:btu:b"),
+    ("scriptCtx", "toolStart:ts:a toolFinish:tf:a finalCommandScript:fcs:a setSelectionCount:ssc:a setAllowExcessCount:sae:b setAutoToggleSelection:sat:b setAutoComplete:sac:b setDoneSelectionPrompt:dsp:a setNoSelectionPrompt:nsp:a setNoSelectionHeadsUp:nsh:a setSelectionPrompt:ssp:a setSelectionHeadsUp:ssh:a totalSelectionSets:tss:a exitUponCompletion:euc:b enableRootSelection:ers:b ignoreInvalidItems:iii:b cumulativeLists:cls:b expandSelectionList:esl:b showManipulators:sm:b baseClassName:bcn:a toolCursorType:tct:a allComponents:alc:b vertex:v:b edge:eg:b facet:fc:b curve:c:b polymesh:pl:b"),
+    ("userCtx", "toolStart:ts:a toolFinish:tf:a finalCommandScript:fcs:a setSelectionCount:ssc:a setAllowExcessCount:sae:b setAutoToggleSelection:sat:b setAutoComplete:sac:b setDoneSelectionPrompt:dsp:a setNoSelectionPrompt:nsp:a setNoSelectionHeadsUp:nsh:a setSelectionPrompt:ssp:a setSelectionHeadsUp:ssh:a totalSelectionSets:tss:a exitUponCompletion:euc:b enableRootSelection:ers:b ignoreInvalidItems:iii:b cumulativeLists:cls:b expandSelectionList:esl:b showManipulators:sm:b baseClassName:bcn:a toolCursorType:tct:a allComponents:alc:b vertex:v:b edge:eg:b facet:fc:b curve:c:b polymesh:pl:b"),
+    ("graphDollyCtx", ""),
+    ("graphTrackCtx", ""),
+    ("graphSelectContext", ""),
+    ("directKeyCtx", "option:o:a selectedOnly:slo:b"),
+    ("currentTimeCtx", ""),
+    ("modelCurrentTimeCtx", "percent:per:a snap:sn:b"),
+    ("curveEditorCtx", "direction:dir:a relativeTangentSize:rts:a tangentScale:ts:a tangentTension:tt:a"),
+    ("keyframeRegionMoveKeyCtx", "moveFunction:mf:a option:o:a"),
+    ("keyframeRegionScaleKeyCtx", "scaleSpecifiedKeys:ssk:b type:typ:a"),
+    ("keyframeRegionSelectKeyCtx", ""),
+    ("keyframeRegionSetKeyCtx", "breakdown:bd:b"),
+    ("keyframeRegionInsertKeyCtx", "breakdown:bd:b"),
+    ("keyframeRegionDirectKeyCtx", "option:o:a selectedOnly:slo:b"),
+    ("keyframeRegionDollyCtx", "scale:s:a"),
+    ("keyframeRegionTrackCtx", "scale:s:a"),
+    ("keyframeRegionCurrentTimeCtx", ""),
+    ("texMoveContext", "snap:s:b snapValue:sv:a snapComponentsRelative:scr:b position:p:b editPivotMode:epm:b editPivotPosition:epp:a tweakMode:twk:b"),
+    ("texRotateContext", "snap:s:b snapValue:sv:a snapComponentsRelative:scr:b position:p:b editPivotMode:epm:b editPivotPosition:epp:a tweakMode:twk:b"),
+    ("texScaleContext", "snap:s:b snapValue:sv:a snapComponentsRelative:scr:b position:p:b editPivotMode:epm:b editPivotPosition:epp:a tweakMode:twk:b"),
+    ("texSelectContext", ""),
+    ("texMoveUVShellContext", "iterations:it:a mask:m:a position:p:b shellBorder:sb:a tolerance:to:a"),
+    ("texCutContext", "adjustSize:as:b displayShellBorders:dsb:b edgeSelectSensitive:ess:a mode:m:a moveRatio:mr:a showTextureBorders:stb:b size:sz:a steadyStroke:ss:b steadyStrokeDistance:ssd:a touchToSew:tts:b"),
+    ("texSmoothContext", ""),
+    ("texSmudgeUVContext", "dragSlider:ds:a effectType:et:a functionType:ft:a pressure:prs:a radius:r:a smudgeIsMiddle:sim:b"),
+    ("texTweakUVContext", "position:p:b tolerance:to:a"),
+    ("texLatticeDeformContext", "envelope:ev:a height:h:a width:w:a latticeColumns:lc:a latticeRows:lr:a snapPixelMode:spm:b useBoundingRect:ubr:b showMoveManipulator:smm:b"),
+    ("texSelectShortestPathCtx", ""),
+    ("textureLassoContext", "drawClosed:dc:b"),
+    ("texWinToolCtx", "alternateContext:ac:b boxzoom:bz:b dolly:do:b toolName:tn:a track:tr:b"),
+    ("artSetPaintCtx", "settomodify:stm:a setcolorfeedback:scf:b setdisplaycvs:dcv:b setopertype:sot:a radius:r:a lowerradius:lr:a opacity:op:a value:val:a stampProfile:stP:a accopacity:aco:b minvalue:mnv:a maxvalue:mxv:a clamp:cl:a clamplower:cll:a clampupper:clu:a colorfeedback:cf:b mappressure:mp:a reflection:rfl:b reflectionaxis:ra:a outline:o:b tablet:tab:b flood:fl:b floodselect:fs:a"),
+    ("artUserPaintCtx", "toolSetupCmd:tsc:a toolCleanupCmd:tcc:a initializeCmd:ic:a finalizeCmd:fc:a setValueCommand:svc:a getValueCommand:gvc:a setArrayValueCommand:sac:a getArrayAttrCommand:gac:a getSurfaceCommand:gsc:a radius:r:a lowerradius:lr:a opacity:op:a value:val:a stampProfile:stP:a accopacity:aco:b minvalue:mnv:a maxvalue:mxv:a clamp:cl:a clamplower:cll:a clampupper:clu:a colorfeedback:cf:b mappressure:mp:a reflection:rfl:b reflectionaxis:ra:a outline:o:b tablet:tab:b flood:fl:b floodselect:fs:a"),
+    ("artPuttyCtx", "mouldtypehead:mth:a mouldtypemouse:mtm:a mouldtypesmooth:mts:a dispdecr:dde:b dispincr:din:b invertrefvector:irv:b maxdisp:md:a refvector:rv:a stampDepth:sd:a radius:r:a lowerradius:lr:a opacity:op:a value:val:a stampProfile:stP:a accopacity:aco:b minvalue:mnv:a maxvalue:mxv:a clamp:cl:a clamplower:cll:a clampupper:clu:a colorfeedback:cf:b mappressure:mp:a reflection:rfl:b reflectionaxis:ra:a outline:o:b tablet:tab:b flood:fl:b floodselect:fs:a"),
+    ("artAttrPaintVertexCtx", "colorRGBValue:cl3:a colorAlphaValue:cl4:a paintRGB:pc3:b paintAlpha:pa:b paintoperationtype:pot:a selectedattroper:sao:a radius:r:a lowerradius:lr:a opacity:op:a value:val:a stampProfile:stP:a accopacity:aco:b minvalue:mnv:a maxvalue:mxv:a clamp:cl:a clamplower:cll:a clampupper:clu:a colorfeedback:cf:b mappressure:mp:a reflection:rfl:b reflectionaxis:ra:a outline:o:b tablet:tab:b flood:fl:b floodselect:fs:a"),
 ];
 
 fn parse_flags(mut c: Cmd, spec: &str) -> Cmd {
@@ -238,9 +362,39 @@ fn view_all(key: &str, value: Value) {
     crate::core::push_ui_request(format!("viewAll|{}", json!({"key": key, "value": value})));
 }
 
-fn apply_to_views(kind: &str, flags: &Map<String, Value>) {
+fn apply_to_views(s: &mut Session, kind: &str, flags: &Map<String, Value>) {
+    if kind == "softSelectOptionsCtx" {
+        if flags.get("buttonDown").is_some_and(truthy) {
+            view_all("brushAdjust", json!(true));
+        }
+        if flags.get("buttonUp").is_some_and(truthy) {
+            view_all("brushAdjust", json!(false));
+        }
+        return;
+    }
+    if kind == "artPuttyCtx" {
+        if let Some(t) = flags.get("mouldtypemouse").and_then(Value::as_str) {
+            s.sculpt_ctx.tool = match t {
+                "smooth" => "smooth",
+                "erase" => "erase",
+                _ => "sculpt",
+            }
+            .to_string();
+        }
+        if let Some(r) = flags.get("radius").and_then(Value::as_f64) {
+            s.sculpt_ctx.size = r;
+        }
+        if let Some(o) = flags.get("opacity").and_then(Value::as_f64) {
+            s.sculpt_ctx.strength = o;
+        }
+        return;
+    }
     if !matches!(kind, "manipMoveContext" | "manipRotateContext" | "manipScaleContext") {
         return;
+    }
+    // Which handle is active: 0 X, 1 Y, 2 Z, 3 centre, and 4 XY, 5 YZ, 6 XZ for a move.
+    if let Some(h) = flags.get("activeHandle").and_then(Value::as_i64) {
+        view_all("activeHandle", json!(h));
     }
     if let Some(m) = flags.get("mode").and_then(Value::as_i64) {
         view_all("axisOrientation", json!(axis_name(kind, m)));
@@ -306,7 +460,7 @@ fn context_command(kind: &'static str, s: &mut Session, a: &Args) -> CmdResult {
             Ok(x.kind.clone())
         })
         .map_err(CommandError::new)?;
-        apply_to_views(&k, &flags);
+        apply_to_views(s, &k, &flags);
         return Ok(json!(n));
     }
     let n = with_ctx(|c| -> Result<String, String> {
@@ -349,7 +503,11 @@ fn manip_position(s: &mut Session) -> CmdResult {
     Ok(json!([(b[0] + b[3]) * 0.5, (b[1] + b[4]) * 0.5, (b[2] + b[5]) * 0.5]))
 }
 
-fn set_tool_to(s: &Session, name: &str) -> CmdResult {
+fn truthy(v: &Value) -> bool {
+    v.as_bool().unwrap_or_else(|| v.as_f64().is_some_and(|x| x != 0.0))
+}
+
+fn set_tool_to(s: &mut Session, name: &str) -> CmdResult {
     // The paint attribute tool's command lives in the scene and keeps its own names.
     if name == "artAttrCtx1" || s.attr_ctx.tools.iter().any(|t| t == name) {
         with_ctx(|c| c.current = name.to_string());
@@ -360,7 +518,29 @@ fn set_tool_to(s: &Session, name: &str) -> CmdResult {
     let Some(kind) = kind else { fail!("setToolTo: Object '{name}' not found.") };
     with_ctx(|c| c.current = name.to_string());
     match tool_of(&kind) {
-        Some(t) => crate::core::push_ui_request(format!("setTool|{t}")),
+        Some("keep") => {}
+        Some(t) if t.starts_with("uv:") => crate::core::push_ui_request(format!("uvTool|{}", &t[3..])),
+        Some(t) if t.starts_with("key:") => crate::core::push_ui_request(format!("keyTool|{}", &t[4..])),
+        Some(t) => {
+            crate::core::push_ui_request(format!("setTool|{t}"));
+            // What the tool picks or shows.
+            match kind.as_str() {
+                "polyMergeEdgeCtx" => drop(s.run("selectMode", json!({"args": ["edge"]}))),
+                "polyMergeFacetCtx" => drop(s.run("selectMode", json!({"args": ["face"]}))),
+                "showManipCtx" => crate::core::push_ui_request("ShowManipulators".to_string()),
+                _ => {}
+            }
+            let props = with_ctx(|c| c.all.get(name).map(|x| x.props.clone())).unwrap_or_default();
+            if kind == "artPuttyCtx" {
+                apply_to_views(s, &kind, &props);
+            }
+            // The tool's own state of a manip context applies as it comes in.
+            if kind.starts_with("manip") {
+                if let Some(h) = props.get("activeHandle") {
+                    view_all("activeHandle", h.clone());
+                }
+            }
+        }
         None => {
             crate::script_jobs::warn_once(&kind, &format!("{kind}: this tool has no interaction in the views yet; the context is current but the views stay on the select tool."));
             crate::core::push_ui_request("setTool|select".to_string());
@@ -369,7 +549,279 @@ fn set_tool_to(s: &Session, name: &str) -> CmdResult {
     Ok(json!(name))
 }
 
+/// What manipPivot set, for the views' manipulator.
+pub fn manip_pivot_override() -> Option<DVec3> {
+    with_ctx(|c| c.manip_pivot.map(DVec3::from_array))
+}
+
+fn selection_now(core: &mut Core) -> Vec<String> {
+    core.s.run("ls", json!({"selection": true, "flatten": true})).ok().and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default()
+}
+
+fn prop_of(name: &str, key: &str) -> Option<Value> {
+    with_ctx(|c| c.all.get(name).and_then(|x| x.props.get(key).cloned()))
+}
+
+/// The commands a context's selection drives: scriptCtx's final script once enough is picked, the paint contexts' action
+/// on what the brush newly took. Start and finish scripts run as a context comes and goes.
+pub(crate) fn idle(core: &mut Core) {
+    let (cur, prev) = with_ctx(|c| {
+        let p = std::mem::replace(&mut c.active, c.current.clone());
+        (c.current.clone(), p)
+    });
+    if prev != cur {
+        for flag in ["toolFinish", "toolCleanupCmd", "finalizeCmd"] {
+            if let Some(cb) = prop_of(&prev, flag) {
+                core.run_callback(&cb, &[]);
+            }
+        }
+        for flag in ["toolStart", "toolSetupCmd", "initializeCmd"] {
+            if let Some(cb) = prop_of(&cur, flag) {
+                core.run_callback(&cb, &[]);
+            }
+        }
+        let now = selection_now(core);
+        with_ctx(|c| c.last_selection = now);
+    }
+    let kind = with_ctx(|c| c.all.get(&cur).map(|x| x.kind.clone())).unwrap_or_default();
+    let watches_pivot = with_ctx(|c| c.manip_pivot.is_some() && !c.pivot_pinned);
+    if !matches!(kind.as_str(), "scriptCtx" | "userCtx" | "artSetPaintCtx" | "artUserPaintCtx" | "artAttrPaintVertexCtx") && !watches_pivot {
+        with_ctx(|c| c.completing = false);
+        return;
+    }
+    let now = selection_now(core);
+    let before = with_ctx(|c| std::mem::replace(&mut c.last_selection, now.clone()));
+    if watches_pivot && before != now {
+        with_ctx(|c| c.manip_pivot = None);
+    }
+    let fresh: Vec<String> = now.iter().filter(|x| !before.contains(x)).cloned().collect();
+    match kind.as_str() {
+        "scriptCtx" | "userCtx" => script_ctx_step(core, &cur, &now),
+        "artSetPaintCtx" if !fresh.is_empty() => {
+            if let Some(set) = prop_of(&cur, "settomodify").and_then(|v| v.as_str().map(str::to_string)) {
+                let flag = match prop_of(&cur, "setopertype").and_then(|v| v.as_str().map(str::to_string)).as_deref() {
+                    Some("remove") => "remove",
+                    _ => "add",
+                };
+                let lines = core.log.len();
+                let _ = core.mel_checked(&format!("sets -{flag} {set} {};", fresh.join(" ")));
+                core.log.truncate(lines);
+            }
+        }
+        "artUserPaintCtx" if !fresh.is_empty() => {
+            let value = prop_of(&cur, "value").and_then(|v| v.as_f64()).unwrap_or(1.0);
+            if let Some(cb) = prop_of(&cur, "setValueCommand") {
+                for item in &fresh {
+                    let index = item.rsplit_once('[').and_then(|x| x.1.trim_end_matches(']').parse::<i64>().ok()).unwrap_or(0);
+                    let _ = crate::attr_ui::call_for_value(core, &cb, &[json!(0), json!(index), json!(value)]);
+                }
+            }
+        }
+        "artAttrPaintVertexCtx" if !fresh.is_empty() => {
+            let rgb = prop_of(&cur, "colorRGBValue").unwrap_or(json!([1.0, 1.0, 1.0]));
+            let _ = core.exec("polyColorPerVertex", json!({"args": fresh, "rgb": rgb}));
+        }
+        _ => {}
+    }
+    with_ctx(|c| c.completing = false);
+}
+
+fn script_ctx_step(core: &mut Core, cur: &str, selection: &[String]) {
+    let completing = with_ctx(|c| c.completing);
+    let count = prop_of(cur, "setSelectionCount").and_then(|v| v.as_i64()).unwrap_or(0).max(0) as usize;
+    let auto = prop_of(cur, "setAutoComplete").is_some_and(|v| truthy(&v));
+    let enough = !selection.is_empty() && selection.len() >= count;
+    if !(enough && (completing || (auto && count > 0))) {
+        return;
+    }
+    if let Some(cb) = prop_of(cur, "finalCommandScript") {
+        let run = match &cb {
+            // Maya hands the picks to the script as $Selection1.
+            Value::String(src) => {
+                let items: Vec<String> = selection.iter().map(|x| format!("\"{x}\"")).collect();
+                json!(format!("{{ string $Selection1[] = {{{}}}; {src} }}", items.join(",")))
+            }
+            o => o.clone(),
+        };
+        core.run_callback(&run, &[]);
+    }
+    if prop_of(cur, "exitUponCompletion").is_some_and(|v| truthy(&v)) {
+        with_ctx(|c| c.current = "selectSuperContext".to_string());
+        crate::core::push_ui_request("setTool|select".to_string());
+    }
+    let _ = core.exec_quiet("select", json!({"clear": true}), aztek_ops::CallSource::Script);
+}
+
+/// A command that only holds flags, and does what `act` says with them.
+fn settings_command(s: &mut Session, name: &str, a: &Args, default: fn(&str) -> Value, act: fn(&mut Session, &Map<String, Value>)) -> CmdResult {
+    if a.bool("query") {
+        let Some(q) = asked(a) else { fail!("{name}: name what to ask about.") };
+        return Ok(with_ctx(|c| c.settings.get(name).and_then(|x| x.get(&q).cloned())).unwrap_or_else(|| default(&q)));
+    }
+    let mut flags = a.flags.clone();
+    flags.retain(|k, v| !matches!(k.as_str(), "query" | "edit" | "queried") && !v.is_null());
+    with_ctx(|c| c.settings.entry(name.to_string()).or_default().extend(flags.clone()));
+    act(s, &flags);
+    Ok(Value::Null)
+}
+
+fn view_manip_act(s: &mut Session, f: &Map<String, Value>) {
+    if let Some(v) = f.get("visible") {
+        let cmd = json!({"args": ["viewAxis"], "visible": truthy(v)});
+        let _ = s.run("headsUpDisplay", cmd);
+    }
+    if f.get("goHome").is_some_and(truthy) {
+        let _ = s.run("viewSet", json!({"home": true}));
+    }
+    if f.get("fitToView").is_some_and(truthy) {
+        let _ = s.run("viewFit", json!({}));
+    }
+}
+
+fn manip_options_act(_s: &mut Session, f: &Map<String, Value>) {
+    if let Some(v) = f.get("scale").or(f.get("handleSize")).and_then(Value::as_f64) {
+        view_all("manipSize", json!(v));
+    }
+}
+
+fn pan_zoom(s: &mut Session, a: &Args) -> CmdResult {
+    let cam = a.named().into_iter().next();
+    let mut call = Map::new();
+    if let Some(c) = &cam {
+        call.insert("args".to_string(), json!([c]));
+    }
+    let mut track = call.clone();
+    let mut moved = false;
+    for k in ["left", "right", "up", "down"] {
+        if a.has(k) {
+            track.insert(k.to_string(), json!(a.float(k, 0.0)));
+            moved = true;
+        }
+    }
+    if moved {
+        s.run("track", Value::Object(track))?;
+    }
+    if a.has("zoomRatio") {
+        let mut zoom = call;
+        zoom.insert("orthoScale".to_string(), json!(a.float("zoomRatio", 1.0)));
+        s.run("dolly", Value::Object(zoom))?;
+    }
+    Ok(Value::Null)
+}
+
 pub fn register(s: &mut Session) {
+    s.register(add_ctx_flags(
+        Cmd::new("manipPivot", "Puts the manipulator somewhere else until the selection changes: -p the place, -o the orientation, -reset, -q.", |s, a| {
+            if a.bool("query") {
+                let q = asked(a).unwrap_or_default();
+                return with_ctx(|c| {
+                    Ok(match q.as_str() {
+                        "position" => json!(c.manip_pivot.unwrap_or([0.0; 3])),
+                        "orientation" => c.settings.get("manipPivot").and_then(|x| x.get("orientation").cloned()).unwrap_or(json!([0.0, 0.0, 0.0])),
+                        "valid" => json!(c.manip_pivot.is_some()),
+                        "pinPivot" => json!(c.pivot_pinned),
+                        _ => Value::Null,
+                    })
+                });
+            }
+            let selected: Vec<String> = s.run("ls", json!({"selection": true, "flatten": true})).ok().and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default();
+            with_ctx(|c| {
+                c.last_selection = selected;
+                if a.bool("reset") || a.bool("resetPosition") {
+                    c.manip_pivot = None;
+                }
+                if a.has("pinPivot") {
+                    c.pivot_pinned = a.bool("pinPivot");
+                }
+                if let Some(p) = a.vec3("position") {
+                    c.manip_pivot = Some(p);
+                }
+                if let Some(o) = a.get("orientation") {
+                    c.settings.entry("manipPivot".to_string()).or_default().insert("orientation".to_string(), o.clone());
+                }
+                if a.bool("reset") || a.bool("resetOrientation") {
+                    if let Some(x) = c.settings.get_mut("manipPivot") {
+                        x.remove("orientation");
+                    }
+                }
+            });
+            view_all("redraw", json!(true));
+            Ok(Value::Null)
+        })
+        .undoable(false),
+        "position:p:a orientation:o:a pinPivot:pin:b reset:r:b resetOrientation:ro:b resetPosition:rp:b valid:v:b query:q:b edit:e:b queried::a",
+    ));
+    s.register(add_ctx_flags(
+        Cmd::new("manipOptions", "How manipulators look and work: -scale, -handleSize and so on.", |s, a| {
+            fn d(q: &str) -> Value {
+                match q {
+                    "scale" | "handleSize" => json!(1.0),
+                    "lineSize" | "pointSize" => json!(1.0),
+                    "refreshMode" => json!(1),
+                    "preselectHighlight" | "showExtrudeSliders" | "linePick" | "rememberActiveHandle" => json!(true),
+                    _ => json!(false),
+                }
+            }
+            settings_command(s, "manipOptions", a, d, manip_options_act)
+        })
+        .undoable(false),
+        "enableSmartDuplicate:esd:b enableSmartExtrude:ese:b forceRefresh:fr:b handleSize:hs:a hideManipOnCtrl:hmc:b hideManipOnShift:hms:b hideManipOnShiftCtrl:hsc:b linePick:lp:a lineSize:ls:a pivotRotateHandleOffset:pro:a planeHandleOffset:pho:a pointSize:ps:a preselectHighlight:psh:b refreshMode:rm:a relative:r:b rememberActiveHandle:rah:b rememberActiveHandleAfterToolSwitch:raa:b scale:s:a showExtrudeSliders:ses:b showPivotRotateHandle:spr:b showPlaneHandles:spl:b smartDuplicateType:sdt:a query:q:b edit:e:b queried::a",
+    ));
+    s.register(add_ctx_flags(
+        Cmd::new("setXformManip", "The manipulator's settings: -showUnits, -suppress, -useRotatePivot, -useScalePivot, -worldSpace. Held; the views go by the tools' own.", |s, a| {
+            fn d(q: &str) -> Value {
+                json!(q == "worldSpace")
+            }
+            settings_command(s, "setXformManip", a, d, |_, _| {})
+        })
+        .undoable(false),
+        "showUnits:su:b suppress:s:b useRotatePivot:urp:b useScalePivot:usp:b worldSpace:ws:b query:q:b edit:e:b queried::a",
+    ));
+    s.register(add_ctx_flags(
+        Cmd::new("viewManip", "The view's orientation aid: -visible shows or hides the axes in the corner, -goHome, -fitToView; the rest are held.", |s, a| {
+            fn d(q: &str) -> Value {
+                match q {
+                    "visible" | "dragSnap" | "drawCompass" => json!(q == "visible"),
+                    "size" => json!("auto"),
+                    "minOpacity" => json!(0.2),
+                    _ => Value::Null,
+                }
+            }
+            settings_command(s, "viewManip", a, d, view_manip_act)
+        })
+        .undoable(false),
+        "bottomLeft:bl:b bottomRight:br:b compassAngle:ca:a dragSnap:ds:b drawCompass:dc:b fitToView:ftv:b frontParameter:fp:a goDefault:gd:b goHome:gh:b homeParameter:hp:a levelCamera:lc:b minOpacity:mo:a postCommand:pc:a preCommand:prc:a restoreCenter:rc:b selectionLockParameter:slp:a setHome:sh:b size:s:a topLeft:tl:b topRight:tr:b visible:v:b zoomToFitScene:zf:b query:q:b edit:e:b queried::a",
+    ));
+    s.register(
+        Cmd::new("pixelMove", "pixelMove x y: moves the selection this many pixels in the view's plane.", |_s, a| {
+            let n: Vec<f64> = a.positional.iter().filter_map(Value::as_f64).collect();
+            let [x, y, ..] = n.as_slice() else { fail!("pixelMove: give x and y.") };
+            crate::core::push_ui_request(format!("pixelMove|{}", json!({"x": x, "y": y})));
+            Ok(Value::Null)
+        })
+        .positional("x y")
+        .undoable(false),
+    );
+    s.register(add_ctx_flags(
+        Cmd::new("panZoom", "panZoom [camera]: -left -right -up -down slide the camera, -zoomRatio scales what it sees. It moves the camera; there is no 2D film pan here.", |s, a| pan_zoom(s, a)).positional("[camera]").undoable(false),
+        "left:l:a right:r:a up:u:a down:d:a zoomRatio:zr:a absolute:abs:b relative:rel:b",
+    ));
+    s.register(
+        Cmd::new("ctxCompletion", "Tells the current tool to finish, as Enter does.", |_s, _a| {
+            with_ctx(|c| c.completing = true);
+            crate::core::push_ui_request("ctxCompleted".to_string());
+            Ok(Value::Null)
+        })
+        .undoable(false),
+    );
+    s.register(
+        Cmd::new("ctxAbort", "Drops what the current tool has so far.", |_s, _a| {
+            with_ctx(|c| c.completing = false);
+            view_all("undoToolPoint", json!(true));
+            Ok(Value::Null)
+        })
+        .undoable(false),
+    );
     for (kind, spec) in TYPES {
         let k: &'static str = kind;
         // A command the scene has, such as the paint tool's, stays.

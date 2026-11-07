@@ -1065,6 +1065,28 @@ pub fn register(s: &mut Session) {
         .flag(f("pivotPoint", "pp", ArgType::Vec3)),
     );
 
+    s.register(add_spec(
+        Cmd::new("tumble", "Turn a camera about a point: -aa azimuth, -ea elevation, -ra both, -pp the point.", |s, a| {
+            let mut call = Map::new();
+            if let Some(c) = cam_arg(a) {
+                call.insert("args".to_string(), json!([c]));
+            }
+            let (mut h, mut v) = (a.float("azimuthAngle", 0.0), a.float("elevationAngle", 0.0));
+            if let Some(l) = a.get("rotationAngles").and_then(Value::as_array) {
+                h = l.first().and_then(Value::as_f64).unwrap_or(h);
+                v = l.get(1).and_then(Value::as_f64).unwrap_or(v);
+            }
+            call.insert("rotationAngles".to_string(), json!([h, v]));
+            if let Some(p) = a.get("pivotPoint") {
+                call.insert("pivotPoint".to_string(), p.clone());
+            }
+            s.run("orbit", Value::Object(call))?;
+            Ok(Value::Null)
+        })
+        .positional("[camera]"),
+        "azimuthAngle:aa:a elevationAngle:ea:a localTumble:lt:a pivotPoint:pp:a rotationAngles:ra:a",
+    ));
+
     s.register(
         Cmd::new("roll", "Roll a camera about its view: -d degrees; -abs sets the roll.", |s, a| {
             let c = camera_of(s, cam_arg(a).as_deref(), "roll")?;
