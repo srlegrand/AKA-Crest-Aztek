@@ -221,7 +221,7 @@ fn ls(s: &mut Session, a: &aztek_ops::Args) -> CmdResult {
     let g = &mut s.graph;
     let mut comps: Vec<String> = Vec::new();
     let mut ids: Vec<NodeId> = Vec::new();
-    let filters = ["type", "exactType", "dag", "dagObjects", "shapes", "transforms", "geometry", "objectsOnly", "visible", "invisible", "cameras", "lights", "leaf", "assemblies", "noIntermediate", "intermediateObjects", "materials", "partition", "sets", "textures"];
+    let filters = ["referencedNodes", "type", "exactType", "dag", "dagObjects", "shapes", "transforms", "geometry", "objectsOnly", "visible", "invisible", "cameras", "lights", "leaf", "assemblies", "noIntermediate", "intermediateObjects", "materials", "partition", "sets", "textures"];
     let filtered = filters.iter().any(|x| a.has(x) && a.get(x) != Some(&Value::Bool(false)));
     if a.bool("selection") || a.bool("orderedSelection") {
         if !a.bool("objectsOnly") {
@@ -295,6 +295,7 @@ fn ls(s: &mut Session, a: &aztek_ops::Args) -> CmdResult {
         (types.is_empty() || types.iter().any(|t| ty.is_a(t)))
             && (exact.is_empty() || exact.iter().any(|t| ty.name == *t))
             && (!a.bool("dag") || ty.dag)
+            && (!a.bool("referencedNodes") || (g.node(id).is_some_and(|n| n.reference_id() != 0) && ty.name != crate::references::REF_NODE_TYPE))
             && (!a.bool("shapes") || is_shape(g, id))
             && (!a.bool("transforms") || (ty.is_a("transform") && !is_shape(g, id)))
             && (!a.bool("geometry") || is_mesh_like(g, id))
@@ -360,6 +361,7 @@ pub fn register(c: &mut Commands<Session>) {
             .flag(f("type", "typ", ArgType::Any, "Only nodes of this type or derived; a list of types too."))
             .flag(f("exactType", "et", ArgType::Any, "Only nodes of exactly this type."))
             .flag(f("dag", "dag", ArgType::Bool, "Only DAG nodes."))
+            .flag(f("referencedNodes", "rn", ArgType::Bool, "Only nodes from references."))
             .flag(f("dagObjects", "do", ArgType::Bool, "DAG nodes and everything below them."))
             .flag(f("shapes", "s", ArgType::Bool, "Only shapes."))
             .flag(f("transforms", "tr", ArgType::Bool, "Only transforms."))

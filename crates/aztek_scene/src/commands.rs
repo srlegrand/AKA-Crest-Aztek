@@ -1223,6 +1223,7 @@ fn register_queries(c: &mut Commands<Session>) {
                         let n = g.node(id).unwrap();
                         ty.is_none_or(|t| n.ty().is_a(t))
                             && (!a.bool("dag") || n.ty().dag)
+                            && (!a.bool("referencedNodes") || (n.reference_id() != 0 && n.ty().name != crate::references::REF_NODE_TYPE))
                             && (!filtered || wanted.contains(&id))
                     })
                     .map(|id| json!(g.path(id)))
@@ -1238,6 +1239,7 @@ fn register_queries(c: &mut Commands<Session>) {
             Value::Null,
             "Only nodes of this type (or derived).",
         ))
+        .flag(flag("referencedNodes", "rn", T::Bool, json!(false), "Only nodes from references."))
         .flag(flag(
             "selection",
             "sl",

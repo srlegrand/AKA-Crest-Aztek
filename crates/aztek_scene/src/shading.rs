@@ -876,7 +876,7 @@ fn default_navigation(s: &mut Session, a: &Args) -> CmdResult {
 // ---------------------------------------------------------------------------------------------------------------------
 // Texture paths
 
-fn expand_env(path: &str) -> String {
+pub(crate) fn expand_env(path: &str) -> String {
     let mut out = String::new();
     let mut rest = path;
     while let Some(i) = rest.find('$') {
@@ -916,6 +916,17 @@ fn in_folder(dir: &Path, name: &str) -> Option<PathBuf> {
 
 /// Finds an image as Maya does: the path as written, relative to the project and then the scene; then by what follows
 /// sourceimages in the path, then by file name, in the scene's folder and the sourceimages folders.
+/// Folders of referenced files: their textures tend to sit beside them, not beside the scene using them.
+static SEARCH_FOLDERS: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
+
+pub(crate) fn add_search_folder(dir: &Path) {
+    if let Ok(mut f) = SEARCH_FOLDERS.lock() {
+        if !f.iter().any(|d| d == dir) {
+            f.push(dir.to_path_buf());
+        }
+    }
+}
+
 pub fn resolve_texture_uncached(written: &str, scene: Option<&str>, project: Option<&str>) -> Option<PathBuf> {
     let written = expand_env(written.trim()).replace('\\', "/");
     if written.is_empty() {
@@ -942,6 +953,12 @@ pub fn resolve_texture_uncached(written: &str, scene: Option<&str>, project: Opt
     }
     if let Some(p) = &project {
         folders.push(p.join("sourceimages"));
+    }
+    if let Ok(f) = SEARCH_FOLDERS.lock() {
+        for d in f.iter() {
+            folders.push(d.clone());
+            folders.push(d.join("sourceimages"));
+        }
     }
     if let Some(d) = &scene_dir {
         folders.push(d.join("sourceimages"));

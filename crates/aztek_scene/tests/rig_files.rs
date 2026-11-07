@@ -642,3 +642,17 @@ fn ik_blend_can_be_driven_by_a_switch() {
     s.run("setAttr", json!({"args": ["sw.ik", 0.0]})).unwrap();
     assert_near(world_at(&mut s, "j2"), &[2.0, 0.0, 0.0], "IK off");
 }
+
+/// A file's `connectAttr "a.s" "b.is"` holds: a joint doesn't take on its parent joint's scale.
+#[test]
+fn a_joint_compensates_for_its_parents_scale() {
+    let (mut s, _) = load(
+        "createNode joint -n \"a\";\n\tsetAttr \".s\" -type \"double3\" 2 2 2 ;\n\
+         createNode joint -n \"b\" -p \"a\";\n\tsetAttr \".t\" -type \"double3\" 1 0 0 ;\n\
+         connectAttr \"a.s\" \"b.is\";\n",
+    );
+    assert_near(get(&mut s, "b.is"), &[2.0, 2.0, 2.0], "inverseScale");
+    let m = get(&mut s, "b.worldMatrix");
+    assert_near(m[0..3].to_vec(), &[1.0, 0.0, 0.0], "b keeps its own size");
+    assert_near(m[12..15].to_vec(), &[2.0, 0.0, 0.0], "and sits where the scaled parent puts it");
+}

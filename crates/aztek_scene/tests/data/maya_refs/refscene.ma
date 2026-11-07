@@ -3,10 +3,10 @@
 //Codeset: 1252
 file -rdi 1 -ns "rig" -rfn "rigRN" -typ "mayaAscii" "C:/project/scenes/skeleton.ma";
 file -rdi 1 -ns "rigb" -rfn "rigbRN" -op "VERS|2026|UVER|undef|MADE|undef|CHNG|Thu, Oct 22, 2026 10:26:24 AM|ICON|undef|INFO|undef|OBJN|23|INCL|undef(|LUNI|cm|TUNI|film|AUNI|deg|TDUR|141120000|"
-		 -typ "mayaBinary" "C:/project/scenes/skeleton.mb";
+		 -typ "mayaAscii" "C:/project/scenes/skeleton.ma";
 file -r -ns "rig" -dr 1 -rfn "rigRN" -typ "mayaAscii" "C:/project/scenes/skeleton.ma";
 file -r -ns "rigb" -dr 1 -rfn "rigbRN" -op "VERS|2026|UVER|undef|MADE|undef|CHNG|Thu, Oct 22, 2026 10:26:24 AM|ICON|undef|INFO|undef|OBJN|23|INCL|undef(|LUNI|cm|TUNI|film|AUNI|deg|TDUR|141120000|"
-		 -typ "mayaBinary" "C:/project/scenes/skeleton.mb";
+		 -typ "mayaAscii" "C:/project/scenes/skeleton.ma";
 requires maya "2026";
 currentUnit -l centimeter -a degree -t film;
 fileInfo "application" "maya";
@@ -200,6 +200,6 @@ connectAttr "layerManager.dli[0]" "defaultLayer.id";
 connectAttr "renderLayerManager.rlmi[0]" "defaultRenderLayer.rlid";
 connectAttr "defaultRenderLayer.msg" ":defaultRenderingList1.r" -na;
 dataStructure -fmt "raw" -as "name=externalContentTable:string=node:string=key:string=upath:uint32=upathcrc:string=rpath:string=roles";
-applyMetadata -fmt "raw" -v "channel\nname externalContentTable\nstream\nname v1.0\nindexType numeric\nstructure externalContentTable\n0\n\"rigRN\" \"\" \"C:/project/scenes/skeleton.ma\" 844861996 \"C:/project/scenes/skeleton.ma\" \"FileRef\"\n1\n\"rigbRN\" \"\" \"C:/project/scenes/skeleton.mb\" 2874327958 \"C:/project/scenes/skeleton.mb\" \"FileRef\"\nendStream\nendChannel\nendAssociations\n" 
+applyMetadata -fmt "raw" -v "channel\nname externalContentTable\nstream\nname v1.0\nindexType numeric\nstructure externalContentTable\n0\n\"rigRN\" \"\" \"C:/project/scenes/skeleton.ma\" 844861996 \"C:/project/scenes/skeleton.ma\" \"FileRef\"\n1\n\"rigbRN\" \"\" \"C:/project/scenes/skeleton.ma\" 2874327958 \"C:/project/scenes/skeleton.ma\" \"FileRef\"\nendStream\nendChannel\nendAssociations\n" 
 		-scn;
 // End of refscene.ma
