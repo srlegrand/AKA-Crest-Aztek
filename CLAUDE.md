@@ -60,7 +60,9 @@ command once on release so the history shows one Maya-style line.
     build.bat                  # Windows (PowerShell script build.ps1)
     cargo test --workspace     # all Rust tests; keep them green
 
-The GitHub Action `.github/workflows/build.yml` builds Linux and Windows on every push to main.
+The GitHub Action `.github/workflows/build.yml` builds Linux, Rocky Linux 8 and 9 and Windows on every push to main and attaches
+the packages to the release. `packaging/` holds the RPM spec, the deb and Windows installer scripts and the install checks; see
+`docs/PACKAGING.md`.
 
 Checking a real `.ma` with no UI: `cargo run --release -p aztek_scene --example load_ma -- file.ma` lists warnings and how far the
 rig is from what the file stored; `--example rig_diff -- a.ma b.ma node.attr=value` compares two files under a pose. Rig files and their
