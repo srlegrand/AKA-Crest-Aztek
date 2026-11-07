@@ -44,10 +44,17 @@ private:
     bool updating_ = false;
     QSet<QString> expanded_;
     QLineEdit* filter_;
+    bool dag_only_ = false;
+    bool attrs_ = false;
+    bool hide_cameras_ = false;
+    bool show_icons_ = true;
+    QSet<QString> hidden_types_;
 };
 
 // The channels picked in the channel box, by attribute name (translateX...).
 QStringList selected_channels();
+// The picked channels that are a history node's, as whole plugs: they don't follow the selected object.
+QStringList selected_input_plugs();
 void clear_channel_selection();
 
 class ChannelBox : public Panel {
@@ -76,25 +83,38 @@ private:
 class AttributeEditor : public Panel {
     Q_OBJECT
 public:
-    explicit AttributeEditor(QWidget* parent = nullptr);
+    // pinned: stays on this node (Copy Tab); empty follows the selection.
+    explicit AttributeEditor(QWidget* parent = nullptr, const QString& pinned = QString());
 protected:
     void refresh() override;
+    bool eventFilter(QObject* o, QEvent* e) override;
 private:
     QTabWidget* tabs_;
     QString current_tab_;
+    QString pinned_;
 };
 
 class ScriptEditor : public QWidget {
     Q_OBJECT
 public:
     explicit ScriptEditor(QWidget* parent = nullptr);
+    ~ScriptEditor() override;
     void append(const QJsonArray& lines);
     void run(bool clear_after);
 protected:
     bool eventFilter(QObject* o, QEvent* e) override;
 private:
+    void add_tab(const QString& language, const QString& name, const QString& text, const QString& path = QString());
+    void rename_tab(int i);
+    void close_tab(int i);
+    void save_current(bool as);
+    void store_tabs();
+    QPlainTextEdit* current() const;
     QPlainTextEdit* history_;
     QTabWidget* inputs_;
+    bool show_numbers_ = true;
+    bool stack_trace_ = true;
+    bool echo_all_ = false;
 };
 
 } // namespace az

@@ -47,11 +47,13 @@ pub struct Camera {
     pub ortho_width: f64,
     /// Looking straight on, no perspective. Default views are; so may any camera be.
     pub orthographic: bool,
+    /// Degrees about the view axis, from the Roll tool. The view keeps it; the camera node doesn't hold it.
+    pub roll: f64,
 }
 
 impl Camera {
     pub fn new(kind: CamKind) -> Camera {
-        let mut c = Camera { kind, coi: DVec3::ZERO, yaw: 0.0, pitch: 0.0, distance: 1000.0, hfov: 54.43, ortho_width: 30.0, orthographic: kind != CamKind::Persp };
+        let mut c = Camera { kind, coi: DVec3::ZERO, yaw: 0.0, pitch: 0.0, distance: 1000.0, hfov: 54.43, ortho_width: 30.0, orthographic: kind != CamKind::Persp, roll: 0.0 };
         match kind {
             CamKind::Persp => c.look_from(DVec3::new(28.0, 21.0, 28.0)),
             CamKind::Top => {
@@ -86,7 +88,12 @@ impl Camera {
     pub fn view(&self) -> DMat4 {
         // Straight down: up is -Z so X runs right, as Maya's top view.
         let up = if self.pitch.abs() > 89.99 { DVec3::new(0.0, 0.0, -self.pitch.signum()) } else { DVec3::Y };
-        DMat4::look_at_rh(self.eye(), self.coi, up)
+        let m = DMat4::look_at_rh(self.eye(), self.coi, up);
+        if self.roll == 0.0 {
+            m
+        } else {
+            DMat4::from_rotation_z(self.roll.to_radians()) * m
+        }
     }
 
     pub fn vfov(&self, aspect: f64) -> f64 {

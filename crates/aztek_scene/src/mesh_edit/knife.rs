@@ -87,10 +87,74 @@ fn insert_edge_point(
 
 const POINT_FORMS: &str = "polyKnife: each point is {vertex:}, {edge:, t:} or {face:, position:}";
 
+/// A plain cut on a mesh with history: a polySplit node holding the path in the mesh's own space.
+fn knife_recorded(g: &mut Graph, n: NodeId, a: &Args) -> CmdResult {
+    let world = g.node(n).unwrap().matrix(Transform::WORLD_MATRIX);
+    let to_local = world.inverse();
+    let mut flags = serde_json::Map::new();
+    let mut pts = Vec::new();
+    for p in a.get("points").and_then(Value::as_array).into_iter().flatten() {
+        let Some(o) = p.as_object() else { fail!("{POINT_FORMS}") };
+        let mut q = o.clone();
+        if let Some(at) = o.get("position") {
+            let l = to_local.transform_point3(vec(at));
+            q.insert("position".into(), json!([l.x, l.y, l.z]));
+        }
+        pts.push(Value::Object(q));
+    }
+    flags.insert("points".into(), Value::Array(pts));
+    flags.insert("closed".into(), json!(a.bool("closed")));
+    flags.insert("through".into(), json!(a.bool("through")));
+    flags.insert("loopEdge".into(), json!(a.int("loopEdge", -1)));
+    flags.insert("fraction".into(), json!(a.float("fraction", 0.5)));
+    if a.has("eye") {
+        let e = to_local.transform_point3(DVec3::from_array(a.vec3("eye").unwrap()));
+        flags.insert("eye".into(), json!([e.x, e.y, e.z]));
+        flags.insert("useEye".into(), json!(true));
+    } else if a.has("direction") {
+        let d = DMat3::from_mat4(world).inverse() * DVec3::from_array(a.vec3("direction").unwrap());
+        flags.insert("direction".into(), json!([d.x, d.y, d.z]));
+        flags.insert("useDirection".into(), json!(true));
+    }
+    let args = Args { positional: Vec::new(), flags };
+    let Some(op) = crate::history::op("polySplit") else { fail!("polyKnife: no polySplit op") };
+    let mut mesh = modifiers::cage(g, n).map(|m| (*m).clone()).unwrap_or_default();
+    let cut = (op.run)(&args, &mut mesh, &Vec::new(), None)?.ids;
+    if cut.is_empty() {
+        fail!("polyKnife: the path crosses no faces it can cut");
+    }
+    let mut remap = MeshRemap::default();
+    mesh.compact(Some(&mut remap));
+    let mapped = remap_ids(&cut, &remap.edges);
+    g.open_chunk("Knife");
+    let r = (|| -> CmdResult {
+        let mut sel = current_selection(g);
+        remap_selection(&mut sel, n, &remap);
+        crate::history::insert(g, n, &op, &args, &[], None)?;
+        modifiers::base_remapped(g, n, &remap, &Arc::new(mesh));
+        let [p, e, f] = sel;
+        components::set_all(g, p, e, f);
+        if a.bool("select") {
+            components::set_all(g, BTreeMap::new(), BTreeMap::from([(n, mapped.clone())]), BTreeMap::new());
+            if components::mode(g) == K::Object {
+                components::set_mode(g, K::Edge);
+            }
+        }
+        Ok(json!(mapped))
+    })();
+    g.close_chunk();
+    r
+}
+
 fn knife(s: &mut Session, a: &Args) -> CmdResult {
     let g = &mut s.graph;
     g.evaluate();
     let n = mesh_flag(g, a, "polyKnife")?;
+    // One point on an edge or a deleted edge keep their own handling; everything else is a cut along a path.
+    let one_point = a.get("points").and_then(Value::as_array).is_some_and(|l| l.len() == 1);
+    if a.int("deleteEdge", -1) < 0 && !one_point && crate::history::can_record(g, n) && crate::mesh_nodes::symmetry_spec(g, n).is_none() {
+        return knife_recorded(g, n, a);
+    }
     let name = components::display_path(g, n);
     let base = base_plug(g, n)?;
     let mut mesh = base_mesh(g, &base);

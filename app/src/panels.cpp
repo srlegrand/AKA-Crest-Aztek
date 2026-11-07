@@ -8,7 +8,9 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDropEvent>
+#include <QColorDialog>
 #include <QFormLayout>
+#include <QHash>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QJsonArray>
@@ -82,30 +84,6 @@ void set_attr(const QString& plug, const QJsonValue& v, const QString& type) {
     exec("setAttr", call);
 }
 
-// Drops reparent: dragging items onto another runs parent; onto empty space parents to the world.
-class OutlinerTree : public QTreeWidget {
-public:
-    using QTreeWidget::QTreeWidget;
-protected:
-    void dropEvent(QDropEvent* e) override {
-        QTreeWidgetItem* target = itemAt(e->position().toPoint());
-        QJsonArray names;
-        for (auto* it : selectedItems()) names.append(it->data(0, Qt::UserRole).toString());
-        if (names.isEmpty()) return;
-        e->setDropAction(Qt::IgnoreAction);
-        e->accept();
-        if (target) {
-            QString p = target->data(0, Qt::UserRole).toString();
-            names.append(p);
-            exec("parent", args(names));
-        } else {
-            QJsonObject call = args(names);
-            call["world"] = true;
-            exec("parent", call);
-        }
-    }
-};
-
 } // namespace
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -133,123 +111,26 @@ void Panel::showEvent(QShowEvent*) {
 
 // ---------------------------------------------------------------------------------------------------------------------
 
-Outliner::Outliner(QWidget* parent) : Panel(parent) {
-    auto* lay = new QVBoxLayout(this);
-    lay->setContentsMargins(2, 2, 2, 2);
-    lay->setSpacing(2);
-    auto* top = new QHBoxLayout();
-    auto* display = new QToolButton(this);
-    display->setText("Display");
-    display->setPopupMode(QToolButton::InstantPopup);
-    auto* menu = new QMenu(display);
-    QAction* shapes = menu->addAction("Shapes");
-    shapes->setCheckable(true);
-    connect(shapes, &QAction::toggled, this, [this](bool on) {
-        shapes_ = on;
-        refresh();
-    });
-    QAction* intermediates = menu->addAction("Intermediate Objects");
-    intermediates->setCheckable(true);
-    connect(intermediates, &QAction::toggled, this, [this](bool on) {
-        intermediates_ = on;
-        refresh();
-    });
-    display->setMenu(menu);
-    top->addWidget(display);
-    filter_ = new QLineEdit(this);
-    filter_->setPlaceholderText("Search...");
-    filter_->setClearButtonEnabled(true);
-    connect(filter_, &QLineEdit::textChanged, this, [this] { refresh(); });
-    top->addWidget(filter_, 1);
-    lay->addLayout(top);
-
-    tree_ = new OutlinerTree(this);
-    tree_->setHeaderHidden(true);
-    tree_->setSelectionMode(QAbstractItemView::ExtendedSelection);
-    tree_->setDragDropMode(QAbstractItemView::InternalMove);
-    tree_->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed);
-    tree_->setIconSize(QSize(16, 16));
-    tree_->setIndentation(14);
-    tree_->setUniformRowHeights(true);
-    tree_->setObjectName("outliner");
-    lay->addWidget(tree_, 1);
-    connect(tree_, &QTreeWidget::itemSelectionChanged, this, &Outliner::selection_changed);
-    connect(tree_, &QTreeWidget::itemExpanded, this, [this](QTreeWidgetItem* it) { expanded_.insert(it->data(0, Qt::UserRole).toString()); });
-    connect(tree_, &QTreeWidget::itemCollapsed, this, [this](QTreeWidgetItem* it) { expanded_.remove(it->data(0, Qt::UserRole).toString()); });
-    connect(tree_, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem* it, int) {
-        if (updating_) return;
-        QString path = it->data(0, Qt::UserRole).toString();
-        QString name = it->text(0).trimmed();
-        if (!name.isEmpty() && !path.endsWith("|" + name) && path != name) exec("rename", args(QJsonArray{path, name}));
-    });
-    tree_->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(tree_, &QWidget::customContextMenuRequested, this, [this](const QPoint& p) {
-        QMenu m;
-        m.addAction("Select Hierarchy", [] { exec("select", QJsonObject{{"hierarchy", true}}); });
-        m.addAction("Rename", [this, p] {
-            if (auto* it = tree_->itemAt(p)) tree_->editItem(it);
-        });
-        m.addSeparator();
-        m.addAction("Group", [] { exec("group"); });
-        m.addAction("Unparent", [] { exec("parent", QJsonObject{{"world", true}}); });
-        m.addAction("Delete", [] { exec("delete"); });
-        m.exec(tree_->viewport()->mapToGlobal(p));
-    });
-}
-
-void Outliner::add(QTreeWidgetItem* parent, const QJsonObject& node) {
-    QString filter = filter_->text().trimmed();
-    auto* it = parent ? new QTreeWidgetItem(parent) : new QTreeWidgetItem(tree_);
-    QString path = node["path"].toString();
-    it->setText(0, node["name"].toString());
-    it->setData(0, Qt::UserRole, path);
-    it->setIcon(0, icon(node["icon"].toString(), 16));
-    it->setFlags(it->flags() | Qt::ItemIsEditable | Qt::ItemIsDragEnabled | Qt::ItemIsDropEnabled);
-    if (!node["visible"].toBool()) it->setForeground(0, QColor(130, 130, 130));
-    if (node["intermediate"].toBool()) it->setForeground(0, QColor(110, 110, 160));
-    for (const QJsonValue& c : node["children"].toArray()) add(it, c.toObject());
-    if (node["selected"].toBool()) it->setSelected(true);
-    if (expanded_.contains(path)) it->setExpanded(true);
-    if (!filter.isEmpty()) {
-        bool match = node["name"].toString().contains(filter, Qt::CaseInsensitive);
-        bool child_visible = false;
-        for (int i = 0; i < it->childCount(); ++i) child_visible |= !it->child(i)->isHidden();
-        it->setHidden(!match && !child_visible);
-        if (child_visible) it->setExpanded(true);
-    }
-}
-
-void Outliner::refresh() {
-    updating_ = true;
-    int scroll = tree_->verticalScrollBar()->value();
-    tree_->clear();
-    for (const QJsonValue& n : query("outliner", intermediates_ ? "shapes intermediate" : shapes_ ? "shapes" : "").toArray()) add(nullptr, n.toObject());
-    tree_->verticalScrollBar()->setValue(scroll);
-    updating_ = false;
-}
-
-void Outliner::selection_changed() {
-    if (updating_) return;
-    QJsonArray names;
-    for (auto* it : tree_->selectedItems()) names.append(it->data(0, Qt::UserRole).toString());
-    if (names.isEmpty())
-        exec("select", QJsonObject{{"clear", true}});
-    else
-        exec("select", args(names));
-}
-
-// ---------------------------------------------------------------------------------------------------------------------
-
 // Channel names picked in the channel box (Maya's highlighted channels): their attribute names, kept across refreshes.
 static QStringList g_channel_sel;
 static QList<QLabel*> g_channel_labels;
+// attr to whole plug for the picked channels under INPUTS.
+static QHash<QString, QString> g_input_plugs;
 
 QStringList selected_channels() {
     return g_channel_sel;
 }
 
+QStringList selected_input_plugs() {
+    QStringList out;
+    for (const QString& a : g_channel_sel)
+        if (g_input_plugs.contains(a)) out << g_input_plugs[a];
+    return out;
+}
+
 void clear_channel_selection() {
     g_channel_sel.clear();
+    g_input_plugs.clear();
 }
 
 namespace {
@@ -277,7 +158,10 @@ protected:
             if (!g_channel_sel.contains(a)) g_channel_sel << a;
         } else {
             g_channel_sel = {a};
+            g_input_plugs.clear();
         }
+        if (property("inputPlug").isValid()) g_input_plugs[a] = property("inputPlug").toString();
+        else g_input_plugs.remove(a);
         restyle_channel_labels();
     }
 };
@@ -294,6 +178,7 @@ QWidget* channel_row(const QJsonObject& ch, QWidget* parent, int label_width) {
     label->setToolTip(ch["plug"].toString());
     label->setObjectName("channelName");
     label->setProperty("attr", ch["attr"].toString());
+    if (parent->property("inInputs").toBool()) label->setProperty("inputPlug", ch["plug"].toString());
     label->setProperty("picked", g_channel_sel.contains(ch["attr"].toString()));
     g_channel_labels << label;
     auto* edit = new QLineEdit(value_text(ch), row);
@@ -465,7 +350,11 @@ void ChannelBox::refresh() {
                 refresh();
             });
             lay->addWidget(b);
-            if (open_inputs_.contains(p)) add_channels(lay, in["channels"].toArray());
+            if (open_inputs_.contains(p)) {
+                body_->setProperty("inInputs", true);
+                add_channels(lay, in["channels"].toArray());
+                body_->setProperty("inInputs", false);
+            }
         }
     }
     lay->addStretch(1);
@@ -485,33 +374,52 @@ LayerEditor::LayerEditor(QWidget* parent) : Panel(parent) {
     bar->addAction(icon("layerSelected"), "Create a new layer and assign selected objects", [] { exec("createDisplayLayer"); });
     lay->addWidget(bar);
     list_ = new QTreeWidget(this);
-    list_->setColumnCount(3);
+    // V, P, T or R, colour, name.
+    list_->setColumnCount(5);
     list_->setHeaderHidden(true);
     list_->setRootIsDecorated(false);
     list_->header()->setStretchLastSection(true);
-    list_->setColumnWidth(0, 26);
-    list_->setColumnWidth(1, 26);
+    for (int i = 0; i < 4; ++i) list_->setColumnWidth(i, 22);
+    list_->setDragDropMode(QAbstractItemView::InternalMove);
+    list_->setSelectionMode(QAbstractItemView::SingleSelection);
     lay->addWidget(list_, 1);
-    connect(list_, &QTreeWidget::itemClicked, this, [](QTreeWidgetItem* it, int col) {
+    // A drag in the list is the new order, top first.
+    connect(list_->model(), &QAbstractItemModel::rowsMoved, this, [this] {
+        for (int i = 0; i < list_->topLevelItemCount(); ++i)
+            exec_quiet("reorderDisplayLayer", QJsonObject{{"args", QJsonArray{list_->topLevelItem(i)->data(0, Qt::UserRole).toString(), list_->topLevelItemCount() - 1 - i}}});
+        Host::get()->poke();
+    });
+    connect(list_, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem* it, int col) {
         QString layer = it->data(0, Qt::UserRole).toString();
         if (col == 0) {
             bool vis = it->data(0, Qt::UserRole + 1).toBool();
             exec("setAttr", args(QJsonArray{layer + ".visibility", !vis}));
         } else if (col == 1) {
+            bool play = it->data(1, Qt::UserRole).toBool();
+            exec("setAttr", args(QJsonArray{layer + ".hideOnPlayback", play}));
+        } else if (col == 2) {
             // Cycles normal, template, reference as Maya's display type button.
-            int t = (it->data(1, Qt::UserRole).toInt() + 1) % 3;
+            int t = (it->data(2, Qt::UserRole).toInt() + 1) % 3;
             exec("setAttr", args(QJsonArray{layer + ".displayType", t}));
+        } else if (col == 3) {
+            QColor c = QColorDialog::getColor(it->background(3).color(), this, "Layer Color");
+            if (c.isValid()) {
+                exec("setAttr", args(QJsonArray{layer + ".useColor", true}));
+                exec("setAttr", args(QJsonArray{layer + ".colorR", c.redF()}));
+                exec("setAttr", args(QJsonArray{layer + ".colorG", c.greenF()}));
+                exec("setAttr", args(QJsonArray{layer + ".colorB", c.blueF()}));
+            }
         }
     });
     connect(list_, &QTreeWidget::itemDoubleClicked, this, [](QTreeWidgetItem* it, int col) {
-        if (col == 2) exec("select", args(it->data(2, Qt::UserRole).toJsonArray()));
+        if (col == 4) exec("select", args(it->data(4, Qt::UserRole).toJsonArray()));
     });
     list_->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(list_, &QWidget::customContextMenuRequested, this, [this](const QPoint& p) {
         QTreeWidgetItem* it = list_->itemAt(p);
         if (!it) return;
         QString layer = it->data(0, Qt::UserRole).toString();
-        QJsonArray members = it->data(2, Qt::UserRole).toJsonArray();
+        QJsonArray members = it->data(4, Qt::UserRole).toJsonArray();
         QMenu m;
         m.addAction("Add Selected Objects", [layer] {
             QJsonArray a{layer};
@@ -532,233 +440,25 @@ void LayerEditor::refresh() {
         QJsonObject l = v.toObject();
         auto* it = new QTreeWidgetItem(list_);
         bool vis = l["visible"].toBool();
+        bool play = l.contains("playback") ? l["playback"].toBool() : true;
         int type = l["displayType"].toInt();
         it->setText(0, vis ? "V" : "");
-        it->setText(1, type == 1 ? "T" : type == 2 ? "R" : "");
-        it->setText(2, l["name"].toString());
+        it->setText(1, play ? "P" : "");
+        it->setText(2, type == 1 ? "T" : type == 2 ? "R" : "");
+        it->setText(4, l["name"].toString());
         it->setData(0, Qt::UserRole, l["name"].toString());
         it->setData(0, Qt::UserRole + 1, vis);
-        it->setData(1, Qt::UserRole, type);
-        it->setData(2, Qt::UserRole, l["members"].toArray());
-        it->setTextAlignment(0, Qt::AlignCenter);
-        it->setTextAlignment(1, Qt::AlignCenter);
-        it->setToolTip(2, QString("%1 members. Double-click to select them.").arg(l["members"].toArray().size()));
-    }
-}
-
-// ---------------------------------------------------------------------------------------------------------------------
-
-namespace {
-
-QWidget* attr_field(const QJsonObject& a, QWidget* parent) {
-    QString type = a["type"].toString(), plug = a["plug"].toString();
-    bool ro = a["output"].toBool() || a["connected"].toBool();
-    QJsonObject c = a;
-    if (type == "bool") {
-        auto* cb = new QCheckBox(parent);
-        cb->setChecked(a["value"].toBool());
-        cb->setEnabled(!ro);
-        QObject::connect(cb, &QCheckBox::toggled, cb, [plug](bool on) { set_attr(plug, on, "bool"); });
-        return cb;
-    }
-    if (type == "enum") {
-        auto* box = new QComboBox(parent);
-        for (const QJsonValue& n : a["enum"].toArray()) box->addItem(n.toString());
-        box->setCurrentIndex(a["value"].toInt());
-        box->setEnabled(!ro);
-        QObject::connect(box, &QComboBox::activated, box, [plug](int i) { set_attr(plug, i, "int"); });
-        return box;
-    }
-    if (type == "vec3") {
-        auto* w = new QWidget(parent);
-        auto* h = new QHBoxLayout(w);
-        h->setContentsMargins(0, 0, 0, 0);
-        h->setSpacing(3);
-        QJsonArray v = a["value"].toArray();
-        QJsonArray kids = a["children"].toArray();
-        for (int k = 0; k < 3; ++k) {
-            auto* e = new QLineEdit(fmt(v.at(k).toDouble()), w);
-            e->setReadOnly(ro);
-            QString child = kids.at(k).toString();
-            if (child.isEmpty()) child = a["attr"].toString() + QString("XYZ")[k];
-            QString node = plug.left(plug.lastIndexOf('.'));
-            QString cp = node + "." + child;
-            QObject::connect(e, &QLineEdit::textEdited, e, [e] { e->setProperty("editing", true); });
-            QObject::connect(e, &QLineEdit::editingFinished, e, [e, cp] {
-                if (!e->property("editing").toBool()) return;
-                e->setProperty("editing", false);
-                set_attr(cp, e->text().toDouble(), "float");
-            });
-            h->addWidget(e);
+        it->setData(1, Qt::UserRole, play);
+        it->setData(2, Qt::UserRole, type);
+        it->setData(4, Qt::UserRole, l["members"].toArray());
+        for (int c = 0; c < 3; ++c) it->setTextAlignment(c, Qt::AlignCenter);
+        if (l["color"].isArray()) {
+            QJsonArray c = l["color"].toArray();
+            it->setBackground(3, QColor::fromRgbF(c[0].toDouble(), c[1].toDouble(), c[2].toDouble()));
         }
-        return w;
+        it->setFlags((it->flags() | Qt::ItemIsDragEnabled) & ~Qt::ItemIsDropEnabled);
+        it->setToolTip(4, QString("%1 members. Double-click to select them.").arg(l["members"].toArray().size()));
     }
-    if (type == "float" || type == "int" || type == "string") {
-        auto* e = new QLineEdit(value_text(a), parent);
-        e->setReadOnly(ro);
-        QObject::connect(e, &QLineEdit::textEdited, e, [e] { e->setProperty("editing", true); });
-        QObject::connect(e, &QLineEdit::editingFinished, e, [e, plug, type, c] {
-            if (!e->property("editing").toBool()) return;
-            e->setProperty("editing", false);
-            set_attr(plug, typed(type, e->text(), c), type);
-        });
-        return e;
-    }
-    auto* l = new QLabel(type == "matrix" ? "(matrix)" : "", parent);
-    return l;
-}
-
-} // namespace
-
-AttributeEditor::AttributeEditor(QWidget* parent) : Panel(parent) {
-    auto* lay = new QVBoxLayout(this);
-    lay->setContentsMargins(2, 2, 2, 2);
-    tabs_ = new QTabWidget(this);
-    tabs_->setDocumentMode(true);
-    tabs_->setUsesScrollButtons(true);
-    lay->addWidget(tabs_);
-    connect(tabs_, &QTabWidget::currentChanged, this, [this](int i) {
-        if (i >= 0) current_tab_ = tabs_->tabText(i);
-    });
-}
-
-void AttributeEditor::refresh() {
-    QJsonObject ae = query("attributeEditor", "").toObject();
-    QString keep = current_tab_;
-    tabs_->blockSignals(true);
-    while (tabs_->count()) {
-        QWidget* w = tabs_->widget(0);
-        tabs_->removeTab(0);
-        w->deleteLater();
-    }
-    int select = 0;
-    for (const QJsonValue& tv : ae["tabs"].toArray()) {
-        QJsonObject t = tv.toObject();
-        auto* scroll = new QScrollArea();
-        scroll->setWidgetResizable(true);
-        scroll->setFrameShape(QFrame::NoFrame);
-        auto* body = new QWidget();
-        auto* v = new QVBoxLayout(body);
-        v->setContentsMargins(6, 6, 6, 6);
-        auto* head = new QHBoxLayout();
-        head->addWidget(new QLabel(QString("<b>%1:</b>").arg(t["type"].toString()), body));
-        auto* name = new QLineEdit(t["name"].toString(), body);
-        QString path = t["path"].toString();
-        connect(name, &QLineEdit::editingFinished, name, [name, path] {
-            if (name->text().trimmed() != path.section('|', -1)) exec("rename", args(QJsonArray{path, name->text().trimmed()}));
-        });
-        head->addWidget(name, 1);
-        v->addLayout(head);
-        // Grouped by category, in the order they come.
-        QMap<QString, QFormLayout*> forms;
-        QStringList order;
-        for (const QJsonValue& av : t["attrs"].toArray()) {
-            QJsonObject a = av.toObject();
-            if (a["type"].toString() == "matrix") continue;
-            QString cat = a["category"].toString();
-            if (cat.isEmpty()) cat = QString("%1 Attributes").arg(t["type"].toString().left(1).toUpper() + t["type"].toString().mid(1));
-            if (!forms.contains(cat)) {
-                auto* box = new QLabel(cat, body);
-                box->setObjectName("aeSection");
-                v->addWidget(box);
-                auto* f = new QFormLayout();
-                f->setLabelAlignment(Qt::AlignRight);
-                f->setContentsMargins(8, 2, 2, 6);
-                f->setVerticalSpacing(3);
-                v->addLayout(f);
-                forms[cat] = f;
-                order << cat;
-            }
-            QWidget* field = attr_field(a, body);
-            field->setToolTip(a["doc"].toString());
-            forms[cat]->addRow(a["nice"].toString(), field);
-        }
-        v->addStretch(1);
-        scroll->setWidget(body);
-        int idx = tabs_->addTab(scroll, t["name"].toString());
-        if (t["name"].toString() == keep) select = idx;
-    }
-    tabs_->setCurrentIndex(select);
-    tabs_->blockSignals(false);
-}
-
-// ---------------------------------------------------------------------------------------------------------------------
-
-ScriptEditor::ScriptEditor(QWidget* parent) : QWidget(parent) {
-    auto* lay = new QVBoxLayout(this);
-    lay->setContentsMargins(0, 0, 0, 0);
-    lay->setSpacing(0);
-    auto* bar = new QToolBar(this);
-    bar->setIconSize(QSize(18, 18));
-    bar->addAction(icon("clearHistory"), "Clear History", [this] { history_->clear(); });
-    bar->addAction(icon("clearInput"), "Clear Input", [this] {
-        if (auto* e = qobject_cast<QPlainTextEdit*>(inputs_->currentWidget())) e->clear();
-    });
-    bar->addSeparator();
-    bar->addAction(icon("play"), "Execute All (Ctrl+Enter)", [this] { run(false); });
-    lay->addWidget(bar);
-    auto* split = new QSplitter(Qt::Vertical, this);
-    history_ = new QPlainTextEdit(split);
-    history_->setReadOnly(true);
-    history_->setObjectName("scriptHistory");
-    history_->setMaximumBlockCount(20000);
-    inputs_ = new QTabWidget(split);
-    inputs_->setDocumentMode(true);
-    for (const char* lang : {"MEL", "Python"}) {
-        // Python tab first opened with the usual import.
-        auto* e = new QPlainTextEdit(inputs_);
-        e->setObjectName("scriptInput");
-        e->setTabStopDistance(4 * e->fontMetrics().horizontalAdvance(' '));
-        e->installEventFilter(this);
-        if (QString(lang) == "Python") e->setPlainText("import maya.cmds as cmds\n");
-        inputs_->addTab(e, lang);
-    }
-    split->setStretchFactor(0, 3);
-    split->setStretchFactor(1, 2);
-    lay->addWidget(split, 1);
-    QFont mono("monospace");
-    mono.setStyleHint(QFont::Monospace);
-    mono.setPointSize(9);
-    history_->setFont(mono);
-    for (int i = 0; i < inputs_->count(); ++i) inputs_->widget(i)->setFont(mono);
-}
-
-void ScriptEditor::append(const QJsonArray& lines) {
-    static const char* colors[] = {"#d2d2d2", "#9fd0ff", "#ff8080", "#a0a0a0", "#f0c060"};
-    for (const QJsonValue& v : lines) {
-        QJsonObject l = v.toObject();
-        int k = qBound(0, l["kind"].toInt(), 4);
-        history_->appendHtml(QString("<span style='color:%1; white-space:pre'>%2</span>").arg(colors[k], l["text"].toString().toHtmlEscaped()));
-    }
-    history_->verticalScrollBar()->setValue(history_->verticalScrollBar()->maximum());
-}
-
-void ScriptEditor::run(bool clear_after) {
-    auto* e = qobject_cast<QPlainTextEdit*>(inputs_->currentWidget());
-    if (!e) return;
-    QString src = e->textCursor().hasSelection() ? e->textCursor().selectedText().replace(QChar(0x2029), '\n') : e->toPlainText();
-    if (inputs_->currentIndex() == 1)
-        python(src);
-    else
-        mel(src);
-    if (clear_after) e->clear();
-}
-
-bool ScriptEditor::eventFilter(QObject* o, QEvent* ev) {
-    if (ev->type() == QEvent::KeyPress) {
-        auto* k = static_cast<QKeyEvent*>(ev);
-        bool enter = k->key() == Qt::Key_Return || k->key() == Qt::Key_Enter;
-        // Ctrl+Enter runs and keeps the text; keypad Enter runs and clears it.
-        if (enter && (k->modifiers() & Qt::ControlModifier)) {
-            run(false);
-            return true;
-        }
-        if (k->key() == Qt::Key_Enter && (k->modifiers() & Qt::KeypadModifier)) {
-            run(true);
-            return true;
-        }
-    }
-    return QWidget::eventFilter(o, ev);
 }
 
 } // namespace az

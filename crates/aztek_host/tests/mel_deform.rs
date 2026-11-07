@@ -82,7 +82,7 @@ fn sets_and_paint_in_mel() {
     assert_eq!(mel(&mut c, "deformableShape -og a;"), json!(["aShapeOrig.worldMesh"]));
     mel(&mut c, "select -r a; artSetToolAndSelectAttr artAttrCtx cluster.cl.weights;");
     assert_eq!(mel(&mut c, "artAttrCtx -q -asl artAttrCtx1;"), json!("cluster.cl.weights"));
-    assert_eq!(aztek_host::take_ui_requests(), json!(["ArtPaintAttrTool"]));
+    assert_eq!(aztek_host::take_ui_requests_for_tests(), json!(["ArtPaintAttrTool"]));
     mel(&mut c, "artAttrCtx -e -val 0.25 -op 1 -r 10 -sao absolute -stP solid artAttrCtx1; artAttrCtx -e -clear artAttrCtx1;");
     assert_eq!(num(mel(&mut c, "getAttr cl.weightList[0].weights[5];")), 0.25);
     assert_eq!(num(mel(&mut c, "getAttr cl.weightList[0].weights[0];")), 0.0);

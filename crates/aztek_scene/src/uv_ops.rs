@@ -149,7 +149,7 @@ pub fn topo(m: &Mesh) -> UvTopo {
 }
 
 /// The shells (as face lists) touching any of the faces.
-fn shells_of(t: &UvTopo, faces: &[Index]) -> Vec<Vec<Index>> {
+pub(crate) fn shells_of(t: &UvTopo, faces: &[Index]) -> Vec<Vec<Index>> {
     let mut ids: Vec<Index> = faces.iter().filter_map(|&f| t.face_shell.get(f as usize).copied()).filter(|&s| s != INVALID).collect();
     ids.sort_unstable();
     ids.dedup();
@@ -477,6 +477,12 @@ pub const NODE_TYPES: &[(&str, &str)] = &[
     ("polyLayoutUV", "UV shells packed into 0 to 1."),
     ("polyFlipUV", "UVs mirrored."),
     ("polyNormalizeUV", "UVs fitted into 0 to 1."),
+    ("polyMoveUV", "UVs moved, scaled or turned."),
+    ("polyMergeUV", "UVs merged where they are close."),
+    ("polyCopyUV", "UVs copied from another set."),
+    ("polyForceUV", "UVs flipped, fitted or made one per face."),
+    ("polyContourProj", "UVs stretched along a run of quads."),
+    ("polyTransfer", "UVs copied from a mesh of the same topology."),
 ];
 
 pub struct UvEditNode;
@@ -682,7 +688,7 @@ pub fn targets(s: &mut Session, a: &Args, cmd: &str) -> CmdResult<BTreeMap<NodeI
 }
 
 /// The faces a target covers: named faces, faces of named edges and maps, or all.
-fn target_faces(m: &Mesh, t: &Target, tp: &UvTopo) -> Vec<Index> {
+pub(crate) fn target_faces(m: &Mesh, t: &Target, tp: &UvTopo) -> Vec<Index> {
     if t.whole {
         return all_faces(m);
     }
@@ -743,7 +749,7 @@ fn f(name: &str, short: &str, ty: ArgType, def: Value, doc: &str) -> FlagDef {
     FlagDef::new(name, short, ty, def, doc)
 }
 
-fn each(s: &mut Session, a: &Args, cmd: &str, label: &str, node_type: &str, mut run: impl FnMut(&mut Mesh, &Target, &UvTopo)) -> CmdResult {
+pub(crate) fn each(s: &mut Session, a: &Args, cmd: &str, label: &str, node_type: &str, mut run: impl FnMut(&mut Mesh, &Target, &UvTopo)) -> CmdResult {
     let targets = targets(s, a, cmd)?;
     let g = &mut s.graph;
     g.open_chunk(label);

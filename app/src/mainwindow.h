@@ -4,12 +4,15 @@
 #include <QHash>
 #include <QJsonObject>
 #include <QMainWindow>
+#include <QSet>
 #include <functional>
 
 class QActionGroup;
 class QComboBox;
 class QDockWidget;
+class QKeyEvent;
 class QLabel;
+class QLineEdit;
 class QMenu;
 class QTabWidget;
 class QToolBar;
@@ -27,6 +30,21 @@ class RangeSlider;
 class Hotbox;
 class ViewportWidget;
 class ToolSettings;
+class ShelfBar;
+class InViewEditor;
+struct MarkItem;
+
+// A named action, callable from a hotkey, MEL or Python as Maya's runtime commands are.
+struct RuntimeCommand {
+    QString name, category, annotation;
+    std::function<void()> fn;
+};
+
+struct HotkeyBinding {
+    QString key;
+    bool ctrl, shift, alt;
+    QString press, release;
+};
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -84,6 +102,43 @@ private:
     void open_scene();
     void save_scene(bool as);
     bool hotkey(QKeyEvent* k, bool press);
+    // runtime.cpp: named actions, the hotkey table and its editor.
+    void build_runtime();
+    void add_runtime(const QString& name, const QString& category, const QString& annotation, std::function<void()> fn);
+    bool run_command(const QString& command);
+    void view_key(const QString& key, const QString& json);
+    void apply_snap();
+    QList<HotkeyBinding> default_hotkeys() const;
+    void load_hotkeys();
+    void set_binding(const QJsonObject& o);
+    void save_user_hotkey(const QJsonObject& o);
+    void show_hotkey_editor();
+    void handle_ui_request(const QString& r);
+    // statusline.cpp.
+    void input_entered(const QString& text);
+    void sync_status_line();
+    // appmenus.cpp: helpers the menus and hotkeys share.
+    void toggle_main_pane();
+    void toggle_view_flag(const QString& key);
+    void step_time(int by);
+    void step_key(const QString& which);
+    void increment_save();
+    void nudge(int dx, int dy);
+    void scale_manip(double by);
+    void show_history_manips();
+    void tool_marking_menu(QPoint global, const QString& hold);
+    QList<MarkItem> hotbox_zone(int zone);
+    void object_marking_items(const QString& hit, QPoint global, QList<MarkItem>& items);
+    void apply_workspace(const QString& name);
+    void show_named_window(const QString& name);
+    void add_to_shelf(QAction* a);
+    void select_by_type(const QString& type);
+    void select_shell(bool border);
+    void set_project();
+    void add_recent_project(const QString& dir);
+    void remember_command(const QString& mel_text);
+    void view_scrub(QObject* o, QEvent* e);
+    void run_menu_path(const QString& path);
     void show_script_editor();
     void show_attribute_editor();
     void show_graph_editor();
@@ -92,7 +147,6 @@ private:
     void show_tool_settings();
     void show_dope_sheet();
     void show_node_editor();
-    void show_shape_editor();
     void show_set_driven_key();
     void time_slider_menu(QPoint global);
     void update_title();
@@ -107,7 +161,6 @@ private:
     QWidget* uv_window_ = nullptr;
     QWidget* dope_window_ = nullptr;
     QWidget* node_window_ = nullptr;
-    QWidget* shape_window_ = nullptr;
     QWidget* sdk_window_ = nullptr;
     CommandLine* command_line_ = nullptr;
     TimeSlider* time_slider_ = nullptr;
@@ -123,6 +176,38 @@ private:
     QList<QMenu*> set_menus_;
     QHash<QString, QAction*> mode_buttons_;
     QHash<QString, QAction*> tool_buttons_;
+    QHash<QString, QAction*> scope_buttons_;
+    QList<QAction*> object_masks_;
+    QSet<QString> snap_on_;
+    QString snap_held_;
+    QComboBox* symmetry_ = nullptr;
+    QComboBox* input_mode_ = nullptr;
+    QLineEdit* input_field_ = nullptr;
+    QAction* soft_button_ = nullptr;
+    ShelfBar* shelf_bar_ = nullptr;
+    QHash<QString, RuntimeCommand> runtime_;
+    QList<HotkeyBinding> hotkeys_;
+    QHash<int, QString> held_;
+    // A key held for a drag in the view: move, rotate, scale, select (marking menu), scrub, nudgeKeys.
+    QString view_hold_;
+    double scrub_from_ = 0, scrub_time_ = 0;
+    bool scrubbing_ = false;
+    QString last_tool_ = "select";
+    QStringList recent_commands_;
+    QStringList clipboard_;
+    QHash<QString, QWidget*> named_windows_;
+    QByteArray main_pane_state_;
+    bool main_pane_ = false;
+    QTimer* autosave_ = nullptr;
+    InViewEditor* in_view_ = nullptr;
+    bool play_every_frame_ = false;
+    double play_speed_ = 1.0;
+    QString loop_mode_ = "Continuous";
+    qint64 play_started_ms_ = 0;
+    double play_started_frame_ = 1;
+    QComboBox* fps_box_ = nullptr;
+    QComboBox* speed_box_ = nullptr;
+    double last_full_min_ = 0, last_full_max_ = 0;
     QAction* history_button_ = nullptr;
     QDockWidget* outliner_dock_ = nullptr;
     QDockWidget* channel_dock_ = nullptr;

@@ -14,6 +14,7 @@ pub mod extrude;
 pub mod grid_fill;
 pub mod knife;
 pub mod loops;
+pub mod poly_tools;
 pub mod split_ngons;
 pub mod subdivide;
 
@@ -24,5 +25,6 @@ pub use extrude::*;
 pub use grid_fill::*;
 pub use knife::*;
 pub use loops::*;
+pub use poly_tools::*;
 pub use split_ngons::*;
 pub use subdivide::*;
