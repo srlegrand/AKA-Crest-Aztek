@@ -394,6 +394,14 @@ fn wire_channels(g: &mut Graph, c: NodeId, lib: NodeId, sched: NodeId) -> CmdRes
     Ok(())
 }
 
+/// A member's keys: on it, or under the clip channel that now reads through to them.
+fn member_curve(g: &Graph, p: &PlugRef) -> Option<NodeId> {
+    anim::curve_of(g, p).or_else(|| {
+        let ch = g.source(p).or_else(|| g.source(&p.whole())).filter(|x| is_clip_channel(g, x.node))?;
+        g.source(&PlugRef::new(ch.node, CH_BASE as i32)).map(|x| x.node).filter(|&c| anim::is_curve(g, c))
+    })
+}
+
 fn clip(s: &mut Session, a: &Args) -> CmdResult {
     let names = a.named();
     let char_name = a.get("character").and_then(Value::as_str).map(str::to_string).or_else(|| names.iter().find(|n| s.graph.find(n).ok().flatten().is_some_and(|id| is_character(&s.graph, id))).cloned());
@@ -449,7 +457,7 @@ fn clip(s: &mut Session, a: &Args) -> CmdResult {
     }
     if lo.is_none() || hi.is_none() {
         // The range of all the members' keys.
-        let t: Vec<f64> = plugs.iter().filter_map(|(_, p)| anim::curve_of(g, p)).flat_map(|c| anim::keys_of(g, c).keys.into_iter().map(|k| k.t)).collect();
+        let t: Vec<f64> = plugs.iter().filter_map(|(_, p)| member_curve(g, p)).flat_map(|c| anim::keys_of(g, c).keys.into_iter().map(|k| k.t)).collect();
         lo = lo.or(t.iter().copied().reduce(f64::min));
         hi = hi.or(t.iter().copied().reduce(f64::max));
     }
@@ -462,7 +470,7 @@ fn clip(s: &mut Session, a: &Args) -> CmdResult {
     let mut curves = Map::new();
     let leave = a.bool("leaveKeys");
     for (m, p) in &plugs {
-        let curve = anim::curve_of(g, p);
+        let curve = member_curve(g, p);
         let mut taken = Keys::default();
         if let Some(cu) = curve {
             let mut k = anim::keys_of(g, cu);
@@ -504,6 +512,123 @@ fn clip(s: &mut Session, a: &Args) -> CmdResult {
     clips.as_array_mut().unwrap().push(entry);
     set_json(g, sched, SCHED_CLIPS, clips)?;
     Ok(json!([source_name, name]))
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// bakeClip and clipMatching
+
+/// bakeClip: the clips picked (all by default) sampled frame by frame into one new source clip, scheduled in their place.
+fn bake_clip(s: &mut Session, a: &Args) -> CmdResult {
+    let names = a.named();
+    let char_name = names.first().cloned().or_else(|| s.current_characters.first().map(|&c| s.graph.path(c)));
+    let Some(char_name) = char_name else { fail!("bakeClip: name the character") };
+    let g = &mut s.graph;
+    let c = character_arg(g, &char_name, "bakeClip")?;
+    let (Some(lib), Some(sched)) = (library_of(g, c), scheduler_of(g, c)) else { fail!("bakeClip: {char_name} has no clips") };
+    let mut picked: Vec<usize> = match a.get("clipIndex").or(a.get("blend")) {
+        Some(Value::Array(v)) => v.iter().filter_map(Value::as_u64).map(|x| x as usize).collect(),
+        Some(v) => v.as_u64().map(|x| x as usize).into_iter().collect(),
+        None => Vec::new(),
+    };
+    let clips = node_json(g, sched, SCHED_CLIPS);
+    let list = clips.as_array().cloned().unwrap_or_default();
+    if picked.is_empty() {
+        picked = (0..list.len()).collect();
+    }
+    if picked.iter().any(|&i| i >= list.len()) || picked.is_empty() {
+        fail!("bakeClip: no such clip");
+    }
+    let spans: Vec<(f64, f64)> = picked.iter().map(|&i| clip_span(&list[i])).collect();
+    let lo = spans.iter().map(|x| x.0).fold(f64::MAX, f64::min);
+    let hi = spans.iter().map(|x| x.1).fold(f64::MIN, f64::max);
+    let members = member_list(g, c);
+    let plugs: Vec<((i32, String, i32), PlugRef)> = members.into_iter().filter_map(|m| member_plug(g, c, &m).map(|p| (m, p))).collect();
+    let now = anim::frame(g);
+    g.open_chunk("Bake Clip");
+    let r = (|| -> CmdResult<Value> {
+        // Only the clips asked for count while sampling.
+        let mut sampling = list.clone();
+        for (i, one) in sampling.iter_mut().enumerate() {
+            if !picked.contains(&i) {
+                one["enabled"] = json!(false);
+            }
+        }
+        set_json(g, sched, SCHED_CLIPS, Value::Array(sampling))?;
+        let mut curves = Map::new();
+        let rg = anim::range();
+        let mut samples: Vec<Keys> = vec![Keys::default(); plugs.len()];
+        let mut t = lo;
+        while t <= hi + 1e-9 {
+            anim::set_frame(g, t);
+            g.evaluate();
+            for (k, (_, p)) in plugs.iter().enumerate() {
+                let v = anim::plug_scalar(g, p);
+                samples[k].keys.push(anim::Key::new(t, v, rg.default_in, rg.default_out));
+            }
+            t += 1.0;
+        }
+        anim::set_frame(g, now);
+        for ((m, _), k) in plugs.iter().zip(&samples) {
+            curves.insert(m.0.to_string(), crate::plug::Data::to_json(k));
+        }
+        let mut sources = node_json(g, lib, LIB_SOURCES);
+        let existing: Vec<String> = sources.as_object().map(|o| o.keys().cloned().collect()).unwrap_or_default();
+        let wanted = a.get("name").and_then(Value::as_str).unwrap_or("bakedClip1").to_string();
+        let source = unique_in(&existing, &format!("{wanted}Source"));
+        sources.as_object_mut().map(|o| o.insert(source.clone(), json!({"start": lo, "end": hi, "curves": Value::Object(curves)})));
+        set_json(g, lib, LIB_SOURCES, sources)?;
+        let mut kept: Vec<Value> = if a.bool("keepOriginals") { list.iter().map(|x| { let mut x = x.clone(); x["enabled"] = json!(false); x }).collect() } else { list.iter().enumerate().filter(|(i, _)| !picked.contains(i)).map(|(_, x)| x.clone()).collect() };
+        let taken: Vec<String> = kept.iter().filter_map(|x| x.get("name").and_then(Value::as_str).map(str::to_string)).collect();
+        let name = unique_in(&taken, &wanted);
+        kept.push(json!({"name": name, "source": source, "start": lo, "sourceStart": lo, "sourceEnd": hi, "scale": 1.0, "preCycle": 0.0, "postCycle": 1.0, "weight": 1.0, "enabled": true, "track": 0, "relative": false}));
+        set_json(g, sched, SCHED_CLIPS, Value::Array(kept))?;
+        Ok(json!(name))
+    })();
+    g.close_chunk();
+    r
+}
+
+/// clipMatching: -cs clip time, -cd clip time: shifts the destination's channels so it starts from where the source is.
+fn clip_matching(s: &mut Session, a: &Args) -> CmdResult {
+    let names = a.named();
+    let char_name = names.first().cloned().or_else(|| s.current_characters.first().map(|&c| s.graph.path(c)));
+    let Some(char_name) = char_name else { fail!("clipMatching: name the character") };
+    let g = &mut s.graph;
+    let c = character_arg(g, &char_name, "clipMatching")?;
+    let (Some(lib), Some(sched)) = (library_of(g, c), scheduler_of(g, c)) else { fail!("clipMatching: {char_name} has no clips") };
+    let pair = |flag: &str| -> Option<(String, f64)> {
+        let l = a.get(flag)?.as_array()?;
+        Some((l.first()?.as_str()?.to_string(), l.get(1)?.as_f64()?))
+    };
+    let (Some(src), Some(dst)) = (pair("clipSrc"), pair("clipDst")) else { fail!("clipMatching: give -cs and -cd") };
+    let clips = node_json(g, sched, SCHED_CLIPS);
+    let find_clip = |n: &str| clips.as_array().and_then(|v| v.iter().find(|x| x.get("name").and_then(Value::as_str) == Some(n)).cloned());
+    let (Some(sc), Some(dc)) = (find_clip(&src.0), find_clip(&dst.0)) else { fail!("clipMatching: no such clip") };
+    let mut sources = node_json(g, lib, LIB_SOURCES);
+    let (ss, ds) = (sc["source"].as_str().unwrap_or("").to_string(), dc["source"].as_str().unwrap_or("").to_string());
+    let (match_t, match_r) = (a.get("matchTranslation").and_then(Value::as_i64).unwrap_or(1) != 0, a.get("matchRotation").and_then(Value::as_i64).unwrap_or(0) != 0);
+    for m in member_list(g, c) {
+        let attr = m.1.as_str();
+        let translate = attr.starts_with("translate") || attr.starts_with("t");
+        let rotate = attr.starts_with("rotate") || attr.starts_with("r");
+        if !(translate && match_t || rotate && match_r) {
+            continue;
+        }
+        let key = m.0.to_string();
+        let (Some(a_keys), Some(b_keys)) = (sources[&ss]["curves"].get(&key).map(Keys::from_json), sources[&ds]["curves"].get(&key).map(Keys::from_json)) else { continue };
+        if a_keys.keys.is_empty() || b_keys.keys.is_empty() {
+            continue;
+        }
+        let d = clip_value(&sc, &a_keys, src.1) - clip_value(&dc, &b_keys, dst.1);
+        let mut moved = b_keys;
+        for k in &mut moved.keys {
+            k.v += d;
+        }
+        sources[&ds]["curves"][&key] = crate::plug::Data::to_json(&moved);
+    }
+    set_json(g, lib, LIB_SOURCES, sources)?;
+    g.evaluate();
+    Ok(Value::Null)
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -716,6 +841,22 @@ pub fn register_types() {
 
 pub fn register(c: &mut Commands<Session>) {
     register_types();
+    c.register(
+        Cmd::new("bakeClip", "Bake clips into one, frame by frame: -ci which (all by default), -bl a blend's two, -k keeps the originals disabled, -n its name. Returns the new clip.", bake_clip)
+            .positional("character")
+            .flag(f("clipIndex", "ci", ArgType::Any, "A clip's place on the scheduler.").multi(1))
+            .flag(f("blend", "bl", ArgType::List, "A blend's two clips.").multi(2))
+            .flag(f("keepOriginals", "k", ArgType::Bool, "Keep the clips, disabled."))
+            .flag(f("name", "n", ArgType::String, "The new clip's name.")),
+    );
+    c.register(
+        Cmd::new("clipMatching", "Line a clip up with another at a frame each: -cs clip frame, -cd clip frame, -mt and -mr which channels (translate by default).", clip_matching)
+            .positional("character")
+            .flag(f("clipSrc", "cs", ArgType::List, "The clip to match and its frame.").multi(2))
+            .flag(f("clipDst", "cd", ArgType::List, "The clip to shift and its frame.").multi(2))
+            .flag(f("matchTranslation", "mt", ArgType::Int, "Match translates (on by default)."))
+            .flag(f("matchRotation", "mr", ArgType::Int, "Match rotates.")),
+    );
 
     c.register(
         query_flags(Cmd::new(

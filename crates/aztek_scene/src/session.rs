@@ -148,6 +148,8 @@ impl Session {
         crate::maya_scene::register(&mut s.commands);
         crate::system_cmds::register(&mut s.commands);
         crate::references::register(&mut s.commands);
+        crate::rig_misc::register(&mut s.commands);
+        crate::anim_misc::register(&mut s.commands);
         // Last: history node types take their attributes from the commands registered above.
         crate::history::register(&mut s.commands);
         crate::instancing::install(&mut s.graph);

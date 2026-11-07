@@ -862,6 +862,19 @@ fn bind(s: &mut Session, a: &Args, names: &[String]) -> CmdResult {
     Ok(json!([g.path(sk)]))
 }
 
+/// Works a skinCluster's weights out again with a bind method, keeping its influences and bind matrices.
+pub fn rebind_weights(g: &mut Graph, sk: NodeId, method: i64, max_inf: usize, dropoff: f64) -> CmdResult<()> {
+    let Some(mut bind) = bind_of(g, sk).map(|b| (*b).clone()) else { fail!("{}: no bind data", g.path(sk)) };
+    g.evaluate();
+    let input = g.value(&plug(sk, SK_IN))?;
+    let Some(cage) = input.as_mesh().cloned() else { fail!("{}: no input mesh", g.path(sk)) };
+    let joints: Vec<NodeId> = influences(g, sk).into_iter().map(|(_, j)| j).collect();
+    let bones: Vec<(DVec3, DVec3)> = joints.iter().map(|&j| bone_of(g, j)).collect();
+    let joined: Vec<Vec<usize>> = joints.iter().map(|&j| joints.iter().enumerate().filter(|&(_, &o)| o != j && (g.parent(o) == j || g.parent(j) == o)).map(|(i, _)| i).collect()).collect();
+    bind.weights = bind_weights(&cage, &bind.geom, &bones, &joined, method, max_inf, dropoff);
+    set_bind(g, sk, bind)
+}
+
 fn unbind(g: &mut Graph, mesh: NodeId, keep_history: bool) -> CmdResult<()> {
     let Some(sk) = skin_of(g, mesh) else { return Ok(()) };
     if keep_history {

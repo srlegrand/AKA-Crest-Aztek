@@ -37,6 +37,8 @@ pub struct Extras {
     pub dg_timer_on: bool,
     /// animDisplay's settings.
     pub anim_display: BTreeMap<String, Value>,
+    /// recordAttr: plugs marked for recording.
+    pub recording: Vec<String>,
     /// The scene's file references.
     pub references: crate::references::RefTable,
 }

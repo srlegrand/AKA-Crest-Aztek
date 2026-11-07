@@ -177,6 +177,11 @@ pub fn curve_lines(n: &crate::node::Node) -> Vec<(DVec3, DVec3)> {
     pts.windows(2).map(|w| (w[0], w[1])).collect()
 }
 
+/// Replaces a curve's geometry; history above it stops counting.
+pub(crate) fn set_curve_data(g: &mut Graph, shape: NodeId, c: NurbsCurve) -> CmdResult<()> {
+    set_cached(g, shape, c)
+}
+
 fn set_cached(g: &mut Graph, shape: NodeId, c: NurbsCurve) -> CmdResult<()> {
     g.set_value(plug(shape, CurveShape::CACHED), to_value(c))?;
     Ok(())
