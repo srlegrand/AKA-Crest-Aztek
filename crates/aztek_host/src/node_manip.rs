@@ -103,9 +103,13 @@ fn is_nonlinear(ty: &str) -> bool {
     matches!(ty, "bend" | "flare" | "sine" | "squash" | "twist" | "wave")
 }
 
+fn is_projection(ty: &str) -> bool {
+    matches!(ty, "polyPlanarProj" | "polyCylProj" | "polySphProj")
+}
+
 /// Whether a node has handles or fields of its own, so a history walk stops at it.
 pub fn has_manip(ty: &str) -> bool {
-    is_move_family(ty) || is_primitive(ty) || is_nonlinear(ty) || matches!(ty, "polyPoke" | "polyMirror" | "polyWedgeFace" | "polyExtrudeVertex" | "softMod" | "sculpt") || !fields_of(ty).is_empty()
+    is_move_family(ty) || is_primitive(ty) || is_nonlinear(ty) || is_projection(ty) || matches!(ty, "polyPoke" | "polyMirror" | "polyWedgeFace" | "polyExtrudeVertex" | "softMod" | "sculpt") || !fields_of(ty).is_empty()
 }
 
 /// The in-view editor's rows for a node type, in order: (attribute, label, kind, min, max). Kind is f, i or b.
@@ -116,6 +120,18 @@ pub fn fields_of(ty: &str) -> &'static [(&'static str, &'static str, char, f64, 
         "polyExtrudeVertex" => &[("length", "Length", 'f', 0.0, 10.0), ("width", "Width", 'f', 0.0, 1.0), ("divisions", "Divisions", 'i', 1.0, 20.0)],
         "polyBevel3" => &[("fraction", "Fraction", 'f', 0.0, 1.0), ("segments", "Segments", 'i', 1.0, 20.0), ("depth", "Depth", 'f', -1.0, 1.0)],
         "polyBevelFace" => &[("offset", "Offset", 'f', 0.0, 10.0), ("segments", "Segments", 'i', 1.0, 20.0)],
+        "bend" => &[("curvature", "Curvature", 'f', -3.0, 3.0), ("lowBound", "Low Bound", 'f', -10.0, 0.0), ("highBound", "High Bound", 'f', 0.0, 10.0)],
+        "twist" => &[("startAngle", "Start Angle", 'f', -360.0, 360.0), ("endAngle", "End Angle", 'f', -360.0, 360.0), ("lowBound", "Low Bound", 'f', -10.0, 0.0), ("highBound", "High Bound", 'f', 0.0, 10.0)],
+        "squash" => &[("factor", "Factor", 'f', -2.0, 2.0), ("expand", "Expand", 'f', 0.0, 5.0), ("lowBound", "Low Bound", 'f', -10.0, 0.0), ("highBound", "High Bound", 'f', 0.0, 10.0)],
+        "flare" => &[("startFlareX", "Start Flare X", 'f', 0.0, 5.0), ("startFlareZ", "Start Flare Z", 'f', 0.0, 5.0), ("endFlareX", "End Flare X", 'f', 0.0, 5.0), ("endFlareZ", "End Flare Z", 'f', 0.0, 5.0), ("curve", "Curve", 'f', -5.0, 5.0)],
+        "sine" => &[("amplitude", "Amplitude", 'f', -5.0, 5.0), ("wavelength", "Wavelength", 'f', 0.1, 10.0), ("offset", "Offset", 'f', -10.0, 10.0)],
+        "wave" => &[("amplitude", "Amplitude", 'f', -5.0, 5.0), ("wavelength", "Wavelength", 'f', 0.1, 10.0), ("offset", "Offset", 'f', -10.0, 10.0), ("minRadius", "Min Radius", 'f', 0.0, 10.0), ("maxRadius", "Max Radius", 'f', 0.0, 10.0)],
+        "softMod" => &[("falloffRadius", "Falloff Radius", 'f', 0.0, 20.0), ("envelope", "Envelope", 'f', 0.0, 1.0)],
+        "sculpt" => &[("maximumDisplacement", "Maximum Displacement", 'f', 0.0, 5.0), ("dropoffDistance", "Dropoff Distance", 'f', 0.0, 10.0), ("envelope", "Envelope", 'f', 0.0, 1.0)],
+        "deltaMush" | "tension" | "jiggle" | "wrap" | "wire" | "textureDeformer" | "blendShape" | "cluster" | "ffd" => &[("envelope", "Envelope", 'f', 0.0, 1.0)],
+        "polyPlanarProj" => &[("projectionWidth", "Width", 'f', 0.0, 20.0), ("projectionHeight", "Height", 'f', 0.0, 20.0)],
+        "polyCylProj" => &[("projectionHeight", "Height", 'f', 0.0, 20.0), ("projectionHorizontalSweep", "Horizontal Sweep", 'f', 0.0, 360.0)],
+        "polySphProj" => &[("projectionHorizontalSweep", "Horizontal Sweep", 'f', 0.0, 360.0)],
         "polyBridgeEdge" => &[("divisions", "Divisions", 'i', 0.0, 20.0), ("twist", "Twist", 'f', -180.0, 180.0), ("taper", "Taper", 'f', 0.0, 2.0)],
         "polyWedgeFace" => &[("wedgeAngle", "Wedge Angle", 'f', 0.0, 360.0), ("divisions", "Divisions", 'i', 1.0, 64.0)],
         "polySplitRing" => &[("weight", "Weight", 'f', 0.0, 1.0), ("divisions", "Divisions", 'i', 1.0, 20.0)],
@@ -320,6 +336,20 @@ pub fn build(s: &mut Session, vp: &Viewport, node: NodeId, world_axes: bool, dpr
         nonlinear(s, vp, h, &ty, dpr, &mut m);
     } else if ty == "softMod" {
         soft_mod(s, vp, dpr, &mut m);
+    } else if is_projection(&ty) {
+        projection(s, vp, node, &ty, dpr, &mut m)?;
+    } else if ty == "sculpt" {
+        let h = aztek_scene::deform::driver_of(&s.graph, node)?;
+        let w = aztek_scene::rig::world(&mut s.graph, h);
+        let at = w.w_axis.truncate();
+        let r = DMat3::from_mat4(w).x_axis.length();
+        let len = vp.handle_len(at, dpr) * 0.7;
+        arrow(&mut m, s, "maximumDisplacement", at + DVec3::Y * r, DVec3::Y, 1.0, len, CYAN, Some(0.0), None);
+        arrow(&mut m, s, "dropoffDistance", at + DVec3::X * r, DVec3::X, 1.0, len, CYAN, Some(0.0), None);
+    } else if s.graph.node(node)?.ty().is_a("ikHandle") {
+        ik_handle(s, vp, node, dpr, &mut m);
+    } else if let Some(cam) = camera_shape(s, node) {
+        camera(s, vp, node, cam, dpr, &mut m);
     } else if s.graph.node(node)?.ty().is_a("transform") {
         // A plain object: its translate, as a transform's default manipulator.
         let w = aztek_scene::rig::world(&mut s.graph, node);
@@ -465,6 +495,87 @@ fn nonlinear(s: &mut Session, vp: &Viewport, h: NodeId, ty: &str, dpr: f64, m: &
         }
         _ => {}
     }
+}
+
+/// A projection's frame, its centre and size handles, and rings for its turn.
+fn projection(s: &mut Session, vp: &Viewport, node: NodeId, ty: &str, dpr: f64, m: &mut Manip) -> Option<()> {
+    let (_, world) = owner(s, node)?;
+    let n = m.node.clone();
+    let c = DVec3::new(get(s, &n, "projectionCenterX"), get(s, &n, "projectionCenterY"), get(s, &n, "projectionCenterZ"));
+    let r = DVec3::new(get(s, &n, "rotateX"), get(s, &n, "rotateY"), get(s, &n, "rotateZ")) * (std::f64::consts::PI / 180.0);
+    let axes = DMat3::from_quat(glam::DQuat::from_euler(glam::EulerRot::ZYX, r.z, r.y, r.x));
+    let at = world.transform_point3(c);
+    let len = vp.handle_len(at, dpr);
+    for (i, attr) in ["projectionCenterX", "projectionCenterY", "projectionCenterZ"].into_iter().enumerate() {
+        let (a, per) = out_axis(&world, DVec3::AXES[i]);
+        arrow(m, s, attr, at, a, per, len, AXES[i], None, None);
+    }
+    for (i, attr) in ["rotateX", "rotateY", "rotateZ"].into_iter().enumerate() {
+        let (a, _) = out_axis(&world, axes.col(i));
+        ring(m, s, attr, at, a, len * 1.2, AXES[i]);
+    }
+    let (ax, px) = out_axis(&world, axes.x_axis);
+    let (ay, py) = out_axis(&world, axes.y_axis);
+    if ty == "polyPlanarProj" {
+        size(m, s, "projectionWidth", at, ax, px, 0.5, CYAN);
+        size(m, s, "projectionHeight", at, ay, py, 0.5, CYAN);
+        let (w, h) = (get(s, &n, "projectionWidth") * 0.5 / px, get(s, &n, "projectionHeight") * 0.5 / py);
+        let q = [at + ax * w + ay * h, at - ax * w + ay * h, at - ax * w - ay * h, at + ax * w - ay * h];
+        for i in 0..4 {
+            m.lines.push((q[i], q[(i + 1) % 4], CYAN));
+        }
+    } else {
+        let h = get(s, &n, "projectionHeight") * 0.5 / py;
+        let radius = get(s, &n, "projectionWidth") * 0.5 / px;
+        if ty == "polyCylProj" {
+            size(m, s, "projectionHeight", at, ay, py, 0.5, CYAN);
+        }
+        // The shape it wraps round.
+        let reach = if ty == "polyCylProj" { h } else { 0.0 };
+        for centre in [at + ay * reach, at - ay * reach] {
+            for w in ring_points(centre, ay, radius.max(1e-3), 48).windows(2) {
+                m.lines.push((w[0], w[1], CYAN));
+            }
+        }
+    }
+    Some(())
+}
+
+/// The handle's pole vector, from its start joint, and its twist.
+fn ik_handle(s: &mut Session, vp: &Viewport, node: NodeId, dpr: f64, m: &mut Manip) {
+    let w = aztek_scene::rig::world(&mut s.graph, node);
+    let at = w.w_axis.truncate();
+    let len = vp.handle_len(at, dpr);
+    for (i, attr) in ["poleVectorX", "poleVectorY", "poleVectorZ"].into_iter().enumerate() {
+        arrow(m, s, attr, at, DVec3::AXES[i], 1.0, len, AXES[i], None, None);
+    }
+    let n = m.node.clone();
+    let pole = DVec3::new(get(s, &n, "poleVectorX"), get(s, &n, "poleVectorY"), get(s, &n, "poleVectorZ"));
+    m.lines.push((at, at + pole.normalize_or_zero() * len * 1.5, CYAN));
+    ring(m, s, "twist", at, DVec3::Y, len * 1.3, CYAN);
+}
+
+fn camera_shape(s: &Session, node: NodeId) -> Option<NodeId> {
+    let g = &s.graph;
+    if g.node(node)?.ty().is_a("camera") {
+        return Some(node);
+    }
+    aztek_scene::dag::shapes(g, node, false).into_iter().find(|&c| g.node(c).is_some_and(|n| n.ty().is_a("camera")))
+}
+
+/// The eye's translate, and the centre of interest out along the view.
+fn camera(s: &mut Session, vp: &Viewport, node: NodeId, shape: NodeId, dpr: f64, m: &mut Manip) {
+    let xf = aztek_scene::dag::transform_of(&s.graph, node);
+    let w = aztek_scene::rig::world(&mut s.graph, xf);
+    let at = w.w_axis.truncate();
+    let len = vp.handle_len(at, dpr);
+    let forward = -w.z_axis.truncate().normalize_or_zero();
+    let shape_name = s.graph.path(shape);
+    let coi = get(s, &shape_name, "centerOfInterest");
+    let mark = at + forward * coi;
+    m.node = shape_name;
+    m.lines.push((at, mark, CYAN));
+    m.handles.push(Handle { attr: "centerOfInterest".into(), form: Form::Dot { at: mark }, color: CYAN, drive: Drive::Along { axis: forward, start: coi, factor: 1.0, min: Some(0.001), max: None } });
 }
 
 fn soft_mod(s: &mut Session, vp: &Viewport, dpr: f64, m: &mut Manip) {

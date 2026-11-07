@@ -284,3 +284,108 @@ fn the_in_view_rows_are_the_nodes_own() {
     let labels: Vec<&str> = f["fields"].as_array().unwrap().iter().map(|r| r["label"].as_str().unwrap()).collect();
     assert_eq!(labels, ["Thickness", "Offset", "Divisions", "Keep Faces Together"]);
 }
+
+fn uv_of(c: &mut Core, comp: &str) -> Vec<f64> {
+    c.mel(&format!("polyEditUV -q {comp};")).as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect()
+}
+
+#[test]
+fn planar_projection_handles_move_the_uvs() {
+    let mut c = Core::new();
+    let vp = view();
+    c.mel("polyCube; select pCube1.f[*];");
+    let r = c.exec("polyProjection", json!({"type": "planar", "mapDirection": "y"})).unwrap();
+    assert_eq!(r, json!(["polyPlanarProj1"]));
+    assert!(node_manip::after_action(&mut c, &r));
+    let m = manip(&mut c, &vp);
+    assert_eq!(m.node, "polyPlanarProj1");
+    assert_eq!(num(&mut c, "polyPlanarProj1.projectionWidth"), 1.0);
+    let before = uv_of(&mut c, "pCube1.map[2]");
+    let by = outward(&vp, &m, "projectionCenterX", 60.0);
+    c.take_log();
+    drag(&mut c, &vp, "projectionCenterX", by);
+    assert!(num(&mut c, "polyPlanarProj1.projectionCenterX") > 0.01);
+    let lines = echoes(&mut c);
+    assert_eq!(lines.iter().filter(|l| l.starts_with("setAttr")).count(), 1, "{lines:?}");
+    let after = uv_of(&mut c, "pCube1.map[2]");
+    assert_ne!(before, after, "the UVs followed");
+    c.mel("undo;");
+    assert_eq!(uv_of(&mut c, "pCube1.map[2]"), before, "undo restores the projection's own UVs");
+}
+
+#[test]
+fn projection_width_and_rings_write_attributes() {
+    let mut c = Core::new();
+    let vp = view();
+    c.mel("polyCube; select pCube1.f[1];");
+    c.exec("polyProjection", json!({"type": "planar", "mapDirection": "y"})).unwrap();
+    let m = manip(&mut c, &vp);
+    let h = m.handles.iter().find(|h| h.attr == "projectionWidth").unwrap();
+    let node_manip::Drive::Along { axis, .. } = h.drive else { panic!() };
+    let Form::Dot { at } = h.form else { panic!() };
+    let s = vp.screen();
+    let by = (s.project(at + axis).unwrap() - s.project(at).unwrap()).normalize() * 40.0;
+    drag(&mut c, &vp, "projectionWidth", by);
+    assert!(num(&mut c, "polyPlanarProj1.projectionWidth") > 1.0);
+    drag(&mut c, &vp, "rotateY", DVec2::new(30.0, 25.0));
+    assert!(num(&mut c, "polyPlanarProj1.rotateY").abs() > 0.1);
+}
+
+#[test]
+fn cylindrical_and_spherical_have_handles() {
+    for (ty, node) in [("cylindrical", "polyCylProj1"), ("spherical", "polySphProj1")] {
+        let mut c = Core::new();
+        let vp = view();
+        c.mel("polyCube;");
+        c.exec("polyProjection", json!({"args": ["pCube1"], "type": ty})).unwrap();
+        c.mel(&format!("select pCube1;"));
+        let m = manip(&mut c, &vp);
+        assert_eq!(m.node, node);
+        let by = outward(&vp, &m, "projectionCenterY", 40.0);
+        drag(&mut c, &vp, "projectionCenterY", by);
+        assert!(num(&mut c, &format!("{node}.projectionCenterY")).abs() > 1e-3);
+    }
+}
+
+#[test]
+fn sculpt_handles() {
+    let mut c = Core::new();
+    let vp = view();
+    c.mel("polyCube; sculpt;");
+    c.mel("select pCube1;");
+    let m = manip(&mut c, &vp);
+    assert_eq!(m.node, "sculpt1");
+    let by = outward(&vp, &m, "dropoffDistance", 40.0);
+    drag(&mut c, &vp, "dropoffDistance", by);
+    assert!(num(&mut c, "sculpt1.dropoffDistance") > 1.0);
+}
+
+#[test]
+fn ik_handle_pole_vector_and_twist() {
+    let mut c = Core::new();
+    let vp = view();
+    c.mel("select -cl; joint -p 0 0 0 -n a; joint -p 0 1 0.2 -n b; joint -p 0 2 0 -n d; ikHandle -sj a -ee d -sol ikRPsolver -n hd;");
+    c.mel("select hd;");
+    let m = manip(&mut c, &vp);
+    let before = num(&mut c, "hd.poleVectorX");
+    let by = outward(&vp, &m, "poleVectorX", 40.0);
+    drag(&mut c, &vp, "poleVectorX", by);
+    assert!((num(&mut c, "hd.poleVectorX") - before).abs() > 1e-3);
+}
+
+#[test]
+fn camera_centre_of_interest() {
+    let mut c = Core::new();
+    let vp = view();
+    c.mel("camera -n shot; move 0 0 8 shot1;");
+    c.mel("select shot1;");
+    let m = manip(&mut c, &vp);
+    let h = m.handles.iter().find(|h| h.attr == "centerOfInterest").expect("the mark");
+    let node_manip::Drive::Along { start, .. } = h.drive else { panic!() };
+    let at = grip(&vp, &m, "centerOfInterest");
+    node_manip::mouse(&mut c, &vp, 0, 1, at, 1, 1.0);
+    node_manip::mouse(&mut c, &vp, 1, 0, at + DVec2::new(0.0, 40.0), 1, 1.0);
+    node_manip::mouse(&mut c, &vp, 2, 1, at + DVec2::new(0.0, 40.0), 0, 1.0);
+    let v = num(&mut c, &format!("{}.centerOfInterest", m.node));
+    assert!((v - start).abs() > 1e-3, "{start} to {v}");
+}

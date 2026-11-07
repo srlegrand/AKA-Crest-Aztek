@@ -59,3 +59,4 @@ QScrollBar:vertical { background: #3a3a3a; width: 12px; }
 QScrollBar::handle:vertical { background: #5e5e5e; min-height: 20px; }
 QScrollBar:horizontal { background: #3a3a3a; height: 12px; }
 QScrollBar::handle:horizontal { background: #5e5e5e; min-width: 20px; }
+QLabel#menuSection { color: #9a9a9a; font-style: italic; padding: 1px 0; }

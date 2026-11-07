@@ -1,3 +1,4 @@
+#include <QWidgetAction>
 #include "mainwindow.h"
 #include "aztek.h"
 #include "feedback.h"
@@ -143,6 +144,16 @@ MainWindow::MainWindow() {
 // ---------------------------------------------------------------------------------------------------------------------
 // Menus
 
+// A divider with a title, as the menus have: Qt's own section text does not show under this style.
+static void menu_title(QMenu* m, const QString& title) {
+    m->addSeparator();
+    auto* label = new QLabel("  " + title, m);
+    label->setObjectName("menuSection");
+    auto* a = new QWidgetAction(m);
+    a->setDefaultWidget(label);
+    m->addAction(a);
+}
+
 QAction* MainWindow::cmd(QMenu* m, const QString& label, const QString& command, const QJsonObject& call, const QString& shortcut, bool options) {
     bool ok = has_command(command);
     auto run = [this, command, call, options, label] {
@@ -232,7 +243,7 @@ QMenu* MainWindow::create_menu() {
 
 QMenu* MainWindow::mesh_menu() {
     auto* m = new QMenu("Mesh", this);
-    m->addSection("Combine");
+    menu_title(m, "Combine");
     QMenu* b = m->addMenu("Booleans");
     cmd(b, "Union", "polyBoolean", QJsonObject{{"operation", "union"}});
     cmd(b, "Difference (A - B)", "polyBoolean", QJsonObject{{"operation", "difference"}});
@@ -267,7 +278,7 @@ QMenu* MainWindow::mesh_menu() {
 
 QMenu* MainWindow::edit_mesh_menu() {
     auto* m = new QMenu("Edit Mesh", this);
-    m->addSection("Components");
+    menu_title(m, "Components");
     cmd(m, "Bevel", "polyBevel", {}, "Ctrl+B", true);
     cmd(m, "Add Divisions", "polySubdivideFacet", {}, QString(), true);
     cmd(m, "Bridge", "polyBridge", {}, QString(), true);
@@ -289,21 +300,21 @@ QMenu* MainWindow::edit_mesh_menu() {
     cmd(m, "Spherize", "polySpherize", {}, QString(), true);
     cmd(m, "Circularize", "polyCircularize", {}, QString(), true);
     cmd(m, "Straighten", "polyStraighten", {}, QString(), true);
-    m->addSection("Vertex");
+    menu_title(m, "Vertex");
     cmd(m, "Reorder Vertices", "meshReorder");
-    m->addSection("Edge");
+    menu_title(m, "Edge");
     cmd(m, "Delete Edge/Vertex", "polyDissolve", {}, "Ctrl+Delete");
     cmd(m, "Edit Edge Flow", "polyEditEdgeFlow", {}, QString(), true);
     cmd(m, "Flip Triangle Edge", "polyFlipEdge");
     cmd(m, "Spin Edge Backward", "polySpinEdge", QJsonObject{{"offset", -1}});
     cmd(m, "Spin Edge Forward", "polySpinEdge", QJsonObject{{"offset", 1}});
-    m->addSection("Face");
+    menu_title(m, "Face");
     cmd(m, "Poke", "polyPoke", {}, QString(), true);
     cmd(m, "Wedge", "polyWedgeFace", {}, QString(), true);
     cmd(m, "Assign Invisible Faces", "polyHole", {}, QString(), true);
     cmd(m, "Duplicate", "polyChipOff", QJsonObject{{"duplicate", true}}, QString(), true);
     cmd(m, "Extract", "polyExtract", {}, QString(), true);
-    m->addSection("Curve");
+    menu_title(m, "Curve");
     cmd(m, "Project Curve on Mesh", "polyProjectCurve", {}, QString(), true);
     m->addSeparator();
     cmd(m, "Grid Fill", "polyGridFill", {}, QString(), true);
@@ -361,7 +372,7 @@ QMenu* MainWindow::mesh_display_menu() {
 
 QMenu* MainWindow::curves_menu() {
     auto* m = new QMenu("Curves", this);
-    m->addSection("Edit");
+    menu_title(m, "Edit");
     cmd(m, "Attach", "attachCurve", {}, QString(), true);
     cmd(m, "Detach", "detachCurve", {}, QString(), true);
     cmd(m, "Open/Close", "closeCurve", {}, QString(), true);
@@ -405,22 +416,22 @@ QMenu* MainWindow::surfaces_menu() {
 
 QMenu* MainWindow::uv_menu() {
     auto* m = new QMenu("UV", this);
-    m->addSection("Editors");
+    menu_title(m, "Editors");
     m->addAction("UV Editor", this, &MainWindow::show_uv_editor);
-    m->addSection("Create");
+    menu_title(m, "Create");
     cmd(m, "Automatic", "polyAutoProjection", {}, QString(), true);
     cmd(m, "Contour Stretch", "polyContourProjection", {}, QString(), true);
     cmd(m, "Planar", "polyProjection", QJsonObject{{"type", "planar"}}, QString(), true);
     cmd(m, "Cylindrical", "polyProjection", QJsonObject{{"type", "cylindrical"}}, QString(), true);
     cmd(m, "Spherical", "polyProjection", QJsonObject{{"type", "spherical"}}, QString(), true);
-    m->addSection("Cut and Sew");
+    menu_title(m, "Cut and Sew");
     cmd(m, "Auto Seams", "u3dAutoSeam", {}, QString(), true);
     cmd(m, "Cut UV Edges", "polyMapCut");
     cmd(m, "Sew UV Edges", "polyMapSew");
     cmd(m, "Move and Sew", "polyMapSewMove");
     cmd(m, "Merge UVs", "polyMergeUV", {}, QString(), true);
     cmd(m, "Delete UVs", "polyMapDel");
-    m->addSection("Modify");
+    menu_title(m, "Modify");
     cmd(m, "Unfold", "u3dUnfold", {}, QString(), true);
     cmd(m, "Layout", "u3dLayout", {}, QString(), true);
     cmd(m, "Optimize", "polyOptUvs", {}, QString(), true);
@@ -477,11 +488,11 @@ QMenu* MainWindow::deform_menu() {
     cmd(m, "Mirror Deformer Weights", "copyDeformerWeights", {}, QString(), true);
     cmd(m, "Export Weights", "deformerWeights", QJsonObject{{"export", true}}, QString(), true);
     cmd(m, "Import Weights", "deformerWeights", QJsonObject{{"import", true}}, QString(), true);
-    m->addSection("Edit");
+    menu_title(m, "Edit");
     QMenu* edit_lattice = m->addMenu("Lattice");
     cmd(edit_lattice, "Remove Lattice Tweaks", "lattice", QJsonObject{{"edit", true}, {"removeTweaks", true}});
     cmd(edit_lattice, "Reset Lattice", "lattice", QJsonObject{{"edit", true}, {"latticeReset", true}});
-    m->addSection("Membership");
+    menu_title(m, "Membership");
     m->addAction("Edit Membership Tool", [this] { set_tool("editMembership"); show_tool_settings(); });
     m->addAction("Shape Editor", [this] { show_named_window("shapeEditor"); });
     return m;

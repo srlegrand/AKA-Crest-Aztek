@@ -687,6 +687,11 @@ fn driver_roots(g: &Graph, n: NodeId) -> Vec<NodeId> {
     out
 }
 
+/// The first handle or lattice driving a deformer.
+pub fn driver_of(g: &Graph, n: NodeId) -> Option<NodeId> {
+    driver_roots(g, n).into_iter().next()
+}
+
 /// The deformers a handle or lattice drives.
 pub fn driven_deformers(g: &Graph, root: NodeId) -> Vec<NodeId> {
     let mut sources = g.descendants(root);

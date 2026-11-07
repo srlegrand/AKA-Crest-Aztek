@@ -15,7 +15,7 @@ use aztek_uv::chart::{build_charts, write_charts, Chart, ChartOptions, IslandSou
 use aztek_uv::layout::{fit_chart, orient_chart, OrientMode};
 use aztek_uv::project::{project, ProjectAxis, ProjectOptions, Projection};
 use aztek_uv::unwrap::{unwrap_charts, UnwrapOptions};
-use glam::DVec2;
+use glam::{DVec2, DVec3};
 use serde_json::{json, Value};
 
 use crate::attr_defs::mesh_attr;
@@ -488,7 +488,109 @@ pub const NODE_TYPES: &[(&str, &str)] = &[
     ("polyUVRectangle", "A shell's UVs squared onto its bounding box."),
 ];
 
-pub struct UvEditNode;
+pub struct UvEditNode {
+    /// Which projection the node reprojects with once its attributes change.
+    pub projection: Option<Projection>,
+}
+
+// The projection nodes' attributes, after the shared three.
+const PJ_CENTER: usize = 3;
+const PJ_ROTATE: usize = 4;
+const PJ_WIDTH: usize = 5;
+const PJ_HEIGHT: usize = 6;
+const PJ_IMAGE_CENTER: usize = 7;
+const PJ_IMAGE_SCALE: usize = 8;
+const PJ_SWEEP: usize = 9;
+/// The attributes as the projection left them: while they match, the stored UVs stand.
+const PJ_FITTED: usize = 10;
+const PJ_FACES: usize = 11;
+
+fn projection_state(d: &NodeData) -> String {
+    let v = |a: usize| d.vec3(a);
+    format!("{:.6?} {:.6?} {:.6} {:.6} {:.6?} {:.6?} {:.6}", v(PJ_CENTER), v(PJ_ROTATE), d.float(PJ_WIDTH), d.float(PJ_HEIGHT), v(PJ_IMAGE_CENTER), v(PJ_IMAGE_SCALE), d.float(PJ_SWEEP))
+}
+
+fn projection_axes(rotate: glam::DVec3) -> glam::DMat3 {
+    let r = rotate * (std::f64::consts::PI / 180.0);
+    glam::DMat3::from_quat(glam::DQuat::from_euler(glam::EulerRot::ZYX, r.z, r.y, r.x))
+}
+
+/// The UVs the attributes give, for the faces the node holds.
+fn reproject(d: &NodeData, ty: Projection, m: &mut Mesh) {
+    let axes = projection_axes(d.vec3(PJ_ROTATE));
+    let inv = axes.transpose();
+    let c = d.vec3(PJ_CENTER);
+    let (w, h) = (d.float(PJ_WIDTH).abs().max(1e-9), d.float(PJ_HEIGHT).abs().max(1e-9));
+    let (ic, is) = (d.vec3(PJ_IMAGE_CENTER), d.vec3(PJ_IMAGE_SCALE));
+    let sweep = d.float(PJ_SWEEP).abs().max(1e-3).to_radians();
+    let faces = crate::history::parse_components(d.string(PJ_FACES));
+    let mut edit = UvEdit::default();
+    for f in faces {
+        if !m.face_valid(f) {
+            continue;
+        }
+        for corner in m.face_corners(f) {
+            let p = inv * (m.position(m.corner_point(corner)) - c);
+            let (u, v) = match ty {
+                Projection::Cylindrical => (p.x.atan2(p.z) / sweep + 0.5, p.y / h + 0.5),
+                Projection::Spherical => (p.x.atan2(p.z) / sweep + 0.5, (p.y / p.length().max(1e-9)).asin() / (sweep * 0.5) + 0.5),
+                _ => (p.x / w + 0.5, p.y / h + 0.5),
+            };
+            edit.uvs.insert(corner, [(u * is.x + ic.x) as f32, (v * is.y + ic.y) as f32]);
+        }
+    }
+    edit.apply(m);
+}
+
+/// After a projection: the node's attributes hold the box it fitted, so handles have something to move.
+pub fn fit_projection(g: &mut Graph, node: NodeId, m: &Mesh, faces: &[Index], ty: Projection, axis: ProjectAxis) -> CmdResult<()> {
+    let mut lo = DVec3::splat(f64::MAX);
+    let mut hi = DVec3::splat(f64::MIN);
+    let mut area = DVec3::ZERO;
+    for &f in faces {
+        if !m.face_valid(f) {
+            continue;
+        }
+        area += m.face_area_vector(f);
+        for p in m.face_points(f) {
+            lo = lo.min(m.position(p));
+            hi = hi.max(m.position(p));
+        }
+    }
+    if lo.x > hi.x {
+        return Ok(());
+    }
+    let centre = (lo + hi) * 0.5;
+    let ext = hi - lo;
+    let a = area.abs();
+    let normal = match axis {
+        ProjectAxis::X => 0,
+        ProjectAxis::Y => 1,
+        ProjectAxis::Z => 2,
+        _ if a.x >= a.y && a.x >= a.z => 0,
+        _ if a.y >= a.z => 1,
+        _ => 2,
+    };
+    let (rotate, w, h) = match (ty, normal) {
+        (Projection::Planar, 0) => (DVec3::new(0.0, 90.0, 0.0), ext.z, ext.y),
+        (Projection::Planar, 1) => (DVec3::new(-90.0, 0.0, 0.0), ext.x, ext.z),
+        (Projection::Planar, _) => (DVec3::ZERO, ext.x, ext.y),
+        _ => (DVec3::ZERO, ext.x.max(ext.z), ext.y),
+    };
+    let sweep = if ty == Projection::Spherical || ty == Projection::Cylindrical { 360.0 } else { 0.0 };
+    g.set_value(plug(node, PJ_CENTER), PlugValue::Vec3(centre))?;
+    g.set_value(plug(node, PJ_ROTATE), PlugValue::Vec3(rotate))?;
+    g.set_value(plug(node, PJ_WIDTH), PlugValue::Float(w.max(1e-6)))?;
+    g.set_value(plug(node, PJ_HEIGHT), PlugValue::Float(h.max(1e-6)))?;
+    g.set_value(plug(node, PJ_SWEEP), PlugValue::Float(sweep))?;
+    g.set_value(plug(node, PJ_FACES), PlugValue::String(crate::history::format_components(ComponentMode::Face, faces)))?;
+    let state = {
+        let n = g.node(node).unwrap();
+        projection_state(n.data())
+    };
+    g.set_value(plug(node, PJ_FITTED), PlugValue::String(state))?;
+    Ok(())
+}
 
 impl NodeBehavior for UvEditNode {
     fn compute(&mut self, _ctx: &EvalContext, d: &mut NodeData) {
@@ -496,6 +598,16 @@ impl NodeBehavior for UvEditNode {
             d.set_output(OUT, PlugValue::Mesh(None));
             return;
         };
+        // Moved from where the projection fitted: reproject from the attributes.
+        if let Some(ty) = self.projection {
+            let fitted = d.string(PJ_FITTED);
+            if !fitted.is_empty() && fitted != projection_state(d) {
+                let mut m = (*input).clone();
+                reproject(d, ty, &mut m);
+                d.set_output(OUT, PlugValue::Mesh(Some(Arc::new(m))));
+                return;
+            }
+        }
         let edit = match d.value(EDIT) {
             PlugValue::Data(Some(t)) => t.as_any().downcast_ref::<UvEdit>().cloned(),
             _ => None,
@@ -521,24 +633,46 @@ pub fn register_types() {
 fn register_types_now() {
     crate::plug::data::register_kind("polyUvEdit", Arc::new(|j| Ok(Arc::new(UvEdit::from_json(j)) as Arc<dyn crate::plug::Data>)));
     for (name, doc) in NODE_TYPES {
+        let projection = match *name {
+            "polyPlanarProj" => Some(Projection::Planar),
+            "polyCylProj" => Some(Projection::Cylindrical),
+            "polySphProj" => Some(Projection::Spherical),
+            _ => None,
+        };
         let t = NodeType {
             name: name.to_string(),
             icon: "texture".into(),
             doc: doc.to_string(),
-            own_attrs: vec![
-                mesh_attr("inputPolymesh", "ip", flags::INPUT | flags::HIDDEN, "The mesh before the UV edit."),
-                mesh_attr("output", "out", flags::OUTPUT | flags::HIDDEN, "The mesh after the UV edit."),
-                AttrDef {
-                    name: "uvEdit".into(),
-                    short_name: "uve".into(),
-                    ty: PlugType::Data,
-                    default_value: PlugValue::Data(None),
-                    flags: flags::INPUT | flags::STORABLE | flags::HIDDEN,
-                    doc: "The UVs and seams the edit set.".into(),
-                    ..Default::default()
-                },
-            ],
-            create: Some(Arc::new(|| Box::new(UvEditNode))),
+            own_attrs: {
+                let mut own = vec![
+                    mesh_attr("inputPolymesh", "ip", flags::INPUT | flags::HIDDEN, "The mesh before the UV edit."),
+                    mesh_attr("output", "out", flags::OUTPUT | flags::HIDDEN, "The mesh after the UV edit."),
+                    AttrDef {
+                        name: "uvEdit".into(),
+                        short_name: "uve".into(),
+                        ty: PlugType::Data,
+                        default_value: PlugValue::Data(None),
+                        flags: flags::INPUT | flags::STORABLE | flags::HIDDEN,
+                        doc: "The UVs and seams the edit set.".into(),
+                        ..Default::default()
+                    },
+                ];
+                if projection.is_some() {
+                    let k = flags::INPUT | flags::STORABLE | flags::KEYABLE;
+                    own.push(crate::node::vec3_attr("projectionCenter", "pc", DVec3::ZERO, k, "Where the projection sits, in the object's space."));
+                    own.push(crate::node::vec3_attr("rotate", "ro", DVec3::ZERO, k, "How it is turned, degrees."));
+                    own.push(crate::attr_defs::float_attr_short("projectionWidth", "pw", 1.0, "Its width.", None, None));
+                    own.push(crate::attr_defs::float_attr_short("projectionHeight", "ph", 1.0, "Its height.", None, None));
+                    own.push(crate::node::vec3_attr("imageCenter", "ic", DVec3::ZERO, k, "Offset in UV space; the third number is unused."));
+                    own.push(crate::node::vec3_attr("imageScale", "is", DVec3::ONE, k, "Scale in UV space; the third number is unused."));
+                    own.push(crate::attr_defs::float_attr_short("projectionHorizontalSweep", "phs", 360.0, "How far round a cylinder or sphere it wraps, degrees.", None, None));
+                    for (nm, sh, doc) in [("fittedState", "fts", "The attributes as the projection left them."), ("inputComponents", "ics", "The faces projected.")] {
+                        own.push(AttrDef { name: nm.into(), short_name: sh.into(), ty: PlugType::String, default_value: PlugValue::String(String::new()), flags: flags::INPUT | flags::STORABLE | flags::HIDDEN, doc: doc.into(), ..Default::default() });
+                    }
+                }
+                own
+            },
+            create: Some(Arc::new(move || Box::new(UvEditNode { projection }))),
             ..Default::default()
         };
         types::register_type(t).expect(name);
@@ -839,10 +973,18 @@ pub fn register(c: &mut Commands<Session>) {
                     Projection::Spherical => "polySphProj",
                     _ => "polyPlanarProj",
                 };
-                each(s, a, "polyProjection", "Projection", node, |m, t, tp| {
+                let mut fits: Vec<(Mesh, Vec<Index>)> = Vec::new();
+                let made = each(s, a, "polyProjection", "Projection", node, |m, t, tp| {
                     let faces = target_faces(m, t, tp);
+                    fits.push((m.clone(), faces.clone()));
                     project_faces(m, &faces, ty, axis);
-                })
+                })?;
+                for (name, (m, faces)) in made.as_array().into_iter().flatten().zip(fits) {
+                    if let Some(n) = name.as_str().and_then(|n| s.graph.find(n).ok().flatten()) {
+                        fit_projection(&mut s.graph, n, &m, &faces, ty, axis)?;
+                    }
+                }
+                Ok(made)
             },
         )
         .positional("faces or meshes")
