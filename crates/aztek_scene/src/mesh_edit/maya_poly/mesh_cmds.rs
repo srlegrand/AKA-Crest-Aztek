@@ -1105,7 +1105,23 @@ pub(super) fn register(c: &mut Commands<Session>) {
         c.register(d);
     }
 
-    extend(c, "polyReduce", "polyReduce", &[("termination", json!(0)), ("version", json!(0))], |s, a| {
+    extend(
+        c,
+        "polyReduce",
+        "polyReduce",
+        &[
+            ("termination", json!(0)),
+            ("version", json!(0)),
+            ("keepBorder", json!(true)),
+            ("keepHardEdge", json!(true)),
+            ("keepMapBorder", json!(true)),
+            ("keepColorBorder", json!(true)),
+            ("keepFaceGroupBorder", json!(true)),
+            ("keepCreaseEdge", json!(true)),
+            ("triangulate", json!(true)),
+            ("preserveTopology", json!(true)),
+        ],
+        |s, a| {
         // The reference's flags go through the node; the ratio form keeps the modifier and radial handling it always had.
         let maya = a.has("percentage") || a.has("vertexCount") || a.has("triangleCount") || a.has("sharpness") || a.has("constructionHistory");
         if !maya {
@@ -1116,7 +1132,8 @@ pub(super) fn register(c: &mut Commands<Session>) {
             a2.flags.insert("ratio".into(), json!(1.0));
         }
         Some(run_op(s, "polyReduce", &a2))
-    });
+        },
+    );
     extend(c, "polyTriangulate", "polyTriangulate", &[], |s, a| {
         if a.named().is_empty() {
             return None;
@@ -1298,14 +1315,16 @@ pub(super) fn register(c: &mut Commands<Session>) {
             "Symmetrize meshes across an axis: -ma 0 x, 1 y, 2 z, the -d side rebuilt from the other. Runs symmetrize.",
             |s, a| {
                 let axis = ["x", "y", "z"][a.int("axis", 0).clamp(0, 2) as usize];
-                let mut call = json!({"axis": axis});
-                if !a.named().is_empty() {
-                    call["args"] = json!(a.named());
+                let shapes = shapes_named(s, a, "polySymmetrize")?;
+                let side = if a.int("axisDirection", 1) == 0 { "negative" } else { "positive" };
+                for shape in shapes {
+                    let path = components::display_path(&s.graph, shape);
+                    let before = s.graph.node(shape).map_or(0, |n| n.int(MeshNode::SYMMETRY));
+                    s.graph.set_value(plug(shape, MeshNode::SYMMETRY), PlugValue::Int(1 + axis.as_bytes()[0] as i64 - b'x' as i64))?;
+                    execute(s, "symmetrize", &json!({"args": [path], "side": side}), CallSource::Script)?;
+                    s.graph.set_value(plug(shape, MeshNode::SYMMETRY), PlugValue::Int(before))?;
                 }
-                if a.int("axisDirection", 1) == 0 {
-                    call["direction"] = json!("negative");
-                }
-                execute(s, "symmetrize", &call, CallSource::Script)
+                Ok(Value::Null)
             },
         )
         .flag(fl("axis", "a", T::Int, json!(0), "0 x, 1 y, 2 z."))

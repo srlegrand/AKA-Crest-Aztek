@@ -734,7 +734,9 @@ fn select_constraint(s: &mut Session, a: &Args) -> CmdResult {
     let hilited = components::hilited_meshes(g);
     if mode == 3 {
         let mut scope: BTreeSet<NodeId> = hilited.into_iter().collect();
-        scope.extend(components::selected_all(g, selected_mode).keys().copied());
+        if selected_mode != K::Object {
+            scope.extend(components::selected_all(g, selected_mode).keys().copied());
+        }
         for n in scope {
             let Some(m) = crate::modifiers::cage(g, n) else { continue };
             results.insert(n, apply_constraint(&m, kind, components::all_ids(&m, kind), &st));
@@ -1004,12 +1006,16 @@ pub(super) fn register(c: &mut Commands<Session>) {
         .flag(fl("ring", "rg", T::Bool, Value::Null, "Edge rings.")),
     );
     c.register(
-        maya_cmd(
+        with_table(
+            Cmd::new(
+                "polyListComponentConversion",
+                "Convert components without selecting them: -fv -fe -ff -fuv -fvf from, -tv -te -tf -tuv -tvf to. By default whatever the components touch; -in only what \
+                 they hold entirely, -bo only the border of the result. Returns component strings.",
+                conversion,
+            )
+            .flag(fl("internal", "in", T::Bool, Value::Null, "Only what the components hold entirely.")),
             "polyListComponentConversion",
-            "Convert components without selecting them: -fv -fe -ff -fuv -fvf from, -tv -te -tf -tuv -tvf to. By default whatever the components touch; -in only what they \
-             hold entirely, -bo only the border of the result. Returns component strings.",
             &[],
-            conversion,
         )
         .undoable(false),
     );

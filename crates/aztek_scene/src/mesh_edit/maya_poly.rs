@@ -78,7 +78,11 @@ fn arg_type(c: char) -> ArgType {
 /// defaults gives the others. pivot stays unset, so the command can tell when none was given.
 pub(crate) fn with_table(mut cmd: Cmd, table_of: &str, defaults: &[(&str, Value)]) -> Cmd {
     for &(long, short, ty) in flag_table::table(table_of) {
-        if cmd.flags.iter().any(|f| f.name == long) {
+        // A flag the command already has takes the reference's short name if it has none.
+        if let Some(at) = cmd.flags.iter().position(|f| f.name == long) {
+            if cmd.flags[at].short_name.is_empty() && !cmd.flags.iter().any(|f| f.short_name == short) {
+                cmd.flags[at].short_name = short.to_string();
+            }
             continue;
         }
         let mut def = defaults.iter().find(|(n, _)| *n == long).map(|(_, v)| v.clone()).unwrap_or(Value::Null);

@@ -1251,6 +1251,9 @@ pub fn register(c: &mut Commands<Session>) {
                     _ => T::Float,
                 };
                 let mut fd = flag(&a.name, ty, to_json(&a.default_value), &a.doc);
+                if fd.short_name.is_empty() {
+                    fd.short_name = a.short_name.clone();
+                }
                 if let Some(lo) = a.min_value {
                     fd = fd.min(lo);
                 }

@@ -124,11 +124,15 @@ fn color_set_op(a: &Args, m: &mut Mesh, _sel: &Ids, _sym: Option<&SymmetryMap>) 
     Ok(EditResult::default())
 }
 
+const UNSET_COLOR: f64 = -1.0;
+
 fn color_value(a: &Args, was: [f32; 4]) -> [f32; 4] {
     let rel = a.bool("relative");
     let rgb = a.vec3("colorRGB");
+    // -1 is how the node holds a channel the call didn't set.
     let pick = |i: usize, single: &str| -> f32 {
-        let given = a.get(single).and_then(Value::as_f64).or(rgb.filter(|_| i < 3).map(|c| c[i]));
+        let unset = |v: &f64| *v != UNSET_COLOR;
+        let given = a.get(single).and_then(Value::as_f64).filter(unset).or(rgb.filter(|_| i < 3).map(|c| c[i]).filter(unset));
         match given {
             Some(v) if rel => was[i] + v as f32,
             Some(v) => v as f32,
@@ -191,7 +195,10 @@ fn normal_vertex_op(a: &Args, m: &mut Mesh, sel: &Ids, _sym: Option<&SymmetryMap
     if !m.corner_attrs().has(names::NORMAL) {
         update_corner_normals(m, &CornerNormalOptions::default());
     }
-    let xyz = vec_flag(a, "normalXYZ", DVec3::new(a.float("normalX", 0.0), a.float("normalY", 0.0), a.float("normalZ", 0.0)));
+    let mut xyz = vec_flag(a, "normalXYZ", DVec3::ZERO);
+    if xyz.length_squared() < 1e-18 {
+        xyz = DVec3::new(a.float("normalX", 0.0), a.float("normalY", 0.0), a.float("normalZ", 0.0));
+    }
     if xyz.length_squared() < 1e-18 {
         return Ok(EditResult::default());
     }
@@ -283,8 +290,15 @@ pub(super) fn register_ops() {
 
 /// The first mesh a query names or has selected, with its cage.
 fn query_mesh(s: &mut Session, a: &Args) -> CmdResult<(NodeId, crate::plug::MeshPtr)> {
-    let (targets, _) = gather(s, a, K::Vertex)?;
-    let Some(&n) = targets.keys().next() else { fail!("name or select a mesh") };
+    let pairs = vtx_face_pairs(s, a)?;
+    let n = match pairs.first() {
+        Some((n, _)) => *n,
+        None => {
+            let (targets, _) = gather(s, a, K::Vertex)?;
+            let Some(&n) = targets.keys().next() else { fail!("name or select a mesh") };
+            n
+        }
+    };
     let Some(m) = crate::modifiers::cage(&mut s.graph, n) else { fail!("no mesh") };
     Ok((n, m))
 }
@@ -444,7 +458,13 @@ pub(super) fn register(c: &mut Commands<Session>) {
         ))
         .flag(fl("corners", "", T::List, Value::Null, "vtxFace pairs the edit works on, when it isn't whole vertices.")),
         "polyColorPerVertex",
-        &[],
+        &[
+            ("colorR", json!(UNSET_COLOR)),
+            ("colorG", json!(UNSET_COLOR)),
+            ("colorB", json!(UNSET_COLOR)),
+            ("alpha", json!(UNSET_COLOR)),
+            ("colorRGB", json!([UNSET_COLOR, UNSET_COLOR, UNSET_COLOR])),
+        ],
     ));
     c.register(with_table(
         query_flags(Cmd::new(

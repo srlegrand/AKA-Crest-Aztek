@@ -668,15 +668,21 @@ fn projected_points(g: &mut crate::graph::Graph, mesh: NodeId, curve_name: &str)
     let Some(cage) = crate::modifiers::cage(g, mesh) else { fail!("polySplit: no mesh") };
     let to_local = g.node(mesh).map_or(glam::DMat4::IDENTITY, |n| n.matrix(Transform::WORLD_MATRIX)).inverse();
     let bvh = aztek_geo::bvh::MeshBvh::new(&cage);
+    let hits: Vec<(Index, DVec3)> = curve.tessellate(8).into_iter().filter_map(|p| bvh.closest_point(to_local.transform_point3(p))).map(|h| (h.face, h.point)).collect();
     let mut out: Vec<Value> = Vec::new();
-    let mut last = None;
-    for p in curve.tessellate(8) {
-        let Some(hit) = bvh.closest_point(to_local.transform_point3(p)) else { continue };
-        if last == Some((hit.face, hit.point.to_array().map(f64::to_bits))) {
-            continue;
+    for (i, &(face, at)) in hits.iter().enumerate() {
+        // Where the curve meets an edge it cuts the edge; inside a face only the ends and the turns between faces count.
+        let on_edge = cage.face_corners(face).into_iter().find_map(|c| {
+            let e = cage.corner_edge(c);
+            let (p, q) = (cage.position(cage.edge_point(e, 0)), cage.position(cage.edge_point(e, 1)));
+            let t = ((at - p).dot(q - p) / (q - p).length_squared().max(1e-18)).clamp(0.0, 1.0);
+            (p.lerp(q, t).distance(at) < 1e-6).then_some((e, t))
+        });
+        if let Some((e, t)) = on_edge {
+            out.push(json!({"edge": e, "t": t}));
+        } else if i == 0 || i + 1 == hits.len() || hits[i - 1].0 != face {
+            out.push(json!({"face": face, "position": [at.x, at.y, at.z]}));
         }
-        last = Some((hit.face, hit.point.to_array().map(f64::to_bits)));
-        out.push(json!({"face": hit.face, "position": [hit.point.x, hit.point.y, hit.point.z]}));
     }
     Ok(out)
 }
@@ -1057,6 +1063,13 @@ pub(super) fn register(c: &mut Commands<Session>) {
             run_op(s, if vertices { "polySplitVert" } else { "polySplitEdge" }, a)
         },
     ));
+    c.register(
+        Cmd::new("DetachComponent", "Detach the selected vertices or edges: polyDetachEdges on the selection.", |s, _a| {
+            aztek_ops::execute(s, "polyDetachEdges", &json!({}), aztek_ops::CallSource::Script)
+        }),
+    );
+    extend(c, "polyCrease", "polyCrease", &[], |_, _| None);
+    extend(c, "polyAppendVertex", "polyAppendVertex", &[], |_, _| None);
     c.register(maya_cmd(
         "polyCollapseFacet",
         "Collapse faces to their centres; with -uat only those under -at in area. Returns the node.",

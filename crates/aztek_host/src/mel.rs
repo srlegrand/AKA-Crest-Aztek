@@ -84,6 +84,9 @@ fn scalar(t: &str) -> Value {
     if let Ok(i) = w.parse::<i64>() {
         return json!(i);
     }
+    if let Some(i) = w.strip_prefix("0x").and_then(|h| i64::from_str_radix(h, 16).ok()) {
+        return json!(i);
+    }
     if let Ok(f) = w.parse::<f64>() {
         return json!(f);
     }
