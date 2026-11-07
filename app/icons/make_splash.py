@@ -1,55 +1,54 @@
-import numpy as np, subprocess, io
-from PIL import Image, ImageDraw, ImageFont
-from scipy.ndimage import gaussian_filter
+# Builds app/icons/aztek-splash.png: the logo on black, and a black and white photo with the mark inked on the cheek.
+#   python3 app/icons/make_splash.py app/icons/splash-photo.jpg app/icons/splash-mask.png app/icons/aztek-logo.svg app/icons/aztek-splash.png
+# The mask separates the subject from the background (made with rembg, isnet-general-use); any size, it is resized to the photo.
+# The version text is drawn by the app (splash_pixmap in app/src/widgets.cpp).
+import numpy as np, subprocess, io, sys
+from PIL import Image, ImageFilter
+from scipy import ndimage
 W,H=1200,700
-rng=np.random.default_rng(7)
-def svgmask(svg,w,h):
-    png=subprocess.run(['rsvg-convert','-w',str(w),'-h',str(h)],input=svg.encode(),capture_output=True).stdout
-    return np.asarray(Image.open(io.BytesIO(png)).convert('L'),float)/255
-# stone
-h=np.zeros((H,W))
-for s,a in [(60,1.0),(20,.5),(6,.25),(2,.12),(.7,.08)]:
-    n=gaussian_filter(rng.standard_normal((H,W)),s); h+=a*n/n.std()
-h*=0.012
-# step-fret relief: two bands, top and bottom, of square spirals
-fret=Image.new('L',(W,H),0); d=ImageDraw.Draw(fret)
-def spiral(x,y,s,flip):
-    u=s/6; pts=[(0,6),(0,0),(6,0),(6,4),(2,4),(2,2),(4,2)]
-    if flip: pts=[(6-a,6-b) for a,b in pts]
-    d.line([(x+a*u,y+b*u) for a,b in pts],fill=255,width=int(u*0.9),joint='curve')
-s=90
-for row,y in enumerate([28,H-28-s]):
-    for i,x in enumerate(range(560,W+s,s+18)):
-        spiral(x,y,s,(i+row)%2)
-fm=gaussian_filter(np.asarray(fret,float)/255,2.2)
-h+=0.9*fm
-# big carved mark from the icon
-icon='''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><g fill="none" stroke="#fff" stroke-width="34" stroke-linecap="square" stroke-linejoin="miter"><path d="M90 450 L210 62 L330 450"/><path d="M135 310 H422 V400 H332 V355 H377"/></g></svg>'''
-m=np.zeros((H,W)); ms=430; ox,oy=730,135
-m[oy:oy+ms,ox:ox+ms]=svgmask(icon,ms,ms)
-carve=gaussian_filter(m,3.0)
-h-=1.6*carve
-# frame lines (raised border round the mark)
-fr=Image.new('L',(W,H),0); d=ImageDraw.Draw(fr)
-d.rectangle([ox-30,oy-15,ox+ms+5,oy+ms+15],outline=255,width=10)
-h+=0.7*gaussian_filter(np.asarray(fr,float)/255,2)
-# shading
-gy,gx=np.gradient(h*40)
-nz=1/np.sqrt(gx**2+gy**2+1); nx=-gx*nz; ny=-gy*nz
-L=np.array([-0.62,-0.55,0.56]); L/=np.linalg.norm(L)
-lam=np.clip(nx*L[0]+ny*L[1]+nz*L[2],0,1)
-ao=np.clip(1+3*(h-gaussian_filter(h,8)),0.25,1.2)
-img=lam**1.6*ao
-img*=0.85+0.15*gaussian_filter(rng.random((H,W)),0.6)/0.5
-# dramatic light pool on the mark, fade to black on the left
-yy,xx=np.mgrid[0:H,0:W]
-pool=np.exp(-(((xx-930)/430)**2+((yy-330)/330)**2))
-fade=np.clip((xx-430)/380,0,1)**1.7
-img=img*(0.15+1.1*pool)*fade
-img=np.clip(img*1.35,0,1)**1.35
-out=Image.fromarray((img*255).astype(np.uint8)).convert('RGB')
-# logo top-left
-logo=svgmask(open('/home/claude/aztek/app/icons/aztek-logo.svg').read(),460,233)
-lg=Image.fromarray((logo*255).astype(np.uint8))
-out.paste(Image.new('RGB',lg.size,(255,255,255)),(40,50),lg)
-out.save('splash_raw.png')
+CX,CY=1052,428
+photo=Image.open(sys.argv[1]).convert('L')
+mask=Image.open(sys.argv[2]).convert('L').resize(photo.size, Image.LANCZOS)
+logo_svg=open(sys.argv[3]).read()
+out=sys.argv[4]
+def svg(s,w,h):
+    png=subprocess.run(['rsvg-convert','-w',str(w),'-h',str(h)],input=s.encode(),capture_output=True).stdout
+    return Image.open(io.BytesIO(png)).convert('RGBA')
+# keep only the dog: largest component of the mask
+m=np.asarray(mask,float)/255
+lab,n=ndimage.label(m>0.5); sizes=ndimage.sum(m>0.5,lab,range(1,n+1))
+keep=lab==(1+int(np.argmax(sizes)))
+keep=ndimage.binary_fill_holes(keep)
+m=np.clip(ndimage.gaussian_filter(keep.astype(float),3),0,1)*np.maximum(m,keep*0.0+0)  # soft edge
+m=ndimage.gaussian_filter(keep.astype(float),2.5)
+g=np.asarray(photo,float)/255
+# cheek mark: the Aztek A, inked on the left cheek
+icon='''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><g fill="none" stroke="#000" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"><path d="M90 450 L210 62 L330 450"/><path d="M135 310 H422 V400 H332 V355 H377"/></g></svg>'''
+# crop the face
+x0,y0,x1,y1=240,30,1390,1148
+g=g[y0:y1,x0:x1]; m=m[y0:y1,x0:x1]
+tw,th=720,700
+g=np.asarray(Image.fromarray((g*255).astype(np.uint8)).resize((tw,th),Image.LANCZOS),float)/255
+m=np.asarray(Image.fromarray((m*255).astype(np.uint8)).resize((tw,th),Image.LANCZOS),float)/255
+# black and white grade: lift contrast, deep shadows
+g=np.clip((g-0.06)/0.8,0,1)
+g=g**1.05
+g=np.clip(1.15*g,0,1)
+# fade into the black on the left
+xx=np.arange(tw)[None,:]
+fade=np.clip(xx/220,0,1)**1.5
+# cheek mark in output space
+ic=svg(icon,62,62).rotate(8,resample=Image.BICUBIC,expand=True)
+ia=ndimage.gaussian_filter(np.asarray(ic,float)[:,:,3]/255,0.7)*0.7
+cx,cy=CX-(W-tw),CY
+h_,w_=ia.shape; py,px=cy-h_//2,cx-w_//2
+ink=np.zeros_like(g); ink[py:py+h_,px:px+w_]=ia
+g=g*(1-ink)
+face=g*m*fade
+canvas=np.zeros((H,W))
+canvas[:,W-tw:]=face
+img=Image.fromarray((canvas*255).astype(np.uint8)).convert('RGB')
+lg=svg(logo_svg,460,233)
+lgm=lg.split()[0]  # white strokes on black
+img.paste(Image.new('RGB',lg.size,(255,255,255)),(40,50),lgm)
+img.save(out)
