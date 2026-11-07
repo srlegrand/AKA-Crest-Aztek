@@ -114,6 +114,7 @@ void MainWindow::build_runtime() {
     tool("PaintSelectTool", "paintSelect", "Paint Selection Tool");
     tool("ShortestEdgePathTool", "shortestPath", "Shortest Edge Path Tool");
     tool("JointTool", "joint", "Joint Tool");
+    tool("InsertJointTool", "insertJoint", "Insert Joint Tool");
     tool("SculptMeshActivateBrushSculpt", "sculpt", "Sculpt brush");
     tool("MultiCutTool", "multiCut", "Multi-Cut");
     tool("SplitEdgeRingTool", "insertLoop", "Insert Edge Loop");
@@ -253,14 +254,22 @@ void MainWindow::build_runtime() {
         Host::get()->poke();
     });
     r("CancelPlayback", "Animation", "Stop playback", [this] { stop_play(); });
-    r("SmoothPreviewOff", "Display", "Base mesh", [] { exec("smoothPreview", QJsonObject{{"level", 0}}); });
-    r("SmoothPreviewCage", "Display", "Cage and smooth mesh", [this] {
+    auto smoothness = [](int div, int wire, int shaded) {
+        exec_quiet("displaySmoothness", QJsonObject{{"divisionsU", div}, {"divisionsV", div}, {"pointsWire", wire}, {"pointsShaded", shaded}});
+    };
+    r("SmoothPreviewOff", "Display", "Base mesh", [smoothness] {
+        exec("smoothPreview", QJsonObject{{"level", 0}});
+        smoothness(0, 4, 1);
+    });
+    r("SmoothPreviewCage", "Display", "Cage and smooth mesh", [this, smoothness] {
         for (ViewportWidget* v : panels_->views()) v->set("smoothCage", "true");
         exec("smoothPreview", QJsonObject{{"level", 2}});
+        smoothness(1, 8, 2);
     });
-    r("SmoothPreviewSmooth", "Display", "Smooth mesh", [this] {
+    r("SmoothPreviewSmooth", "Display", "Smooth mesh", [this, smoothness] {
         for (ViewportWidget* v : panels_->views()) v->set("smoothCage", "false");
         exec("smoothPreview", QJsonObject{{"level", 2}});
+        smoothness(3, 16, 4);
     });
     r("ManipBigger", "Display", "Bigger manipulator", [this] { scale_manip(0.25); });
     r("ManipSmaller", "Display", "Smaller manipulator", [this] { scale_manip(-0.25); });

@@ -178,7 +178,15 @@ QMenu* MainWindow::create_menu() {
                 P{"Quad Sphere", "polyQuadSphere"}})
         cmd(polys, p.label, p.cmd, {}, QString(), true);
     QMenu* nurbs = m->addMenu("NURBS Primitives");
-    cmd(nurbs, "Circle", "circle", QJsonObject{{"normal", QJsonArray{0, 1, 0}}}, QString(), true);
+    const QJsonArray up{0, 1, 0};
+    cmd(nurbs, "Sphere", "sphere", QJsonObject{{"axis", up}}, QString(), true);
+    cmd(nurbs, "Cube", "nurbsCube", QJsonObject{{"axis", up}}, QString(), true);
+    cmd(nurbs, "Cylinder", "cylinder", QJsonObject{{"axis", up}}, QString(), true);
+    cmd(nurbs, "Cone", "cone", QJsonObject{{"axis", up}}, QString(), true);
+    cmd(nurbs, "Plane", "nurbsPlane", QJsonObject{{"axis", up}}, QString(), true);
+    cmd(nurbs, "Torus", "torus", QJsonObject{{"axis", up}}, QString(), true);
+    nurbs->addSeparator();
+    cmd(nurbs, "Circle", "circle", QJsonObject{{"normal", up}}, QString(), true);
     cmd(nurbs, "Square", "nurbsSquare", {}, QString(), true);
     QMenu* curves = m->addMenu("Curve Tools");
     curves->addAction("CV Curve Tool", [this] { set_tool("curveCv"); });
@@ -314,8 +322,20 @@ QMenu* MainWindow::surfaces_menu() {
     cmd(m, "Loft", "loft", {}, QString(), true);
     cmd(m, "Planar", "planar");
     cmd(m, "Revolve", "revolve", {}, QString(), true);
+    cmd(m, "Birail", "singleProfileBirailSurface", {}, QString(), true);
     cmd(m, "Extrude", "extrude", {}, QString(), true);
+    cmd(m, "Boundary", "boundary", {}, QString(), true);
+    cmd(m, "Square", "square", {}, QString(), true);
     cmd(m, "Sweep Mesh", "sweepMeshFromCurve", {}, QString(), true);
+    m->addSeparator();
+    cmd(m, "Duplicate NURBS Patch Curve", "duplicateCurve", {}, QString(), true);
+    cmd(m, "Attach", "attachSurface", {}, QString(), true);
+    cmd(m, "Detach", "detachSurface", {}, QString(), true);
+    cmd(m, "Open/Close", "closeSurface", {}, QString(), true);
+    cmd(m, "Insert Isoparms", "insertKnotSurface", {}, QString(), true);
+    cmd(m, "Offset", "offsetSurface", {}, QString(), true);
+    cmd(m, "Rebuild", "rebuildSurface", {}, QString(), true);
+    cmd(m, "Reverse Direction", "reverseSurface", {}, QString(), true);
     return m;
 }
 
@@ -351,17 +371,38 @@ QMenu* MainWindow::deform_menu() {
         cmd(nl, label, "nonLinear", QJsonObject{{"type", t}}, QString(), true);
     }
     m->addSeparator();
-    for (const char* l : {"Lattice", "Wrap", "Wire", "Soft Modification", "Delta Mush", "Tension"}) todo(m, l);
+    cmd(m, "Lattice", "lattice", QJsonObject{{"divisions", QJsonArray{2, 5, 2}}, {"objectCentered", true}}, QString(), true);
+    cmd(m, "Wrap", "wrap", {}, QString(), true);
+    cmd(m, "Wire", "wire", {}, QString(), true);
+    cmd(m, "Soft Modification", "softMod", {}, QString(), true);
+    cmd(m, "Delta Mush", "deltaMush", {}, QString(), true);
+    cmd(m, "Tension", "tension", {}, QString(), true);
     return m;
 }
 
 QMenu* MainWindow::skeleton_menu() {
     auto* m = new QMenu("Skeleton", this);
     m->addAction("Create Joints", [this] { set_tool("joint"); });
+    // Runs on the selected joint until there is a tool to drag the new joint with.
+    m->addAction("Insert Joint Tool", [this] { set_tool("insertJoint"); });
+    cmd(m, "Mirror Skeleton", "mirrorJoint", QJsonObject{{"mirrorXY", true}, {"mirrorBehavior", true}}, QString(), true);
+    cmd(m, "Mirror Skeleton (Orientation)", "mirrorJoint", QJsonObject{{"mirrorXY", true}});
     m->addAction("Orient Joint", [] { exec("joint", QJsonObject{{"edit", true}, {"orientJoint", "xyz"}, {"secondaryAxisOrient", "yup"}, {"children", true}}); });
+    m->addSeparator();
+    cmd(m, "Remove Joint", "removeJoint");
+    cmd(m, "Connect Joint", "connectJoint", QJsonObject{{"connectMode", true}});
+    cmd(m, "Parent Joint", "connectJoint", QJsonObject{{"parentMode", true}});
+    cmd(m, "Disconnect Joint", "disconnectJoint");
+    cmd(m, "Reroot Skeleton", "reroot");
+    m->addSeparator();
+    cmd(m, "Set Preferred Angle", "joint", QJsonObject{{"edit", true}, {"setPreferredAngles", true}, {"children", true}});
+    cmd(m, "Assume Preferred Angle", "joint", QJsonObject{{"edit", true}, {"assumePreferredAngles", true}, {"children", true}});
     m->addSeparator();
     cmd(m, "Create IK Handle", "ikHandle", QJsonObject{{"solver", "ikRPsolver"}}, QString(), true);
     cmd(m, "Create IK Handle (Single Chain)", "ikHandle", QJsonObject{{"solver", "ikSCsolver"}});
+    cmd(m, "Create IK Spline Handle", "ikHandle", QJsonObject{{"solver", "ikSplineSolver"}}, QString(), true);
+    cmd(m, "Enable IK Handles", "ikHandle", QJsonObject{{"enableHandles", true}});
+    cmd(m, "Disable IK Handles", "ikHandle", QJsonObject{{"disableHandles", true}});
     return m;
 }
 
@@ -433,6 +474,13 @@ QMenu* MainWindow::constrain_menu() {
     cmd(m, "Orient", "orientConstraint", {}, QString(), true);
     cmd(m, "Scale", "scaleConstraint", {}, QString(), true);
     cmd(m, "Aim", "aimConstraint", {}, QString(), true);
+    cmd(m, "Pole Vector", "poleVectorConstraint", {}, QString(), true);
+    cmd(m, "Geometry", "geometryConstraint", {}, QString(), true);
+    cmd(m, "Normal", "normalConstraint", {}, QString(), true);
+    cmd(m, "Tangent", "tangentConstraint", {}, QString(), true);
+    cmd(m, "Point on Poly", "pointOnPolyConstraint", {}, QString(), true);
+    m->addSeparator();
+    cmd(m, "Remove Target", "RemoveConstraintTarget");
     return m;
 }
 
@@ -481,6 +529,21 @@ QMenu* MainWindow::key_menu() {
         label[0] = label[0].toUpper();
         cmd(def, label, "keyTangent", QJsonObject{{"global", true}, {"inTangentType", t == QString("step") ? "clamped" : t}, {"outTangentType", t}});
     }
+    m->addSeparator();
+    auto* path = m->addMenu("Motion Paths");
+    cmd(path, "Attach to Motion Path", "pathAnimation", QJsonObject{{"follow", true}, {"fractionMode", true}, {"startTimeU", 1}, {"endTimeU", 120}});
+    cmd(path, "Flow Path Object", "flow");
+    auto* layers = m->addMenu("Animation Layers");
+    cmd(layers, "Create Layer", "animLayer");
+    cmd(layers, "Create Layer from Selected", "animLayer", QJsonObject{{"addSelectedObjects", true}});
+    cmd(layers, "Merge Layers", "mergeAnimLayers");
+    auto* vis = m->addMenu("Visualize");
+    cmd(vis, "Create Motion Trail", "snapshot", QJsonObject{{"motionTrail", true}});
+    cmd(vis, "Animation Snapshot", "snapshot", QJsonObject{{"constructionHistory", true}});
+    cmd(vis, "Ghost Selected", "GhostSelected");
+    cmd(vis, "Unghost Selected", "UnghostSelected");
+    cmd(vis, "Unghost All", "UnghostAll");
+    cmd(m, "Create Character Set", "character");
     m->addSeparator();
     m->addAction("Graph Editor...", [this] { show_graph_editor(); });
     m->addAction("Dope Sheet...", [this] { show_dope_sheet(); });
@@ -800,10 +863,11 @@ void MainWindow::build_bottom() {
 
 void MainWindow::toggle_play(int dir) {
     if (play_timer_->isActive() && play_dir_ == dir) {
-        play_timer_->stop();
+        stop_play();
         return;
     }
     play_dir_ = dir;
+    ask("play", QJsonObject{{"state", true}, {"forward", dir > 0}});
     double fps = ask("playbackOptions", QJsonObject{{"query", true}, {"queried", QJsonArray{"framesPerSecond"}}}).toDouble(24);
     play_timer_->setInterval(int(1000 / qMax(1.0, fps * play_speed_)));
     play_started_ms_ = QDateTime::currentMSecsSinceEpoch();
@@ -813,6 +877,7 @@ void MainWindow::toggle_play(int dir) {
 
 void MainWindow::stop_play() {
     play_timer_->stop();
+    ask("play", QJsonObject{{"state", false}});
 }
 
 void MainWindow::sync_time_range() {
@@ -841,6 +906,12 @@ void MainWindow::refresh_state() {
         QString n = r.toString();
         handle_ui_request(n);
     }
+    // A script may have started or stopped playback with the play command.
+    bool script_plays = ask("play", QJsonObject{{"query", true}, {"queried", QJsonArray{"state"}}}).toBool();
+    if (script_plays && !play_timer_->isActive())
+        toggle_play(ask("play", QJsonObject{{"query", true}, {"queried", QJsonArray{"forward"}}}).toBool(true) ? 1 : -1);
+    else if (!script_plays && play_timer_->isActive())
+        play_timer_->stop();
     // The time: scripts may have moved it, changed the range or set keys.
     double now = ask("currentTime", QJsonObject{{"query", true}}).toDouble(1);
     sync_time_range();
@@ -896,6 +967,7 @@ void MainWindow::set_tool(const QString& tool) {
         {"camRoll", "Roll Tool: drag to roll the view."},
         {"camYawPitch", "Yaw-Pitch Tool: drag to turn the camera where it stands."},
         {"sculpt", "Sculpting: drag to sculpt, Ctrl inverts, Shift smooths, B-drag sizes the brush."},
+        {"insertJoint", "Insert Joint: drag from a joint to add a joint along the bone."},
         {"multiCut", "Multi-Cut: click to place cut points, Shift snaps along edges, Ctrl-click inserts a loop, Backspace takes the last back, Enter cuts."},
         {"insertLoop", "Insert Edge Loop: hover an edge to see the loop, click to insert it."},
         {"offsetLoop", "Offset Edge Loop: drag from an edge to add loops either side."},
@@ -927,7 +999,7 @@ void MainWindow::repeat_last() {
 }
 
 void MainWindow::open_scene() {
-    QString f = QFileDialog::getOpenFileName(this, "Open Scene", QString(), "Aztek scenes (*.aztek);;All files (*)");
+    QString f = QFileDialog::getOpenFileName(this, "Open Scene", QString(), "Scenes (*.aztek *.ma);;Aztek scenes (*.aztek);;Maya ASCII (*.ma);;All files (*)");
     if (!f.isEmpty()) open_file(f);
 }
 
@@ -948,8 +1020,10 @@ void MainWindow::open_file(const QString& path) {
 void MainWindow::save_scene(bool as) {
     QString f = state()["file"].toString();
     if (as || f.isEmpty()) {
-        f = QFileDialog::getSaveFileName(this, "Save Scene As", f.isEmpty() ? "untitled.aztek" : f, "Aztek scenes (*.aztek)");
+        QString filter;
+        f = QFileDialog::getSaveFileName(this, "Save Scene As", f.isEmpty() ? "untitled.aztek" : f, "Aztek scenes (*.aztek);;Maya ASCII (*.ma)", &filter);
         if (f.isEmpty()) return;
+        if (!f.section('/', -1).contains('.')) f += filter.contains("*.ma") ? ".ma" : ".aztek";
     }
     QString err = take(aztek_file("save", f.toUtf8().constData()));
     Host::get()->poke();

@@ -152,14 +152,22 @@ QMenu* MainWindow::file_menu() {
     m->addAction("Optimize Scene Size", [] { exec("cleanUpScene"); });
     m->addSeparator();
     m->addAction("Import...", [] {
-        QString f = QFileDialog::getOpenFileName(nullptr, "Import", QString(), "Meshes (*.obj *.ply *.stl)");
+        QString f = QFileDialog::getOpenFileName(nullptr, "Import", QString(), "Scenes and meshes (*.ma *.obj *.ply *.stl);;Maya ASCII (*.ma);;Meshes (*.obj *.ply *.stl)");
         if (f.isEmpty()) return;
+        if (f.endsWith(".ma", Qt::CaseInsensitive)) {
+            exec("file", QJsonObject{{"args", QJsonArray{f}}, {"import", true}});
+            return;
+        }
         QString c = f.endsWith(".ply", Qt::CaseInsensitive) ? "importPly" : f.endsWith(".stl", Qt::CaseInsensitive) ? "importStl" : "importObj";
         exec(c, args(QJsonArray{f}));
     });
     auto do_export = [](bool all) {
-        QString f = QFileDialog::getSaveFileName(nullptr, all ? "Export All" : "Export Selection", "export.obj", "OBJ (*.obj);;PLY (*.ply);;STL (*.stl)");
+        QString f = QFileDialog::getSaveFileName(nullptr, all ? "Export All" : "Export Selection", "export.ma", "Maya ASCII (*.ma);;OBJ (*.obj);;PLY (*.ply);;STL (*.stl)");
         if (f.isEmpty()) return;
+        if (f.endsWith(".ma", Qt::CaseInsensitive)) {
+            exec("file", QJsonObject{{"args", QJsonArray{f}}, {all ? "exportAll" : "exportSelected", true}, {"type", "mayaAscii"}});
+            return;
+        }
         QStringList keep = selection_names();
         if (all) mel("SelectAll;");
         QString c = f.endsWith(".ply", Qt::CaseInsensitive) ? "exportPly" : f.endsWith(".stl", Qt::CaseInsensitive) ? "exportStl" : "exportObj";
@@ -488,6 +496,7 @@ QMenu* MainWindow::modify_menu() {
     m->addAction("Delete Attribute...", [this] { show_named_window("deleteAttribute"); });
     m->addSeparator();
     QMenu* convert = m->addMenu("Convert");
+    cmd(convert, "NURBS to Polygons", "nurbsToPoly", QJsonObject{{"format", 3}, {"polygonType", 1}}, QString(), true);
     cmd(convert, "Instance to Object", "makeUnique");
     cmd(convert, "Object to Instance", "convertToInstance");
     cmd(convert, "Polygon Edges to Curve", "polyToCurve", {}, QString(), true);
@@ -914,7 +923,7 @@ QList<MarkItem> MainWindow::hotbox_zone(int zone) {
     auto mask_all = [](bool on) {
         return [on] {
             QJsonObject c;
-            for (const char* f : {"polymesh", "nurbsCurve", "joint", "ikHandle", "handle", "cluster", "nonlinear", "locator", "camera", "group"}) c[f] = on;
+            for (const char* f : {"polymesh", "nurbsSurface", "nurbsCurve", "joint", "ikHandle", "handle", "cluster", "nonlinear", "locator", "camera", "group"}) c[f] = on;
             exec_quiet("selectType", c);
         };
     };

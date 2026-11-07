@@ -486,7 +486,10 @@ pub fn before_delete(g: &mut Graph, doomed: &[NodeId]) {
 
 /// Installs before_delete as the graph's delete hook.
 pub fn install(g: &mut Graph) {
-    g.set_delete_hook(Arc::new(|g: &mut Graph, doomed: &[NodeId]| before_delete(g, doomed)));
+    g.set_delete_hook(Arc::new(|g: &mut Graph, doomed: &[NodeId]| {
+        crate::rig::before_delete(g, doomed);
+        before_delete(g, doomed);
+    }));
 }
 
 type Cmd = CommandDef<Session>;

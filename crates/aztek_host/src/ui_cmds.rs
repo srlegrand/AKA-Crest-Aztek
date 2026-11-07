@@ -326,6 +326,7 @@ pub fn register(s: &mut Session) {
             let names = [
                 ("polymesh", "polymesh"),
                 ("nurbsCurve", "curve"),
+                ("nurbsSurface", "surface"),
                 ("joint", "joint"),
                 ("ikHandle", "ikHandle"),
                 ("handle", "ikHandle"),
@@ -357,7 +358,7 @@ pub fn register(s: &mut Session) {
     .undoable(false)
     .flag(f("query", "q", ArgType::Bool, "Query."))
     .flag(f("allObjects", "alc", ArgType::Bool, "Everything on."));
-    for (n, sh) in [("polymesh", "pm"), ("nurbsCurve", "nc"), ("joint", "j"), ("ikHandle", "ikh"), ("handle", "ha"), ("cluster", "cl"), ("nonlinear", "nl"), ("locator", "lc"), ("camera", "ca"), ("group", "gr")] {
+    for (n, sh) in [("polymesh", "pm"), ("nurbsCurve", "nc"), ("nurbsSurface", "ns"), ("joint", "j"), ("ikHandle", "ikh"), ("handle", "ha"), ("cluster", "cl"), ("nonlinear", "nl"), ("locator", "lc"), ("camera", "ca"), ("group", "gr")] {
         st = st.flag(f(n, sh, ArgType::Bool, "This kind can be selected."));
     }
     reg(s, st);

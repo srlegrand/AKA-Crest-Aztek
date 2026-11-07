@@ -85,7 +85,7 @@ void MainWindow::build_status_line() {
     mask("maskHandle", "Select handles", {"handle", "ikHandle"});
     mask("maskJoint", "Select joints", {"joint"});
     mask("maskCurve", "Select curves", {"nurbsCurve"});
-    mask("maskSurface", "Select surfaces", {"polymesh"});
+    mask("maskSurface", "Select surfaces", {"polymesh", "nurbsSurface"});
     mask("maskDeformer", "Select deformations", {"cluster", "nonlinear"});
     mask("maskMisc", "Select miscellaneous: locators and groups", {"locator", "group"});
     mask("camera", "Select cameras", {"camera"});

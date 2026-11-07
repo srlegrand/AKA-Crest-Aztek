@@ -1018,6 +1018,7 @@ impl View {
                     "joint" => Tool::Joint,
                     "paintSkin" => Tool::PaintSkin,
                     "sculpt" => Tool::Sculpt,
+                    "insertJoint" => Tool::InsertJoint,
                     "curveCv" => Tool::CurveCv,
                     "curveEp" => Tool::CurveEp,
                     "multiCut" => Tool::MultiCut,
@@ -1097,6 +1098,7 @@ impl View {
                         let b = x.as_bool().unwrap_or(false);
                         match k.as_str() {
                             "polygons" => d.polygons = b,
+                            "surfaces" => d.surfaces = b,
                             "curves" => d.curves = b,
                             "joints" => d.joints = b,
                             "ikHandles" => d.ik_handles = b,
@@ -1224,7 +1226,7 @@ impl View {
             "isolated" => json!(self.vp.iso.active()),
             "disp" => {
                 let d = &self.vp.disp;
-                json!({"polygons": d.polygons, "curves": d.curves, "joints": d.joints, "ikHandles": d.ik_handles, "deformers": d.deformers, "locators": d.locators, "cameras": d.cameras, "manipulators": d.manipulators, "flat": d.flat, "boundingBox": d.bounding_box, "xray": d.xray, "xrayJoints": d.xray_joints, "xrayActive": d.xray_active, "backface": d.backface, "filmGate": d.film_gate, "resGate": d.res_gate, "safeAction": d.safe_action, "highlight": d.highlight, "grid": self.show_grid, "wireframe": self.vp.wireframe, "wireOnShaded": self.vp.wire_on_shaded})
+                json!({"polygons": d.polygons, "surfaces": d.surfaces, "curves": d.curves, "joints": d.joints, "ikHandles": d.ik_handles, "deformers": d.deformers, "locators": d.locators, "cameras": d.cameras, "manipulators": d.manipulators, "flat": d.flat, "boundingBox": d.bounding_box, "xray": d.xray, "xrayJoints": d.xray_joints, "xrayActive": d.xray_active, "backface": d.backface, "filmGate": d.film_gate, "resGate": d.res_gate, "safeAction": d.safe_action, "highlight": d.highlight, "grid": self.show_grid, "wireframe": self.vp.wireframe, "wireOnShaded": self.vp.wire_on_shaded})
             }
             _ => Value::Null,
         }

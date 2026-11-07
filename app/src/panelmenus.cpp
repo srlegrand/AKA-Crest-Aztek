@@ -170,8 +170,8 @@ void ModelPanel::build_menus() {
 
     // Show: what this view draws.
     QMenu* show = menus_->addMenu("Show");
-    show->addAction("All", [v] { v->set("disp", "{\"polygons\":true,\"curves\":true,\"joints\":true,\"ikHandles\":true,\"deformers\":true,\"locators\":true,\"cameras\":true}"); });
-    show->addAction("None", [v] { v->set("disp", "{\"polygons\":false,\"curves\":false,\"joints\":false,\"ikHandles\":false,\"deformers\":false,\"locators\":false,\"cameras\":false}"); });
+    show->addAction("All", [v] { v->set("disp", "{\"polygons\":true,\"surfaces\":true,\"curves\":true,\"joints\":true,\"ikHandles\":true,\"deformers\":true,\"locators\":true,\"cameras\":true}"); });
+    show->addAction("None", [v] { v->set("disp", "{\"polygons\":false,\"surfaces\":false,\"curves\":false,\"joints\":false,\"ikHandles\":false,\"deformers\":false,\"locators\":false,\"cameras\":false}"); });
     show->addSeparator();
     QMenu* iso = show->addMenu("Isolate Select");
     QAction* iso_view = iso->addAction("View Selected\tCtrl+1");
@@ -183,6 +183,7 @@ void ModelPanel::build_menus() {
     show->addSeparator();
     flag_item(show, v, "Polygons", "polygons", *flags);
     flag_item(show, v, "NURBS Curves", "curves", *flags);
+    flag_item(show, v, "NURBS Surfaces", "surfaces", *flags);
     flag_item(show, v, "Joints", "joints", *flags);
     flag_item(show, v, "IK Handles", "ikHandles", *flags);
     flag_item(show, v, "Deformers", "deformers", *flags);

@@ -310,6 +310,13 @@ pub fn from_selection(g: &Graph) -> Vec<Member> {
     g.selection().iter().copied().filter(|&id| g.node(id).is_some_and(|n| !is_set(n))).map(Member::object).collect()
 }
 
+/// The ids of "3" or "0:7".
+fn plain_ids(range: &str) -> Option<Ids> {
+    let (a, b) = range.split_once(':').unwrap_or((range, range));
+    let (a, b): (u32, u32) = (a.parse().ok()?, b.parse().ok()?);
+    (a <= b).then(|| (a..=b).collect())
+}
+
 /// Maya-style member strings: "pCube1", "pCube1.vtx[3]", "pCube1.e[0:7]", "pCube1.f[2]".
 pub fn parse(g: &Graph, items: &[String]) -> Result<Vec<Member>, String> {
     let mut out = Vec::new();
@@ -333,6 +340,17 @@ pub fn parse(g: &Graph, items: &[String]) -> Result<Vec<Member>, String> {
             Ok(Some(n)) => n,
             _ => return Err(format!("no object named {node_name}")),
         };
+        // A surface's CVs too, by cv[u][v].
+        if let Some(sh) = crate::surfaces::as_surface(g, n) {
+            if suffix != "cv" {
+                return Err(format!("unknown component '{suffix}' in {item} (cv)"));
+            }
+            let Some(ids) = crate::surfaces::parse_cv_ranges(g, sh, &item[open + 1..item.len() - 1]) else {
+                return Err(format!("bad component range in {item}"));
+            };
+            out = merged(out, &[Member { node: sh, kind: ComponentMode::Vertex, ids }]);
+            continue;
+        }
         // A curve's CVs are its vertex components.
         if let Some(c) = crate::curves::as_curve(g, n) {
             if suffix != "cv" {
@@ -351,6 +369,17 @@ pub fn parse(g: &Graph, items: &[String]) -> Result<Vec<Member>, String> {
                 },
             };
             out = merged(out, &[Member { node: c, kind: ComponentMode::Vertex, ids: (first..=last).collect() }]);
+            continue;
+        }
+        if let Some(pn) = crate::components::point_node(g, n) {
+            let range = &item[open + 1..item.len() - 1];
+            let ids = match crate::components::point_grid(g, pn) {
+                Some(dims) if suffix == "pt" => crate::components::grid_ids(dims, range),
+                _ if matches!(suffix, "pt" | "cv" | "vtx") => plain_ids(range),
+                _ => None,
+            };
+            let Some(ids) = ids else { return Err(format!("bad component range in {item}")) };
+            out = merged(out, &[Member { node: pn, kind: ComponentMode::Vertex, ids }]);
             continue;
         }
         let Some(n) = crate::components::as_mesh(g, n) else {
@@ -399,6 +428,14 @@ pub fn format(g: &Graph, list: &[Member]) -> Vec<String> {
         let path = if m.kind == ComponentMode::Object { g.path(m.node) } else { crate::components::display_path(g, m.node) };
         if m.kind == ComponentMode::Object {
             out.push(path);
+            continue;
+        }
+        if let Some(dims) = crate::components::point_grid(g, m.node) {
+            out.extend(crate::components::grid_strings(&path, dims, &m.ids, false));
+            continue;
+        }
+        if let Some(stride) = crate::surfaces::id_stride(g, m.node) {
+            out.extend(crate::surfaces::format_cvs(&m.ids, stride).into_iter().map(|c| format!("{path}.{c}")));
             continue;
         }
         let prefix = format!("{path}.{}[", kind_suffix(m.kind));
