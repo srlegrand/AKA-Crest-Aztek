@@ -79,6 +79,8 @@ pub mod scripted;
 pub mod session;
 pub mod soft_select;
 pub mod split_rings_modifier;
+pub mod general_cmds;
+pub mod rig_extra;
 pub mod system_cmds;
 pub mod transform;
 pub mod transform_ops;

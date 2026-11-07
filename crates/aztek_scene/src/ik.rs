@@ -618,7 +618,7 @@ pub(crate) fn register_types() {
             flags: flags::INPUT | flags::HIDDEN,
             doc: "The handle this effector ends.".into(),
             ..Default::default()
-        }],
+        }, AttrDef { short_name: "hd".into(), ..bool_attr("hideDisplay", false, "Hide the effector when it is attached to a handle. Held for scripts: the views do not draw effectors.") }],
         create: Some(Arc::new(|| Box::new(Transform))),
         ..Default::default()
     })
@@ -833,7 +833,7 @@ fn find_system(g: &Graph) -> Option<NodeId> {
     g.nodes().into_iter().find(|&id| g.node(id).is_some_and(|n| n.ty().name == "ikSystem"))
 }
 
-fn ensure_system(g: &mut Graph) -> CmdResult<NodeId> {
+pub(crate) fn ensure_system(g: &mut Graph) -> CmdResult<NodeId> {
     if let Some(id) = find_system(g) {
         return Ok(id);
     }

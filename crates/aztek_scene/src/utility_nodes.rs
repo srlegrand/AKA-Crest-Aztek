@@ -461,6 +461,24 @@ fn table() -> Vec<Spec> {
                 let (x, y) = (d.element_or(ia, c).scalar().unwrap_or(0.0), d.element_or(ia, c + 1).scalar().unwrap_or(0.0));
                 set(d, "output", x * (1.0 - t) + y * t);
             }),
+        Spec("combinationShape", "utility/general", "Works out a blend shape target's weight from its drivers: multiplied, the lowest, or the lowest smoothed. The smoothing is a polynomial smooth minimum of this module's own.",
+            vec![en("combinationMethod", "cm", 0, &["Multiplication", "Lowest Weighting", "Lowest Weighting (Smooth)"]), multi(fin("inputWeight", "iw", 0.0)), fout("outputWeight", "ow")],
+            |d| {
+                let v = scalars(d, "inputWeight");
+                let out = match (v.is_empty(), i(d, "combinationMethod")) {
+                    (true, _) => 0.0,
+                    (_, 1) => v.iter().copied().fold(f64::MAX, f64::min),
+                    (_, 2) => v.iter().copied().fold(f64::MAX, |a, b| {
+                        if a == f64::MAX {
+                            return b;
+                        }
+                        let h = (0.5 + 0.5 * (b - a) / 0.2).clamp(0.0, 1.0);
+                        b + (a - b) * h - 0.2 * h * (1.0 - h)
+                    }),
+                    _ => v.iter().product(),
+                };
+                set(d, "outputWeight", out);
+            }),
         Spec("remapValue", "utility/general", "Maps inputValue through a value ramp and a colour ramp.",
             vec![
                 fin("inputValue", "i", 0.0),
