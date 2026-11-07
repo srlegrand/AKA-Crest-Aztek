@@ -8,21 +8,21 @@
 
 [![Build](https://github.com/srlegrand/Aztek/actions/workflows/build.yml/badge.svg)](https://github.com/srlegrand/Aztek/actions/workflows/build.yml)
 
-A modelling, UV, rigging and animation application that behaves like Maya. Rust core (scene graph, commands,
-geometry, Vulkan viewport), Qt Widgets shell in C++, a MEL interpreter, and embedded Python with `aztek.cmds`, a
-`maya.cmds` shim and an OpenMaya API 2.0 subset. Reads and writes `.ma` files. [PARITY.md](PARITY.md) has the behaviour
-target and status, including where it differs from Maya; [docs/COMMANDS.md](docs/COMMANDS.md) lists all 963 commands.
+A modelling, UV, rigging and animation application with the industry-standard commands, hotkeys, menus and file format. Rust core (scene graph, commands,
+geometry, Vulkan viewport), Qt Widgets shell in C++, a MEL interpreter, and embedded Python with `aztek.cmds`,
+compatibility modules so existing scripts import unchanged, and an API 2.0 subset. Reads and writes `.ma` files. [PARITY.md](PARITY.md) has the behaviour
+target and status, including known differences; [docs/COMMANDS.md](docs/COMMANDS.md) lists all 963 commands.
 
-Website: [srlegrand.github.io/Aztek](https://srlegrand.github.io/Aztek/). Downloads: [latest build](https://github.com/srlegrand/Aztek/releases/tag/latest) for Windows and Linux. Licence: [Apache 2.0](LICENSE).
+Website: [srlegrand.github.io/Aztek](https://srlegrand.github.io/Aztek/). Downloads: [latest build](https://github.com/srlegrand/Aztek/releases/tag/latest) for Windows and Linux. Licence: [MIT-0](LICENSE).
 
-![A production rig from Maya 2020, opened from its .ma file](docs/production-rig.png)
+![A production rig opened from its .ma file](docs/production-rig.png)
 
-A production character rig made in Maya 2020, opened from its `.ma` file and posed: 414 joints, 37 skinClusters, 17
+A production character rig, opened from its `.ma` file and posed: 414 joints, 37 skinClusters, 17
 blendShapes, 82 IK handles, follicles, ribbons and wires. It opens in about 3 seconds and responds in 13 to 44 ms per change.
 
 ## What's in it
 
-- **Polygon modelling:** Maya's polygon commands with construction history; Quad Draw, Multi-Cut, Insert and Offset Edge
+- **Polygon modelling:** the standard polygon commands with construction history; Quad Draw, Multi-Cut, Insert and Offset Edge
   Loop, Target Weld, Slide Edge, Crease, Create and Append Polygon; symmetry, soft selection; eighteen sculpting brushes.
 - **NURBS:** curves (CV and EP tools, rebuild, attach, detach, offset) and surfaces (primitives, loft, revolve, extrude,
   boundary, birail, `nurbsToPoly`), with CVs as components.
@@ -40,11 +40,11 @@ blendShapes, 82 IK handles, follicles, ribbons and wires. It opens in about 3 se
   copy and paste keys, baking, motion paths, animation layers, character sets and clips.
 - **Deformers:** blendShape in full (Shape Editor, in-between and live targets), sculpt, jiggle, shrinkWrap, proximityWrap,
   curveWarp, wrinkle, morph and more; deformer weights painted with the Paint Attribute tool or exported.
-- **Files:** `.ma` read and written in Maya's layout, deformer chains, constraints, utility nodes, expressions, materials,
+- **Files:** `.ma` read and written in the standard layout, deformer chains, constraints, utility nodes, expressions, materials,
   NURBS and references with their edits included; namespaces, instances, locked nodes, Z up.
 
   ![A character rig opened from a .ma file](docs/rig-file.png)
-- **Scripting:** MEL (procedures, arrays, control flow, backticks), Python, `maya.api.OpenMaya`, Python plug-ins with
+- **Scripting:** MEL (procedures, arrays, control flow, backticks), Python, the API 2.0 subset, Python plug-ins with
   `MPxCommand` and `MPxNode`; `scriptJob`, `scriptNode` and `evalDeferred`.
 
   ![A MEL script in the Script Editor building cubes with expressions, then playing them](docs/scripting.gif)
@@ -155,7 +155,7 @@ Options:
     aztek [scene.aztek|scene.ma] [--script file.mel|file.py] [--screenshot out.png]
 
 On KDE Plasma, Alt + drag moves windows by default: set System Settings > Window Management > Window Behavior >
-Window Actions > Modifier key to Meta, as for Maya.
+Window Actions > Modifier key to Meta.
 
 ## Hotkeys
 
@@ -205,13 +205,13 @@ In the channel box, click channel names to pick them (Ctrl and Shift add); middl
 The command line and the Script Editor take MEL (`polyCube -w 2 -sx 3; select -r pCube1.f[0:3]; polyExtrudeFacet
 -ltz 1;`) and Python:
 
-    import maya.cmds as cmds
+    from aztek import cmds
     cube = cmds.polyCube(w=2)[0]
     cmds.setKeyframe(cube, at='ty', t=1, v=0)
     cmds.setKeyframe(cube, at='ty', t=24, v=5)
     cmds.polyCube(cube, q=True, w=True)
 
-`aztek.cmds` is the module of record; `maya.cmds`, `maya.mel` and `maya.api.OpenMaya` map onto it. Python plug-ins load
+`aztek.cmds` is the module of record; the compatibility modules map onto it, so existing scripts run unchanged. Python plug-ins load
 with `loadPlugin`. C++ plug-ins can't load.
 
 ## This doesn't feel right!
@@ -231,17 +231,13 @@ in the description box) and shows the folder holding the attachments, under `fee
 in. You need a GitHub account, and nothing is public until you press Submit on that page. The window shows exactly what the page will be
 filled in with. GitHub takes files up to 25 MB and images up to 10 MB.
 
-## Maya compatibility
+## Compatibility
 
-The target is that Maya's scripts, habits and `.ma` files carry over. A production rig from Maya 2020 opens, poses and saves; see "A real rig" in [PARITY.md](PARITY.md). It has been developed without a copy of Maya to
-compare against, so behaviour comes from the published reference: expect differences in details, and see PARITY.md for
-the known ones. `.mb` files and C++ plug-ins are not supported. Rendering, dynamics and Bifrost are out of
-scope.
+Existing scripts, habits and `.ma` files carry over: a production rig opens, poses and saves (see "A real rig" in
+[PARITY.md](PARITY.md)). Behaviour comes from published references, so expect differences in details; PARITY.md lists
+the known ones. `.mb` files and C++ plug-ins are not supported. Rendering and dynamics are out of scope.
 
 ## Licence
 
-Aztek is free and open source under the [Apache License 2.0](LICENSE): use it, change it and ship it, commercially or not,
-keeping the licence and copyright notices.
-
-Maya is a trademark of Autodesk, Inc. Aztek is an independent project, not affiliated with or endorsed by Autodesk. It uses
-Maya's published behaviour as its reference and contains none of its code or artwork.
+[MIT-0](LICENSE): use, copy, change, sell and redistribute it however you like, with no attribution required. It comes with
+no warranty of any kind.
