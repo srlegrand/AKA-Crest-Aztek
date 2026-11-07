@@ -215,6 +215,9 @@ see the value before the limit. The defaults of `multiplyDivide.input1`, `condit
 were written from memory with no Maya to check against. In MEL a 0 or 1 after a
 switch of move, rotate or scale is a value, not the switch's own, so `move -r 1 0 0` reads as it should.
 
+`.ma` files keep utility nodes and expressions, and read Maya's slot spelling of an expression (`.O[0] = .I[0] * 2;`). On
+reading, a `unitConversion` is seen through, its factor dropped, since Aztek's angles are degrees throughout.
+
 Not yet in these: `polyEvaluate -b2` and `-bc2`, `select` of `pCube1.vtx[*]`; `displayCull`, `snapMode` and the display attributes (`displayHandle`, `displayLocalAxis` and so on) hold their values
 but the viewport does not draw from them.
 

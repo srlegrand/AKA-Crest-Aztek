@@ -237,7 +237,8 @@ fn select_cmd(s: &mut Session, a: &Args, prev: &aztek_ops::RunFn<Session>) -> Cm
     let mut ids: Vec<NodeId> = Vec::new();
     let mut items: Vec<Value> = Vec::new();
     if a.bool("all") {
-        ids = g.nodes().into_iter().filter(|&i| g.node(i).is_some_and(|n| n.ty().dag) && !crate::dag::is_shape(g, i)).collect();
+        // Every object, not the default cameras.
+        ids = g.nodes().into_iter().filter(|&i| g.node(i).is_some_and(|n| n.ty().dag) && !crate::dag::is_shape(g, i) && !crate::cameras::is_default_camera(g, i)).collect();
     } else if a.bool("allDagObjects") {
         ids = g.roots().iter().copied().filter(|&i| g.node(i).is_some_and(|n| n.ty().dag)).collect();
     } else if a.bool("allDependencyNodes") {

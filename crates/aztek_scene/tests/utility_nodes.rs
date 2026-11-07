@@ -503,3 +503,79 @@ fn bounding_box_attributes() {
     close3(&get(&mut s, "pCube1.center"), [10.0, 0.0, 0.0]);
     close(&get(&mut s, "pCube1.boundingBoxMaxY"), 2.0);
 }
+
+#[test]
+fn ma_files_keep_utility_nodes_and_expressions() {
+    let mut s = Session::new();
+    run(&mut s, "polyCube", json!({"name": "box"}));
+    run(&mut s, "createNode", json!({"args": ["multiplyDivide"], "name": "md"}));
+    set(&mut s, "md.input2", json!([2.0, 2.0, 2.0]));
+    run(&mut s, "setAttr", json!({"args": ["box.tx", 3.0]}));
+    connect(&mut s, "box.tx", "md.input1X");
+    connect(&mut s, "md.outputX", "box.ty");
+    run(&mut s, "createNode", json!({"args": ["plusMinusAverage"], "name": "pma"}));
+    set(&mut s, "pma.input3D[1]", json!([1.0, 2.0, 3.0]));
+    connect(&mut s, "pma.output3Dx", "box.sz");
+    run(&mut s, "createNode", json!({"args": ["remapValue"], "name": "rv"}));
+    set(&mut s, "rv.value[2].value_Position", json!(0.5));
+    set(&mut s, "rv.value[2].value_FloatValue", json!(0.25));
+    set(&mut s, "rv.inputValue", json!(0.5));
+    run(&mut s, "expression", json!({"string": "box.rx = box.tx * 10;", "name": "e1"}));
+    set(&mut s, "box.offsetParentMatrix", translate_matrix(0.0, 0.0, 7.0));
+    set(&mut s, "box.shearXY", json!(0.5));
+
+    let (text, warnings) = aztek_scene::ma_file::write_text(&mut s, "x.ma", None);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let mut t = Session::new();
+    let warnings = aztek_scene::ma_file::read_text(&mut t, &text, false);
+    assert!(warnings.is_empty(), "{warnings:?}\n{text}");
+    close(&get(&mut t, "box.ty"), 6.0);
+    close3(&get(&mut t, "pma.output3D"), [1.0, 2.0, 3.0]);
+    close(&get(&mut t, "box.sz"), 1.0);
+    close(&get(&mut t, "rv.outValue"), 0.25);
+    close(&get(&mut t, "box.rx"), 30.0);
+    assert_eq!(run(&mut t, "expression", json!({"args": ["e1"], "query": true, "queried": ["string"]})), "box.rx = box.tx * 10;");
+    close(&get(&mut t, "box.worldMatrix")[14], 7.0);
+    close(&get(&mut t, "box.shxy"), 0.5);
+    // Still live after the trip.
+    set(&mut t, "box.tx", json!(1.0));
+    close(&get(&mut t, "box.ty"), 2.0);
+    close(&get(&mut t, "box.rx"), 10.0);
+}
+
+#[test]
+fn ma_files_as_maya_writes_them() {
+    let text = r#"//Maya ASCII 2024 scene
+requires maya "2024";
+currentUnit -l centimeter -a degree -t film;
+createNode transform -n "box";
+createNode multiplyDivide -n "md";
+    setAttr ".i2" -type "float3" 2 3 4 ;
+    setAttr ".op" 1;
+createNode plusMinusAverage -n "pma";
+    setAttr -s 2 ".i1";
+    setAttr ".i1[0]" 5;
+    setAttr ".i1[1]" 6;
+createNode expression -n "e1";
+    setAttr -k on ".nds";
+    setAttr ".ixp" -type "string" ".O[0] = .I[0] * 2;";
+createNode condition -n "cn";
+    setAttr ".ct" -type "float3" 1 2 3 ;
+connectAttr "box.tx" "md.i1x";
+connectAttr "md.ox" "box.ty";
+connectAttr "box.tx" "e1.in[0]";
+connectAttr "e1.out[0]" "box.tz";
+connectAttr ":time1.o" "e1.tim";
+connectAttr "pma.o1" "cn.ft";
+// End of x.ma
+"#;
+    let mut s = Session::new();
+    let warnings = aztek_scene::ma_file::read_text(&mut s, text, false);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    set(&mut s, "box.tx", json!(5.0));
+    close(&get(&mut s, "box.ty"), 10.0);
+    close(&get(&mut s, "box.tz"), 10.0);
+    close(&get(&mut s, "pma.output1D"), 11.0);
+    close(&get(&mut s, "cn.firstTerm"), 11.0);
+    close(&get(&mut s, "cn.colorIfTrueG"), 2.0);
+}

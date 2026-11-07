@@ -217,6 +217,14 @@ impl Program {
         self.refs
             .iter()
             .map(|r| {
+                // Maya's files spell an expression's plugs by slot: .O[2] = .I[0] * 2;
+                let slot = |prefix: &str| r.token.strip_prefix(prefix).and_then(|x| x.strip_suffix(']')).and_then(|x| x.parse::<i32>().ok());
+                if let Some(k) = slot(".I[") {
+                    return (false, k);
+                }
+                if let Some(k) = slot(".O[") {
+                    return (true, k);
+                }
                 if r.written {
                     outs += 1;
                     (true, outs - 1)
@@ -1171,7 +1179,7 @@ pub fn register_types() {
         doc: "Runs a small program that reads and assigns attributes, whenever its inputs or the time change.".into(),
         time_dependent: true,
         own_attrs: vec![
-            attr("expression", "ex", PlugType::String, PlugValue::String(String::new()), store | flags::CODE),
+            attr("expression", "ixp", PlugType::String, PlugValue::String(String::new()), store | flags::CODE),
             attr("object", "obj", PlugType::String, PlugValue::String(String::new()), store),
             attr("alwaysEvaluate", "ae", PlugType::Int, PlugValue::Int(1), store),
             unit,
