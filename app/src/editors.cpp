@@ -29,6 +29,7 @@
 #include <QToolBar>
 #include <QTreeWidget>
 #include <QVBoxLayout>
+#include <algorithm>
 
 namespace az {
 

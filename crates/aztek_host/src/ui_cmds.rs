@@ -321,7 +321,19 @@ pub fn register(s: &mut Session) {
         .flag(f("releaseName", "rn", ArgType::String, "The name command for release.")),
     );
 
-    let mut st = Cmd::new("selectType", "Selection masks: -polymesh, -joint, -nurbsCurve, -ikHandle, -locator, -cluster, -camera and so on, each on or off. -q reads one.", |_s, a| {
+    let mut st = Cmd::new("selectType", "Selection masks: -polymesh, -joint, -nurbsCurve, -ikHandle, -locator, -cluster, -camera and so on, each on or off; -cv, -v, -pv points, -pe edges, -pf faces pick the component kind. -q reads one.", |s, a| {
+        use aztek_scene::components::{self, ComponentMode};
+        let kinds = [("controlVertex", ComponentMode::Vertex), ("vertex", ComponentMode::Vertex), ("polymeshVertex", ComponentMode::Vertex), ("polymeshEdge", ComponentMode::Edge), ("polymeshFace", ComponentMode::Face)];
+        for (flag, mode) in kinds {
+            if a.has(flag) {
+                if a.bool("query") {
+                    return Ok(json!(components::mode(&s.graph) == mode));
+                }
+                if a.bool(flag) {
+                    components::set_mode(&mut s.graph, mode);
+                }
+            }
+        }
         with_ui(|u| {
             let names = [
                 ("polymesh", "polymesh"),
@@ -361,7 +373,10 @@ pub fn register(s: &mut Session) {
     for (n, sh) in [("polymesh", "pm"), ("nurbsCurve", "nc"), ("nurbsSurface", "ns"), ("joint", "j"), ("ikHandle", "ikh"), ("handle", "ha"), ("cluster", "cl"), ("nonlinear", "nl"), ("locator", "lc"), ("camera", "ca"), ("group", "gr")] {
         st = st.flag(f(n, sh, ArgType::Bool, "This kind can be selected."));
     }
-    reg(s, st);
+    for (n, sh, doc) in [("controlVertex", "cv", "CVs."), ("vertex", "v", "Points."), ("polymeshVertex", "pv", "Mesh vertices."), ("polymeshEdge", "pe", "Mesh edges."), ("polymeshFace", "pf", "Mesh faces.")] {
+        st = st.flag(f(n, sh, ArgType::Bool, doc));
+    }
+    s.register(st);
 
     reg(
         s,

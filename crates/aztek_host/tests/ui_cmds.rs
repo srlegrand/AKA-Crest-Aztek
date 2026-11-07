@@ -53,6 +53,10 @@ fn select_type_masks_read_back() {
     assert_eq!(c.mel("selectType -q -joint 1;"), json!(false));
     c.mel("selectType -joint 1;");
     assert_eq!(c.mel("selectType -q -joint 1;"), json!(true));
+    // The component kinds still work through the same command.
+    c.mel("polyCube; selectType -polymeshFace 1;");
+    assert_eq!(c.mel("selectMode;"), json!("face"));
+    assert_eq!(c.mel("selectType -q -polymeshEdge 1;"), json!(false));
 }
 
 #[test]

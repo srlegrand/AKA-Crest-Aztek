@@ -27,6 +27,7 @@
 #include <QSettings>
 #include <QTabBar>
 #include <QTabWidget>
+#include <QTimer>
 #include <QToolBar>
 #include <QToolButton>
 #include <QVBoxLayout>

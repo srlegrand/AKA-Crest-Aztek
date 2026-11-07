@@ -39,6 +39,7 @@
 #include <QTimer>
 #include <QToolBar>
 #include <QVBoxLayout>
+#include <algorithm>
 #include <cmath>
 
 namespace az {

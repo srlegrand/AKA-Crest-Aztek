@@ -20,6 +20,7 @@
 #include <QTabWidget>
 #include <QToolButton>
 #include <QVBoxLayout>
+#include <cmath>
 
 namespace az {
 
