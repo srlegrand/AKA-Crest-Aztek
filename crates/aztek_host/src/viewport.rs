@@ -249,6 +249,8 @@ pub enum Tool {
     /// Drag on the grid for the base; a cube then takes its height from the mouse and a click.
     CreateCube,
     CreatePlane,
+    /// Sphere, cylinder, cone or torus: drag for the radius; a cylinder or cone takes a height too.
+    CreateRound,
     /// Two clicks: a point on the object to move, and where it goes.
     SnapTogether,
 }
@@ -420,6 +422,8 @@ pub struct Viewport {
     pub tool_points: Vec<(DVec3, [u8; 4])>,
     /// The handle a script made active (the contexts' -ah): what a middle drag takes when none is under the mouse.
     pub active_handle: Option<Handle>,
+    /// What CreateRound makes: polySphere, polyCylinder, polyCone or polyTorus.
+    pub round_kind: String,
     /// The Show Manipulator tool's lines, world space.
     pub node_lines: Vec<(DVec3, DVec3, [u8; 4])>,
 }
@@ -470,6 +474,7 @@ impl Viewport {
             tool_points: Vec::new(),
             active_handle: None,
             node_lines: Vec::new(),
+            round_kind: String::new(),
             snap_relative: true,
             tweak: false,
             preserve_children: false,

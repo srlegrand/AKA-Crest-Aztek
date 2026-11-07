@@ -273,8 +273,25 @@ fn dissolve_edge_op(_a: &Args, m: &mut Mesh, sel: &Ids, sym: Option<&SymmetryMap
     Ok(faces(dissolve_edges(m, &all, true)))
 }
 
-fn spin_op(_a: &Args, m: &mut Mesh, sel: &Ids, sym: Option<&SymmetryMap>) -> CmdResult<EditResult> {
-    Ok(edges(spin_edges(m, &with_mirror(m, sym, sel, K::Edge))))
+fn spin_op(a: &Args, m: &mut Mesh, sel: &Ids, sym: Option<&SymmetryMap>) -> CmdResult<EditResult> {
+    let ids = with_mirror(m, sym, sel, K::Edge);
+    if a.int("offset", 1) >= 0 {
+        return Ok(edges(spin_edges(m, &ids)));
+    }
+    // Backward: round the polygon the two faces make, all but one of the way.
+    let mut out = Vec::new();
+    for e in ids {
+        let mut sides = 0;
+        m.for_each_edge_corner(e, |c| sides += m.face_points(m.corner_face(c)).len());
+        let around = sides.saturating_sub(2);
+        let period = if around % 2 == 0 { around / 2 } else { around };
+        let mut at = vec![e];
+        for _ in 1..period.max(2) {
+            at = spin_edges(m, &at);
+        }
+        out.extend(at);
+    }
+    Ok(edges(out))
 }
 
 fn fill_hole_op(_a: &Args, m: &mut Mesh, sel: &Ids, _sym: Option<&SymmetryMap>) -> CmdResult<EditResult> {
@@ -621,9 +638,9 @@ pub fn register(c: &mut Commands<Session>) {
         edit_selected_op(s, "polyPoke", _a, false, None)
     }));
 
-    c.register(Cmd::new("polySpinEdge", "Turn each selected edge one step within its two faces.", |s, _a| {
+    c.register(Cmd::new("polySpinEdge", "Turn each selected edge one step within its two faces: -of 1 forward, -of -1 backward.", |s, _a| {
         edit_selected_op(s, "polySpinEdge", _a, false, None)
-    }));
+    }).flag(FlagDef::new("offset", "of", T::Int, json!(1), "1 forward, -1 backward.")));
 
     c.register(Cmd::new("polyFillHole", "Cap the holes bordered by the selected edges (every hole when nothing is selected).", |s, _a| {
         edit_selected_op(s, "polyCloseBorder", _a, true, None)

@@ -118,8 +118,9 @@ QJsonObject OptionsDialog::saved(const QString& command) {
     return call;
 }
 
-void OptionsDialog::open(const QString& command, const QString& title) {
+void OptionsDialog::open(const QString& command, const QString& title, const QJsonObject& fixed) {
     auto* d = new OptionsDialog(command, title);
+    d->fixed_ = fixed;
     d->setAttribute(Qt::WA_DeleteOnClose);
     d->show();
 }
@@ -284,6 +285,8 @@ OptionsDialog::OptionsDialog(const QString& command, const QString& title) : QDi
     auto run = [this] {
         QJsonObject call = collect();
         store(call);
+        for (auto it = fixed_.begin(); it != fixed_.end(); ++it)
+            if (!call.contains(it.key())) call[it.key()] = it.value();
         az::exec(command_, call);
     };
     connect(apply_close, &QPushButton::clicked, this, [this, run] {

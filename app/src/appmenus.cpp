@@ -267,7 +267,10 @@ QMenu* MainWindow::edit_menu() {
         if (recents->isEmpty()) recents->addAction("(none)")->setEnabled(false);
     });
     m->addSeparator();
-    todo(m, "Cut");
+    m->addAction("Cut\tCtrl+X", [this] {
+        clipboard_ = selection_names();
+        exec("delete");
+    });
     m->addAction("Copy\tCtrl+C", [this] { clipboard_ = selection_names(); });
     m->addAction("Paste\tCtrl+V", [this] {
         QJsonArray a;
@@ -443,6 +446,10 @@ QMenu* MainWindow::select_menu() {
     cmd(conv, "To Vertices", "convertSelection", args(QJsonArray{"vertex"}), "Ctrl+F9");
     cmd(conv, "To Edges", "convertSelection", args(QJsonArray{"edge"}), "Ctrl+F10");
     cmd(conv, "To Faces", "convertSelection", args(QJsonArray{"face"}), "Ctrl+F11");
+    conv->addSeparator();
+    cmd(conv, "To Edge Loop", "selectLoop");
+    cmd(conv, "To Edge Ring", "selectLoop", QJsonObject{{"ring", true}});
+    cmd(conv, "To Shell Border", "selectBorder");
     return m;
 }
 
@@ -455,6 +462,10 @@ QMenu* MainWindow::modify_menu() {
     xf->addAction("Move Tool\tW", [this] { set_tool("move"); });
     xf->addAction("Rotate Tool\tE", [this] { set_tool("rotate"); });
     xf->addAction("Scale Tool\tR", [this] { set_tool("scale"); });
+    xf->addAction("Move Normal Tool", [this] {
+        set_tool("move");
+        exec_quiet("manipMoveContext", QJsonObject{{"edit", true}, {"args", QJsonArray{"Move"}}, {"mode", 3}});
+    });
     xf->addAction("Show Manipulator Tool\tT", [] { mel("ShowManipulators;"); });
     cmd(m, "Freeze Transformations", "freezeTransforms", {}, QString(), true);
     cmd(m, "Reset Transformations", "resetTransforms", {}, QString(), true);
@@ -464,7 +475,12 @@ QMenu* MainWindow::modify_menu() {
     cmd(pivot, "Bake Pivot", "bakePivot");
     cmd(pivot, "Reset Pivot", "resetPivot");
     cmd(pivot, "Zero Pivot", "zeroPivot");
-    cmd(m, "Match Pivots", "matchPivot");
+    QMenu* match = m->addMenu("Match Transformations");
+    cmd(match, "Match Translation", "matchTransform", QJsonObject{{"position", true}});
+    cmd(match, "Match Rotation", "matchTransform", QJsonObject{{"rotation", true}});
+    cmd(match, "Match Scaling", "matchTransform", QJsonObject{{"scale", true}});
+    cmd(match, "Match All Transforms", "matchTransform");
+    cmd(match, "Match Pivots", "matchPivot");
     QMenu* snap = m->addMenu("Snap Align");
     snap->addAction("Align Objects...", [this] { show_named_window("alignObjects"); });
     snap->addAction("Point to Point", [] {
@@ -560,16 +576,42 @@ QMenu* MainWindow::display_menu() {
     m->addSeparator();
     QMenu* hide = m->addMenu("Hide");
     cmd(hide, "Hide Selection", "hide", {}, "Ctrl+H");
+    hide->addAction("Hide Unselected Objects\tAlt+H", [] {
+        // Top level objects other than what is selected and its parents.
+        QJsonArray sel = state()["selection"].toArray();
+        QJsonArray hidden;
+        for (const QJsonValue& o : mel("ls -assemblies;").toArray()) {
+            QString name = o.toString();
+            bool keep = false;
+            for (const QJsonValue& s : sel) {
+                QString path = s.toString().section('.', 0, 0);
+                if (path == name || path.startsWith("|" + name) || path.startsWith(name + "|")) keep = true;
+            }
+            if (!keep && !QStringList{"persp", "top", "front", "side"}.contains(name)) hidden.append(name);
+        }
+        if (!hidden.isEmpty()) exec("hide", QJsonObject{{"args", hidden}});
+    });
     QMenu* show = m->addMenu("Show");
     cmd(show, "Show Selection", "show");
+    cmd(show, "All", "showHidden", QJsonObject{{"all", true}});
     cmd(show, "Show Last Hidden", "showLastHidden", {}, "Ctrl+Shift+H");
     cmd(m, "Toggle Show/Hide", "toggleVisibility", {}, "H");
     m->addSeparator();
     QMenu* obj = m->addMenu("Object Display");
     cmd(obj, "Template", "toggle", QJsonObject{{"template", true}, {"state", true}});
     cmd(obj, "Untemplate", "toggle", QJsonObject{{"template", true}, {"state", false}});
-    cmd(obj, "Bounding Box", "toggle", QJsonObject{{"boundingBox", true}, {"state", true}});
-    cmd(obj, "No Bounding Box", "toggle", QJsonObject{{"boundingBox", true}, {"state", false}});
+    // A node's drawing override shows it as its box.
+    auto box = [](bool on) {
+        return [on] {
+            for (const QJsonValue& s : state()["selection"].toArray()) {
+                QString o = s.toString().section('.', 0, 0);
+                exec("setAttr", QJsonObject{{"args", QJsonArray{o + ".overrideEnabled", on}}});
+                exec("setAttr", QJsonObject{{"args", QJsonArray{o + ".overrideLevelOfDetail", on ? 1 : 0}}});
+            }
+        };
+    };
+    obj->addAction("Bounding Box", box(true));
+    obj->addAction("No Bounding Box", box(false));
     m->addAction("Wireframe Color...", this, [this] { show_wireframe_color_window(this); });
     QMenu* xf = m->addMenu("Transform Display");
     cmd(xf, "Local Rotation Axes", "toggle", QJsonObject{{"localAxis", true}});

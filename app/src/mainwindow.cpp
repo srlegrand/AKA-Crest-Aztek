@@ -146,6 +146,12 @@ MainWindow::MainWindow() {
 QAction* MainWindow::cmd(QMenu* m, const QString& label, const QString& command, const QJsonObject& call, const QString& shortcut, bool options) {
     bool ok = has_command(command);
     auto run = [this, command, call, options, label] {
+        // Interactive Creation: the primitive is drawn in the view rather than made at the origin.
+        static const QHash<QString, QString> drawn{{"polyCube", "createCube"}, {"polyPlane", "createPlane"}, {"polySphere", "createSphere"}, {"polyCylinder", "createCylinder"}, {"polyCone", "createCone"}, {"polyTorus", "createTorus"}};
+        if (drawn.contains(command) && QSettings().value("prefs/interactiveCreation", false).toBool()) {
+            set_tool(drawn[command]);
+            return;
+        }
         QJsonObject c = call;
         // An option box's remembered settings apply to the plain item too, as in Maya.
         if (options) {
@@ -157,7 +163,7 @@ QAction* MainWindow::cmd(QMenu* m, const QString& label, const QString& command,
     };
     QAction* a;
     if (options && ok) {
-        a = new OptionRow(label, shortcut, run, [command, label] { OptionsDialog::open(command, label); }, m);
+        a = new OptionRow(label, shortcut, run, [command, label, call] { OptionsDialog::open(command, label, call); }, m);
         m->addAction(a);
     } else {
         a = m->addAction(label);
@@ -185,8 +191,14 @@ QMenu* MainWindow::create_menu() {
     struct P { const char* label; const char* cmd; };
     for (P p : {P{"Sphere", "polySphere"}, P{"Cube", "polyCube"}, P{"Cylinder", "polyCylinder"}, P{"Cone", "polyCone"}, P{"Torus", "polyTorus"},
                 P{"Plane", "polyPlane"}, P{"Disc", "polyDisc"}, P{"Pipe", "polyPipe"}, P{"Capsule", "polyCapsule"}, P{"Platonic Solid", "polyIcoSphere"},
-                P{"Quad Sphere", "polyQuadSphere"}})
+                P{"Quad Sphere", "polyQuadSphere"}, P{"Pyramid", "polyPyramid"}, P{"Prism", "polyPrism"}, P{"Helix", "polyHelix"}, P{"Soccer Ball", "polySoccerBall"}})
         cmd(polys, p.label, p.cmd, {}, QString(), true);
+    polys->addSeparator();
+    // With this on, the primitive menu items start a drag in the view instead of making one at the origin.
+    auto* interactive = polys->addAction("Interactive Creation");
+    interactive->setCheckable(true);
+    interactive->setChecked(QSettings().value("prefs/interactiveCreation", false).toBool());
+    connect(interactive, &QAction::toggled, this, [](bool on) { QSettings().setValue("prefs/interactiveCreation", on); });
     cmd(m, "Text", "textCurves", QJsonObject{{"text", "Text"}});
     QMenu* nurbs = m->addMenu("NURBS Primitives");
     const QJsonArray up{0, 1, 0};
@@ -202,8 +214,17 @@ QMenu* MainWindow::create_menu() {
     QMenu* curves = m->addMenu("Curve Tools");
     curves->addAction("CV Curve Tool", [this] { set_tool("curveCv"); });
     curves->addAction("EP Curve Tool", [this] { set_tool("curveEp"); });
+    curves->addAction("Bezier Curve Tool", [this] { set_tool("curveBezier"); });
+    QMenu* arcs = curves->addMenu("Arc Tools");
+    arcs->addAction("Two Point Circular Arc", [this] { set_tool("arcTwo"); });
+    arcs->addAction("Three Point Circular Arc", [this] { set_tool("arcThree"); });
     m->addSeparator();
+    cmd(m, "Camera", "camera");
     cmd(m, "Locator", "spaceLocator");
+    cmd(m, "Annotation", "annotate", QJsonObject{{"text", "Annotation"}});
+    QMenu* measure = m->addMenu("Measure Tools");
+    cmd(measure, "Distance Tool", "distanceDimension", QJsonObject{{"startPoint", QJsonArray{0, 0, 0}}, {"endPoint", QJsonArray{1, 0, 0}}});
+    cmd(measure, "Parameter Tool", "paramDimension");
     cmd(m, "Empty Group", "group", QJsonObject{{"empty", true}}, "Ctrl+G");
     cmd(m, "Sets", "createSet", {}, QString(), true);
     return m;
@@ -211,9 +232,16 @@ QMenu* MainWindow::create_menu() {
 
 QMenu* MainWindow::mesh_menu() {
     auto* m = new QMenu("Mesh", this);
+    m->addSection("Combine");
     QMenu* b = m->addMenu("Booleans");
     cmd(b, "Union", "polyBoolean", QJsonObject{{"operation", "union"}});
-    cmd(b, "Difference", "polyBoolean", QJsonObject{{"operation", "difference"}});
+    cmd(b, "Difference (A - B)", "polyBoolean", QJsonObject{{"operation", "difference"}});
+    b->addAction("Difference (B - A)", [] {
+        // The same with the selection the other way round.
+        QJsonArray sel = state()["selection"].toArray(), back;
+        for (int i = sel.size() - 1; i >= 0; --i) back.append(sel.at(i));
+        exec("polyBoolean", QJsonObject{{"args", back}, {"operation", "difference"}});
+    });
     cmd(b, "Intersection", "polyBoolean", QJsonObject{{"operation", "intersection"}});
     cmd(m, "Combine", "polyUnite", {}, QString(), true);
     cmd(m, "Separate", "polySeparate");
@@ -239,8 +267,7 @@ QMenu* MainWindow::mesh_menu() {
 
 QMenu* MainWindow::edit_mesh_menu() {
     auto* m = new QMenu("Edit Mesh", this);
-    QLabel* comp = new QLabel("  Components", m);
-    comp->setObjectName("menuSection");
+    m->addSection("Components");
     cmd(m, "Bevel", "polyBevel", {}, "Ctrl+B", true);
     cmd(m, "Add Divisions", "polySubdivideFacet", {}, QString(), true);
     cmd(m, "Bridge", "polyBridge", {}, QString(), true);
@@ -252,21 +279,32 @@ QMenu* MainWindow::edit_mesh_menu() {
     cmd(m, "Inset", "polyInset", {}, QString(), true);
     cmd(m, "Merge", "polyMerge", {}, QString(), true);
     cmd(m, "Merge to Center", "polyMergeCenter");
-    m->addSeparator();
+    // Transform: the Move Component command for what is selected, with its handles straight away.
+    m->addAction("Transform", [this] {
+        QString mode = state()["mode"].toString();
+        const char* c = mode == "face" ? "polyMoveFacet" : mode == "edge" ? "polyMoveEdge" : "polyMoveVertex";
+        exec(c);
+    });
     cmd(m, "Flip", "polyFlip");
     cmd(m, "Spherize", "polySpherize", {}, QString(), true);
     cmd(m, "Circularize", "polyCircularize", {}, QString(), true);
     cmd(m, "Straighten", "polyStraighten", {}, QString(), true);
-    m->addSeparator();
+    m->addSection("Vertex");
+    cmd(m, "Reorder Vertices", "meshReorder");
+    m->addSection("Edge");
     cmd(m, "Delete Edge/Vertex", "polyDissolve", {}, "Ctrl+Delete");
     cmd(m, "Edit Edge Flow", "polyEditEdgeFlow", {}, QString(), true);
     cmd(m, "Flip Triangle Edge", "polyFlipEdge");
-    cmd(m, "Spin Edge", "polySpinEdge");
-    cmd(m, "Poke Face", "polyPoke", {}, QString(), true);
+    cmd(m, "Spin Edge Backward", "polySpinEdge", QJsonObject{{"offset", -1}});
+    cmd(m, "Spin Edge Forward", "polySpinEdge", QJsonObject{{"offset", 1}});
+    m->addSection("Face");
+    cmd(m, "Poke", "polyPoke", {}, QString(), true);
     cmd(m, "Wedge", "polyWedgeFace", {}, QString(), true);
     cmd(m, "Assign Invisible Faces", "polyHole", {}, QString(), true);
-    cmd(m, "Duplicate", "polyChipOff", {}, QString(), true);
+    cmd(m, "Duplicate", "polyChipOff", QJsonObject{{"duplicate", true}}, QString(), true);
     cmd(m, "Extract", "polyExtract", {}, QString(), true);
+    m->addSection("Curve");
+    cmd(m, "Project Curve on Mesh", "polyProjectCurve", {}, QString(), true);
     m->addSeparator();
     cmd(m, "Grid Fill", "polyGridFill", {}, QString(), true);
     cmd(m, "Split Rings", "polySplitRings", {}, QString(), true);
@@ -311,9 +349,9 @@ QMenu* MainWindow::mesh_display_menu() {
     m->addSeparator();
     cmd(m, "Soften Edge", "polySoftEdge", QJsonObject{{"angle", 180.0}});
     cmd(m, "Harden Edge", "polySoftEdge", QJsonObject{{"angle", 0.0}});
-    cmd(m, "Soft/Hard Edges", "polySoftEdge", {}, QString(), true);
+    cmd(m, "Soften/Harden Edge", "polySoftEdge", {}, QString(), true);
     m->addSeparator();
-    cmd(m, "Average Normals", "polyAverageNormal", {}, QString(), true);
+    cmd(m, "Average", "polyAverageNormal", {}, QString(), true);
     cmd(m, "Set to Face", "polySetToFaceNormal");
     cmd(m, "Lock Normals", "polyLockNormals");
     cmd(m, "Unlock Normals", "polyUnlockNormals");
@@ -323,9 +361,13 @@ QMenu* MainWindow::mesh_display_menu() {
 
 QMenu* MainWindow::curves_menu() {
     auto* m = new QMenu("Curves", this);
+    m->addSection("Edit");
     cmd(m, "Attach", "attachCurve", {}, QString(), true);
     cmd(m, "Detach", "detachCurve", {}, QString(), true);
     cmd(m, "Open/Close", "closeCurve", {}, QString(), true);
+    cmd(m, "Fillet", "filletCurve", {}, QString(), true);
+    cmd(m, "Intersect", "curveIntersect", {}, QString(), true);
+    m->addAction("Add Points Tool", [this] { set_tool("curveAddPt"); });
     m->addSeparator();
     cmd(m, "Insert Knot", "insertKnotCurve", {}, QString(), true);
     cmd(m, "Extend", "extendCurve", {}, QString(), true);
@@ -351,7 +393,6 @@ QMenu* MainWindow::surfaces_menu() {
     cmd(m, "Square", "square", {}, QString(), true);
     cmd(m, "Sweep Mesh", "sweepMeshFromCurve", {}, QString(), true);
     m->addSeparator();
-    cmd(m, "Duplicate NURBS Patch Curve", "duplicateCurve", {}, QString(), true);
     cmd(m, "Attach", "attachSurface", {}, QString(), true);
     cmd(m, "Detach", "detachSurface", {}, QString(), true);
     cmd(m, "Open/Close", "closeSurface", {}, QString(), true);
@@ -364,22 +405,28 @@ QMenu* MainWindow::surfaces_menu() {
 
 QMenu* MainWindow::uv_menu() {
     auto* m = new QMenu("UV", this);
+    m->addSection("Editors");
+    m->addAction("UV Editor", this, &MainWindow::show_uv_editor);
+    m->addSection("Create");
     cmd(m, "Automatic", "polyAutoProjection", {}, QString(), true);
+    cmd(m, "Contour Stretch", "polyContourProjection", {}, QString(), true);
     cmd(m, "Planar", "polyProjection", QJsonObject{{"type", "planar"}}, QString(), true);
-    cmd(m, "Cylindrical", "polyProjection", QJsonObject{{"type", "cylindrical"}});
-    cmd(m, "Spherical", "polyProjection", QJsonObject{{"type", "spherical"}});
-    m->addSeparator();
+    cmd(m, "Cylindrical", "polyProjection", QJsonObject{{"type", "cylindrical"}}, QString(), true);
+    cmd(m, "Spherical", "polyProjection", QJsonObject{{"type", "spherical"}}, QString(), true);
+    m->addSection("Cut and Sew");
+    cmd(m, "Auto Seams", "u3dAutoSeam", {}, QString(), true);
+    cmd(m, "Cut UV Edges", "polyMapCut");
+    cmd(m, "Sew UV Edges", "polyMapSew");
+    cmd(m, "Move and Sew", "polyMapSewMove");
+    cmd(m, "Merge UVs", "polyMergeUV", {}, QString(), true);
+    cmd(m, "Delete UVs", "polyMapDel");
+    m->addSection("Modify");
     cmd(m, "Unfold", "u3dUnfold", {}, QString(), true);
     cmd(m, "Layout", "u3dLayout", {}, QString(), true);
-    m->addSeparator();
-    cmd(m, "Cut", "polyMapCut");
-    cmd(m, "Sew", "polyMapSew");
-    cmd(m, "Move and Sew", "polyMapSewMove");
-    m->addSeparator();
+    cmd(m, "Optimize", "polyOptUvs", {}, QString(), true);
+    cmd(m, "Straighten", "polyStraightenUVBorder", {}, QString(), true);
     cmd(m, "Normalize", "polyNormalizeUV", {}, QString(), true);
     cmd(m, "Flip", "polyFlipUV", {}, QString(), true);
-    m->addSeparator();
-    m->addAction("UV Editor", this, &MainWindow::show_uv_editor);
     return m;
 }
 
@@ -397,17 +444,17 @@ QMenu* MainWindow::deform_menu() {
     cmd(m, "Lattice", "lattice", QJsonObject{{"divisions", QJsonArray{2, 5, 2}}, {"objectCentered", true}}, QString(), true);
     cmd(m, "Wrap", "wrap", {}, QString(), true);
     cmd(m, "Wire", "wire", {}, QString(), true);
-    cmd(m, "Soft Modification", "softMod", {}, QString(), true);
+    cmd(m, "Soft Modification Tool", "softMod", {}, QString(), true);
     cmd(m, "Delta Mush", "deltaMush", {}, QString(), true);
     cmd(m, "Tension", "tension", {}, QString(), true);
     cmd(m, "Sculpt", "sculpt", {}, QString(), true);
     cmd(m, "Jiggle", "jiggle", {}, QString(), true);
-    cmd(m, "Shrink Wrap", "shrinkWrap", {}, QString(), true);
+    cmd(m, "ShrinkWrap", "shrinkWrap", {}, QString(), true);
     cmd(m, "Morph", "morph", {}, QString(), true);
     cmd(m, "Wrinkle", "wrinkle", {}, QString(), true);
     cmd(m, "Proximity Wrap", "proximityWrap", {}, QString(), true);
     cmd(m, "Solidify", "solidify", {}, QString(), true);
-    cmd(m, "Point on Curve", "pointOnCurveDeformer", {}, QString(), true);
+    cmd(m, "Point On Curve", "pointOnCurveDeformer", {}, QString(), true);
     cmd(m, "Texture", "textureDeformer", {}, QString(), true);
     cmd(m, "Curve Warp", "curveWarp", {}, QString(), true);
     m->addSeparator();
@@ -427,6 +474,14 @@ QMenu* MainWindow::deform_menu() {
             show_tool_settings();
         });
     }
+    cmd(m, "Mirror Deformer Weights", "copyDeformerWeights", {}, QString(), true);
+    cmd(m, "Export Weights", "deformerWeights", QJsonObject{{"export", true}}, QString(), true);
+    cmd(m, "Import Weights", "deformerWeights", QJsonObject{{"import", true}}, QString(), true);
+    m->addSection("Edit");
+    QMenu* edit_lattice = m->addMenu("Lattice");
+    cmd(edit_lattice, "Remove Lattice Tweaks", "lattice", QJsonObject{{"edit", true}, {"removeTweaks", true}});
+    cmd(edit_lattice, "Reset Lattice", "lattice", QJsonObject{{"edit", true}, {"latticeReset", true}});
+    m->addSection("Membership");
     m->addAction("Edit Membership Tool", [this] { set_tool("editMembership"); show_tool_settings(); });
     m->addAction("Shape Editor", [this] { show_named_window("shapeEditor"); });
     return m;
@@ -436,12 +491,11 @@ QMenu* MainWindow::skeleton_menu() {
     auto* m = new QMenu("Skeleton", this);
     m->addAction("Create Joints", [this] { set_tool("joint"); });
     // Runs on the selected joint until there is a tool to drag the new joint with.
-    m->addAction("Insert Joint Tool", [this] { set_tool("insertJoint"); });
-    cmd(m, "Mirror Skeleton", "mirrorJoint", QJsonObject{{"mirrorXY", true}, {"mirrorBehavior", true}}, QString(), true);
-    cmd(m, "Mirror Skeleton (Orientation)", "mirrorJoint", QJsonObject{{"mirrorXY", true}});
+    m->addAction("Insert Joints", [this] { set_tool("insertJoint"); });
+    cmd(m, "Mirror Joints", "mirrorJoint", {}, QString(), true);
     m->addAction("Orient Joint", [] { exec("joint", QJsonObject{{"edit", true}, {"orientJoint", "xyz"}, {"secondaryAxisOrient", "yup"}, {"children", true}}); });
     m->addSeparator();
-    cmd(m, "Remove Joint", "removeJoint");
+    cmd(m, "Remove Joints", "removeJoint");
     cmd(m, "Connect Joint", "connectJoint", QJsonObject{{"connectMode", true}});
     cmd(m, "Parent Joint", "connectJoint", QJsonObject{{"parentMode", true}});
     cmd(m, "Disconnect Joint", "disconnectJoint");
@@ -457,17 +511,16 @@ QMenu* MainWindow::skeleton_menu() {
         exec("hikCreateControlRig", QJsonObject{{"args", QJsonArray{"Character1"}}});
     });
     m->addSeparator();
-    cmd(m, "Create IK Handle", "ikHandle", QJsonObject{{"solver", "ikRPsolver"}}, QString(), true);
-    cmd(m, "Create IK Handle (Single Chain)", "ikHandle", QJsonObject{{"solver", "ikSCsolver"}});
+    cmd(m, "Create IK Handle", "ikHandle", {}, QString(), true);
     cmd(m, "Create IK Spline Handle", "ikHandle", QJsonObject{{"solver", "ikSplineSolver"}}, QString(), true);
-    cmd(m, "Enable IK Handles", "ikHandle", QJsonObject{{"enableHandles", true}});
-    cmd(m, "Disable IK Handles", "ikHandle", QJsonObject{{"disableHandles", true}});
+    cmd(m, "Enable Selected IK Handles", "ikHandle", QJsonObject{{"enableHandles", true}});
+    cmd(m, "Disable Selected IK Handles", "ikHandle", QJsonObject{{"disableHandles", true}});
     return m;
 }
 
 QMenu* MainWindow::skin_menu() {
     auto* m = new QMenu("Skin", this);
-    cmd(m, "Bind Skin", "skinCluster", QJsonObject{{"toSelectedBones", false}}, QString(), true);
+    cmd(m, "Bind Skin", "skinCluster", {}, QString(), true);
     cmd(m, "Unbind Skin", "skinCluster", QJsonObject{{"edit", true}, {"unbind", true}});
     cmd(m, "Go to Bind Pose", "dagPose", QJsonObject{{"restore", true}, {"global", true}, {"bindPose", true}});
     m->addSeparator();
@@ -505,7 +558,7 @@ QMenu* MainWindow::skin_menu() {
     m->addAction("Smooth Skin Weights", on_selected("smooth", [] { return QJsonObject{{"edit", true}, {"smoothWeights", 0.5}, {"smoothWeightsMaxIterations", 2}}; }, "skinCluster"));
     m->addAction("Prune Small Weights", on_selected("prune", [] { return QJsonObject{{"pruneWeights", 0.01}}; }, "skinPercent"));
     m->addAction("Normalize Weights", on_selected("normalize", [] { return QJsonObject{{"edit", true}, {"forceNormalizeWeights", true}}; }, "skinCluster"));
-    m->addAction("Reset Weights to Default", on_selected("reset", [] { return QJsonObject{{"resetToDefault", true}}; }, "skinPercent"));
+    m->addAction("Reset Default Weights", on_selected("reset", [] { return QJsonObject{{"resetToDefault", true}}; }, "skinPercent"));
     m->addSeparator();
     // Selection order: the skinned mesh and the joints.
     auto influence = [](const char* flag) {
@@ -524,8 +577,11 @@ QMenu* MainWindow::skin_menu() {
             exec("skinCluster", c);
         };
     };
-    m->addAction("Add Influence", influence("addInfluence"));
-    m->addAction("Remove Influence", influence("removeInfluence"));
+    QMenu* infl = m->addMenu("Edit Influences");
+    infl->addAction("Add Influence", influence("addInfluence"));
+    infl->addAction("Remove Influence", influence("removeInfluence"));
+    cmd(m, "Export Weight Maps", "deformerWeights", QJsonObject{{"export", true}}, QString(), true);
+    cmd(m, "Import Weight Maps", "deformerWeights", QJsonObject{{"import", true}}, QString(), true);
     return m;
 }
 
@@ -574,6 +630,8 @@ QMenu* MainWindow::key_menu() {
     m->addSeparator();
     m->addAction("Copy Keys", [this] { exec("copyKey", QJsonObject{{"time", QString("%1").arg(time_slider_->time())}}); });
     m->addAction("Paste Keys", [this] { exec("pasteKey", QJsonObject{{"time", time_slider_->time()}, {"option", "merge"}}); });
+    cmd(m, "Scale Keys", "scaleKey", {}, QString(), true);
+    cmd(m, "Snap Keys", "snapKey", {}, QString(), true);
     cmd(m, "Bake Animation", "bakeResults", {}, QString(), true);
     m->addSeparator();
     auto* sdk = m->addMenu("Set Driven Key");
@@ -1082,6 +1140,10 @@ void MainWindow::set_tool(const QString& tool) {
         {"mergeFacet", "Merge Face Tool: click two faces of different shells."},
         {"createCube", "Polygon Cube: drag on the grid for the base, move for the height, click to finish."},
         {"createPlane", "Polygon Plane: drag on the grid."},
+        {"createSphere", "Polygon Sphere: drag on the grid for the radius."},
+        {"createCylinder", "Polygon Cylinder: drag on the grid for the radius, move for the height, click to finish."},
+        {"createCone", "Polygon Cone: drag on the grid for the radius, move for the height, click to finish."},
+        {"createTorus", "Polygon Torus: drag on the grid for the radius."},
         {"snapTogether", "Snap Together Tool: click a point on the object to move, then the point it goes to."},
         {"insertJoint", "Insert Joint: drag from a joint to add a joint along the bone."},
         {"multiCut", "Multi-Cut: click to place cut points, Shift snaps along edges, Ctrl-click inserts a loop, Backspace takes the last back, Enter cuts."},

@@ -796,7 +796,7 @@ impl View {
                             self.bezier_preview();
                             return true;
                         }
-                        Tool::CreateCube | Tool::CreatePlane => {
+                        Tool::CreateCube | Tool::CreatePlane | Tool::CreateRound => {
                             let at = self.vp.place_point(px);
                             match self.prim {
                                 // The height's click finishes the cube.
@@ -1249,7 +1249,8 @@ impl View {
                 if let Some(mut p) = self.prim.filter(|p| p.stage == 1) {
                     p.press_y = px.y;
                     let dragged = (p.b - p.a).length() > 1e-6;
-                    if self.vp.tool == Tool::CreateCube && dragged {
+                    let tall = matches!(self.vp.round_kind.as_str(), "polyCylinder" | "polyCone");
+                    if (self.vp.tool == Tool::CreateCube || (self.vp.tool == Tool::CreateRound && tall)) && dragged {
                         p.stage = 2;
                         self.prim = Some(p);
                     } else {
@@ -1426,6 +1427,20 @@ impl View {
         let (c, size) = prim_box(&p);
         // A click with no drag: the unit size, where it was clicked.
         let (w, d) = if size.x < 1e-6 || size.z < 1e-6 { (1.0, 1.0) } else { (size.x, size.z) };
+        if self.vp.tool == Tool::CreateRound {
+            let kind = self.vp.round_kind.clone();
+            let radius = if w == 1.0 && d == 1.0 && size.x < 1e-6 { 1.0 } else { (w.max(d) * 0.5).max(1e-3) };
+            let call = match kind.as_str() {
+                "polyCylinder" | "polyCone" => json!({"radius": radius, "height": if p.height.abs() < 1e-6 { radius * 2.0 } else { p.height.abs() }}),
+                "polyTorus" => json!({"radius": radius, "sectionRadius": radius * 0.25}),
+                _ => json!({"radius": radius}),
+            };
+            if core.exec(&kind, call).is_ok() {
+                let y = if p.height.abs() > 1e-6 { c.y + p.height * 0.5 } else { c.y };
+                let _ = core.exec("move", json!({"to": [c.x, y, c.z]}));
+            }
+            return;
+        }
         let cube = self.vp.tool == Tool::CreateCube;
         let height = if p.height.abs() < 1e-6 { w.min(d) } else { p.height.abs() };
         let made = if cube { core.exec("polyCube", json!({"width": w, "height": height, "depth": d})) } else { core.exec("polyPlane", json!({"width": w, "height": d})) };
@@ -1564,6 +1579,10 @@ impl View {
                     "mergeFacet" => Tool::MergeFacet,
                     "createCube" => Tool::CreateCube,
                     "createPlane" => Tool::CreatePlane,
+                    "createSphere" | "createCylinder" | "createCone" | "createTorus" => {
+                        self.vp.round_kind = format!("poly{}", &v.as_str().unwrap_or("")[6..]);
+                        Tool::CreateRound
+                    }
                     "snapTogether" => Tool::SnapTogether,
                     _ => Tool::Select,
                 }

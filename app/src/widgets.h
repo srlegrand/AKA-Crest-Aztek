@@ -29,7 +29,7 @@ void show_about(QWidget* parent);
 class OptionsDialog : public QDialog {
     Q_OBJECT
 public:
-    static void open(const QString& command, const QString& title);
+    static void open(const QString& command, const QString& title, const QJsonObject& fixed = QJsonObject());
     // The remembered settings of a command, as a call.
     static QJsonObject saved(const QString& command);
 private:
@@ -37,6 +37,8 @@ private:
     QJsonObject collect() const;
     void store(const QJsonObject& call) const;
     QString command_;
+    // What the menu item itself passes: the projection type, the deformer's kind.
+    QJsonObject fixed_;
     QList<std::function<void(QJsonObject&)>> readers_;
 };
 
