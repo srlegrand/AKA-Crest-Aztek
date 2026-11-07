@@ -1,5 +1,11 @@
 <p align="center"><img src="docs/splash.png" alt="Aztek"></p>
 
+<p align="center">
+  <a href="https://github.com/srlegrand/Aztek/releases/tag/latest"><img src="https://img.shields.io/badge/Download-Windows%20%7C%20Linux-white?style=for-the-badge" alt="Download"></a>
+  <a href="https://github.com/srlegrand/Aztek/fork"><img src="https://img.shields.io/badge/Fork%20it%20on%20GitHub-white?style=for-the-badge&logo=github&logoColor=black" alt="Fork it on GitHub"></a>
+  <a href="https://srlegrand.github.io/Aztek/"><img src="https://img.shields.io/badge/Website-white?style=for-the-badge" alt="Website"></a>
+</p>
+
 [![Build](https://github.com/srlegrand/Aztek/actions/workflows/build.yml/badge.svg)](https://github.com/srlegrand/Aztek/actions/workflows/build.yml)
 
 A modelling, UV, rigging and animation application that behaves like Maya. Rust core (scene graph, commands,
