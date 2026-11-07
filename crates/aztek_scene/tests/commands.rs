@@ -668,7 +668,7 @@ fn command_results_re_resolve_to_the_same_node() {
 fn group_and_parent_leave_other_nodes_names_alone() {
     let mut s = two_arms();
     assert_eq!(
-        run(&mut s, "group", json!({"args": ["L|Arm"], "name": "G"})),
+        run(&mut s, "group", json!({"args": ["L|Arm"], "name": "G", "world": true})),
         "G"
     );
     assert!(s.graph.find("G|Arm").unwrap().is_some());

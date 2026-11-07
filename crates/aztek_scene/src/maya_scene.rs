@@ -447,9 +447,28 @@ fn parent_cmd(s: &mut Session, a: &Args, prev: &aztek_ops::RunFn<Session>) -> Cm
 }
 
 fn group_cmd(s: &mut Session, a: &Args, prev: &aztek_ops::RunFn<Session>) -> CmdResult {
-    // Groups go under the world unless -p says otherwise. Maya puts one under its members' shared parent; the tests and
-    // tools here rely on the world.
+    // A group goes under its members' lowest common parent unless -w or -p says otherwise.
     let mut call = a.clone();
+    if !a.bool("world") && !a.has("parent") && !a.bool("empty") {
+        let g = &s.graph;
+        let names = aztek_ops::objects(s, a);
+        let ids: Vec<NodeId> = names.iter().filter_map(|n| g.find(n).ok().flatten()).collect();
+        let ancestors = |id: NodeId| {
+            let mut v = Vec::new();
+            let mut p = g.parent(id);
+            while p != NO_NODE {
+                v.push(p);
+                p = g.parent(p);
+            }
+            v
+        };
+        if let Some(&first) = ids.first() {
+            let common = ancestors(first).into_iter().find(|p| ids[1..].iter().all(|&i| ancestors(i).contains(p)));
+            if let Some(p) = common {
+                call.flags.insert("parent".into(), json!(g.path(p)));
+            }
+        }
+    }
     call.flags.remove("world");
     call.flags.remove("absolute");
     call.flags.remove("relative");
