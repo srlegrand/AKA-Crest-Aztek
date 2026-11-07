@@ -212,6 +212,9 @@ impl View {
         let items = self.vp.filter_items(&core.s.graph, gathered);
         self.vp.show_grid = self.show_grid;
         self.vp.draw(&mut self.gpu, &self.r, &mut core.s, &items, self.dpr);
+        for w in crate::textures::with_cache(&self.gpu, |c| c.take_warnings()) {
+            core.push(format!("// Warning: {w} //"), crate::core::LineKind::Warning);
+        }
         self.overlay(core, &items);
         let ok = self.gpu.end_frame(index);
         if self.want_capture {
@@ -1597,6 +1600,8 @@ impl View {
                             "cameras" => d.cameras = b,
                             "manipulators" => d.manipulators = b,
                             "flat" => d.flat = b,
+                            "textured" => d.textured = b,
+                            "defaultMaterial" => d.default_material = b,
                             "boundingBox" => d.bounding_box = b,
                             "xray" => d.xray = b,
                             "xrayJoints" => d.xray_joints = b,
@@ -1750,7 +1755,7 @@ impl View {
             "isolated" => json!(self.vp.iso.active()),
             "disp" => {
                 let d = &self.vp.disp;
-                json!({"polygons": d.polygons, "surfaces": d.surfaces, "curves": d.curves, "joints": d.joints, "ikHandles": d.ik_handles, "deformers": d.deformers, "locators": d.locators, "cameras": d.cameras, "manipulators": d.manipulators, "flat": d.flat, "boundingBox": d.bounding_box, "xray": d.xray, "xrayJoints": d.xray_joints, "xrayActive": d.xray_active, "backface": d.backface, "filmGate": d.film_gate, "resGate": d.res_gate, "safeAction": d.safe_action, "highlight": d.highlight, "grid": self.show_grid, "wireframe": self.vp.wireframe, "wireOnShaded": self.vp.wire_on_shaded})
+                json!({"polygons": d.polygons, "surfaces": d.surfaces, "curves": d.curves, "joints": d.joints, "ikHandles": d.ik_handles, "deformers": d.deformers, "locators": d.locators, "cameras": d.cameras, "manipulators": d.manipulators, "flat": d.flat, "textured": d.textured, "defaultMaterial": d.default_material, "boundingBox": d.bounding_box, "xray": d.xray, "xrayJoints": d.xray_joints, "xrayActive": d.xray_active, "backface": d.backface, "filmGate": d.film_gate, "resGate": d.res_gate, "safeAction": d.safe_action, "highlight": d.highlight, "grid": self.show_grid, "wireframe": self.vp.wireframe, "wireOnShaded": self.vp.wire_on_shaded})
             }
             _ => Value::Null,
         }

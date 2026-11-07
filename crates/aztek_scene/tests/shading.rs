@@ -223,7 +223,7 @@ fn texture_paths_are_found_as_they_are_written_then_by_name() {
     std::fs::write(images.join("Project.png"), b"x").unwrap();
     std::fs::write(images.join("sub").join("Deep.png"), b"x").unwrap();
     let (sc, pr) = (scene.to_str().unwrap().to_string(), dir.to_str().unwrap().to_string());
-    let find = |w: &str| shading::resolve_texture(w, Some(&sc), Some(&pr));
+    let find = |w: &str| shading::resolve_texture_uncached(w, Some(&sc), Some(&pr));
     // As written.
     let abs = images.join("Project.png");
     assert_eq!(find(abs.to_str().unwrap()), Some(abs.clone()));

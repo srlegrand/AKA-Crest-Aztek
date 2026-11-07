@@ -120,7 +120,8 @@ pub fn outliner(core: &Core, arg: &str) -> Value {
     // Sets and layers at the end, as Maya lists its default sets.
     for id in g.nodes() {
         let Some(n) = g.node(id) else { continue };
-        if n.ty().is_a("objectSet") && (show_intermediate || aztek_scene::deform_sets::deformer_of_set(g, id).is_none()) {
+        // Shading groups stay in the Hypershade unless everything is asked for, as Maya's outliner leaves them out.
+        if n.ty().is_a("objectSet") && (show_intermediate || (aztek_scene::deform_sets::deformer_of_set(g, id).is_none() && !n.ty().is_a(aztek_scene::shading::SG_TYPE))) {
             out.push(json!({"name": n.name(), "path": g.path(id), "type": n.ty().name, "icon": "set", "selected": sel.contains(&id), "visible": true, "intermediate": false, "children": []}));
         }
     }

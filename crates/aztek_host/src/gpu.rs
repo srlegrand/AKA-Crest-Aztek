@@ -28,6 +28,8 @@ pub struct Shared {
     pub allocator: Arc<Mutex<Allocator>>,
     pub device_name: String,
     pub features: vk::PhysicalDeviceFeatures,
+    /// Textures, kept with the device so every view draws the same uploads.
+    pub textures: Mutex<Option<crate::textures::TextureCache>>,
 }
 
 type Res<T> = Result<T, Box<dyn std::error::Error>>;
@@ -122,7 +124,16 @@ impl Shared {
                 wide_lines: enabled.wide_lines,
                 ..Default::default()
             },
+            textures: Mutex::new(None),
         }))
+    }
+}
+
+impl Drop for Shared {
+    fn drop(&mut self) {
+        if let Some(mut t) = self.textures.lock().unwrap().take() {
+            t.release(&self.device, &self.allocator);
+        }
     }
 }
 
@@ -366,7 +377,7 @@ impl Gpu {
         self.buffer_at(usage, data, MemoryLocation::CpuToGpu)
     }
 
-    fn buffer_at<T: bytemuck::Pod>(&self, usage: vk::BufferUsageFlags, data: &[T], location: MemoryLocation) -> Buffer {
+    pub(crate) fn buffer_at<T: bytemuck::Pod>(&self, usage: vk::BufferUsageFlags, data: &[T], location: MemoryLocation) -> Buffer {
         let bytes: &[u8] = bytemuck::cast_slice(data);
         let size = (bytes.len() as u64).max(16);
         unsafe {

@@ -1295,6 +1295,10 @@ fn register_queries(c: &mut Commands<Session>) {
                     }
                     return Ok(Value::Null);
                 }
+                // Naming objects replaces picked components too; the component mode stays until it is changed.
+                if mode == SelectMode::Replace && !ids.is_empty() {
+                    crate::components::clear(&mut s.graph);
+                }
                 s.graph.select(&ids, mode);
                 Ok(Value::Null)
             },

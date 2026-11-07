@@ -192,7 +192,8 @@ void MainWindow::build_runtime() {
         apply_prefs();
     });
     r("WireframeView", "View", "Wireframe", [this] { view_key("wireframe", "true"); });
-    r("ShadedView", "View", "Smooth shade all", [this] { view_key("wireframe", "false"); });
+    r("ShadedView", "View", "Smooth shade all", [this] { view_key("wireframe", "false"); view_key("disp", "{\"textured\":false}"); });
+    r("TexturedView", "View", "Hardware texturing", [this] { view_key("wireframe", "false"); view_key("disp", "{\"textured\":true}"); });
     r("PlaybackToggle", "Animation", "Play or stop", [this] { toggle_play(1); });
     r("GoToMinFrame", "Animation", "Go to the start of the playback range", [this] { time_slider_->set_time(time_slider_->start()); });
     r("NextFrame", "Animation", "Next frame", [this] { step_time(1); });
@@ -403,7 +404,7 @@ QList<HotkeyBinding> MainWindow::default_hotkeys() const {
         {"F2", 0, "MenuSetAnimation", ""}, {"F3", 0, "MenuSetModeling", ""}, {"F4", 0, "MenuSetRigging", ""}, {"F8", 0, "ToggleSelectMode", ""},
         {"F9", 0, "SelectVertexMask", ""}, {"F10", 0, "SelectEdgeMask", ""}, {"F11", 0, "SelectFacetMask", ""}, {"F12", 0, "UVEditor", ""},
         {"F9", C, "ConvertSelectionToVertices", ""}, {"F10", C, "ConvertSelectionToEdges", ""}, {"F11", C, "ConvertSelectionToFaces", ""},
-        {"1", 0, "SmoothPreviewOff", ""}, {"2", 0, "SmoothPreviewCage", ""}, {"3", 0, "SmoothPreviewSmooth", ""}, {"4", 0, "WireframeView", ""}, {"5", 0, "ShadedView", ""},
+        {"1", 0, "SmoothPreviewOff", ""}, {"2", 0, "SmoothPreviewCage", ""}, {"3", 0, "SmoothPreviewSmooth", ""}, {"4", 0, "WireframeView", ""}, {"5", 0, "ShadedView", ""}, {"6", 0, "TexturedView", ""},
         {"1", C, "IsolateSelect", ""}, {"A", A, "XRayToggle", ""}, {"B", A, "BackgroundCycle", ""}, {"Space", C, "ToggleMainPane", ""},
         {"Del", 0, "DeleteSelection", ""}, {"Backspace", 0, "DeleteSelection", ""}, {"Del", C, "DeleteEdgeVertex", ""},
         {"Return", 0, "FinishTool", ""}, {"Enter", 0, "FinishTool", ""}, {"Esc", 0, "CancelPlayback", ""},

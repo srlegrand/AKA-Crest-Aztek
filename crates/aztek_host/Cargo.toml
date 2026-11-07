@@ -24,6 +24,7 @@ gpu-allocator = { version = "0.28", default-features = false, features = ["vulka
 naga = { version = "27", features = ["glsl-in", "spv-out"] }
 bytemuck = { version = "1", features = ["derive"] }
 stacker = "0.1"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "tga", "bmp", "tiff"] }
 pyo3 = { version = "0.30", optional = true }
 
 [features]

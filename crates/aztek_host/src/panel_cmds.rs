@@ -163,6 +163,8 @@ const DISP: &[(&str, &str)] = &[
     ("xrayActive", "activeComponentsXray"),
     ("backface", "backfaceCulling"),
     ("highlight", "selectionHiliteDisplay"),
+    ("textured", "displayTextures"),
+    ("defaultMaterial", "useDefaultMaterial"),
 ];
 
 fn f(name: &str, short: &str, ty: ArgType) -> FlagDef {

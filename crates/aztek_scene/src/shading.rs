@@ -912,7 +912,7 @@ fn in_folder(dir: &Path, name: &str) -> Option<PathBuf> {
 
 /// Finds an image as Maya does: the path as written, relative to the project and then the scene; then by what follows
 /// sourceimages in the path, then by file name, in the scene's folder and the sourceimages folders.
-pub fn resolve_texture(written: &str, scene: Option<&str>, project: Option<&str>) -> Option<PathBuf> {
+pub fn resolve_texture_uncached(written: &str, scene: Option<&str>, project: Option<&str>) -> Option<PathBuf> {
     let written = expand_env(written.trim()).replace('\\', "/");
     if written.is_empty() {
         return None;
@@ -956,6 +956,23 @@ pub fn resolve_texture(written: &str, scene: Option<&str>, project: Option<&str>
     }
     let name = written.rsplit('/').next().filter(|n| !n.is_empty())?;
     folders.iter().find_map(|f| in_folder(f, name))
+}
+
+/// `resolve_texture_uncached`, asking the disk at most every two seconds per path: the viewport reads this on many frames.
+pub fn resolve_texture(written: &str, scene: Option<&str>, project: Option<&str>) -> Option<PathBuf> {
+    type Memo = HashMap<(String, Option<String>, Option<String>), (std::time::Instant, Option<PathBuf>)>;
+    static MEMO: std::sync::Mutex<Option<Memo>> = std::sync::Mutex::new(None);
+    let key = (written.to_string(), scene.map(str::to_string), project.map(str::to_string));
+    let mut guard = MEMO.lock().unwrap();
+    let memo = guard.get_or_insert_with(HashMap::new);
+    if let Some((when, found)) = memo.get(&key) {
+        if when.elapsed().as_secs_f64() < 2.0 {
+            return found.clone();
+        }
+    }
+    let found = resolve_texture_uncached(written, scene, project);
+    memo.insert(key, (std::time::Instant::now(), found.clone()));
+    found
 }
 
 /// The project folder, from the workspace command in force.
@@ -1023,23 +1040,36 @@ fn value_f(g: &mut Graph, id: NodeId, attr: &str) -> Option<f64> {
     g.value(&p).ok()?.scalar()
 }
 
-/// A file node at or just upstream of a plug, through whatever utility nodes lie between.
+/// A file node at or just upstream of a plug, through whatever utility nodes lie between. Asked often: it reads only
+/// the plugs of the nodes on the way.
 fn file_feeding(g: &Graph, id: NodeId, attr: &str) -> Option<NodeId> {
-    let t = g.node(id)?.type_arc().clone();
-    let i = t.attr_index(attr)? as i32;
-    let conns = g.connections();
-    // The whole colour, or any of its channels.
-    let mut seen: Vec<NodeId> = conns.iter().filter(|(d, _)| d.node == id && d.attr == i).map(|(_, s)| s.node).collect();
+    let i = g.node(id)?.ty().attr_index(attr)? as i32;
+    let mut seen: Vec<NodeId> = Vec::new();
+    for p in [PlugRef::new(id, i), PlugRef::component(id, i, 0), PlugRef::component(id, i, 1), PlugRef::component(id, i, 2)] {
+        if let Some(s) = g.source(&p) {
+            seen.push(s.node);
+        }
+    }
     let mut k = 0;
     while k < seen.len() && seen.len() < 64 {
         let at = seen[k];
         k += 1;
-        if g.node(at).is_some_and(|n| n.ty().name == "file") {
+        let Some(n) = g.node(at) else { continue };
+        if n.ty().name == "file" {
             return Some(at);
         }
-        for (d, s) in &conns {
-            if d.node == at && !seen.contains(&s.node) && !is_shaded_shape(g, s.node) {
-                seen.push(s.node);
+        for (a, def) in n.ty().attrs.iter().enumerate() {
+            if !def.has(flags::INPUT) || def.is_array() {
+                continue;
+            }
+            let plugs = [PlugRef::new(at, a as i32), PlugRef::component(at, a as i32, 0), PlugRef::component(at, a as i32, 1), PlugRef::component(at, a as i32, 2)];
+            let count = if def.ty == PlugType::Vec3 { 4 } else { 1 };
+            for p in &plugs[..count] {
+                if let Some(s) = g.source(p) {
+                    if !seen.contains(&s.node) && !is_shaded_shape(g, s.node) {
+                        seen.push(s.node);
+                    }
+                }
             }
         }
     }

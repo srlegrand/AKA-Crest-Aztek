@@ -22,7 +22,8 @@ use aztek_scene::surfaces::{self, SurfaceShape};
 
 use crate::camera::{CamKind, Camera};
 use crate::gpu::{Buffer, Gpu};
-use crate::render::{c8, Kind, LineVertex, Push, Renderer, ShadedVertex};
+use crate::render::{c8, Kind, LineVertex, MatPush, Push, Renderer, ShadedVertex};
+use aztek_scene::shading::{self, DrawMaterial};
 
 pub struct DrawItem {
     pub shape: NodeId,
@@ -90,6 +91,100 @@ struct GpuMesh {
     vertex_point: Vec<Index>,
     weight_tris: Option<(Buffer, Buffer, u32)>,
     weight_key: u64,
+    /// UVs, one per render vertex: the second vertex buffer of the material pipelines.
+    uvs: Option<Buffer>,
+    /// Per face of the smooth preview's mesh, the cage face it is part of.
+    display_faces: Vec<Index>,
+    /// The triangles again, gathered by shading group.
+    batch_ib: Option<Buffer>,
+    batch_indices: Vec<Index>,
+    /// The cage face of each triangle of batch_indices.
+    batch_faces: Vec<Index>,
+    batches: Vec<Batch>,
+    batch_key: u64,
+}
+
+/// A run of triangles one material draws. group is NO_NODE for a shape no shading group holds.
+#[derive(Clone, Copy)]
+struct Batch {
+    group: NodeId,
+    first: u32,
+    count: u32,
+}
+
+/// One material's textures, this frame.
+#[derive(Clone, Copy)]
+struct MatSets {
+    color: Option<vk::DescriptorSet>,
+    alpha: Option<vk::DescriptorSet>,
+    alpha_has_alpha: bool,
+}
+
+/// How the scene's materials draw, read when the scene changes.
+#[derive(Default)]
+struct MatTable {
+    version: u64,
+    materials: HashMap<NodeId, DrawMaterial>,
+    members: HashMap<NodeId, Vec<(NodeId, Option<Vec<u32>>)>>,
+    project: Option<String>,
+    project_read: Option<std::time::Instant>,
+    sets: HashMap<NodeId, MatSets>,
+    /// lambert1: what draws a shading group whose shader Aztek doesn't know.
+    fallback: Option<DrawMaterial>,
+}
+
+/// A see-through batch, drawn after everything solid.
+struct Clear {
+    shape: NodeId,
+    world: DMat4,
+    batch: usize,
+    depth: f64,
+    retopo: f32,
+}
+
+/// What a shape draws with when nothing shades it: Maya's green.
+fn no_material() -> DrawMaterial {
+    DrawMaterial { group: NO_NODE, material: NO_NODE, unlit: false, color: [0.0, 1.0, 0.0], ambient: [0.0; 3], incandescence: [0.0; 3], diffuse: 1.0, transparency: 0.0, color_map: None, alpha_map: None }
+}
+
+fn material_push(base: Push, m: &DrawMaterial, sets: Option<&MatSets>) -> (MatPush, bool) {
+    let color_set = sets.and_then(|x| x.color);
+    let alpha_set = sets.and_then(|x| x.alpha);
+    let placed = m.color_map.as_ref().filter(|_| color_set.is_some()).or(m.alpha_map.as_ref().filter(|_| alpha_set.is_some()));
+    let mut flags = 0;
+    let (mut uv, mut frame, mut rot, mut gain, mut offs) = ([1.0, 1.0, 0.0, 0.0], [1.0, 1.0, 0.0, 0.0], [0.0, 0.0], [1.0; 3], [0.0; 3]);
+    if let Some(t) = placed {
+        uv = [t.repeat[0], t.repeat[1], t.offset[0], t.offset[1]];
+        frame = [t.coverage[0].max(1e-6), t.coverage[1].max(1e-6), t.translate_frame[0], t.translate_frame[1]];
+        rot = [t.rotate_uv.to_radians(), t.rotate_frame.to_radians()];
+        flags |= t.wrap[0] as i32 | (t.wrap[1] as i32) << 1 | (t.mirror[0] as i32) << 2 | (t.mirror[1] as i32) << 3;
+        gain = t.gain;
+        offs = t.color_offset;
+    } else {
+        flags |= 3;
+    }
+    if color_set.is_some() {
+        flags |= 16;
+    }
+    let mut alpha_mode = 0.0;
+    if alpha_set.is_some() {
+        let lum = m.alpha_map.as_ref().is_some_and(|t| t.alpha_is_luminance) || !sets.is_some_and(|x| x.alpha_has_alpha);
+        alpha_mode = if lum { 2.0 } else { 1.0 };
+    }
+    let alpha = 1.0 - m.transparency;
+    let mut base = base;
+    base.color = [m.color[0], m.color[1], m.color[2], alpha];
+    let push = MatPush {
+        base,
+        uv,
+        frame,
+        misc: [rot[0], rot[1], flags as f32, alpha_mode],
+        gain: [gain[0], gain[1], gain[2], if m.unlit { 0.0 } else { 1.0 }],
+        offs: [offs[0], offs[1], offs[2], m.diffuse],
+        ambient: [m.ambient[0], m.ambient[1], m.ambient[2], 0.0],
+        incandescence: [m.incandescence[0], m.incandescence[1], m.incandescence[2], 0.0],
+    };
+    (push, alpha_mode > 0.0 || alpha < 0.999)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -198,6 +293,10 @@ pub struct Display {
     pub normal_size: f64,
     /// Polygon display options apply to the selection only (Display > Polygons > Limit to Selected).
     pub limit_to_selected: bool,
+    /// Hardware texturing: the 6 key, modelEditor -displayTextures.
+    pub textured: bool,
+    /// Every surface in the default grey: modelEditor -useDefaultMaterial.
+    pub default_material: bool,
 }
 
 impl Default for Display {
@@ -229,6 +328,8 @@ impl Default for Display {
             crease_edges: false,
             normal_size: 0.4,
             limit_to_selected: true,
+            textured: false,
+            default_material: false,
         }
     }
 }
@@ -271,6 +372,7 @@ pub struct Viewport {
     pub pivot_mode: bool,
     pub cam: Camera,
     meshes: HashMap<NodeId, GpuMesh>,
+    mats: MatTable,
     grid: Option<(Buffer, u32)>,
     pub wireframe: bool,
     pub wire_on_shaded: bool,
@@ -317,6 +419,7 @@ impl Viewport {
         Viewport {
             cam: Camera::new(kind),
             meshes: HashMap::new(),
+            mats: Default::default(),
             grid: None,
             wireframe: false,
             wire_on_shaded: false,
@@ -411,8 +514,73 @@ impl Viewport {
         }
     }
 
+    /// Reads the materials when the scene has changed; finds this frame's textures. A missing or broken image is a
+    /// warning in the script history, once, and the material draws with the file node's default colour.
+    fn prepare_materials(&mut self, gpu: &Gpu, s: &mut Session) {
+        let stale_project = self.mats.project_read.is_none_or(|t| t.elapsed().as_secs_f64() > 2.0);
+        if stale_project {
+            self.mats.project = shading::project_dir(s);
+            self.mats.project_read = Some(std::time::Instant::now());
+        }
+        let g = &mut s.graph;
+        if g.version() != self.mats.version || self.mats.materials.is_empty() {
+            self.mats.members = shading::membership(g);
+            let scene = s.scene_path.clone();
+            let project = self.mats.project.clone();
+            let mut materials = HashMap::new();
+            for sg in shading::all_groups(&s.graph) {
+                if let Some(m) = shading::draw_material(&mut s.graph, sg, scene.as_deref(), project.as_deref()) {
+                    materials.insert(sg, m);
+                }
+            }
+            let g = &mut s.graph;
+            self.mats.fallback = g.find(shading::INITIAL_SG).ok().flatten().and_then(|sg| materials.get(&sg).cloned());
+            self.mats.materials = materials;
+            self.mats.version = g.version();
+            crate::textures::with_cache(gpu, |c| {
+                for m in self.mats.materials.values() {
+                    for t in [&m.color_map, &m.alpha_map].into_iter().flatten() {
+                        if t.resolved.is_none() && !t.written.is_empty() {
+                            c.warn(format!("Cannot find texture {}", t.written));
+                        }
+                    }
+                }
+            });
+        }
+        self.mats.sets.clear();
+        if !self.disp.textured || !r_supports(gpu) {
+            return;
+        }
+        let mut found = Vec::new();
+        crate::textures::with_cache(gpu, |c| {
+            for (sg, m) in &self.mats.materials {
+                let color = m.color_map.as_ref().and_then(|t| t.resolved.as_ref().and_then(|p| c.get(gpu, p, t.srgb)).map(|l| (t.file, l)));
+                let alpha = m.alpha_map.as_ref().and_then(|t| t.resolved.as_ref().and_then(|p| c.get(gpu, p, t.srgb)).map(|l| (t.file, l)));
+                self.mats.sets.insert(*sg, MatSets { color: color.map(|x| x.1.set), alpha: alpha.map(|x| x.1.set), alpha_has_alpha: alpha.is_some_and(|x| x.1.has_alpha) });
+                found.extend(color);
+                found.extend(alpha);
+            }
+        });
+        // What the image says of itself, as the file node reports it. Not an edit: no undo.
+        let g = &mut s.graph;
+        for (file, l) in found {
+            let Some(n) = g.node(file) else { continue };
+            let t = n.type_arc().clone();
+            let (Some(fha), Some(os)) = (t.attr_index("fileHasAlpha"), t.attr_index("outSize")) else { continue };
+            let size = DVec3::new(l.size.0 as f64, l.size.1 as f64, 0.0);
+            let same = n.bool(fha) == l.has_alpha && n.data().vec3(os) == size;
+            if !same {
+                g.without_undo(|g| {
+                    let _ = g.set_value(aztek_scene::PlugRef::new(file, fha as i32), aztek_scene::PlugValue::Bool(l.has_alpha));
+                    let _ = g.set_value(aztek_scene::PlugRef::new(file, os as i32), aztek_scene::PlugValue::Vec3(size));
+                });
+            }
+        }
+    }
+
     pub fn draw(&mut self, gpu: &mut Gpu, r: &Renderer, s: &mut Session, items: &[DrawItem], scale: f64) {
         self.prune(gpu, items);
+        self.prepare_materials(gpu, s);
         let [x, y, w, h] = self.rect;
         if w < 2.0 || h < 2.0 {
             return;
@@ -436,6 +604,7 @@ impl Viewport {
         let mode = components::mode(g);
         let sel = g.selection().to_vec();
         let lead = sel.last().copied();
+        let mut transparent: Vec<Clear> = Vec::new();
         for it in items {
             let entry = self.meshes.entry(it.shape).or_insert_with(|| GpuMesh {
                 mesh_key: 0,
@@ -452,21 +621,37 @@ impl Viewport {
                 vertex_point: Vec::new(),
                 weight_tris: None,
                 weight_key: u64::MAX,
+                uvs: None,
+                display_faces: Vec::new(),
+                batch_ib: None,
+                batch_indices: Vec::new(),
+                batch_faces: Vec::new(),
+                batches: Vec::new(),
+                batch_key: u64::MAX,
             });
             let key = Arc::as_ptr(&it.mesh) as usize;
             let mesh_changed = entry.mesh_key != key || entry.smooth != it.smooth;
             if mesh_changed {
                 entry.smooth = it.smooth;
+                let mut sub_map = aztek_geo::ops::subdivide::SubdivideMap::default();
                 entry.display = (it.smooth > 0).then(|| {
                     let o = aztek_geo::ops::subdivide::SubdivideOptions { levels: it.smooth, ..Default::default() };
-                    Arc::new(aztek_geo::ops::subdivide::subdivide(&it.mesh, &o, None))
+                    Arc::new(aztek_geo::ops::subdivide::subdivide(&it.mesh, &o, Some(&mut sub_map)))
                 });
+                entry.display_faces = sub_map.faces;
                 if let Some((a, b, _)) = entry.tris.take() {
                     gpu.drop_buffer(a);
                     gpu.drop_buffer(b);
                 }
                 let shown = entry.display.clone().unwrap_or_else(|| it.mesh.clone());
-                let rm = build_render_mesh(&shown, &RenderMeshOptions { max_uv_sets: 0, ..Default::default() });
+                let rm = build_render_mesh(&shown, &RenderMeshOptions { max_uv_sets: 1, ..Default::default() });
+                if let Some(b) = entry.uvs.take() {
+                    gpu.drop_buffer(b);
+                }
+                let uvs: Vec<[f32; 2]> = rm.uvs.first().cloned().unwrap_or_else(|| vec![[0.0; 2]; rm.positions.len()]);
+                if !uvs.is_empty() {
+                    entry.uvs = Some(gpu.buffer_with(vk::BufferUsageFlags::VERTEX_BUFFER, &uvs));
+                }
                 let verts: Vec<ShadedVertex> = rm
                     .positions
                     .iter()
@@ -593,6 +778,60 @@ impl Viewport {
                     }
                 }
             }
+            // The triangles by shading group, when either has changed.
+            let group_list: Vec<(NodeId, Option<Vec<u32>>)> = {
+                let held = self.mats.members.get(&it.shape).cloned();
+                held.unwrap_or_else(|| {
+                    let src = if g.node(it.shape).is_some_and(|n| n.ty().is_a("mesh")) { aztek_scene::instancing::source(g, it.shape) } else { NO_NODE };
+                    self.mats.members.get(&src).cloned().unwrap_or_default()
+                })
+            };
+            let entry = self.meshes.get_mut(&it.shape).unwrap();
+            let mut bh = DefaultHasher::new();
+            (key, entry.smooth).hash(&mut bh);
+            group_list.hash(&mut bh);
+            let batch_key = bh.finish();
+            if batch_key != entry.batch_key {
+                entry.batch_key = batch_key;
+                if let Some(b) = entry.batch_ib.take() {
+                    gpu.drop_buffer(b);
+                }
+                let face_group = shading::face_groups(&it.mesh, &group_list);
+                let cage_of = |t: usize| -> Index {
+                    let f = entry.tri_faces[t];
+                    if entry.display.is_some() {
+                        entry.display_faces.get(f as usize).copied().unwrap_or(0)
+                    } else {
+                        f
+                    }
+                };
+                let tri_count = entry.tri_faces.len();
+                let mut order: Vec<(usize, u32)> = (0..tri_count).map(|t| (face_group.get(cage_of(t) as usize).copied().unwrap_or(usize::MAX), t as u32)).collect();
+                order.sort_unstable();
+                let (mut indices, mut faces, mut batches) = (Vec::with_capacity(tri_count * 3), Vec::with_capacity(tri_count), Vec::new());
+                let mut k = 0;
+                while k < order.len() {
+                    let mut end = k;
+                    while end < order.len() && order[end].0 == order[k].0 {
+                        end += 1;
+                    }
+                    let group = group_list.get(order[k].0).map_or(NO_NODE, |x| x.0);
+                    let first = indices.len() as u32;
+                    for &(_, t) in &order[k..end] {
+                        let t = t as usize;
+                        indices.extend_from_slice(&entry.tri_indices[t * 3..t * 3 + 3]);
+                        faces.push(cage_of(t));
+                    }
+                    batches.push(Batch { group, first, count: indices.len() as u32 - first });
+                    k = end;
+                }
+                if !indices.is_empty() {
+                    entry.batch_ib = Some(gpu.buffer_with(vk::BufferUsageFlags::INDEX_BUFFER, &indices));
+                }
+                entry.batch_indices = indices;
+                entry.batch_faces = faces;
+                entry.batches = batches;
+            }
             let mvp = vp * it.world;
             // Paint skin weights: the painted influence's weight in grey, white for 1, as Maya's colour feedback.
             let mut painted = false;
@@ -706,13 +945,78 @@ impl Viewport {
                         let mut pc = push(mvp, it.world, view, [0.55, 0.55, 0.55, 0.45], retopo, 1.0);
                         pc.n2[3] = self.disp.flat as i32 as f32;
                         r.push(gpu, &pc);
-                    } else {
+                        r.draw(gpu, vb, Some((ib, *n)), 0);
+                    } else if self.disp.default_material {
                         r.bind(gpu, if self.disp.backface { Kind::ShadedCull } else { Kind::Shaded });
                         let mut pc = push(mvp, it.world, view, [0.5, 0.5, 0.5, 1.0], retopo, 1.0);
                         pc.n2[3] = self.disp.flat as i32 as f32;
                         r.push(gpu, &pc);
+                        r.draw(gpu, vb, Some((ib, *n)), 0);
+                    } else {
+                        let batches = entry.batches.clone();
+                        // A partly isolated mesh: its shown faces of each batch, for this frame.
+                        let mut shown_batches: Option<(Buffer, Vec<Batch>)> = None;
+                        if partial.is_some() {
+                            let (mut ti, mut list) = (Vec::new(), Vec::new());
+                            for b in &batches {
+                                let first = ti.len() as u32;
+                                for t in 0..(b.count / 3) as usize {
+                                    let at = b.first as usize / 3 + t;
+                                    if shown_mask.get(entry.batch_faces[at] as usize).copied().unwrap_or(1) != 0 {
+                                        ti.extend_from_slice(&entry.batch_indices[at * 3..at * 3 + 3]);
+                                    }
+                                }
+                                if ti.len() as u32 > first {
+                                    list.push(Batch { group: b.group, first, count: ti.len() as u32 - first });
+                                }
+                            }
+                            if !ti.is_empty() {
+                                shown_batches = Some((gpu.buffer_with(vk::BufferUsageFlags::INDEX_BUFFER, &ti), list));
+                            }
+                        }
+                        let (draw_ib, draw_list): (Option<&Buffer>, &[Batch]) = match &shown_batches {
+                            Some((b, l)) => (Some(b), l),
+                            None if partial.is_some() => (None, &[]),
+                            None => (entry.batch_ib.as_ref(), &batches),
+                        };
+                        let depth = (view * it.world.w_axis).z;
+                        for (bi, b) in draw_list.iter().enumerate() {
+                            let green = no_material();
+                            let m = if b.group == NO_NODE { &green } else { self.mats.materials.get(&b.group).or(self.mats.fallback.as_ref()).unwrap_or(&green) };
+                            let mut pc = push(mvp, it.world, view, [m.color[0], m.color[1], m.color[2], 1.0], retopo, 1.0);
+                            pc.n2[3] = self.disp.flat as i32 as f32;
+                            let (mp, clear) = material_push(pc, m, self.mats.sets.get(&b.group));
+                            // The isolated draws are for this frame only, so see-through ones go now rather than later.
+                            if clear && shown_batches.is_none() && r.materials {
+                                transparent.push(Clear { shape: it.shape, world: it.world, batch: bi, depth, retopo });
+                                continue;
+                            }
+                            let (Some(ib), Some(uvs)) = (draw_ib, entry.uvs.as_ref()) else { continue };
+                            if r.materials {
+                                let sets = self.mats.sets.get(&b.group);
+                                let white = crate::textures::with_cache(gpu, |c| c.white(gpu));
+                                let kind = match (clear, self.disp.backface) {
+                                    (false, false) => Kind::Material,
+                                    (false, true) => Kind::MaterialCull,
+                                    (true, false) => Kind::MaterialBlend,
+                                    (true, true) => Kind::MaterialBlendCull,
+                                };
+                                r.bind_material(gpu, kind, sets.and_then(|x| x.color).unwrap_or(white), sets.and_then(|x| x.alpha).unwrap_or(white));
+                                r.push_material(gpu, &mp);
+                                r.draw_material(gpu, vb, uvs, ib, b.first, b.count);
+                            } else {
+                                // A device without room for the material constants: flat colours.
+                                r.bind(gpu, if clear { Kind::Tint } else if self.disp.backface { Kind::ShadedCull } else { Kind::Shaded });
+                                let mut pc = mp.base;
+                                pc.color = [m.color[0] * m.diffuse, m.color[1] * m.diffuse, m.color[2] * m.diffuse, mp.base.color[3]];
+                                r.push(gpu, &pc);
+                                r.draw_range(gpu, vb, ib, b.first, b.count);
+                            }
+                        }
+                        if let Some((b, _)) = shown_batches {
+                            gpu.drop_buffer(b);
+                        }
                     }
-                    r.draw(gpu, vb, Some((ib, *n)), 0);
                     if let Some((ti, tn)) = &entry.tint {
                         r.bind(gpu, Kind::Tint);
                         r.push(gpu, &push(mvp, it.world, view, [1.0, 0.45, 0.05, 0.45], 2e-4, 1.0));
@@ -734,6 +1038,23 @@ impl Viewport {
                 r.push(gpu, &push(mvp, it.world, view, [1.0; 4], 2e-3, (5.0 * scale) as f32));
                 r.draw(gpu, pb, None, *pn);
             }
+        }
+        // See-through materials last, the furthest first, reading the depth the solid ones wrote.
+        transparent.sort_by(|a, b| a.depth.total_cmp(&b.depth));
+        for c in &transparent {
+            let Some(entry) = self.meshes.get(&c.shape) else { continue };
+            let (Some((vb, _, _)), Some(ib), Some(uvs)) = (&entry.tris, entry.batch_ib.as_ref(), entry.uvs.as_ref()) else { continue };
+            let Some(b) = entry.batches.get(c.batch).copied() else { continue };
+            let green = no_material();
+            let m = self.mats.materials.get(&b.group).or(self.mats.fallback.as_ref()).unwrap_or(&green);
+            let mut pc = push(vp * c.world, c.world, view, [m.color[0], m.color[1], m.color[2], 1.0], c.retopo, 1.0);
+            pc.n2[3] = self.disp.flat as i32 as f32;
+            let sets = self.mats.sets.get(&b.group);
+            let (mp, _) = material_push(pc, m, sets);
+            let white = crate::textures::with_cache(gpu, |c| c.white(gpu));
+            r.bind_material(gpu, if self.disp.backface { Kind::MaterialBlendCull } else { Kind::MaterialBlend }, sets.and_then(|x| x.color).unwrap_or(white), sets.and_then(|x| x.alpha).unwrap_or(white));
+            r.push_material(gpu, &mp);
+            r.draw_material(gpu, vb, uvs, ib, b.first, b.count);
         }
         self.draw_poly_display(gpu, r, s, items);
         self.draw_rig(gpu, r, s, scale);
@@ -2095,7 +2416,18 @@ impl Viewport {
     }
 }
 
+fn r_supports(gpu: &Gpu) -> bool {
+    let limits = unsafe { gpu.shared.instance.get_physical_device_properties(gpu.shared.phys).limits };
+    limits.max_push_constants_size as usize >= std::mem::size_of::<MatPush>()
+}
+
 fn drop_mesh(gpu: &mut Gpu, m: GpuMesh) {
+    if let Some(b) = m.uvs {
+        gpu.drop_buffer(b);
+    }
+    if let Some(b) = m.batch_ib {
+        gpu.drop_buffer(b);
+    }
     if let Some((a, b, _)) = m.tris {
         gpu.drop_buffer(a);
         gpu.drop_buffer(b);

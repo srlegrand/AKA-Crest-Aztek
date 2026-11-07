@@ -445,6 +445,12 @@ QPixmap draw(const QString& name, int size) {
     } else if (name == "shaded") {
         pen_color(Qt::transparent, 0);
         cube(p, QRectF(2, 2, 28, 28), kFill);
+    } else if (name == "textured") {
+        // A checkered tile.
+        p.fillRect(QRectF(4, 4, 24, 24), QColor(200, 200, 200));
+        for (int y = 0; y < 2; y++)
+            for (int x = 0; x < 2; x++)
+                if ((x + y) % 2 == 0) p.fillRect(QRectF(4 + x * 12, 4 + y * 12, 12, 12), QColor(70, 110, 170));
     } else if (name == "wireOnShaded") {
         pen_color(kInk, 1.0);
         cube(p, QRectF(2, 2, 28, 28), kFill);

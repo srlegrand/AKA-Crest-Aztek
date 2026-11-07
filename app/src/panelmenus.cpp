@@ -154,6 +154,9 @@ void ModelPanel::build_menus() {
     smooth->setChecked(true);
     (void)wire;
     shading->addSeparator();
+    flag_item(shading, v, "Hardware Texturing\t6", "textured", *flags);
+    flag_item(shading, v, "Use Default Material", "defaultMaterial", *flags);
+    shading->addSeparator();
     QAction* wos = shading->addAction("Wireframe on Shaded");
     wos->setCheckable(true);
     connect(wos, &QAction::toggled, this, [v](bool on) { v->set("wireOnShaded", on ? "true" : "false"); });
@@ -278,6 +281,7 @@ void ModelPanel::build_menus() {
     bar_->addSeparator();
     bar_->addAction(icon("wireframe"), "Wireframe (4)", set("wireframe", "true"));
     bar_->addAction(icon("shaded"), "Smooth Shade All (5)", set("wireframe", "false"));
+    bar_flag("textured", "Textured (6)", "textured");
     QAction* wos2 = bar_->addAction(icon("wireOnShaded"), "Wireframe on Shaded");
     wos2->setCheckable(true);
     connect(wos2, &QAction::toggled, wos, &QAction::setChecked);
