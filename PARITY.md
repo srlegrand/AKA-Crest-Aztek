@@ -123,5 +123,28 @@ Rigging and deformers, as of 06/11/2026: `joint` (create, edit with orient, quer
 solvers, pole vector, twist), `nonLinear` (bend, twist, squash, flare, sine, wave) with handles, `cluster`,
 `blendShape` with a weight per target. Everything saves and loads.
 
+Utility nodes, expressions and core commands, as of 06/11/2026: `multiplyDivide`, `plusMinusAverage`, `condition`,
+`clamp`, `setRange`, `reverse`, `blendColors`, `blendTwoAttr`, `remapValue`, `distanceBetween`, `angleBetween`,
+`vectorProduct`, `pairBlend`, `decomposeMatrix`, `composeMatrix`, `multMatrix` and the other matrix nodes, the quaternion
+nodes, `blendMatrix`, `aimMatrix`, `pickMatrix`, the float, colour and modern math nodes, `closestPointOnMesh`
+(`utility_nodes.rs`). Connections depend on plugs rather than nodes, so `pCube1.tx -> node -> pCube1.ty` runs; array
+elements have components (`input3D[0].input3Dx`) and can drive. `expression` node and command (`expression.rs`) over real
+connections. Transforms: `offsetParentMatrix`, `shear`, limits and `transformLimits`, `inheritsTransform`, inverse
+matrices, `rotateQuaternion`, bounding box attributes, `hiddenInOutliner`. UUIDs and namespaces. Full flag sets for the
+core commands (`maya_attrs.rs`, `maya_xforms.rs`, `maya_scene.rs`).
+
+Differences from Maya in these: `group` goes under the world, not the members' shared parent, because existing tests and
+tools rely on it. `src.t -> dst.r` followed by `dst.r -> src.s` is refused as a cycle, which Maya allows, for the same
+reason. `parentMatrix` read through a connection includes `offsetParentMatrix` (getAttr gives Maya's value). Expression
+numbers are all doubles, so `1/2` is 0.5. `parent -add` makes an instance through `instance`. `closestPointOnMesh` leaves
+`parameterU` and `parameterV` at 0. Limits apply when the node computes, so a plug reading a limited channel directly can
+see the value before the limit. The defaults of `multiplyDivide.input1`, `condition.colorIfTrue` and `floatMath.floatB`
+were written from memory with no Maya to check against. `Core::mel` moves the switches of move, rotate and scale after
+their values before parsing, since the parser reads a 0 or 1 after a switch as its value.
+
+Not yet in these: `polyEvaluate -b2` and `-bc2`, `select` of `pCube1.vtx[*]`; `displaySmoothness` acts on `-po` only;
+`displayCull`, `snapMode` and the display attributes (`displayHandle`, `displayLocalAxis` and so on) hold their values
+but the viewport does not draw from them.
+
 Not yet: weight painting, lattice, wrap, wire, delta mush, spline IK, set driven keys, NURBS curves, the dope sheet,
 the node editor, `.ma` files, the OpenMaya subset, MEL procedures and control flow.

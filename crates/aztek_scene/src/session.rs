@@ -51,6 +51,13 @@ pub struct Session {
     pub key_selection: Vec<(NodeId, f64)>,
     /// The live surface: what Quad Draw and snapping draw on.
     pub live_surface: Vec<NodeId>,
+    /// optionVar's values.
+    pub option_vars: BTreeMap<String, Value>,
+    /// currentUnit's linear and angular units. Values stay in cm and degrees internally.
+    pub linear_unit: String,
+    pub angular_unit: String,
+    /// snapMode's switches.
+    pub snap_modes: BTreeMap<String, bool>,
 }
 
 impl Default for Session {
@@ -74,6 +81,10 @@ impl Session {
             key_clipboard: Default::default(),
             key_selection: Vec::new(),
             live_surface: Vec::new(),
+            option_vars: BTreeMap::new(),
+            linear_unit: "cm".into(),
+            angular_unit: "deg".into(),
+            snap_modes: BTreeMap::new(),
         };
         crate::commands::register(&mut s.commands);
         crate::components::register(&mut s.commands);
@@ -101,6 +112,9 @@ impl Session {
         crate::maya_cmds::register(&mut s.commands);
         crate::maya_core::register(&mut s.commands);
         crate::expression::register(&mut s.commands);
+        crate::maya_attrs::register(&mut s.commands);
+        crate::maya_xforms::register(&mut s.commands);
+        crate::maya_scene::register(&mut s.commands);
         // Last: history node types take their attributes from the commands registered above.
         crate::history::register(&mut s.commands);
         crate::instancing::install(&mut s.graph);

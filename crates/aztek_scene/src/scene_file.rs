@@ -83,6 +83,13 @@ pub fn serialize(g: &Graph, packed: bool) -> Value {
         node.insert("name".into(), json!(n.name()));
         node.insert("type".into(), json!(n.ty().name));
         node.insert("uuid".into(), json!(n.uuid()));
+        if !n.aliases().is_empty() {
+            node.insert("aliases".into(), json!(n.aliases()));
+        }
+        let channels: Vec<Value> = n.channels.iter().map(|((a, c), (k, b))| json!([n.ty().attrs[*a as usize].name, c, k, b])).collect();
+        if !channels.is_empty() {
+            node.insert("channels".into(), Value::Array(channels));
+        }
         let p = g.parent(id);
         if p != NO_NODE {
             node.insert("parent".into(), json!(g.full_path(p)));
@@ -324,6 +331,18 @@ pub fn instantiate(g: &mut Graph, doc: &Value, warnings: &mut Vec<String>) -> Ve
             })();
             if let Err(e) = r {
                 warnings.push(format!("{name}.{attr}: {e}"));
+            }
+        }
+        for (alias, target) in member_obj(jn, "aliases").into_iter().flatten() {
+            if let Some(t) = target.as_str() {
+                g.set_alias(id, alias, Some(t.to_string()));
+            }
+        }
+        for c in member(jn, "channels") {
+            if let (Some(attr), Some(comp), Some(k), Some(b)) = (c[0].as_str(), c[1].as_i64(), c[2].as_bool(), c[3].as_bool()) {
+                if let Some(i) = nt.attr_index(attr) {
+                    g.set_channel_state(&PlugRef { node: id, attr: i as i32, component: comp as i32, element: -1 }, Some(k), Some(b));
+                }
             }
         }
         // After the values, which a lock would otherwise refuse.

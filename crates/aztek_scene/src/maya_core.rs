@@ -12,8 +12,31 @@ use crate::transform::DagNode;
 
 type Cmd = CommandDef<Session>;
 
-fn f(name: &str, short: &str, ty: ArgType, doc: &str) -> FlagDef {
+pub(crate) fn f(name: &str, short: &str, ty: ArgType, doc: &str) -> FlagDef {
     FlagDef::new(name, short, ty, Value::Null, doc)
+}
+
+/// Whether query mode asked for this flag.
+pub(crate) fn asked(a: &aztek_ops::Args, name: &str) -> bool {
+    a.get("queried").and_then(Value::as_array).is_some_and(|v| v.iter().any(|x| x.as_str() == Some(name))) || a.bool(name)
+}
+
+/// Replaces a registered command with one that has more flags and runs `wrap`, handed the old command to fall back on.
+/// A flag named like an old one takes its place, so its default can change.
+pub(crate) fn extend(
+    c: &mut Commands<Session>,
+    name: &str,
+    flags: Vec<FlagDef>,
+    wrap: impl Fn(&mut Session, &aztek_ops::Args, &aztek_ops::RunFn<Session>) -> CmdResult + Send + Sync + 'static,
+) {
+    let mut def = c.find(name).unwrap_or_else(|| panic!("no command {name}")).clone();
+    let prev = def.run.clone();
+    for fl in flags {
+        def.flags.retain(|o| o.name != fl.name);
+        def.flags.push(fl);
+    }
+    def.run = std::sync::Arc::new(move |s: &mut Session, a: &aztek_ops::Args| wrap(s, a, &prev));
+    c.register(def);
 }
 
 /// Glob match: `*` any run, `?` any one character.

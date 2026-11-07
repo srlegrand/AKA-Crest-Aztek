@@ -412,6 +412,10 @@ pub struct Node {
     pub(crate) name: String,
     pub(crate) namespace: String,
     pub(crate) uuid: String,
+    /// setAttr -k / -cb on one plug: (attr, component) -> (keyable, channel box).
+    pub(crate) channels: BTreeMap<(i32, i32), (bool, bool)>,
+    /// aliasAttr: alias -> attribute.
+    pub(crate) aliases: BTreeMap<String, String>,
     pub(crate) reference: u32,
     pub(crate) data: NodeData,
     /// True once `data.ty` is this node's private copy holding user attrs.
@@ -442,6 +446,8 @@ impl Node {
             name: String::new(),
             namespace: String::new(),
             uuid: new_uuid(),
+            channels: BTreeMap::new(),
+            aliases: BTreeMap::new(),
             reference: 0,
             data: NodeData {
                 ty,
@@ -473,6 +479,10 @@ impl Node {
     /// "" for the root namespace.
     pub fn namespace(&self) -> &str {
         &self.namespace
+    }
+    /// aliasAttr's aliases: alias -> attribute.
+    pub fn aliases(&self) -> &BTreeMap<String, String> {
+        &self.aliases
     }
     /// The node's identity, as `ls -uuid` gives it.
     pub fn uuid(&self) -> &str {

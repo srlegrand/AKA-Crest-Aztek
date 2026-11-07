@@ -143,6 +143,7 @@ impl Core {
     pub fn mel(&mut self, src: &str) -> Value {
         let mut last = Value::Null;
         for stmt in mel::statements(src) {
+            let stmt = switches_last(&stmt);
             match mel::parse(&self.s.commands, &stmt) {
                 Ok((name, mut call)) => {
                     self.push(format!("{stmt};"), LineKind::Echo);
@@ -209,6 +210,8 @@ impl Core {
                 if let Some(to) = o.remove("to") {
                     o.insert("by".into(), to);
                 }
+                // The object form's switches mean nothing to the component commands.
+                o.retain(|k, _| matches!(k.as_str(), "by" | "args" | "pivot"));
             }
         }
         let _ = self.exec_quiet("select", json!({ "args": comps }), CallSource::Script);
@@ -241,7 +244,15 @@ impl Core {
     }
 
     /// aztek.cmds.<name>(*args, **kwargs): Maya's spellings, short flags, query and edit modes.
-    pub fn py_call(&mut self, typed: &str, args: Vec<Value>, kwargs: Map<String, Value>) -> Result<Value, String> {
+    pub fn py_call(&mut self, typed: &str, args: Vec<Value>, mut kwargs: Map<String, Value>) -> Result<Value, String> {
+        // optionVar(q='name'): the query flag carrying what is queried.
+        let mut args = args;
+        for k in ["q", "query"] {
+            if let Some(Value::String(what)) = kwargs.get(k).cloned() {
+                args.push(json!(what));
+                kwargs.insert(k.to_string(), json!(true));
+            }
+        }
         let al = mel::alias(typed);
         let name = al.map(|a| a.target.to_string()).unwrap_or(typed.to_string());
         let def_flags: Vec<(String, String, aztek_ops::ArgType)> = match self.s.commands.find(&name) {
@@ -470,6 +481,25 @@ fn register_ui_commands(s: &mut Session) {
 
 pub fn take_ui_requests() -> Value {
     json!(std::mem::take(&mut *UI_REQUESTS.lock().unwrap()))
+}
+
+/// move, rotate and scale take their values positionally, and a switch before them must not read a value as its own
+/// (`move -r -os 1 0 0 pCube1`): the switches go after the values.
+fn switches_last(stmt: &str) -> String {
+    const SWITCHES: &[&str] = &[
+        "-r", "-relative", "-a", "-absolute", "-ws", "-worldSpace", "-os", "-objectSpace", "-ls", "-localSpace", "-pa", "-parent", "-wd", "-worldSpaceDistance", "-pcp", "-preserveChildPosition",
+        "-pgp", "-preserveGeometryPosition", "-rpr", "-rotatePivotRelative", "-spr", "-scalePivotRelative", "-xy", "-xz", "-yz", "-xyz", "-moveXY", "-moveXZ", "-moveYZ", "-moveXYZ", "-rotateXY",
+        "-rotateXZ", "-rotateYZ", "-rotateXYZ", "-scaleXY", "-scaleXZ", "-scaleYZ", "-scaleXYZ", "-eu", "-euler", "-fo", "-forceOrderXYZ", "-ocp", "-objectCenterPivot", "-dph", "-deletePriorHistory",
+    ];
+    let Some(first) = stmt.split_whitespace().next() else { return stmt.to_string() };
+    if !matches!(first, "move" | "rotate" | "scale") || stmt.contains('"') {
+        return stmt.to_string();
+    }
+    let (switches, rest): (Vec<&str>, Vec<&str>) = stmt.split_whitespace().skip(1).partition(|t| SWITCHES.contains(t));
+    let mut out = vec![first];
+    out.extend(rest);
+    out.extend(switches);
+    out.join(" ")
 }
 
 /// Maya moves pivots with move on obj.scalePivot / obj.rotatePivot: that is movePivot here.

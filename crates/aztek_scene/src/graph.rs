@@ -1461,6 +1461,92 @@ impl Graph {
         Ok(new_name)
     }
 
+    /// Runs `f` with the graph evaluating at another time, then comes back; held values survive it (getAttr -t).
+    pub fn at_time<R>(&mut self, seconds: f64, f: impl FnOnce(&mut Graph) -> R) -> R {
+        let was = self.ctx.time;
+        let held = self.held.clone();
+        self.set_time(seconds);
+        let r = f(self);
+        self.set_time(was);
+        self.held = held;
+        r
+    }
+
+    /// (keyable, shown in the channel box) of a plug: its own setting, else its attr's.
+    pub fn channel_state(&self, p: &PlugRef) -> (bool, bool) {
+        let Some(n) = self.node(p.node) else { return (false, false) };
+        if let Some(&s) = n.channels.get(&(p.attr, p.component)) {
+            return s;
+        }
+        if p.component >= 0 {
+            if let Some(&s) = n.channels.get(&(p.attr, -1)) {
+                return s;
+            }
+        }
+        let a = &n.ty().attrs[p.attr as usize];
+        (a.has(flags::KEYABLE), a.has(flags::CHANNEL_BOX))
+    }
+
+    /// setAttr -k and -cb. Undoable.
+    pub fn set_channel_state(&mut self, p: &PlugRef, keyable: Option<bool>, channel_box: Option<bool>) {
+        let (k, c) = self.channel_state(p);
+        let now = (keyable.unwrap_or(k), channel_box.unwrap_or(if keyable == Some(true) { false } else { c }));
+        let key = (p.attr, p.component);
+        let id = p.node;
+        let old = self.node(id).and_then(|n| n.channels.get(&key).copied());
+        let apply = move |g: &mut Graph, v: Option<(bool, bool)>| {
+            let n = g.node_mut(id);
+            match v {
+                Some(s) => {
+                    n.channels.insert(key, s);
+                }
+                None => {
+                    n.channels.remove(&key);
+                }
+            }
+            g.changed(Change::Attrs, id, None);
+        };
+        apply(self, Some(now));
+        self.record(move |g| apply(g, old), move |g| apply(g, Some(now)));
+    }
+
+    /// aliasAttr: `alias` stands for the attribute `target` (node-relative). None removes the alias. Undoable.
+    pub fn set_alias(&mut self, id: NodeId, alias: &str, target: Option<String>) {
+        let name = alias.to_string();
+        let old = self.node(id).and_then(|n| n.aliases.get(alias).cloned());
+        let apply = move |g: &mut Graph, v: &Option<String>| {
+            let n = g.node_mut(id);
+            match v {
+                Some(t) => {
+                    n.aliases.insert(name.clone(), t.clone());
+                }
+                None => {
+                    n.aliases.remove(&name);
+                }
+            }
+            g.changed(Change::Attrs, id, None);
+        };
+        let (a, b) = (apply.clone(), target.clone());
+        apply(self, &target);
+        self.record(move |g| a(g, &old), move |g| apply(g, &b));
+    }
+
+    /// Adds or removes a namespace from the known list. Undoable.
+    pub fn set_namespace_known(&mut self, name: &str, known: bool) {
+        let n = name.to_string();
+        let was = self.namespaces.contains(name);
+        let apply = move |g: &mut Graph, on: bool| {
+            if on {
+                g.namespaces.insert(n.clone());
+            } else {
+                g.namespaces.remove(&n);
+            }
+        };
+        let a = apply.clone();
+        apply(self, known);
+        self.record(move |g| a(g, was), move |g| apply(g, known));
+    }
+
     // ---------------------------------------------------------------------------------------------------------------
     // Hierarchy
 
@@ -1674,6 +1760,16 @@ impl Graph {
                         }
                     }
                 }
+            }
+        }
+        if let Some(target) = n.aliases.get(attr_name.as_str()) {
+            return self.plug(&format!("{node_part}.{target}"));
+        }
+        // A child of a plain compound by its own name: node.child for node.group.child.
+        if element < 0 {
+            let suffix = format!(".{attr_name}");
+            if let Some(i) = n.ty().attrs.iter().position(|a| !a.is_array() && a.name.ends_with(&suffix)) {
+                return Ok(PlugRef::new(id, i as i32));
             }
         }
         // pCube1.translate.translateX and cpm.result.position: the last part names the attr.

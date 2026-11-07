@@ -70,6 +70,9 @@ fn outliner_node(g: &Graph, id: NodeId, shapes: bool, sel: &[NodeId]) -> Option<
     if shape && !shapes {
         return None;
     }
+    if n.ty().dag && n.bool(DagNode::HIDDEN_IN_OUTLINER) {
+        return None;
+    }
     let kids: Vec<Value> = g.children(id).iter().filter_map(|&c| outliner_node(g, c, shapes, sel)).collect();
     // What the icon shows: a transform over a mesh is a mesh to the user.
     let icon = if n.ty().is_a("joint") {
@@ -201,13 +204,26 @@ fn channels(g: &Graph, id: NodeId, all_inputs: bool) -> Vec<Value> {
         }
         let keyable = a.flags & flags::KEYABLE != 0;
         let is_vis = a.name == "visibility";
-        if !keyable && !is_vis && !(all_inputs && matches!(a.ty, PlugType::Bool | PlugType::Int | PlugType::Float | PlugType::Enum | PlugType::String)) {
+        // setAttr -k and -cb can show or hide one channel, a child of a Vec3 too.
+        let shown = |p: &PlugRef| {
+            let (k, c) = g.channel_state(p);
+            k || c
+        };
+        let whole = PlugRef::new(id, i as i32);
+        let any_child = a.ty == PlugType::Vec3 && (0..3).any(|c| shown(&PlugRef::component(id, i as i32, c)));
+        if !keyable && !is_vis && !shown(&whole) && !any_child && !(all_inputs && matches!(a.ty, PlugType::Bool | PlugType::Int | PlugType::Float | PlugType::Enum | PlugType::String)) {
+            continue;
+        }
+        if !all_inputs && !is_vis && a.ty != PlugType::Vec3 && !shown(&whole) {
             continue;
         }
         let v = n.value(i);
         match (a.ty, v) {
             (PlugType::Vec3, PlugValue::Vec3(v)) => {
                 for k in 0..3 {
+                    if !all_inputs && !shown(&PlugRef::component(id, i as i32, k as i32)) {
+                        continue;
+                    }
                     let child = if a.child_names[k].is_empty() { format!("{}{}", a.name, ["X", "Y", "Z"][k]) } else { a.child_names[k].clone() };
                     out.push(json!({
                         "attr": child,
