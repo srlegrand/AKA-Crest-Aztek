@@ -1261,6 +1261,9 @@ fn register_queries(c: &mut Commands<Session>) {
             "Select objects. Replaces the selection unless add/deselect/toggle.",
             |s, a| {
                 if a.bool("clear") {
+                    if !crate::components::component_strings(&s.graph, false).is_empty() {
+                        let _ = crate::components::select_strings(&mut s.graph, &[], SelectMode::Replace);
+                    }
                     s.graph.select(&[], SelectMode::Replace);
                     return Ok(Value::Null);
                 }
@@ -1295,10 +1298,9 @@ fn register_queries(c: &mut Commands<Session>) {
                     }
                     return Ok(Value::Null);
                 }
-                // Naming objects replaces picked components too; the component mode stays until it is changed.
-                let picked = [crate::components::ComponentMode::Vertex, crate::components::ComponentMode::Edge, crate::components::ComponentMode::Face].iter().any(|&k| crate::components::selected_all(&s.graph, k).values().any(|v| !v.is_empty()));
-                if mode == SelectMode::Replace && !ids.is_empty() && picked {
-                    crate::components::clear(&mut s.graph);
+                // Replacing with objects replaces any components too.
+                if mode == SelectMode::Replace && !crate::components::component_strings(&s.graph, false).is_empty() {
+                    let _ = crate::components::select_strings(&mut s.graph, &[], SelectMode::Replace);
                 }
                 s.graph.select(&ids, mode);
                 Ok(Value::Null)

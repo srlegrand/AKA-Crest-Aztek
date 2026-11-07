@@ -3,7 +3,7 @@
 Generated from the command registry by `cargo run -p aztek_host --example gen_commands`; do not edit by hand.
 Commands take Maya's flags, long or short, in MEL and in Python (`aztek.cmds` or `maya.cmds`).
 
-907 commands.
+962 commands.
 
 ## AppendToPolygonTool
 
@@ -263,6 +263,25 @@ Arguments: objects
 | `binaryTag` | `bt` | Accepted for Maya scripts. |
 | `proxy` | `pxy` | Accepted for Maya scripts. |
 | `usedAsProxy` | `uap` | Accepted for Maya scripts. |
+
+## addMetadata
+
+Attach a metadata stream of a structure to objects: -structure, -stn, -cn, -idt. Returns what it went on.
+
+Arguments: objects or components (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `channelName` | `cn` | The channel: vertex, edge, face or your own. |
+| `channelType` | `cht` | Obsolete: as -cn. |
+| `endIndex` | `eix` | Last index of a range. |
+| `index` | `idx` | An index. |
+| `indexType` | `idt` | The index's type: numeric unless given. |
+| `memberName` | `mn` | The structure's member. |
+| `scene` | `scn` | On the scene rather than a node. |
+| `startIndex` | `six` | First index of a range. |
+| `streamName` | `stn` | The stream. |
+| `structure` | `str` | The structure. |
 
 ## addModifier
 
@@ -1898,6 +1917,49 @@ Arguments: a curve
 | `tolerance` | `tol` | Accepted for Maya scripts. |
 | `polygon` | `po` | 0 NURBS, 1 polygons. |
 
+## bezierAnchorPreset
+
+Set selected anchors' tangents: -p 0 Bezier (smooth and even, along the line between the neighbours), 1 Bezier Corner (each a third of the way to its neighbour), 2 Corner (drawn in to the anchor). Returns how many anchors. The exact tangent lengths are this command's own: Maya does not document them.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `preset` | `p` | 0 Bezier, 1 Bezier Corner, 2 Corner. |
+
+## bezierAnchorState
+
+Set selected anchors or their tangents: -sm true lines the tangents up, -ev true makes them the same length. Returns how many anchors. Less than Maya: there is no lasting state, so false changes nothing and later drags do not keep the tangents smooth or even.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `even` | `ev` | Even weighting. |
+| `smooth` | `sm` | Smooth rather than broken. |
+
+## bezierCurveToNurbs
+
+Make a Bezier curve a plain NURBS curve, keeping its CVs and knots. Returns [object, node].
+
+Arguments: curves (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `constructionHistory` | `ch` | Keep a history node (on by default). |
+| `replaceOriginal` | `rpo` | Change the curve itself (on by default). |
+| `name` | `n` | Name of a new curve. |
+| `object` | `o` | Make an object (accepted for Maya scripts). |
+
+## bezierInfo
+
+Questions about Bezier CVs: -afc a CV's anchor, -cfa an anchor's CV; -ias, -its, -oas, -ots about what is selected, as 1 or 0.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `anchorFromCV` | `afc` | A CV index. |
+| `cvFromAnchor` | `cfa` | An anchor index. |
+| `isAnchorSelected` | `ias` | Is an anchor selected. |
+| `isTangentSelected` | `its` | Is a tangent selected. |
+| `onlyAnchorsSelected` | `oas` | Are only anchors selected. |
+| `onlyTangentsSelected` | `ots` | Are only tangents selected. |
+
 ## bindSkin
 
 Rigid bind: each point follows one joint, a skinCluster of 1.0 weights. -tsb only the bones named, -ub unbinds, -ubk keeps history. Returns 1.
@@ -1934,6 +1996,39 @@ Arguments: a profile and two rails (the selection when none)
 | `range` | `rn` | Accepted for Maya scripts. |
 | `name` | `n` | Name of the new object. |
 | `object` | `o` | Accepted for Maya scripts. |
+
+## blend2
+
+A surface between two rails, curves or surface edges (surface.u[x]): -ls, -le, -rs, -re the ranges, -la, -ra on closed rails, -aa lines closed rails up, -fln, -frn flip the tangents off an edge, -rvl, -rvr with -an false. Returns [surface, node]. Less than Maya: one curve per rail, so -cfr must be 1; the result meets its rails exactly and -pt, -tt and -mk are only held.
+
+Arguments: two rails (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `constructionHistory` | `ch` | Keep the node (on by default). |
+| `name` | `n` | The new object's name. |
+| `object` | `o` | Accepted for Maya scripts. |
+| `range` | `rn` | Accepted for Maya scripts. |
+| `caching` | `cch` | Accepted for Maya scripts. |
+| `nodeState` | `nds` | Accepted for Maya scripts. |
+| `tolerance` | `tol` | Accepted for Maya scripts. |
+| `polygon` | `po` | 0 NURBS, 1 polygons. |
+| `autoAnchor` | `aa` | On closed rails, line them up. |
+| `autoNormal` | `an` | Take the directions from the geometry. |
+| `crvsInFirstRail` | `cfr` | Curves in the first rail: only 1 here. |
+| `flipLeftNormal` | `fln` | Flip the tangent off the left. |
+| `flipRightNormal` | `frn` | Flip the tangent off the right. |
+| `leftAnchor` | `la` | Where a closed left rail starts. |
+| `leftEnd` | `le` | Where it ends on the left (1). |
+| `leftStart` | `ls` | Where it starts on the left. |
+| `multipleKnots` | `mk` | Held. |
+| `positionTolerance` | `pt` | Held. |
+| `reverseLeft` | `rvl` | With -an false: reverse off the left. |
+| `reverseRight` | `rvr` | With -an false: reverse off the right. |
+| `rightAnchor` | `ra` | Where a closed right rail starts. |
+| `rightEnd` | `re` | Where it ends on the right (1). |
+| `rightStart` | `rs` | Where it starts on the right. |
+| `tangentTolerance` | `tt` | Held. |
 
 ## blendShape
 
@@ -2047,6 +2142,47 @@ Arguments: name
 | `useTemplate` | `ut` |  |
 | `query` | `q` |  |
 | `edit` | `e` |  |
+
+## blendTwoAttr
+
+Blend attributes between two inputs with a blendTwoAttr node: -at on what's named or selected (every keyable attribute without it), -at0 and -at1 what feeds the inputs (what drove the attribute by default), -bl a blender attribute, -t the range to key the blend over, -d the driver index, -n a name. Returns the nodes. -s and -cp are accepted: shapes below transforms are not walked.
+
+Arguments: objects or plugs (the selection when none); the node with -q and -e
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `attribute` | `at` | The attributes. |
+| `attribute0` | `at0` | What feeds the first input. |
+| `attribute1` | `at1` | What feeds the second input. |
+| `blender` | `bl` | The attribute driving the blend. |
+| `controlPoints` | `cp` | Accepted for Maya scripts; has no effect. |
+| `driver` | `d` | The driver index, 0 or 1. |
+| `name` | `n` | The node's name. |
+| `shape` | `s` | Accepted for Maya scripts; has no effect. |
+| `time` | `t` | The range to blend over; a single time is an abrupt change. |
+
+## boneLattice
+
+A flexor's node on a lattice along a bone: the joint's bend bulges the lattice's points. Returns the node. Less than Maya: it does not move the lattice's ends rigidly (flexor parents the lattice to the bone).
+
+Arguments: the lattice (the selection when none); the node with -q and -e
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `name` | `n` | Name of the node. |
+| `joint` | `j` | The joint whose bend drives the bulge. |
+| `geometry` | `g` | With -q: what the lattice deforms. |
+| `lengthIn` | `li` | Moves the points on the upper half along the bone. |
+| `lengthOut` | `lo` | Moves the points on the lower half along the bone. |
+| `widthLeft` | `wl` | Bulge on the left of the bend. |
+| `widthRight` | `wr` | Bulge on the right of the bend. |
+| `bicep` | `bi` | Bulge on the inside of the bend. |
+| `tricep` | `tr` | Bulge on the outside of the bend. |
+| `transform` | `t` | The transform the bend is measured against: the joint's parent by default. |
 
 ## boundary
 
@@ -2285,6 +2421,34 @@ Arguments: two characters, or a map
 | `mapMethod` | `mm` | Accepted: by name is what it does. |
 | `mapNode` | `mn` | Accepted for Maya scripts. |
 | `unmapNode` | `un` | Accepted for Maya scripts. |
+
+## characterize
+
+Make a character from a skeleton: the joints named or selected go to slots by their names, -sk "joint slot, joint slot" sets others, -nm names it. Returns the character (a HIKCharacterNode). Less than Maya: -type label reads names too; the pivot, effector and stance flags fail, since the full body solver is not here; -pos and -aab are only held.
+
+Arguments: the skeleton's root (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `name` | `nm` | The character's name. |
+| `posture` | `pos` | biped or quadruped. |
+| `sourceSkeleton` | `sk` | Joints and the slots they fill. |
+| `type` | `typ` | label or name: names are read either way. |
+| `autoActivateBodyPart` | `aab` | Held for scripts. |
+| `pinHandFeet` | `phf` | Held for scripts. |
+| `activatePivot` | `apv` | Not available: fails. |
+| `addAuxEffector` | `aae` | Not available: fails. |
+| `addFloorContactPlane` | `afp` | Not available: fails. |
+| `addMissingEffectors` | `ame` | Not available: fails. |
+| `changePivotPlacement` | `cpp` | Not available: fails. |
+| `placeNewPivot` | `pnp` | Not available: fails. |
+| `effectors` | `ef` | Not available: fails. |
+| `fkSkeleton` | `fk` | Not available: fails. |
+| `stancePose` | `sp` | Not available: fails. |
+| `attributeFromHIKProperty` | `ahk` | Not available: fails. |
+| `attributeFromHIKPropertyMode` | `mhk` | Not available: fails. |
 
 ## checkBox
 
@@ -2877,6 +3041,38 @@ Arguments: name
 | `query` | `q` |  |
 | `edit` | `e` |  |
 
+## combinationShape
+
+Drive a blend shape target from others through a combinationShape node: -bs, -cti or -ctn, -dti or -dtn, -cm 0 multiply, 1 lowest, 2 lowest smooth. With -e: -add, -rmd, -ald, -cm; removing the last driver deletes the node. -q: -ex, -ald, -cm. Returns the target's index, or with -e the node.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `addDriver` | `add` | With -e: add the drivers. |
+| `allDrivers` | `ald` | All the drivers. |
+| `blendShape` | `bs` | The blend shape. |
+| `combinationTargetIndex` | `cti` | The driven target. |
+| `combinationTargetName` | `ctn` | The driven target. |
+| `combineMethod` | `cm` | 0 multiplication, 1 lowest weighting, 2 lowest weighting (smooth). |
+| `driverTargetIndex` | `dti` | A driver. |
+| `driverTargetName` | `dtn` | A driver. |
+| `exist` | `ex` | With -q: whether the target has one. |
+| `removeDriver` | `rmd` | With -e: remove the drivers. |
+
+## commandEcho
+
+What is echoed: -st on echoes commands called from Python too, -f and -af filter them by how their names start. -ln is only held: messages have no line numbers to show or hide here. -q reads them.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `addFilter` | `af` | Names to add to the filter. |
+| `filter` | `f` | Names to filter out. |
+| `lineNumbers` | `ln` | Line numbers in messages. |
+| `state` | `st` | Echo everything. |
+
 ## componentEditor
 
 Script UI: componentEditor, with create, edit and query as in Maya's command.
@@ -2961,6 +3157,22 @@ Selected components: {mesh: {"vertices": [...], "edges": [...], "faces": [...]}}
 | Flag | Short | Description |
 | --- | --- | --- |
 | `ordered` |  | True: a flat list [[mesh, kind, id], ...] in the order the components were picked. False: grouped per mesh and kind, ids sorted ascending, pick order lost. |
+
+## condition
+
+A named condition isTrue and scriptJob -ct can read: -s the MEL script that gives its state, -d conditions it follows (checked at idle), -i run the script now, -st set the state, -delete remove it. -q -st reads it. Scripts run just after the command, or at idle when a dependency changes. Not undoable, and not saved.
+
+Arguments: its name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `delete` | `delete` | Delete it. |
+| `dependency` | `d` | A condition it follows. |
+| `initialize` | `i` | Run its script now. |
+| `script` | `s` | The MEL script giving its state. |
+| `state` | `st` | Its state. |
 
 ## cone
 
@@ -3222,6 +3434,12 @@ Copy a deformer's weights to another by closest point in world space: -sd, -dd, 
 | `surfaceAssociation` | `sa` | Accepted: closest point is what's used. |
 | `uvSpace` | `uv` | Accepted for Maya scripts. |
 
+## copyFlexor
+
+Copy a flexor's settings and lattice tweaks to another joint: the flexor's lattice, then the joint. Returns the new node. Less than Maya: a mirrored bone does not reflect the lattice.
+
+Arguments: the flexor's lattice and the joint
+
 ## copyKey
 
 Copy keys of objects or channels to the key clipboard; -t limits them. Returns how many.
@@ -3261,6 +3479,29 @@ Arguments: source then destination (the selection when none)
 | `normalize` | `nr` | Normalize the copied weights (default on). |
 | `uvSpace` | `uv` | Source and destination UV sets: points read the source at their UV position, between the corners of the face there. Sets beyond map1 aren't kept here. |
 | `sampleSpace` | `spa` | Accepted for Maya scripts. |
+
+## createCurveWarp
+
+Make a curveWarp on a mesh and a curve, as the Deform menu's Create Curve Warp does. Maya does not document this as a command; it runs curveWarp with what it is given.
+
+Arguments: the mesh, then the curve (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `name` | `n` | Name of the deformer. |
+| `before` | `bf` | Go just above the deformer nearest the mesh. |
+| `after` | `af` | Go nearest the mesh, after the other deformers (the default). |
+| `frontOfChain` | `foc` | Go above every other deformer. |
+| `envelope` | `en` | How much of the deformation applies (1). |
+| `edit` | `e` | Edit mode. |
+| `query` | `q` | Query mode. |
+| `curve` | `c` | The curve; or name it last. |
+| `lengthScale` | `ls` | Stretches the mesh along the curve (1). |
+| `offset` | `off` | Slides the mesh along the curve, as a fraction. |
+| `twistRotation` | `tw` | Degrees of twist from end to end. |
+| `rollRotation` | `rr` | Degrees the mesh rolls about the curve. |
+| `alignmentMode` | `am` | 0 auto, 1 X, 2 Y, 3 Z. |
+| `keepLength` | `kl` | Keep the mesh's length, not the curve's. |
 
 ## createDisplayLayer
 
@@ -3753,6 +3994,23 @@ Arguments: joints or a dagPose (the selection when none)
 | `edit` | `e` | Edit mode. |
 | `query` | `q` | Query mode. |
 
+## dataStructure
+
+Define a metadata structure: -fmt raw -asString "name=N:int32=ID:string=label", or -af a file. -q lists them; -q -n N with -lmn, -dt or -asString reads one. -rm and -ral remove. Structures live in the session and are not saved.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `asFile` | `af` | A file holding the description. |
+| `asString` | `asString` | The description. |
+| `dataType` | `dt` | With -lmn: each member's type too. |
+| `format` | `fmt` | raw is the one there is. |
+| `listMemberNames` | `lmn` | The member names. |
+| `name` | `n` | The structure asked about. |
+| `remove` | `rm` | Remove -n. |
+| `removeAll` | `ral` | Remove all. |
+
 ## defaultNavigation
 
 Connects as dropping one node on another does: -connectToExisting -source file1 -destination lambert2.color. Plugs left out take the node's usual one.
@@ -4045,6 +4303,16 @@ Arguments: [name]
 | `history` | `ch` |  |
 | `dragSlider` | `ds` |  |
 
+## disable
+
+Enable or disable a control: -v true (the default) disables it, false enables it.
+
+Arguments: the control
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `value` | `v` | True disables, false enables. |
+
 ## disconnectAttr
 
 disconnectAttr('dst.attr'), or (src, dst). A whole array input loses every element, or with src only the ones src drives.
@@ -4060,6 +4328,17 @@ Arguments: [src] dst
 Break a skeleton at a joint, deleting handles across the break. Returns the new end joint left on the old parent, then the joint.
 
 Arguments: joint
+
+## displayAffected
+
+Held for scripts: whether objects affected by the selection get their special colour. The views do not draw that colour. Takes on or off; -q reads it.
+
+Arguments: on or off
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
 
 ## displayColor
 
@@ -4471,6 +4750,27 @@ Edit keys picked by curve and index: -dt/-dv move them, -t/-v set them, -itt/-ot
 | `breakdown` | `bd` | Make them breakdowns, or normal keys. |
 | `delete` | `del` | Remove them. |
 
+## editMetadata
+
+Set metadata: -stn, -mn, -v or -sv, on selected components or -idx, -six and -eix. -rm removes those indices. Returns true.
+
+Arguments: objects or components (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `channelName` | `cn` | The channel: vertex, edge, face or your own. |
+| `channelType` | `cht` | Obsolete: as -cn. |
+| `endIndex` | `eix` | Last index of a range. |
+| `index` | `idx` | An index. |
+| `indexType` | `idt` | The index's type: numeric unless given. |
+| `memberName` | `mn` | The structure's member. |
+| `scene` | `scn` | On the scene rather than a node. |
+| `startIndex` | `six` | First index of a range. |
+| `streamName` | `stn` | The stream. |
+| `value` | `v` | A number. |
+| `stringValue` | `sv` | A string. |
+| `remove` | `rm` | Remove the indices. |
+
 ## editorTemplate
 
 Inside an AE<type>Template procedure: lays out the Attribute Editor with -beginLayout, -addControl, -suppress, -addSeparator, -addExtraControls, -callCustom.
@@ -4510,6 +4810,19 @@ Arguments: [attribute]
 | `query` | `q` |  |
 | `edit` | `e` |  |
 
+## effector
+
+An IK effector's name and hide flag: -n, -hi, in -e and -q. hideDisplay is only held: the views do not draw effectors. Returns the effector.
+
+Arguments: the effector (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `hide` | `hi` | Hide it when attached to a handle. |
+| `name` | `n` | Its name. |
+
 ## encodeString
 
 A string with quotes, backslashes and control characters escaped, as MEL would need them.
@@ -4544,6 +4857,15 @@ Arguments: objects
 | --- | --- | --- |
 | `ignoreInvisible` | `ii` | Leave out hidden shapes. |
 | `calculateExactly` | `ce` | Accepted: bounds are always exact here. |
+
+## expandedSelection
+
+The selection and what is connected to it: -d steps (1), -et DG, EG or SG. EG and SG follow the same connections as DG: there is no separate evaluation graph here, and clusters are not reported.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `depth` | `d` | Steps away from the selection. |
+| `expansionType` | `et` | DG, EG or SG. |
 
 ## exportObj
 
@@ -4887,6 +5209,25 @@ Arguments: curves (the selection when none)
 | `replaceOriginal` | `rpo` | Change the curve itself (on by default). |
 | `name` | `n` | Name of a new curve. |
 | `object` | `o` | Make an object (accepted for Maya scripts). |
+
+## flexor
+
+A deformer at joints or bones: -typ jointLattice (the default), boneLattice or sculpt, -aj or -ab, -ts for the whole skeleton. Deforms what the joints are bound to, and any meshes named. -q -l lists the types. Returns the new nodes. Less than Maya: of -dc only the lattice's -dv and the sculpt's -mxd are read; a sculpt flexor follows its joint but no attribute drives it; the lattice sits after the skin.
+
+Arguments: joints, and any extra meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `atBones` | `ab` | At bones. |
+| `atJoints` | `aj` | At joints (the default). |
+| `deformerCommand` | `dc` | The deformer's command text: -dv and -mxd are read from it. |
+| `list` | `l` | With -q: the types. |
+| `name` | `n` | Obsolete in Maya; has no effect. |
+| `noScale` | `ns` | Do not size the flexor to the geometry nearby. |
+| `toSkeleton` | `ts` | Every joint below those selected. |
+| `type` | `typ` | Which flexor. |
 
 ## floatField
 
@@ -5566,9 +5907,40 @@ Arguments: type
 | --- | --- | --- |
 | `satisfies` | `sat` | Whether the type's classification satisfies this. |
 
+## getFileList
+
+File names in -fld matching -fs, sorted.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `filespec` | `fs` | A wildcard. |
+| `folder` | `fld` | The directory. |
+
 ## getLastError
 
 The text of the last error reported.
+
+## getMetadata
+
+Read metadata values, flattened in index order: -stn, -mn, -cn, indices as for editMetadata. -lsn, -lcn, -lmn list names, -dt a member's type.
+
+Arguments: objects or components (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `channelName` | `cn` | The channel: vertex, edge, face or your own. |
+| `channelType` | `cht` | Obsolete: as -cn. |
+| `endIndex` | `eix` | Last index of a range. |
+| `index` | `idx` | An index. |
+| `indexType` | `idt` | The index's type: numeric unless given. |
+| `memberName` | `mn` | The structure's member. |
+| `scene` | `scn` | On the scene rather than a node. |
+| `startIndex` | `six` | First index of a range. |
+| `streamName` | `stn` | The stream. |
+| `dataType` | `dt` | The member's type. |
+| `listChannelNames` | `lcn` | The channels. |
+| `listMemberNames` | `lmn` | The members. |
+| `listStreamNames` | `lsn` | The streams. |
 
 ## getModifiers
 
@@ -5609,6 +5981,39 @@ The panels: -wf in focus, -up under the pointer, -wl by label, -typ of a type, -
 An environment variable's value, or "".
 
 Arguments: name
+
+## ghosting
+
+Ghosting state: -act ghost, unghost or unghostAll on the selection, the options as defaults, -e to change objects (-ago all ghosted), -q an option, -q -go the ghosted objects, -q -f their ghost frames. Less than Maya: the views draw no ghosts, so -en, the colours, the opacities and -ud are only held.
+
+Arguments: objects (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `action` | `act` | ghost, unghost or unghostAll. |
+| `allGhostedObjects` | `ago` | With -e: every ghosted object. |
+| `allInRange` | `a` | Keyframes mode uses the whole playback range. Held only. |
+| `customFrames` | `cf` | The custom frames; -9999999 clears them. |
+| `enable` | `en` | Ghosts on the whole scene. Held only. |
+| `farOpacity` | `fo` | Opacity of the farthest ghost. Held only. |
+| `frames` | `f` | With -q: the ghost frames. |
+| `geometryFilter` | `gf` | Leave geometry out. |
+| `ghostedObjects` | `go` | With -q: the ghosted objects. |
+| `ghostsStep` | `gs` | Frames or keys between ghosts. |
+| `hierarchy` | `h` | Walk down hierarchies. |
+| `jointFilter` | `jf` | Leave joints out. |
+| `locatorFilter` | `lf` | Leave locators out. |
+| `mode` | `m` | preAndPost, pre, post, custom or keyframes. |
+| `nearOpacity` | `no` | Opacity of the nearest ghost. Held only. |
+| `postColor` | `poc` | Colour after the current time. Held only. |
+| `postFrames` | `pof` | Ghosts after the current time. |
+| `preColor` | `prc` | Colour before the current time. Held only. |
+| `preFrames` | `prf` | Ghosts before the current time. |
+| `preset` | `p` | 1s, 2s, 4s, 5s, 10s or Custom. |
+| `resetAll` | `r` | Back to the defaults, everything unghosted. |
+| `useDriver` | `ud` | Use the driver's frames. Held only. |
 
 ## globalStitch
 
@@ -5691,6 +6096,30 @@ Arguments: [name]
 | `name` | `n` |  |
 | `history` | `ch` |  |
 | `dragSlider` | `ds` |  |
+
+## grid
+
+The ground plane: -s size, -sp spacing between major lines, -d divisions between them, -tgl on or off, -r back to the defaults, -df the defaults themselves. These reach the four model panels: a line every spacing / divisions, reaching -s each way. The major lines stay darker every 5 lines whatever -d says, and the axes, division line and label flags are only held. -q reads a flag.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `default` | `df` | Set or read the defaults. |
+| `reset` | `r` | Back to the defaults. |
+| `style` | `st` | Obsolete in Maya; has no effect. |
+| `displayAxes` | `da` | A grid setting. |
+| `displayAxesBold` | `dab` | A grid setting. |
+| `displayDivisionLines` | `ddl` | A grid setting. |
+| `displayGridLines` | `dgl` | A grid setting. |
+| `displayOrthographicLabels` | `dol` | A grid setting. |
+| `displayPerspectiveLabels` | `dpl` | A grid setting. |
+| `divisions` | `d` | A grid setting. |
+| `orthographicLabelPosition` | `olp` | A grid setting. |
+| `perspectiveLabelPosition` | `plp` | A grid setting. |
+| `size` | `s` | A grid setting. |
+| `spacing` | `sp` | A grid setting. |
+| `toggle` | `tgl` | A grid setting. |
 
 ## gridLayout
 
@@ -5808,6 +6237,26 @@ Arguments: message
 | `horizontalOffset` | `hoo` |  |
 | `viewport` | `vp` |  |
 
+## help
+
+A command's description and flags, from what it registered: help name; -so only the synopsis; -l a regular expression, listing the commands that match. -doc fails, since no documentation ships. The popup and rollover settings are only held.
+
+Arguments: a command, or a pattern with -l
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `documentation` | `doc` | Not available: fails. |
+| `language` | `lng` | mel or python, with -doc. |
+| `list` | `l` | List the commands matching. |
+| `popupDisplayTime` | `pdt` | Held only. |
+| `popupMode` | `pm` | Held only. |
+| `popupPauseTime` | `ppt` | Held only. |
+| `popupSimpleMode` | `psm` | Held only. |
+| `rolloverMode` | `rm` | Held only. |
+| `syntaxOnly` | `so` | Only the synopsis. |
+
 ## hide
 
 Hide objects (visibility off). Defaults to the selection.
@@ -5865,11 +6314,27 @@ Remove a character's control rig; the joints stay where they are.
 
 Arguments: the character
 
+## hikGetDependNodes
+
+The nodes a character depends on: its joints, then what is connected to it. Maya does not document this command, so what it returns is inferred from the name.
+
+Arguments: a character
+
 ## hikGetSkNode
 
 The joint in a character's slot, by id or name; with only the character, every slot and joint in turn.
 
 Arguments: character, slot
+
+## hikGlobals
+
+Held for scripts: -rap, the release all pinning flag. It has no effect, since the full body solver is not here. Returns the state.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `releaseAllPinning` | `rap` | Ignore pinning states. |
 
 ## hikSetSource
 
@@ -5907,6 +6372,20 @@ Bind a key: -k the key, -alt -ctl -sht modifiers, -n the name command for press,
 | `shiftModifier` | `sht` | With Shift. |
 | `name` | `n` | The name command for press. |
 | `releaseName` | `rn` | The name command for release. |
+
+## hotkeyCheck
+
+The annotation of the nameCommand a key is bound to, or an empty string: -k the key, -alt, -ctl, -cmd, -opt modifiers, -kup for release. Less than Maya: it sees keys bound with the hotkey command, not the built-in table the shell keeps.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `altModifier` | `alt` | With Alt. |
+| `commandModifier` | `cmd` | With Command: as Ctrl here. |
+| `ctrlModifier` | `ctl` | With Ctrl. |
+| `isRepeatable` | `ir` | Accepted for Maya scripts; has no effect. |
+| `keyString` | `k` | The key. |
+| `keyUp` | `kup` | On release. |
+| `optionModifier` | `opt` | With Option: as Alt here. |
 
 ## hudButton
 
@@ -6264,6 +6743,17 @@ Arguments: [name]
 | `history` | `ch` |  |
 | `dragSlider` | `ds` |  |
 
+## ikHandleDisplayScale
+
+How big IK handles draw in the views: the scale, -q reads it.
+
+Arguments: the scale
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+
 ## ikSolver
 
 Create a solver node handles can name with -sol. Returns its name.
@@ -6326,6 +6816,26 @@ Scene wide IK: -e -sol 0 stops every handle solving, -e -sn 0 stops handles snap
 | `listSolvers` | `ls` | Query: the solver nodes. |
 | `edit` | `e` | Change the settings. |
 | `query` | `q` | Ask about the settings. |
+
+## ikSystemInfo
+
+The ikSystem's snap switch: -gsh off means no handle snaps to its effector while IK is off. -q reads it.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `globalSnapHandle` | `gsh` | Whether handles snap. |
+
+## ikfkDisplayMethod
+
+Held for scripts: how IK/FK blending shows on a selected handle, -d none, ik, fk or ikfk. The views do not draw it. -q -d reads it.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `display` | `d` | none, ik, fk or ikfk. |
 
 ## image
 
@@ -6537,6 +7047,20 @@ Arguments: objects
 How a mesh shares data: {kind: none | source | instance | reference, source, members}.
 
 Arguments: mesh
+
+## instanceable
+
+Whether nodes may be instanced: -a false makes instance refuse them, -r their children too, -s their shapes too. Returns the states, and -q reads them. duplicate -ilf is not checked.
+
+Arguments: nodes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `allow` | `a` | Whether they can be instanced. |
+| `recursive` | `r` | And the non-shape children. |
+| `shape` | `s` | And the shape children. |
 
 ## intField
 
@@ -7076,6 +7600,43 @@ Arguments: [name]
 | `name` | `n` |  |
 | `history` | `ch` |  |
 | `dragSlider` | `ds` |  |
+
+## jointDisplayScale
+
+How big joints draw in the views: the scale, -q reads it. -a takes it as the size, the same number here since the default size is 1. -ik is only held: joints of ik/fk skeletons draw at the common scale.
+
+Arguments: the scale
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `absolute` | `a` | The number is the size. |
+| `ikfk` | `ik` | The size of ik/fk skeleton joints. Held only. |
+
+## jointLattice
+
+A flexor's node on a lattice: the joint's bend bulges the lattice's points. Returns the node. Less than Maya: it does not move the lattice's ends rigidly (flexor keeps the lattice on the joints with constraints) and the bind skin flags do nothing.
+
+Arguments: the lattice (the selection when none); the node with -q and -e
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `name` | `n` | Name of the node. |
+| `joint` | `j` | The joint whose bend drives the bulge. |
+| `geometry` | `g` | With -q: what the lattice deforms. |
+| `lengthIn` | `li` | Moves the points on the upper half along the bone. |
+| `lengthOut` | `lo` | Moves the points on the lower half along the bone. |
+| `widthLeft` | `wl` | Bulge on the left of the bend. |
+| `widthRight` | `wr` | Bulge on the right of the bend. |
+| `creasing` | `cr` | Bulge on the inside of the bend. |
+| `rounding` | `ro` | Bulge on the outside of the bend. |
+| `upperTransform` | `ut` | The transform of the upper part: the joint's parent by default. |
+| `lowerTransform` | `lt` | The transform of the lower part: the joint by default. |
+| `upperBindSkin` | `ub` | Accepted for Maya scripts; has no effect. |
+| `lowerBindSkin` | `lb` | Accepted for Maya scripts; has no effect. |
 
 ## keyTangent
 
@@ -7811,6 +8372,25 @@ Arguments: meshes (the selection when none)
 | --- | --- | --- |
 | `none` | `n` | Clear the live surface. |
 | `query` | `q` | Query mode. |
+
+## makePaintable
+
+Held for scripts: registers node type and attribute as paintable. -at, -ui, -ac, -aca, -rm, -ca; -q lists type, attribute, kind and name for each. The Paint Attributes tool does not read this list: it paints deformer weights only.
+
+Arguments: node type and attribute
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `activate` | `ac` | Turn it on or off. |
+| `activateAll` | `aca` | Turn all on or off. |
+| `altAttribute` | `aa` | Accepted for Maya scripts; has no effect. |
+| `attrType` | `at` | intArray, doubleArray, vectorArray, multiInteger, multiFloat, multiDouble or multiVector. |
+| `clearAll` | `ca` | Remove all. |
+| `remove` | `rm` | Remove this one. |
+| `shapeMode` | `sm` | Accepted for Maya scripts; has no effect. |
+| `uiName` | `ui` | The name shown. |
 
 ## makeSingleSurface
 
@@ -8679,6 +9259,22 @@ Arguments: mesh
 
 Clear the scene. Not undoable.
 
+## nodeCast
+
+Replace the target node with the source: its connections, hierarchy and values move to the source, whose type must be the target's or a kind of it (-f skips that). -cda, -dua, -sn, -sv. Returns 0. -dsa and -dsj are accepted and change nothing. Referenced nodes are not refused.
+
+Arguments: source, then target
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `copyDynamicAttrs` | `cda` | Bring added attributes the source lacks. |
+| `disableAPICallbacks` | `dsa` | Accepted for Maya scripts; has no effect. |
+| `disableScriptJobCallbacks` | `dsj` | Accepted for Maya scripts; has no effect. |
+| `disconnectUnmatchedAttrs` | `dua` | Drop connections the source has no attribute for. |
+| `force` | `f` | Try even when the types differ. |
+| `swapNames` | `sn` | Swap the names. |
+| `swapValues` | `sv` | Exchange common values rather than copy them. |
+
 ## nodeEditor
 
 Script UI: nodeEditor, with create, edit and query as in Maya's command.
@@ -8806,6 +9402,21 @@ Arguments: name
 | `query` | `q` |  |
 | `edit` | `e` |  |
 
+## nodePreset
+
+Save and load a node's settings by name: -sv node name, -ld node name, -ls node, -del node name, -ex node name, -ivn name; -atr limits what is saved. Less than Maya: multis and hidden attributes are left out, files are JSON, -ctm does nothing.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `attributes` | `atr` | Attributes to save, separated by spaces. |
+| `custom` | `ctm` | Accepted for Maya scripts; has no effect. |
+| `delete` | `delete` | Node and preset. |
+| `exists` | `ex` | Node and preset. |
+| `isValidName` | `ivn` | A name to check. |
+| `list` | `ls` | The node. |
+| `load` | `ld` | Node and preset. |
+| `save` | `sv` | Node and preset. |
+
 ## nodeType
 
 Type name of a node.
@@ -8878,6 +9489,12 @@ Arguments: two surfaces
 | `nsrfsInFirstShell` | `nsf` | Accepted for Maya scripts. |
 | `name` | `n` | Accepted for Maya scripts. |
 
+## nurbsCopyUVSet
+
+Copy the implicit parameterization to the surface's explicit set, as Maya's debugging command does. Returns true. The values are evenly spaced by CV.
+
+Arguments: a surface (the selection when none)
+
 ## nurbsCube
 
 Create a cube of six NURBS patches under a group, with a makeNurbCube node. Returns [nurbsCube1, makeNurbCube1].
@@ -8896,6 +9513,41 @@ Create a cube of six NURBS patches under a group, with a makeNurbCube node. Retu
 | `degree` | `d` | The degree (3). |
 | `patchesU` | `u` | Patches along U (1). |
 | `patchesV` | `v` | Patches along V (1). |
+
+## nurbsCurveToBezier
+
+Make a curve Bezier: a cubic with every third CV an anchor, keeping its shape. Other degrees are refit and change a little. Returns [object, node]. Less than Maya: the shape stays a nurbsCurve with an added attribute marking it.
+
+Arguments: curves (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `constructionHistory` | `ch` | Keep a history node (on by default). |
+| `replaceOriginal` | `rpo` | Change the curve itself (on by default). |
+| `name` | `n` | Name of a new curve. |
+| `object` | `o` | Make an object (accepted for Maya scripts). |
+
+## nurbsEditUV
+
+Edit the explicit UVs of surface CVs: -u, -v moves (absolute with -r false), -a degrees with -rr, -su, -sv about -pu, -pv (0 by default). -q gives u, v per CV; -q -u or -q -v one of them. Needs nurbsUVSet -c first.
+
+Arguments: surface.cv[u][v] (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `angle` | `a` | Degrees to rotate. |
+| `pivotU` | `pu` | The pivot in U. |
+| `pivotV` | `pv` | The pivot in V. |
+| `relative` | `r` | Add to the values (on by default). |
+| `rotateRatio` | `rr` | Multiplies the angle (1). |
+| `rotation` | `rot` | Editing rotation: -a says how much. |
+| `scale` | `s` | Editing scale: -su and -sv say how much. |
+| `scaleU` | `su` | Scale in U. |
+| `scaleV` | `sv` | Scale in V. |
+| `uValue` | `u` | U. |
+| `vValue` | `v` | V. |
 
 ## nurbsPlane
 
@@ -8971,6 +9623,19 @@ Arguments: surfaces (the selection when none)
 | `matchNormalDir` | `mnd` | Accepted for Maya scripts. |
 | `constructionHistory` | `ch` | Keep the node (on by default). |
 | `name` | `n` | Name of the mesh. |
+
+## nurbsUVSet
+
+Explicit UVs on a surface: -c makes the set from the implicit ones, -ue switches to it. Returns true. Less than Maya: one set per surface, the implicit values are evenly spaced by CV rather than taken from the knots, and nothing draws from them yet.
+
+Arguments: a surface (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `create` | `c` | Make the explicit set. |
+| `useExplicit` | `ue` | Use the explicit set. |
 
 ## objExists
 
@@ -11782,6 +12447,24 @@ Inset the selected faces.
 | `individual` |  | Each face separately. |
 | `clamp` |  | Shrink the thickness where the inset would cross itself, as on narrow faces. |
 
+## polyInstallAction
+
+Prepare for a poly action: -ic the component mode and for polyCloseBorder a border constraint, -id show borders, -cs convert the selection, -uc and -ud take them off. An action alone does -ic -id; no arguments does -uc -ud. Returns the selection on -ic. Less than Maya: only the actions it knows have a mode, and only polyCloseBorder a constraint and display.
+
+Arguments: the action
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `commandName` | `cn` | The action installed. |
+| `convertSelection` | `cs` | Convert selected objects to the action's components. |
+| `installConstraint` | `ic` | Install the mode and constraint. |
+| `installDisplay` | `id` | Install the display. |
+| `keepInstances` | `ki` | Accepted for Maya scripts; has no effect. |
+| `uninstallConstraint` | `uc` | Take the constraint off. |
+| `uninstallDisplay` | `ud` | Take the display off. |
+
 ## polyKnife
 
 Knife / multi-cut: cut a mesh along a path of points, splitting the faces between them and the edges the path crosses. Between two points the cut follows the surface under the straight screen line joining them (seen from eye= or along direction=; without either, along the points' average normal). With loopEdge= it inserts an edge loop across that edge's quad ring instead, and with deleteEdge= it dissolves that edge. Follows the mesh's symmetry. A single point on an edge inserts a vertex there. Returns the new edges.
@@ -14471,6 +15154,19 @@ Brings the scene up to date; the viewports draw on their own.
 | `suspend` | `su` | Accepted for Maya scripts. |
 | `currentView` | `cv` | Accepted for Maya scripts. |
 
+## relationship
+
+Held for scripts: relationship type owner members, -b breaks it, -rd its data; -q type owner lists the members. Maya makes the connections on reading a file; this only holds the list, and it is not saved.
+
+Arguments: the type, the owner, then what is related
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `b` | `b` | Break it. |
+| `relationshipData` | `rd` | Data for it. |
+
 ## removeFromDisplayLayer
 
 Take objects (the selection by default) out of their display layers.
@@ -14752,6 +15448,28 @@ Arguments: curves, objects or rotate plugs (the selection when none)
 | `shape` | `s` | Include the channels of the objects' shapes. |
 | `animation` | `an` | objects (the default), keys or keysOrObjects: keys means the selected keys. |
 | `convert` | `c` | The interpolation to convert to. |
+
+## roundConstantRadius
+
+Constant radius fillets where surface edges meet: edges in pairs, surface.u[x] surface.v[y], -rad the radius (one for all, or one per pair; 1 by default). Returns the fillets, then the nodes. Less than Maya: it makes the fillets but does not trim the surfaces or build corners, and -a, -sa, -sb and -s (compound edges) fail.
+
+Arguments: edges in pairs
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `constructionHistory` | `ch` | Keep the node (on by default). |
+| `name` | `n` | The new object's name. |
+| `object` | `o` | Accepted for Maya scripts. |
+| `range` | `rn` | Accepted for Maya scripts. |
+| `caching` | `cch` | Accepted for Maya scripts. |
+| `nodeState` | `nds` | Accepted for Maya scripts. |
+| `tolerance` | `tol` | Accepted for Maya scripts. |
+| `polygon` | `po` | 0 NURBS, 1 polygons. |
+| `append` | `a` | Not supported: fails. |
+| `radiuss` | `rad` | The radius, one or one per pair. |
+| `side` | `s` | Not supported: fails. |
+| `sidea` | `sa` | Not supported: fails. |
+| `sideb` | `sb` | Not supported: fails. |
 
 ## rowColumnLayout
 
@@ -15941,6 +16659,24 @@ Arguments: plug [value]
 | `alteredValue` | `av` | Accepted for Maya scripts. |
 | `caching` | `ca` | Accepted for Maya scripts. |
 
+## setAttrMapping
+
+Held only: an offset and scale for a device attachment. Input devices are not supported, so it has no effect. -q reads a flag back.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `absolute` | `a` | Absolute mapping. |
+| `attribute` | `at` | The attribute. |
+| `axis` | `ax` | The device axis. |
+| `clutch` | `c` | The clutch button. |
+| `device` | `d` | The device. |
+| `offset` | `o` | The offset. |
+| `relative` | `r` | Relative mapping. |
+| `scale` | `s` | The scale. |
+| `selection` | `sl` | On the selected objects. |
+
 ## setCharacterObject
 
 Put a joint in a character's slot, as `setCharacterObject(joint, character, slot, 0)`; the slot by id or name.
@@ -16067,6 +16803,12 @@ Arguments: objects or object.attribute plugs (the selection when none)
 | `animLayer` | `al` | The layer to key. Ignored for channels not in it, as in Maya. |
 | `dirtyDG` | `dd` | Accepted for Maya scripts: keying always dirties what it drives. |
 | `identity` | `id` | Accepted for Maya scripts. |
+
+## setKeyframeBlendshapeTargetWts
+
+Key per-point blend shape target weights at the current time: a selected base keys all its targets, a selected live target only itself. Returns how many keys. The keys go on the node's targetWeightKeys elements, which override the painted weight for that point: Maya has them under inputTarget, which are not plugs here.
+
+Arguments: a base or a target (the selection when none)
 
 ## setMembers
 
@@ -16535,6 +17277,21 @@ Arguments: a profile and two rails (the selection when none)
 | `range` | `rn` | Accepted for Maya scripts. |
 | `name` | `n` | Name of the new object. |
 | `object` | `o` | Accepted for Maya scripts. |
+
+## skeletonEmbed
+
+Fit a joint chain inside meshes: a plain heuristic, a straight run along the bounds' longest axis through the middle of each slice of points. Maya embeds a whole skeleton from a voxel segmentation; -sm and -sr are accepted and change nothing. -jc is this command's own: how many joints (5). Returns the joints; -q the positions; -q -mm the merged mesh as points and faces.
+
+Arguments: meshes (the selection when none)
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `mergedMesh` | `mm` | With -q: the meshes merged. |
+| `segmentationMethod` | `sm` | Accepted for Maya scripts; has no effect. |
+| `segmentationResolution` | `sr` | Accepted for Maya scripts; has no effect. |
+| `jointCount` | `jc` | How many joints. |
 
 ## skinBindCtx
 
@@ -17057,6 +17814,23 @@ Arguments: CVs
 | `stepCount` | `sc` | Accepted for Maya scripts. |
 | `tolerance` | `tol` | Accepted for Maya scripts. |
 
+## stringArrayIntersector
+
+An object holding the intersection of string arrays so far: name it, -e -i array, -q reads it, -e -r starts again, -ex asks, -ad keeps duplicates. -dt and -ut are accepted and do nothing.
+
+Arguments: its name
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `allowDuplicates` | `ad` | Keep duplicate entries. |
+| `defineTemplate` | `dt` | Accepted for Maya scripts; has no effect. |
+| `exists` | `ex` | Whether it exists. |
+| `intersect` | `i` | An array. |
+| `reset` | `r` | Start again. |
+| `useTemplate` | `ut` | Accepted for Maya scripts; has no effect. |
+
 ## substituteGeometry
 
 Substitute Geometry: the second mesh takes over from the skinned first, with its influences and weights. The old mesh goes unless -rog. Returns the new skinCluster.
@@ -17256,6 +18030,21 @@ Arguments: objects
 | `pairsOnly` |  | Only match the stored pairs again, leaving the geometry as it is. |
 | `topological` |  | With pairsOnly: match by topology from the selected edge. |
 | `tolerance` |  | Weld or match distance, cm (0: scaled to the mesh). |
+
+## sysFile
+
+File operations on a path: -cp, -delete, -md, -mov, -red, -ren. Returns whether it worked. Not undoable, unlike what Maya's reference says.
+
+Arguments: the path
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `copy` | `cp` | Copy to this name. |
+| `delete` | `delete` | Delete the file. |
+| `makeDir` | `md` | Make the directory and those above it. |
+| `move` | `mov` | As -rename. |
+| `removeEmptyDir` | `red` | Remove the directory if empty. |
+| `rename` | `ren` | Rename to this name. |
 
 ## tabLayout
 
@@ -18248,6 +19037,20 @@ Arguments: objects or plugs (the selection when none)
 | `special` | `sp` | On or off. |
 | `time` | `t` | Which keys. |
 
+## timeCode
+
+Held for scripts: the file's time code, -msf, -psf, -psh, -psm, -pss, read back with -q. Less than Maya: the numbers are in the session, not on a time1 node, so they are not saved, and nothing shows them.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `mayaStartFrame` | `msf` | The start time, in frames. |
+| `productionStartFrame` | `psf` | Production start: frames. |
+| `productionStartHour` | `psh` | Production start: hours. |
+| `productionStartMinute` | `psm` | Production start: minutes. |
+| `productionStartSecond` | `pss` | Production start: seconds. |
+
 ## timeControl
 
 The time slider's state: the range selected on it (-q -ra, -q -rng, -q -rv), its key display and snapping.
@@ -18390,6 +19193,17 @@ Arguments: objects
 | `template` | `te` | What to switch. |
 | `state` | `st` | On or off, rather than the other way round. |
 | `query` | `q` | Query. |
+
+## toggleAxis
+
+The display axes: -v the one at the bottom left of each view, which is the viewAxis heads up display; -o the one at the origin, which is only held. -q reads them.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `origin` | `o` | The axis at the origin. |
+| `view` | `v` | The axis at the bottom left. |
 
 ## toggleSymmetry
 
@@ -18998,6 +19812,21 @@ Arguments: [name]
 | `history` | `ch` |  |
 | `dragSlider` | `ds` |  |
 
+## uvLink
+
+Held for scripts: links between UV sets and textures. -uvs and -t make one (or -m), -b breaks it; -q -uvs lists textures, -q -t lists UV sets, -qo limits to an object; -iv checks the objects exist. No uvChooser node is made and nothing draws from it. The list is not saved.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `b` | `b` | Break the link. |
+| `isValid` | `iv` | Whether the texture or UV set exists. |
+| `make` | `m` | Make the link: what happens without -b. |
+| `queryObject` | `qo` | With -q -t: only this object. |
+| `texture` | `t` | The texture. |
+| `uvSet` | `uvs` | The UV set plug. |
+
 ## uvSnapshot
 
 Write the UV wireframe to an image: -n file, -xr -yr, -r -g -b the line colour, -um -uM -vm -vM the range, -o overwrites. PNG, or PPM with -ff ppm.
@@ -19197,6 +20026,25 @@ Arguments: [name]
 Hammer Skin Weights: the points named or selected take the average weights of the points around them.
 
 Arguments: points (the selection when none)
+
+## weightsColor
+
+Held for scripts: the false colour settings for showing a deformer's weights. Nothing is drawn from them: the views have no weight display for this. -q reads them.
+
+Arguments: objects
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `colorRamp` | `cr` | A ramp. |
+| `deformer` | `dfm` | The deformer. |
+| `falseColor` | `fc` | False colour on or off. |
+| `outOfRangeColor` | `orc` | Colour outside the deformer's set. |
+| `rampMaxColor` | `rxc` | Colour at or over the maximum. |
+| `rampMinColor` | `rmc` | Colour at or under the minimum. |
+| `useColorRamp` | `ucr` | Use the ramp. |
+| `useMaxMinColor` | `umc` | Use the out of range colours. |
 
 ## window
 
@@ -19498,6 +20346,18 @@ Arguments: Transforms to edit or query; the selection when none are given.
 | `reflection` | `rfl` | Accepted for Maya scripts. |
 | `disableReflection` | `drp` | Accepted for Maya scripts. |
 | `requiresAll` | `rab` | Accepted for Maya scripts. |
+
+## xformConstraint
+
+Held for scripts: the transform tools' constraint, -t none, surface, edge or live, -n along normals. The tools do not honour it yet. -q -t, -q -n and -q -l read it; -l is whether there is a live surface.
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `query` | `q` | Query mode. |
+| `edit` | `e` | Edit mode. |
+| `type` | `t` | none, surface, edge or live. |
+| `alongNormal` | `n` | Along the normals first. |
+| `live` | `l` | With -q: whether a live surface is set. |
 
 ## zeroPivot
 

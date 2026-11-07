@@ -150,7 +150,7 @@ impl LatticeGrid {
     }
 }
 
-fn grid_of(v: &PlugValue) -> Option<&LatticeGrid> {
+pub(crate) fn grid_of(v: &PlugValue) -> Option<&LatticeGrid> {
     match v {
         PlugValue::Data(Some(x)) => x.as_any().downcast_ref::<LatticeGrid>(),
         _ => None,
@@ -164,7 +164,7 @@ const SD: usize = Shape::COUNT;
 const TD: usize = Shape::COUNT + 1;
 const UD: usize = Shape::COUNT + 2;
 /// The moved points; none means the regular grid.
-const CONTROL_POINTS: usize = Shape::COUNT + 3;
+pub(crate) const CONTROL_POINTS: usize = Shape::COUNT + 3;
 const LATTICE_OUTPUT: usize = Shape::COUNT + 4;
 
 struct LatticeShape;
@@ -201,9 +201,9 @@ const LOCAL: usize = BASE_COUNT + 3;
 const OUTSIDE: usize = BASE_COUNT + 4;
 const OFD: usize = BASE_COUNT + 5;
 const FREEZE: usize = BASE_COUNT + 6;
-const DLP: usize = BASE_COUNT + 7;
-const DLM: usize = BASE_COUNT + 8;
-const BLM: usize = BASE_COUNT + 9;
+pub(crate) const DLP: usize = BASE_COUNT + 7;
+pub(crate) const DLM: usize = BASE_COUNT + 8;
+pub(crate) const BLM: usize = BASE_COUNT + 9;
 const STU: usize = BASE_COUNT + 10;
 
 struct Ffd;
@@ -412,7 +412,7 @@ pub fn box_lines(w: &DMat4) -> Vec<(DVec3, DVec3)> {
 // The command
 
 /// The ffd a name stands for: the node, or its lattice or base lattice.
-fn ffd_named(g: &Graph, name: &str) -> CmdResult<NodeId> {
+pub(crate) fn ffd_named(g: &Graph, name: &str) -> CmdResult<NodeId> {
     let id = crate::rig::find(g, name, "lattice")?;
     if g.node(id).is_some_and(|n| n.ty().is_a("ffd")) {
         return Ok(id);
@@ -424,8 +424,12 @@ fn ffd_named(g: &Graph, name: &str) -> CmdResult<NodeId> {
 }
 
 /// The ffd's lattice shape and the two transforms.
-fn parts(g: &Graph, n: NodeId) -> Option<(NodeId, NodeId, NodeId)> {
-    let shape = g.source(&plug(n, DLP))?.node;
+pub(crate) fn parts(g: &Graph, n: NodeId) -> Option<(NodeId, NodeId, NodeId)> {
+    let mut shape = g.source(&plug(n, DLP))?.node;
+    // A flexor's jointLattice or boneLattice sits between the lattice and the ffd.
+    while g.node(shape).is_some_and(|x| crate::rig_extra::is_flexor_type(x.ty().name.as_str())) {
+        shape = g.source(&plug(shape, 0))?.node;
+    }
     let lat = g.source(&plug(n, DLM))?.node;
     let base = g.source(&plug(n, BLM))?.node;
     Some((shape, lat, base))

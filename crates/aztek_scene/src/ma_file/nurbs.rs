@@ -60,6 +60,10 @@ impl Build<'_> {
     /// What a blend shape reads from a live target: a curve or surface goes through nurbsToPoints.
     pub(super) fn target_source(&mut self, src: NodeId, from: String) -> String {
         let name = self.s.graph.node(src).map(|n| n.ty().name.clone()).unwrap_or_default();
+        // A mesh's `.w` is its worldMesh in the file: the same points, read here from its output.
+        if name == "mesh" {
+            return format!("{}.outMesh", self.s.graph.path(src));
+        }
         let local = match name.as_str() {
             "nurbsCurve" => crate::curves::CurveShape::LOCAL,
             "nurbsSurface" => crate::surfaces::SurfaceShape::LOCAL,
@@ -108,5 +112,31 @@ impl Build<'_> {
         let _ = g.connect(&prev, &PlugRef::new(from_id, 1), false);
         let _ = g.connect(&PlugRef::new(from_id, 2), &PlugRef::new(shape, create as i32), false);
         true
+    }
+}
+
+impl Writer<'_> {
+    /// A deformed curve or surface: its original's `.ws` through the deformers to `.cr`.
+    pub(super) fn write_nurbs_chain(&mut self, shape: NodeId, create: usize) {
+        let g = &self.s.graph;
+        let Some(from) = g.source(&PlugRef::new(shape, create as i32)).filter(|s| g.node(s.node).is_some_and(|n| n.ty().name == nn::FROM_POINTS)) else { return };
+        let mut chain = Vec::new();
+        let mut at = PlugRef::new(from.node, 1);
+        let to = loop {
+            let Some(src) = g.source(&at) else { return };
+            let Some(n) = g.node(src.node) else { return };
+            if n.ty().name == nn::TO_POINTS {
+                break src.node;
+            }
+            chain.insert(0, src.node);
+            let Some(ip) = n.ty().attr_index("inputPolymesh") else { return };
+            at = PlugRef::new(src.node, ip as i32);
+        };
+        let Some(orig) = g.source(&PlugRef::new(to, 0)) else { return };
+        let count = g.node(to).and_then(|n| n.data().value(1).as_mesh().map(|m| m.point_capacity())).unwrap_or(0) as usize;
+        let stored = Stored { points: vec![DVec3::ZERO; count], point_of: (0..count as i64).collect(), edges: Vec::new(), faces: Vec::new(), corners: 0, uv_sets: Vec::new() };
+        let (first, shape_path) = (format!("{}.ws", g.path(orig.node)), g.path(shape));
+        let last = self.write_chain_from(&chain, &shape_path, first, &stored, true);
+        self.conn(&last, &format!("{shape_path}.cr"));
     }
 }

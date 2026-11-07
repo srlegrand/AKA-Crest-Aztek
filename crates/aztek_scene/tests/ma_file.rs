@@ -1218,7 +1218,7 @@ fn curves_and_cameras_round_trip() {
     assert!(text.contains("createNode nurbsCurve -n \"splineShape\" -p \"spline\";"), "{text}");
     assert!(text.contains("-type \"nurbsCurve\""));
     assert!(text.contains("createNode camera -n \"shotShape\" -p \"shot\";"), "{text}");
-    assert!(!text.contains("-n \"persp\""));
+    assert!(text.contains("createNode transform -s -n \"persp\";"), "{text}");
     let dir = std::env::temp_dir().join(format!("aztek_curve_{}.ma", std::process::id()));
     std::fs::write(&dir, &text).unwrap();
     let mut t = Session::new();

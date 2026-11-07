@@ -167,7 +167,7 @@ with `loadPlugin`. C++ plug-ins can't load.
 
 ## Maya compatibility
 
-The target is that Maya's scripts, habits and `.ma` files carry over. It has been developed without a copy of Maya to
+The target is that Maya's scripts, habits and `.ma` files carry over. A production rig from Maya 2020 opens, poses and saves; see "A real rig" in [PARITY.md](PARITY.md). It has been developed without a copy of Maya to
 compare against, so behaviour comes from the published reference: expect differences in details, and see PARITY.md for
 the known ones. `.mb` files and C++ plug-ins are not supported. Rendering, dynamics and Bifrost are out of
 scope.

@@ -188,6 +188,10 @@ impl Build<'_> {
             for (e, chunk) in set.values.chunks(stride).enumerate().take(count) {
                 let text = if seg.range.is_some() { format!("{path}.{}[{}]", seg.name, lo + e as i64) } else { format!("{path}.{}", seg.name) };
                 let Ok(p) = self.s.graph.plug(&text) else { continue };
+                // A driven plug's value is what drives it now; setting one would hold it there.
+                if self.s.graph.source(&p).is_some() {
+                    continue;
+                }
                 let def = self.s.graph.attr(&p).clone();
                 if let Some(v) = plug_value(&def, p.component, chunk, 1.0) {
                     let _ = self.s.graph.set_value(p, v);
@@ -254,7 +258,7 @@ impl Build<'_> {
         let indices: Vec<i64> = doc.conns.iter().filter(|c| c.dst == d.doc && matches!(plain_attr(&c.dst_attr).as_str(), "dw" | "deformedWire")).map(|c| first_index(&c.dst_attr).unwrap_or(0)).collect();
         for k in indices {
             let Some(driver) = of(self, ["dw", "deformedWire"], k) else { continue };
-            let base = of(self, ["bw", "baseWire"], k).unwrap_or(driver);
+            let base = of(self, ["bw", "baseWire"], k);
             if let Err(e) = crate::deform_wire::add_file_wire(&mut self.s.graph, d.id, k as i32, driver, base) {
                 self.warnings.push(format!("{}: {e}", doc.nodes[d.doc].name));
             }
@@ -424,7 +428,7 @@ impl Build<'_> {
             }
             let (sn, sa) = self.real_source(c);
             let plain_dst = plain_attr(&c.dst_attr);
-            if matches!(plain_dst.as_str(), "bw" | "baseWire" | "dw" | "deformedWire" | "ip.ig" | "ip.gi" | "input.inputGeometry" | "input.groupId" | "i" | "inMesh" | "dd" | "deformerData" | "gm" | "geomMatrix") || matches!(plain_attr(&sa).as_str(), "og" | "outputGeometry" | "msg" | "message") {
+            if matches!(plain_dst.as_str(), "bw" | "baseWire" | "dw" | "deformedWire" | "ip.ig" | "ip.gi" | "input.inputGeometry" | "input.groupId" | "i" | "inMesh" | "dd" | "deformerData" | "gm" | "geomMatrix") || (matches!(plain_attr(&sa).as_str(), "og" | "outputGeometry" | "msg" | "message") && !crate::rig_extra::is_flexor_type(&doc.nodes[sn].ty)) {
                 continue;
             }
             let Some(src) = self.id(sn) else { continue };
@@ -443,7 +447,11 @@ impl Build<'_> {
                     let is_this = self.deformers.iter().any(|d| d.id == id && d.geometry == g);
                     if is_this {
                         let from = self.target_source(src, from.clone());
-                        self.connect_quietly(&from, &format!("{path}.inputGeomTarget[{key}]"));
+                        let to = format!("{path}.inputGeomTarget[{key}]");
+                        if self.s.graph.plug(&from).is_err() {
+                            self.warnings.push(format!("{to}: nothing to read at {from}"));
+                        }
+                        self.connect_quietly(&from, &to);
                         let xf = crate::dag::transform_of(&self.s.graph, src);
                         let m = self.s.graph.path(xf);
                         self.connect_quietly(&format!("{m}.worldMatrix"), &format!("{path}.inputTargetMatrix[{key}]"));
@@ -529,11 +537,29 @@ impl Writer<'_> {
     }
 
     pub(super) fn write_chain(&mut self, chain: &[NodeId], shape_path: &str, orig: &str, stored: &Stored) {
-        let mut prev = format!("{orig}.w");
+        let last = self.write_chain_from(chain, shape_path, format!("{orig}.w"), stored, false);
+        self.conn(&last, &format!("{shape_path}.i"));
+    }
+
+    /// The deformers from `first`. Returns the plug that comes out of them. On a curve or surface a tweak is Maya's tweak node.
+    pub(super) fn write_chain_from(&mut self, chain: &[NodeId], shape_path: &str, first: String, stored: &Stored, nurbs: bool) -> String {
+        let mut prev = first;
         for (k, &d) in chain.iter().enumerate() {
             let dp = self.s.graph.path(d);
             let is_skin = self.s.graph.node(d).is_some_and(|n| n.ty().name == skin::SKIN_TYPE);
             let is_tweak = self.s.graph.node(d).is_some_and(|n| n.ty().name == crate::history::TWEAK_TYPE);
+            if is_tweak && nurbs {
+                self.conn(&prev, &format!("{dp}.ip[0].ig"));
+                let mut text = format!("createNode tweak -n {};\n", quoted(&dp));
+                let saved = crate::history::tweaks_json(&self.s.graph, d);
+                for e in saved.get("points").and_then(Value::as_array).into_iter().flatten() {
+                    let c = |k: usize| e.get(k).and_then(Value::as_f64).unwrap_or(0.0);
+                    let _ = writeln!(text, "\tsetAttr \".pl[0].cp[{}]\" -type \"double3\" {} ;", c(0) as i64, vec_text(DVec3::new(c(1), c(2), c(3))));
+                }
+                self.pending_nodes_push(text);
+                prev = format!("{dp}.og[0]");
+                continue;
+            }
             if is_tweak {
                 self.conn(&prev, &format!("{dp}.ip"));
                 let text = self.chain_tweak_text(d, stored);
@@ -568,7 +594,7 @@ impl Writer<'_> {
             self.pending_nodes_push(text);
             prev = format!("{dp}.og[0]");
         }
-        self.conn(&prev, &format!("{shape_path}.i"));
+        prev
     }
 
     fn chain_tweak_text(&self, d: NodeId, stored: &Stored) -> String {
@@ -745,6 +771,26 @@ impl Writer<'_> {
         let is_def = |t: &NodeType| deform::is_deformer(&t.name);
         if is_def(&dt) && matches!(dst.attr as usize, IN | GEOM | deform::DEFORMER_SET) {
             return;
+        }
+        // A curve as a blend target: it goes through nurbsToPoints here and straight in as Maya has it.
+        if st.name == crate::nurbs_nodes::TO_POINTS {
+            if dt.name == "blendShape" && dt.attrs[dst.attr as usize].name == "inputGeomTarget" {
+                if let Some(shape) = g.source(&PlugRef::new(src.node, 0)) {
+                    let (a, dp) = (g.path(shape.node), g.path(dst.node));
+                    let (i, iti) = (dst.element / 100_000, dst.element % 100_000);
+                    self.conn(&format!("{a}.ws"), &format!("{dp}.it[0].itg[{i}].iti[{iti}].igt"));
+                }
+            }
+            return;
+        }
+        // A wire's driver and rest curve, when it knows them, as Maya's deformedWire and baseWire.
+        if dt.name == "wire" && matches!(dt.attrs[dst.attr as usize].name.as_str(), "wireMatrix" | "baseWireMatrix") {
+            if let Some(shape) = crate::curves::as_curve(g, src.node) {
+                let short = if dt.attrs[dst.attr as usize].name == "wireMatrix" { "dw" } else { "bw" };
+                let (a, dp) = (g.path(shape), g.path(dst.node));
+                self.conn(&format!("{a}.ws"), &format!("{dp}.{short}[{}]", dst.element));
+                return;
+            }
         }
         if is_def(&st) && src.attr as usize == OUT {
             return;

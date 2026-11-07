@@ -33,6 +33,8 @@ struct Ui {
     huds: BTreeMap<String, Value>,
     /// Which of the built-in heads up displays are on.
     hud_on: BTreeSet<String>,
+    /// What `hotkey` has bound, for hotkeyCheck.
+    hotkeys: Vec<Value>,
     workspace: String,
     /// Per-node display toggles the Display menu sets: localAxis, rotatePivot, scalePivot, selectHandle.
     node_flags: BTreeMap<String, HashSet<NodeId>>,
@@ -104,6 +106,22 @@ pub fn pref_bool(name: &str, fallback: bool) -> bool {
 
 pub fn pref_f64(name: &str, fallback: f64) -> f64 {
     with_ui(|u| u.prefs.get(name).and_then(Value::as_f64).unwrap_or(fallback))
+}
+
+pub fn set_pref(name: &str, value: Value) {
+    with_ui(|u| {
+        u.prefs.insert(name.to_string(), value);
+    });
+}
+
+pub fn set_hud(name: &str, on: bool) {
+    with_ui(|u| {
+        if on {
+            u.hud_on.insert(name.to_string());
+        } else {
+            u.hud_on.remove(name);
+        }
+    });
 }
 
 pub fn hud_on(name: &str) -> bool {
@@ -355,6 +373,32 @@ pub fn register(s: &mut Session) {
 
     reg(
         s,
+        Cmd::new("hotkeyCheck", "The annotation of the nameCommand a key is bound to, or an empty string: -k the key, -alt, -ctl, -cmd, -opt modifiers, -kup for release. Less than Maya: it sees keys bound with the hotkey command, not the built-in table the shell keeps.", |_s, a| {
+            let key = a.string("keyString", "");
+            if key.is_empty() {
+                fail!("hotkeyCheck: give -k");
+            }
+            let (ctrl, alt) = (a.bool("ctrlModifier") || a.bool("commandModifier"), a.bool("altModifier") || a.bool("optionModifier"));
+            let release = a.bool("keyUp");
+            Ok(with_ui(|u| {
+                let found = u.hotkeys.iter().find(|x| x["key"] == key.as_str() && x["ctrl"] == ctrl && x["alt"] == alt);
+                let name = found.and_then(|x| x[if release { "releaseName" } else { "name" }].as_str()).unwrap_or("").to_string();
+                let ann = u.name_commands.get(&name).and_then(|e| e["annotation"].as_str()).unwrap_or("").to_string();
+                json!(ann)
+            }))
+        })
+        .flag(f("altModifier", "alt", ArgType::Bool, "With Alt."))
+        .flag(f("commandModifier", "cmd", ArgType::Bool, "With Command: as Ctrl here."))
+        .flag(f("ctrlModifier", "ctl", ArgType::Bool, "With Ctrl."))
+        .flag(f("isRepeatable", "ir", ArgType::Bool, "Accepted for Maya scripts; has no effect."))
+        .flag(f("keyString", "k", ArgType::String, "The key."))
+        .flag(f("keyUp", "kup", ArgType::Bool, "On release."))
+        .flag(f("optionModifier", "opt", ArgType::Bool, "With Option: as Alt here."))
+        .undoable(false),
+    );
+
+    reg(
+        s,
         Cmd::new("hotkey", "Bind a key: -k the key, -alt -ctl -sht modifiers, -n the name command for press, -rn for release.", |_s, a| {
             let key = a.string("keyShortcut", "");
             if key.is_empty() {
@@ -367,6 +411,10 @@ pub fn register(s: &mut Session) {
                 "shift": a.bool("shiftModifier"),
                 "name": a.string("name", ""),
                 "releaseName": a.string("releaseName", ""),
+            });
+            with_ui(|u| {
+                u.hotkeys.retain(|x| !(x["key"] == hk["key"] && x["ctrl"] == hk["ctrl"] && x["alt"] == hk["alt"] && x["shift"] == hk["shift"]));
+                u.hotkeys.push(hk.clone());
             });
             crate::core::push_ui_request(format!("hotkey|{hk}"));
             Ok(Value::Null)

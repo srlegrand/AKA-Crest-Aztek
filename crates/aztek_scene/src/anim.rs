@@ -1003,6 +1003,15 @@ pub(crate) fn targets(s: &Session, a: &aztek_ops::Args, cmd: &str) -> CmdResult<
             out.extend(split(g.plug(&name)?));
             continue;
         }
+        // An array element is a plug (blendShape1.w[0]); anything else ending in ] is a component.
+        if name.contains('.') {
+            if let Ok(p) = g.plug(&name) {
+                if p.element >= 0 && g.attr(&p).is_array() {
+                    out.push(p);
+                    continue;
+                }
+            }
+        }
         let base = name.split('.').next().unwrap_or(&name);
         let Some(id) = g.find(base)? else { fail!("{cmd}: no object named {name}") };
         if crate::characters::is_character(g, id) {

@@ -302,7 +302,7 @@ switch of move, rotate or scale is a value, not the switch's own, so `move -r 1 
 `.ma` files keep utility nodes and expressions, and read Maya's slot spelling of an expression (`.O[0] = .I[0] * 2;`). On
 reading, a `unitConversion` is seen through, its factor dropped, since Aztek's angles are degrees throughout.
 
-Not yet in these: `polyEvaluate -b2` and `-bc2`, `select` of `pCube1.vtx[*]`; `displayCull`, `snapMode` and the display attributes (`displayHandle`, `displayLocalAxis` and so on) hold their values
+Not yet in these: `displayCull`, `snapMode` and the display attributes (`displayHandle`, `displayLocalAxis` and so on) hold their values
 but the viewport does not draw from them.
 
 (As of that date. All of these have since been done; see below.)
@@ -417,6 +417,77 @@ Less than Maya does, in these:
 Deformers save and load in `.ma` as Maya lays them out: Orig shape, groupParts and groupId, the deformer, its objectSet, `.wl` weights, `.gm`. blendShape uses `.it[g].itg[i].iti[k].ipt/.ict`, `.tw`, `.bw` and `attributeAlias`; live targets connect at `.igt`. cluster and nonLinear handles are a transform with Maya's shape (clusterHandle, deformBend and so on), with nonlinear settings on the shape. A deformer on several meshes reads from `.ip[n]`/`.og[n]` into one node per mesh, with the followers linked to the leader. Point moves in a `tweak` node go into the Orig geometry; a polyTweak below a deformer stays in the chain. Data that Maya's attributes can't hold goes in an added string attribute, aztekState. Other history below a deformer still bakes, with a warning.
 
 To check against Maya: the `.cc` lattice layout, whether a file opens without a set for every deformer, the skinCluster's own groupParts, and scripted reading of a real rig.
+
+## A real rig (07/11/2026)
+
+Tested against a production rig made in Maya 2020: a character of 1,588 transforms, 414 joints, 37 skinClusters, 17 blendShapes, 102
+follicles, 82 IK handles, ribbons, wires and pose readers. `crates/aztek_scene/examples/load_ma.rs` loads any `.ma` with no UI and
+reports warnings and how far the result is from what the file says: influences against their bind matrices, channels against the values
+Maya stored, meshes against their originals. `rig_diff.rs` compares two files under a pose. `tests/rig_files.rs` holds each fault found,
+from small `.ma` files written by hand.
+
+Works on that rig: opens in about 3 seconds with nothing dropped but render settings and polyBridgeEdge history (its meshes hold their
+geometry); every stored translate comes out as saved, and every stored rotate except on 63 eyelid joints, which are up to 0.51 degrees off (cause not found); body, arm IK and FK, legs, spine, head, jaw, lips,
+cheeks, brows and blink all reach the final meshes; 13 to 44 ms per change; saving and reopening gives the same result under every pose
+tried, to the last digit.
+
+Added or fixed for it:
+
+- A node connected to itself no longer hangs the graph.
+- `follicle`, on surfaces and meshes: X along U, Y along V, Z the normal. It may drive its own transform (`free_of_parent` on its type).
+- `transformGeometry`, makeNurbCircle and makeNurbPlane in files; curve `.cp[k]` drivable; `blendWeighted` and `pointOnCurveInfo` read.
+- Deformers on curves and surfaces: `nurbsToPoints` and `pointsToNurbs` carry the CVs through skinCluster, blendShape, wire and tweak.
+  They are extra nodes in `listHistory`, which Maya does not have. They are not saved: files hold Maya's own connections.
+- Constraints go to the target's rotate pivot; aim, normal and tangent work in the parent's frame; a mirrored matrix is a rotation with
+  every axis scaled by -1. Weights can be driven (space switches), world up objects connect, rest values read and write, pairBlend between
+  constraint and object.
+- Pole vectors are in the space of the start joint's parent. A file's stored pole is the chain's rest reference.
+- Spline IK from files, and it keeps rootOnCurve.
+- Live blendShape targets from meshes (`.w`). Importing no longer pins a driven plug at the value in the file.
+- The default cameras exist as soon as a file opens, take the file's values, and are written with `-s`.
+
+Shallower than Maya:
+
+- Nothing here has been compared with Maya running. The checks are against values Maya saved at rest; posed results are only checked to be
+  plausible and the same after saving. Whether Maya opens what Aztek writes is unchecked.
+- Follicle hair, simulation and most of its attributes are ignored: it is a point and frame. `pu` and `pv` are clamped to 0 to 1.
+- Spline IK ignores advanced twist (`.dwut`, `.dwum`, `.dwue`), and stretch comes only from what the rig wires up.
+- blendWeighted ignores `.w`. A periodic curve's skin weights cover its first lap only.
+- A mesh named the same as its transform needs a path: `hair|hair`, as in Maya.
+- A wire reads driver curves by sampling; `.sc` (scale) on a wire is not used.
+- A rest error of 5.3 on one mesh of that rig is unexplained. It is probably the blend targets the file has on at weight 1, but this has not been shown.
+### Remaining rigging, animation, NURBS and general commands (07/11/2026)
+
+Flags and short names come from the command reference for Maya 2024; no copy of Maya was run. In `rig_extra.rs`, `anim_extra.rs`, `model_extra.rs`, `general_cmds.rs`, `nurbs_ops.rs` and `aztek_host/src/host_general.rs`.
+
+Working as Maya describes them: `combinationShape` with its node (the smooth method's formula is our own, Maya doesn't document it), `blendTwoAttr`, `instanceable` (`instance` refuses, not `duplicate -ilf`), `effector`, `ikSystemInfo`, `jointDisplayScale` and `ikHandleDisplayScale` (the views read them), `expandedSelection`, `dataStructure`, `addMetadata`, `editMetadata`, `getMetadata`, `nodeCast`, `sysFile`, `getFileList`, `stringArrayIntersector`, `condition` (also through `isTrue` and `scriptJob -ct`), `disable`, `getProcArguments`, `clear` and `print` and `warning` from `cmds`, `hotkeyCheck` (keys bound with `hotkey`, not the shell's built-in table), `help` (from each command's registered text).
+
+Shallower than Maya:
+
+- `flexor`, `copyFlexor`, `jointLattice`, `boneLattice`: the node bulges the lattice's points by the bend, and `.ma` keeps them. The bulge's shape is our own. The lattice follows the joints through constraints and its ffd runs after the skin, where Maya's node moves the lattice's ends rigidly. Of `-dc` only `-dv` and `-mxd` are read. A sculpt flexor follows its joint and no attribute drives it. `copyFlexor` doesn't reflect a mirrored bone.
+- `skeletonEmbed` is a shallow heuristic: a straight chain along the bounds' longest axis through the middle of each slice of points. It embeds no skeleton, and `-sm` and `-sr` change nothing. `-jc` is ours.
+- `characterize` makes a character from names and `-sk`. `-type label` reads names too, and the pivot, effector and stance flags fail, as there is no full body solver. `hikGlobals` is only held. `hikGetDependNodes` has no Maya documentation: what it returns (joints, then connected nodes) is inferred from its name.
+- `setKeyframeBlendshapeTargetWts` keys `targetWeightKeys` elements on the blendShape, which override the painted weight: Maya's per-point weights under `inputTarget` aren't plugs here. `.ma` keeps them under that name, which Maya won't read as weights.
+- `ghosting` sets the ghost attributes and answers about frames, but the views draw no ghosts, so `-en`, the colours and the opacities have no effect.
+- `blend2` takes one curve or edge per rail. `-pt`, `-tt` and `-mk` are only held. `roundConstantRadius` makes the fillets but doesn't trim the surfaces or build corners; compound edges and `-a` fail; the sections are cubics, up to about 0.2% of the radius off a true arc, and assume the surfaces are flat at each section.
+- `nurbsCurveToBezier` keeps a `nurbsCurve` shape with tripled knots and a marker attribute, not Maya's `bezierCurve` type, as `.ma` writes curves by that name. `bezierAnchorState` and `bezierAnchorPreset` move the tangents once: no state is kept, and later drags don't keep them smooth or even. Preset tangent lengths are our own.
+- `nurbsUVSet`, `nurbsCopyUVSet`, `nurbsEditUV`: one explicit set per surface, implicit values evenly spaced by CV rather than from the knots, and nothing draws from them.
+- `polyInstallAction` knows a table of actions; only `polyCloseBorder` has a constraint and a display.
+- `grid`: size, spacing, divisions and toggle reach the four model panels, as a line every spacing over divisions. Darker lines stay every 5, and new panels don't get the settings. Defaults are 12, 5, 5 as the views and Preferences have them; the reference's text says spacing and divisions of 10.
+- `commandEcho -st` echoes commands from Python only. `nodePreset` writes JSON and leaves out multis and hidden attributes; `-ctm` does nothing. `nodeCast` doesn't refuse referenced nodes.
+
+Stored with no effect, as their command text says: `weightsColor`, `ikfkDisplayMethod`, `xformConstraint`, `relationship`, `displayAffected`, `timeCode`, `makePaintable`, `uvLink`, `setAttrMapping`, `toggleAxis -o`, `grid`'s label, axis and division line flags, `help`'s popup settings, `hideDisplay` on effectors. Only `instanceable`, metadata on nodes, explicit UVs and the Bezier marker are saved in files; structures, scene metadata and the rest last for the session.
+
+Not done, and why:
+
+- No Maya documentation in the 2016 to 2025 references, and nothing found on what they do, so there is no behaviour to copy: `proxyWire`, `setDrawOverride`, `meshIntersectTarget`, `mouldMesh` (real, listed by PyMEL in 2011 with no arguments). `createCurveWarp` has no page either; it is the Deform menu's item and runs `curveWarp`.
+- Not Maya commands as far as the references show: `birailOp`, `reparent`.
+- `blendCtx`: no page, and Ctx commands are separate work. `getDefaultBrush`: Paint Effects, out of scope. `surfaceSampler`: bakes texture maps, render only.
+- `selectKeyframeRegionCtx`-free helpers: the keyframe region commands are all contexts; no non-UI ones were identified.
+
+Fixed along the way: `setKeyframe` and `keyframe` on an array element such as `blendShape1.w[0]` took it for a component and keyed the node's own channels (the envelope); `freeFormFillet` and `projectTangent` took a surface's point for its U derivative.
+
+Found and left: after `select shape`, `ls -sl` still lists the earlier components, and `select -cl` leaves the component lists in place. Maya clears them.
 
 ### Materials, texturing and viewport textures (07/11/2026)
 

@@ -32,6 +32,8 @@ const LOCAL_INFLUENCE: usize = BASE_COUNT + 4;
 /// One element per wire, connected from the driver's transform: which node drives it, and it dirties the wire when that moves.
 const WIRE_MATRIX: usize = BASE_COUNT + 5;
 const BASE_WIRE: usize = BASE_COUNT + 6;
+/// One element per wire whose rest curve is a shape in the scene: which shape, for saving.
+const BASE_WIRE_MATRIX: usize = BASE_COUNT + 7;
 
 /// Wire nodes ever made in this process: scenes without any skip the hook's walk over the nodes.
 static WIRES_MADE: AtomicUsize = AtomicUsize::new(0);
@@ -208,6 +210,7 @@ pub(crate) fn register_types(gf: Arc<NodeType>) {
             float_attr_short("localInfluence", "li", 0.0, "Where wires cross: how much a still wire holds its points, 0 to 1.", Some(0.0), Some(1.0)),
             AttrDef { name: "wireMatrix".into(), short_name: "wm".into(), ty: PlugType::Matrix, default_value: PlugValue::Matrix(DMat4::IDENTITY), flags: flags::INPUT | flags::HIDDEN | flags::ARRAY, doc: "Each wire's world matrix.".into(), ..Default::default() },
             data_attr("baseWire", "bw", "The wires as they were when added, world space."),
+            AttrDef { name: "baseWireMatrix".into(), short_name: "bwm".into(), ty: PlugType::Matrix, default_value: PlugValue::Matrix(DMat4::IDENTITY), flags: flags::INPUT | flags::HIDDEN | flags::ARRAY, doc: "Each wire's rest curve, when it is a shape in the scene.".into(), ..Default::default() },
         ],
         create: Some(Arc::new(|| {
             WIRES_MADE.fetch_add(1, Ordering::Relaxed);
@@ -265,12 +268,8 @@ fn add_wire(g: &mut Graph, n: NodeId, name: &str) -> CmdResult<()> {
 
 /// One wire from a file: the curve that drives and the curve holding where it rested, as Maya keeps them. Keeps a dropoff the
 /// file already set.
-pub(crate) fn add_file_wire(g: &mut Graph, n: NodeId, index: i32, driver: NodeId, base_shape: NodeId) -> CmdResult<()> {
+pub(crate) fn add_file_wire(g: &mut Graph, n: NodeId, index: i32, driver: NodeId, base_shape: Option<NodeId>) -> CmdResult<()> {
     g.evaluate();
-    let line = driver_points(g, base_shape);
-    if line.is_empty() {
-        fail!("wire: the rest curve has no points");
-    }
     let xf = crate::dag::transform_of(g, driver);
     g.connect(&plug(xf, Transform::WORLD_MATRIX), &PlugRef::element(n, WIRE_MATRIX as i32, index), false)?;
     if g.node(n).unwrap().element(DROPOFF, index).is_none() {
@@ -280,7 +279,21 @@ pub(crate) fn add_file_wire(g: &mut Graph, n: NodeId, index: i32, driver: NodeId
     if base.len() <= index as usize {
         base.resize(index as usize + 1, Vec::new());
     }
-    base[index as usize] = line;
+    match base_shape {
+        Some(shape) => {
+            let line = driver_points(g, shape);
+            if line.is_empty() {
+                fail!("wire: the rest curve has no points");
+            }
+            base[index as usize] = line;
+            // Kept so saving can name it again.
+            let at = PlugRef::element(n, BASE_WIRE_MATRIX as i32, index);
+            g.connect(&plug(crate::dag::transform_of(g, shape), Transform::WORLD_MATRIX), &at, false)?;
+        }
+        // A file of ours may name no rest curve: its state holds the line. With neither, it rests where it is now.
+        None if base[index as usize].is_empty() => base[index as usize] = driver_points(g, driver),
+        None => {}
+    }
     set_floats(g, n, BASE_WIRE, pack(&base))
 }
 

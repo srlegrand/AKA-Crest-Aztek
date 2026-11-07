@@ -204,3 +204,97 @@ fn utility_names_are_the_ones_maya_writes() {
     assert_near(get(&mut s, "o.translateX"), &[4.0], "pairBlend's numbered children");
     assert_near(get(&mut s, "sum.translateX"), &[5.0], "blendWeighted comes through");
 }
+
+#[test]
+fn a_live_mesh_target_follows_what_deforms_it() {
+    let cube = |n: &str| format!("createNode transform -n \"{n}\";\ncreateNode mesh -n \"{n}Shape\" -p \"{n}\";\ncreateNode polyPlane -n \"{n}Make\";\n\tsetAttr \".sw\" 1;\n\tsetAttr \".sh\" 1;\nconnectAttr \"{n}Make.out\" \"{n}Shape.i\";\n");
+    let body = format!(
+        "{}{}createNode blendShape -n \"bs\";\n\tsetAttr -s 1 \".w[0]\" 1;\nconnectAttr \"tgtShape.w\" \"bs.it[0].itg[0].iti[6000].igt\";\nconnectAttr \"bsParts.og\" \"bs.ip[0].ig\";\ncreateNode groupParts -n \"bsParts\";\nconnectAttr \"baseMake.out\" \"bsParts.ig\";\nconnectAttr \"bs.og[0]\" \"baseShape.i\";\n",
+        cube("base"),
+        cube("tgt")
+    );
+    let (mut s, w) = load(&body.replace("connectAttr \"baseMake.out\" \"baseShape.i\";\n", ""));
+    assert!(w.iter().all(|x| !x.contains("nothing to read")), "{w:?}");
+    let before = s.run("pointPosition", json!({"args": ["base.vtx[0]"]})).unwrap();
+    s.run("move", json!({"args": [0.0, 2.0, 0.0, "tgt.vtx[0]"], "r": true})).unwrap();
+    let after = s.run("pointPosition", json!({"args": ["base.vtx[0]"]})).unwrap();
+    assert_near(vec![after[1].as_f64().unwrap() - before[1].as_f64().unwrap()], &[2.0], "the base follows the target");
+}
+
+#[test]
+fn a_blend_weight_with_a_driver_follows_it_not_the_value_in_the_file() {
+    let body = "createNode transform -n \"base\";\ncreateNode mesh -n \"baseShape\" -p \"base\";\ncreateNode polyPlane -n \"make\";\ncreateNode transform -n \"sw\";\n\tsetAttr \".tx\" 0.25;\ncreateNode blendShape -n \"bs\";\n\tsetAttr -s 1 \".w[0]\" 0.75;\ncreateNode groupParts -n \"gp\";\nconnectAttr \"make.out\" \"gp.ig\";\nconnectAttr \"gp.og\" \"bs.ip[0].ig\";\nconnectAttr \"bs.og[0]\" \"baseShape.i\";\nconnectAttr \"sw.tx\" \"bs.w[0]\";\n";
+    let (mut s, _) = load(body);
+    assert_near(get(&mut s, "bs.weight[0]"), &[0.25], "the driver");
+    s.run("setAttr", json!({"args": ["sw.tx", 0.5]})).unwrap();
+    assert_near(get(&mut s, "bs.weight[0]"), &[0.5], "and it keeps following");
+}
+
+/// What matters of a rig after saving: it still moves the same.
+fn after_saving(body: &str) -> Session {
+    let (mut s, _) = load(body);
+    let (text, _) = aztek_scene::ma_file::write_text(&mut s, "rig.ma", None);
+    let mut again = Session::new();
+    let w = read_text(&mut again, &text, false);
+    assert!(w.is_empty(), "{w:?}\n{text}");
+    again.graph.evaluate();
+    again
+}
+
+#[test]
+fn spline_ik_survives_saving() {
+    let cv = "\t\t3 1 0 no 3\n\t\t6 0 0 0 1 1 1\n\t\t4\n\t\t0 5 0\n\t\t0 6 0\n\t\t0 7 0\n\t\t0 8 0\n\t\t;\n";
+    let body = format!(
+        "createNode joint -n \"a\";\n\tsetAttr \".jo\" -type \"double3\" 0 0 90 ;\ncreateNode joint -n \"b\" -p \"a\";\n\tsetAttr \".t\" -type \"double3\" 3 0 0 ;\ncreateNode ikEffector -n \"eff\" -p \"a\";\ncreateNode transform -n \"c\";\ncreateNode nurbsCurve -n \"cShape\" -p \"c\";\n\tsetAttr \".cc\" -type \"nurbsCurve\" \n{cv}createNode ikSplineSolver -n \"ikSplineSolver\";\ncreateNode ikHandle -n \"h\";\n\tsetAttr \".roc\" yes;\nconnectAttr \"b.tx\" \"eff.tx\";\nconnectAttr \"a.msg\" \"h.hsj\";\nconnectAttr \"eff.hp\" \"h.hee\";\nconnectAttr \"ikSplineSolver.msg\" \"h.hsv\";\nconnectAttr \"cShape.ws\" \"h.ic\";\n"
+    );
+    let mut s = after_saving(&body);
+    s.run("setAttr", json!({"args": ["c.ty", 1.0]})).unwrap();
+    assert_near(world_at(&mut s, "a"), &[0.0, 6.0, 0.0], "still follows the curve");
+}
+
+#[test]
+fn a_skinned_curve_and_its_tweak_survive_saving() {
+    let cv = "\t\t1 3 0 no 3\n\t\t4 0 1 2 3\n\t\t4\n\t\t0 0 0\n\t\t1 0 0\n\t\t2 0 0\n\t\t3 0 0\n\t\t;\n";
+    let body = format!(
+        "createNode joint -n \"j\";\ncreateNode transform -n \"c\";\ncreateNode nurbsCurve -n \"cShape\" -p \"c\";\ncreateNode nurbsCurve -n \"cShapeOrig\" -p \"c\";\n\tsetAttr \".io\" yes;\n\tsetAttr \".cc\" -type \"nurbsCurve\" \n{cv}createNode skinCluster -n \"sk\";\n\tsetAttr -s 4 \".wl\";\n\tsetAttr \".wl[0:3].w\"\n\t\t1 0 1\n\t\t1 0 1\n\t\t1 0 1\n\t\t1 0 1;\n\tsetAttr \".pm[0]\" -type \"matrix\" 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1;\n\tsetAttr \".gm\" -type \"matrix\" 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1;\n\tsetAttr \".mi\" 1;\ncreateNode tweak -n \"tw\";\n\tsetAttr -s 1 \".pl[0].cp[1]\" -type \"double3\" 0 0.5 0;\nconnectAttr \"j.wm\" \"sk.ma[0]\";\nconnectAttr \"cShapeOrig.ws\" \"tw.ip[0].ig\";\nconnectAttr \"tw.og[0]\" \"sk.ip[0].ig\";\nconnectAttr \"sk.og[0]\" \"cShape.cr\";\ncreateNode pointOnCurveInfo -n \"poc\";\n\tsetAttr \".pr\" 1;\ncreateNode transform -n \"loc\";\nconnectAttr \"cShape.ws\" \"poc.ic\";\nconnectAttr \"poc.p\" \"loc.t\";\n"
+    );
+    let mut s = after_saving(&body);
+    assert_near(get(&mut s, "loc.translate"), &[1.0, 0.5, 0.0], "the tweak");
+    s.run("setAttr", json!({"args": ["j.ty", 2.0]})).unwrap();
+    assert_near(get(&mut s, "loc.translate"), &[1.0, 2.5, 0.0], "the skin");
+}
+
+#[test]
+fn a_driven_weight_survives_saving() {
+    let body = format!(
+        "createNode transform -n \"a\";\n\tsetAttr \".t\" -type \"double3\" 5 0 0 ;\ncreateNode transform -n \"sw\";\n\taddAttr -ci true -sn \"Follow\" -ln \"Follow\" -at \"double\";\n\tsetAttr -k on \".Follow\" 0;\ncreateNode transform -n \"obj\";\n\tsetAttr \".t\" -type \"double3\" 0 7 0 ;\n{}\tsetAttr \".rst\" -type \"double3\" 0 7 0 ;\ncreateNode animCurveUU -n \"w_curve\";\n\tsetAttr -s 2 \".ktv[0:1]\"  0 0 1 1;\nconnectAttr \"sw.Follow\" \"w_curve.i\";\nconnectAttr \"w_curve.o\" \"obj_parentConstraint1.w0\";\n",
+        constraint("obj_parentConstraint1", "obj", "a", "aW0", true)
+    );
+    let mut s = after_saving(&body);
+    assert_near(get(&mut s, "obj.translate"), &[0.0, 7.0, 0.0], "weight 0");
+    s.run("setAttr", json!({"args": ["sw.Follow", 1.0]})).unwrap();
+    assert_near(get(&mut s, "obj.translate"), &[5.0, 0.0, 0.0], "weight 1");
+}
+
+#[test]
+fn opening_a_file_keeps_the_scenes_cameras_where_it_says() {
+    let dir = std::env::temp_dir().join(format!("aztek_rig_files_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("cam.ma");
+    let text = format!("{HEAD}createNode transform -s -n \"persp\";\n\tsetAttr \".t\" -type \"double3\" 1 2 3 ;\ncreateNode camera -s -n \"perspShape\" -p \"persp\";\n\tsetAttr \".fl\" 50;\n\tsetAttr \".coi\" 7;\n");
+    std::fs::write(&path, text).unwrap();
+    let mut s = Session::new();
+    aztek_scene::ma_file::open_scene(&mut s, path.to_str().unwrap()).unwrap();
+    assert_near(get(&mut s, "persp.translate"), &[1.0, 2.0, 3.0], "where the file has it");
+    assert_near(get(&mut s, "perspShape.focalLength"), &[50.0], "the lens");
+    assert!(s.graph.find("top").unwrap().is_some(), "the others exist too");
+    // And it goes round.
+    let (saved, _) = aztek_scene::ma_file::write_text(&mut s, "cam.ma", None);
+    assert!(saved.contains("createNode transform -s -n \"persp\""), "{saved}");
+    std::fs::write(&path, saved).unwrap();
+    let mut again = Session::new();
+    aztek_scene::ma_file::open_scene(&mut again, path.to_str().unwrap()).unwrap();
+    assert_near(get(&mut again, "persp.translate"), &[1.0, 2.0, 3.0], "after saving");
+    assert_near(get(&mut again, "perspShape.focalLength"), &[50.0], "the lens after saving");
+    std::fs::remove_dir_all(dir).ok();
+}

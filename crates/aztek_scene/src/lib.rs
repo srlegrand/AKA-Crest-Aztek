@@ -3,6 +3,7 @@
 
 pub mod anim;
 pub mod anim_edit;
+pub mod anim_extra;
 pub mod anim_filter;
 pub mod anim_keys;
 pub mod anim_layers;
@@ -57,6 +58,7 @@ pub mod mesh_data;
 pub mod mesh_edit;
 pub mod mesh_files;
 pub mod mesh_nodes;
+pub mod model_extra;
 pub mod modifiers;
 pub mod motion_path;
 pub mod naming;
@@ -81,6 +83,8 @@ pub mod session;
 pub mod shading;
 pub mod soft_select;
 pub mod split_rings_modifier;
+pub mod general_cmds;
+pub mod rig_extra;
 pub mod system_cmds;
 pub mod transform;
 pub mod transform_ops;
