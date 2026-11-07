@@ -17,7 +17,7 @@ bin, and the target is Maya's behaviour. PARITY.md holds the target and status; 
   rendering, dynamics or Bifrost.
 - Never add AI or Claude attribution anywhere: no Co-Authored-By, session links or "Generated with" lines in commits,
   no credits in files, READMEs or comments.
-- Never `git push` or `git pull`; Simon does those himself.
+- Pushing to `origin main` is allowed when tests pass. Every push builds and releases through GitHub Actions, so a push also carries the README, docs and website's download links up to date. No `git pull`; merge what's on origin with `git merge --ff-only`. Commit only what you mean to: check for stray files before `git add`.
 - Writing style in docs and comments: dry and plain, no em dashes, dates as DD/MM/YYYY.
 - Licence intent: Apache 2.0 (not yet added; don't add a LICENSE file unless asked).
 
