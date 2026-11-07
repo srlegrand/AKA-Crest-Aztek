@@ -26,6 +26,32 @@ pub const ORTHOGRAPHIC: usize = Shape::COUNT + 5;
 pub const ORTHO_WIDTH: usize = Shape::COUNT + 6;
 pub const COI: usize = Shape::COUNT + 7;
 pub const LENS_SQUEEZE: usize = Shape::COUNT + 8;
+pub const RENDERABLE: usize = Shape::COUNT + 9;
+pub const IMAGE_NAME: usize = Shape::COUNT + 10;
+pub const DEPTH_NAME: usize = Shape::COUNT + 11;
+pub const MASK_NAME: usize = Shape::COUNT + 12;
+pub const HOME_COMMAND: usize = Shape::COUNT + 13;
+/// Past the ones named here, up to this flag, are plain stored values.
+pub const STARTUP: usize = Shape::COUNT + 55;
+
+fn short_bool(name: &str, short: &str, value: bool) -> crate::plug::AttrDef {
+    crate::plug::AttrDef { short_name: short.into(), flags: flags::INPUT | flags::STORABLE, ..bool_attr(name, value, "") }
+}
+
+fn short_text(name: &str, short: &str) -> crate::plug::AttrDef {
+    crate::plug::AttrDef { name: name.into(), short_name: short.into(), ty: crate::plug::PlugType::String, default_value: PlugValue::String(String::new()), flags: flags::INPUT | flags::STORABLE, ..Default::default() }
+}
+
+/// Whether a camera is a startup camera, which can't be deleted until `camera -e -startupCamera off` says so.
+pub fn is_startup(g: &Graph, id: NodeId) -> bool {
+    shape_of(g, id).and_then(|sh| g.node(sh)).is_some_and(|n| n.bool(STARTUP))
+}
+
+/// The attributes beyond the view's own, for files: (attribute index, short name).
+pub fn plain_attrs(g: &Graph, shape: NodeId) -> Vec<(usize, String)> {
+    let Some(n) = g.node(shape) else { return Vec::new() };
+    (RENDERABLE..STARTUP).map(|i| (i, n.ty().attrs[i].short_name.clone())).collect()
+}
 
 struct CameraShape;
 
@@ -56,10 +82,59 @@ pub fn register_types() {
                 stored(float_attr_short("verticalFilmAperture", "vfa", 0.94488, "Film height, inches.", Some(0.0001), None)),
                 stored(float_attr_short("nearClipPlane", "ncp", 0.1, "Near clip distance.", Some(0.0), None)),
                 stored(float_attr_short("farClipPlane", "fcp", 10000.0, "Far clip distance.", Some(0.0), None)),
-                stored(bool_attr("orthographic", false, "No perspective.")),
+                stored(crate::plug::AttrDef { short_name: "o".into(), ..bool_attr("orthographic", false, "No perspective.") }),
                 stored(float_attr_short("orthographicWidth", "ow", 30.0, "View width when orthographic.", Some(1e-6), None)),
                 stored(float_attr_short("centerOfInterest", "coi", 5.0, "Distance to what the camera tumbles about.", Some(1e-6), None)),
                 stored(float_attr_short("lensSqueezeRatio", "lsr", 1.0, "Lens squeeze.", Some(0.0), None)),
+                // Kept for scripts and files; the views read the ones above.
+                short_bool("renderable", "rnd", true),
+                short_text("imageName", "imn"),
+                short_text("depthName", "den"),
+                short_text("maskName", "man"),
+                short_text("homeCommand", "hc"),
+                short_bool("image", "img", true),
+                short_bool("mask", "ma", true),
+                short_bool("depth", "dep", false),
+                short_bool("displayFilmGate", "dfg", false),
+                short_bool("displayResolution", "dr", false),
+                short_bool("displayGateMask", "dgm", true),
+                short_bool("displaySafeAction", "dsa", false),
+                short_bool("displaySafeTitle", "dst", false),
+                short_bool("displayFieldChart", "dfc", false),
+                short_bool("displayFilmOrigin", "dfo", false),
+                short_bool("displayFilmPivot", "dfp", false),
+                short_bool("displayCameraNearClip", "cnc", false),
+                short_bool("displayCameraFarClip", "cfp", false),
+                short_bool("displayCameraFrustum", "dcf", false),
+                short_bool("depthOfField", "dof", false),
+                short_bool("motionBlur", "mb", false),
+                short_bool("journalCommand", "jc", false),
+                short_bool("panZoomEnabled", "pze", false),
+                short_bool("renderPanZoom", "rpz", false),
+                short_bool("shakeEnabled", "se", false),
+                short_bool("bestFitClippingPlanes", "bfc", true),
+                short_bool("clippingPlanes", "cp", true),
+                stored(float_attr_short("filmFit", "ff", 1.0, "Film fit.", None, None)),
+                stored(float_attr_short("filmFitOffset", "ffo", 0.0, "Film fit offset.", None, None)),
+                stored(float_attr_short("horizontalFilmOffset", "hfo", 0.0, "Film offset across.", None, None)),
+                stored(float_attr_short("verticalFilmOffset", "vfo", 0.0, "Film offset up.", None, None)),
+                stored(float_attr_short("fStop", "fs", 5.6, "Lens f-stop.", None, None)),
+                stored(float_attr_short("focusDistance", "fd", 5.0, "Focus distance.", None, None)),
+                stored(float_attr_short("focusRegionScale", "frs", 1.0, "Focus region scale.", None, None)),
+                stored(float_attr_short("shutterAngle", "sa", 144.0, "Shutter angle, degrees.", None, None)),
+                stored(float_attr_short("cameraScale", "cs", 1.0, "Camera scale.", None, None)),
+                stored(float_attr_short("locatorScale", "lls", 1.0, "Icon scale.", None, None)),
+                stored(float_attr_short("overscan", "ovr", 1.0, "How much past the gate a view shows.", None, None)),
+                stored(float_attr_short("preScale", "psc", 1.0, "Pre scale.", None, None)),
+                stored(float_attr_short("postScale", "ptsc", 1.0, "Post scale.", None, None)),
+                stored(float_attr_short("horizontalPan", "hpn", 0.0, "Pan across.", None, None)),
+                stored(float_attr_short("verticalPan", "vpn", 0.0, "Pan up.", None, None)),
+                stored(float_attr_short("zoom", "zom", 1.0, "Pan and zoom's zoom.", None, None)),
+                stored(float_attr_short("horizontalShake", "hs", 0.0, "Shake across.", None, None)),
+                stored(float_attr_short("verticalShake", "vs", 0.0, "Shake up.", None, None)),
+                stored(float_attr_short("threshold", "tthd", 0.9, "Depth threshold.", None, None)),
+                // Not an attribute of Maya's: its startup flag is internal. Hidden, cleared by camera -e -sc off.
+                crate::plug::AttrDef { flags: flags::INPUT | flags::HIDDEN, ..short_bool("aztekStartupCamera", "azsc", false) },
             ],
             create: Some(Arc::new(|| Box::new(CameraShape))),
             ..Default::default()
@@ -90,19 +165,27 @@ pub fn make_defaults(g: &mut Graph) {
         return;
     }
     g.without_undo(|g| {
-        let mut made = |name: &str, t: DVec3, r: DVec3, ortho: bool, coi: f64| {
+        let mut made = |name: &str, t: DVec3, r: DVec3, ortho: bool, coi: f64, home: &str| {
             if let Ok((tr, sh)) = create(g, name, NO_NODE) {
                 let _ = g.set_value(plug(tr, Transform::TRANSLATE), PlugValue::Vec3(t));
                 let _ = g.set_value(plug(tr, Transform::ROTATE), PlugValue::Vec3(r));
                 let _ = g.set_value(plug(tr, DagNode::VISIBILITY), PlugValue::Bool(false));
                 let _ = g.set_value(plug(sh, ORTHOGRAPHIC), PlugValue::Bool(ortho));
                 let _ = g.set_value(plug(sh, COI), PlugValue::Float(coi));
+                let _ = g.set_value(plug(sh, STARTUP), PlugValue::Bool(true));
+                if ortho {
+                    let _ = g.set_value(plug(sh, RENDERABLE), PlugValue::Bool(false));
+                }
+                for (attr, text) in [(IMAGE_NAME, name.to_string()), (DEPTH_NAME, format!("{name}_depth")), (MASK_NAME, format!("{name}_mask")), (HOME_COMMAND, format!("viewSet {home} %camera"))] {
+                    let _ = g.set_value(plug(sh, attr), PlugValue::String(text));
+                }
             }
         };
-        made("persp", DVec3::new(28.0, 21.0, 28.0), DVec3::new(-27.9, 45.0, 0.0), false, 44.8);
-        made("top", DVec3::new(0.0, 1000.1, 0.0), DVec3::new(-90.0, 0.0, 0.0), true, 1000.1);
-        made("front", DVec3::new(0.0, 0.0, 1000.1), DVec3::ZERO, true, 1000.1);
-        made("side", DVec3::new(1000.1, 0.0, 0.0), DVec3::new(0.0, 90.0, 0.0), true, 1000.1);
+        // The values Maya's own scene files hold for a new scene.
+        made("persp", DVec3::new(28.0, 21.0, 28.0), DVec3::new(-27.938352729602379, 45.0, 0.0), false, 44.82186966202994, "-p");
+        made("top", DVec3::new(0.0, 1000.1, 0.0), DVec3::new(-90.0, 0.0, 0.0), true, 1000.1, "-t");
+        made("front", DVec3::new(0.0, 0.0, 1000.1), DVec3::ZERO, true, 1000.1, "-f");
+        made("side", DVec3::new(1000.1, 0.0, 0.0), DVec3::new(0.0, 90.0, 0.0), true, 1000.1, "-s");
         for set in ["defaultLightSet", "defaultObjectSet"] {
             let _ = crate::object_sets::create(g, set, &[], false);
         }
@@ -147,6 +230,17 @@ pub fn register(c: &mut Commands<Session>) {
             |s, a| {
                 let names = a.named();
                 let g = &mut s.graph;
+                if asked(a, "startupCamera") || a.get("startupCamera").is_some() {
+                    let Some(sh) = names.first().and_then(|n| g.find(n).ok().flatten()).and_then(|id| shape_of(g, id)) else { fail!("camera: name a camera") };
+                    if a.bool("query") {
+                        return Ok(json!(g.node(sh).unwrap().bool(STARTUP)));
+                    }
+                    if a.bool("edit") {
+                        let on = a.bool("startupCamera");
+                        g.without_undo(|g| g.set_value(plug(sh, STARTUP), PlugValue::Bool(on))).map_err(|e| aztek_ops::CommandError::new(e.to_string()))?;
+                        return Ok(Value::Null);
+                    }
+                }
                 if a.bool("query") || a.bool("edit") {
                     let n = match names.first() {
                         Some(n) => n.clone(),
@@ -205,6 +299,7 @@ pub fn register(c: &mut Commands<Session>) {
         .flag(f("nearClipPlane", "ncp", ArgType::Float, "Near clip."))
         .flag(f("farClipPlane", "fcp", ArgType::Float, "Far clip."))
         .flag(f("orthographic", "o", ArgType::Bool, "No perspective."))
+        .flag(f("startupCamera", "sc", ArgType::Bool, "Query or edit: a startup camera, which can't be deleted."))
         .flag(f("orthographicWidth", "ow", ArgType::Float, "View width when orthographic."))
         .flag(f("centerOfInterest", "coi", ArgType::Float, "Distance to what it tumbles about."))
         .flag(f("lensSqueezeRatio", "lsr", ArgType::Float, "Lens squeeze."))

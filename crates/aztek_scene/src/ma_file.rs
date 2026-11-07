@@ -1783,6 +1783,14 @@ impl Build<'_> {
         if let Some(o) = n.truth(&["o", "orthographic"]) {
             let _ = self.s.graph.set_value(PlugRef::new(shape, cam::ORTHOGRAPHIC as i32), PlugValue::Bool(o));
         }
+        let t = self.s.graph.node(shape).unwrap().type_arc().clone();
+        for (at, short) in cam::plain_attrs(&self.s.graph, shape) {
+            let def = &t.attrs[at];
+            let Some(set) = n.set_of(&[short.as_str(), def.name.as_str()]) else { continue };
+            if let Some(v) = plug_value(def, -1, &set.values, 1.0) {
+                let _ = self.s.graph.set_value(PlugRef::new(shape, at as i32), v);
+            }
+        }
     }
 
     fn build_mesh(&mut self, i: usize) {
@@ -3286,6 +3294,23 @@ impl Writer<'_> {
         }
         if d.bool(cam::ORTHOGRAPHIC) {
             let _ = writeln!(self.out, "\tsetAttr \".o\" yes;");
+        }
+        let t = n.type_arc().clone();
+        for (at, short) in cam::plain_attrs(&self.s.graph, shape) {
+            let def = &t.attrs[at];
+            let Some(n) = self.s.graph.node(shape) else { return };
+            match n.value(at).clone() {
+                PlugValue::Bool(v) if !matches!(def.default_value, PlugValue::Bool(x) if x == v) => {
+                    let _ = writeln!(self.out, "\tsetAttr \".{short}\" {};", if v { "yes" } else { "no" });
+                }
+                PlugValue::Float(v) if !matches!(def.default_value, PlugValue::Float(x) if (x - v).abs() < 1e-12) => {
+                    let _ = writeln!(self.out, "\tsetAttr \".{short}\" {};", fmt_num(v));
+                }
+                PlugValue::String(v) if !v.is_empty() => {
+                    let _ = writeln!(self.out, "\tsetAttr \".{short}\" -type \"string\" {};", quoted(&v));
+                }
+                _ => {}
+            }
         }
     }
 

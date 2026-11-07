@@ -605,3 +605,7 @@ Shallower than Maya:
   `colorIndex -atv -dor -uc` flags are not done.
 - The Wireframe Color window's Index row sets drawing overrides on what is selected: unverified whether that is what Maya's does.
 - A wheel over a combo box in the Attribute Editor changes it, which is how Qt behaves and predates this.
+
+### Default cameras (07/11/2026)
+
+`persp`, `top`, `front` and `side` with `perspShape` and the rest, in every new scene from start-up, with the positions, centres of interest, `.rnd`, image names and home commands a new scene saved by Maya holds (checked against Maya-written files in `tests/data/maya_refs`). The camera shape has the node reference's stored attributes by long and short name, read and written in `.ma`; those past the view's own are kept and don't yet change a view. They can't be deleted until `camera -e -startupCamera false`.
