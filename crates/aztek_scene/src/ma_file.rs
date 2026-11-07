@@ -957,8 +957,15 @@ fn mark_seams(m: &mut Mesh, ids: &[i64]) {
 // ---------------------------------------------------------------------------------------------------------------------
 // Attribute names
 
-const XFORM_CHANNELS: &[&str] =
-    &["visibility", "translate", "rotate", "scale", "rotateOrder", "rotatePivot", "scalePivot", "rotatePivotTranslate", "scalePivotTranslate", "rotateAxis"];
+const XFORM_CHANNELS: &[&str] = &[
+    "visibility", "translate", "rotate", "scale", "rotateOrder", "rotatePivot", "scalePivot", "rotatePivotTranslate", "scalePivotTranslate", "rotateAxis", "shear", "offsetParentMatrix",
+    "inheritsTransform", "displayHandle", "displayRotatePivot", "displayScalePivot", "displayLocalAxis", "selectHandle", "template", "lodVisibility", "hiddenInOutliner",
+];
+
+/// Nodes written and read attribute by attribute, with their connections: utility nodes and expressions.
+fn is_plain_node(ty: &str) -> bool {
+    ty == "expression" || (ty != "unitConversion" && crate::utility_nodes::classification(ty).is_some())
+}
 const LINEAR_CHANNELS: &[&str] = &["translate", "rotatePivot", "scalePivot", "rotatePivotTranslate", "scalePivotTranslate"];
 const ANGLE_CHANNELS: &[&str] = &["rotate", "rotateAxis", "jointOrient"];
 
@@ -1458,6 +1465,58 @@ impl Build<'_> {
             if let Err(e) = self.s.graph.set_value(plug_ref(id, attr, comp), v) {
                 self.warnings.push(format!("{}.{}: {e}", n.name, set.path[0].name));
             }
+        }
+    }
+
+    /// A utility node or expression: made as it is, its setAttrs applied by name. Attributes Aztek's node doesn't have
+    /// (Maya's nodeState and the like) are passed over.
+    fn create_plain(&mut self, i: usize) {
+        let n = &self.doc.nodes[i];
+        self.used[i] = true;
+        let Some(t) = types::find(&n.ty) else { return };
+        let id = match self.s.graph.create_node(&t, &n.name, NO_NODE, false) {
+            Ok(id) => id,
+            Err(e) => {
+                self.warnings.push(format!("{}: {e}", n.name));
+                return;
+            }
+        };
+        self.ids[i] = Some(id);
+        let node_path = self.s.graph.path(id);
+        for set in &n.sets {
+            if set.values.is_empty() {
+                continue;
+            }
+            // One range may hold several elements: .i[0:2] 1 2 3.
+            let (lo, hi) = set.path.last().and_then(|s| s.range).or(set.path.first().and_then(|s| s.range)).unwrap_or((-1, -1));
+            let count = (hi - lo + 1).max(1) as usize;
+            let stride = (set.values.len() / count).max(1);
+            for (k, chunk) in set.values.chunks(stride).enumerate().take(count) {
+                let text: Vec<String> = set
+                    .path
+                    .iter()
+                    .map(|seg| match seg.range {
+                        Some(r) => format!("{}[{}]", seg.name, r.0 + k as i64),
+                        None => seg.name.clone(),
+                    })
+                    .collect();
+                let Ok(p) = self.s.graph.plug(&format!("{node_path}.{}", text.join("."))) else { continue };
+                let def = self.s.graph.attr(&p).clone();
+                let Some(v) = plug_value(&def, p.component, chunk, 1.0) else { continue };
+                if let Err(e) = self.s.graph.set_value(p, v) {
+                    self.warnings.push(format!("{}.{}: {e}", n.name, text.join(".")));
+                }
+            }
+        }
+    }
+
+    /// A connection with a utility node or expression at either end.
+    fn plain_connection(&mut self, c: &Conn, sn: usize, sa: &str, src: NodeId, dst: NodeId) {
+        let (a, b) = (format!("{}.{sa}", self.s.graph.path(src)), format!("{}.{}", self.s.graph.path(dst), c.dst_attr));
+        let plugs = self.s.graph.plug(&a).and_then(|x| self.s.graph.plug(&b).map(|y| (x, y)));
+        let r = plugs.and_then(|(x, y)| self.s.graph.connect(&x, &y, true));
+        if let Err(e) = r {
+            self.warnings.push(format!("{}.{sa} -> {}.{}: {e}", self.doc.nodes[sn].name, self.doc.nodes[c.dst].name, c.dst_attr));
         }
     }
 
@@ -2050,6 +2109,10 @@ impl Build<'_> {
             let (sn, sa) = self.real_source(c);
             let Some(src) = self.id(sn) else { continue };
             let st = self.s.graph.node(src).unwrap().type_arc().clone();
+            if is_plain_node(&dt.name) || is_plain_node(&st.name) {
+                self.plain_connection(c, sn, &sa, src, dst);
+                continue;
+            }
             let plain_dst = plain_attr(&c.dst_attr);
             let is_curve = st.attr_index("keys").is_some() && st.attr_index("output").is_some();
             // Into a driven curve, from a channel.
@@ -2098,6 +2161,7 @@ impl Build<'_> {
                 let d = &self.doc.nodes[c.dst];
                 let plain = plain_attr(&c.dst_attr);
                 match self.id(c.dst) {
+                    Some(_) if is_plain_node(&d.ty) => true,
                     Some(id) => channel(self.s.graph.node(id).unwrap().ty(), &plain).is_some(),
                     None => d.ty == "unitConversion" || d.ty == "ikHandle",
                 }
@@ -2199,6 +2263,7 @@ fn plug_value(def: &AttrDef, comp: i32, values: &[Tok], factor: f64) -> Option<P
             PlugValue::Vec3(tok_vec3(values) * factor)
         }
         PlugType::String => PlugValue::String(f0.text()?.to_string()),
+        PlugType::Matrix => PlugValue::Matrix(matrix_from(values)?),
         _ => return None,
     })
 }
@@ -2253,6 +2318,11 @@ fn build(s: &mut Session, doc: &Doc, import: bool) -> Vec<String> {
 
     for i in 0..count {
         b.create_dag(i);
+    }
+    for i in 0..count {
+        if is_plain_node(&doc.nodes[i].ty) {
+            b.create_plain(i);
+        }
     }
     for i in 0..count {
         b.add_user_attrs(i);
@@ -2669,6 +2739,9 @@ impl Writer<'_> {
                 }
                 PlugValue::String(x) => {
                     let _ = writeln!(self.out, "\tsetAttr \".{name}\" -type \"string\" {};", quoted(&x));
+                }
+                PlugValue::Matrix(m) => {
+                    let _ = writeln!(self.out, "\tsetAttr \".{name}\" -type \"matrix\" {};", matrix_text(&m));
                 }
                 _ => {}
             }
@@ -3238,6 +3311,59 @@ impl Writer<'_> {
         }
     }
 
+    /// A utility node or expression: its type, name and every stored value that isn't the default or driven.
+    fn write_plain(&mut self, id: NodeId) {
+        let g = &self.s.graph;
+        let n = g.node(id).unwrap();
+        let t = n.type_arc().clone();
+        let path = g.path(id);
+        let mut text = format!("createNode {} -n {};\n", t.name, quoted(&path));
+        let line = |p: &PlugRef, v: &PlugValue, out: &mut String| {
+            let name = g.plug_name(p);
+            let attr = name.split_once('.').map_or("", |x| x.1);
+            match v {
+                PlugValue::Vec3(x) => {
+                    let _ = writeln!(out, "\tsetAttr \".{attr}\" -type \"double3\" {} ;", vec_text(*x));
+                }
+                PlugValue::Float(x) => {
+                    let _ = writeln!(out, "\tsetAttr \".{attr}\" {x};");
+                }
+                PlugValue::Int(x) => {
+                    let _ = writeln!(out, "\tsetAttr \".{attr}\" {x};");
+                }
+                PlugValue::Bool(x) => {
+                    let _ = writeln!(out, "\tsetAttr \".{attr}\" {};", if *x { "yes" } else { "no" });
+                }
+                PlugValue::String(x) => {
+                    let _ = writeln!(out, "\tsetAttr \".{attr}\" -type \"string\" {};", quoted(x));
+                }
+                PlugValue::Matrix(m) => {
+                    let _ = writeln!(out, "\tsetAttr \".{attr}\" -type \"matrix\" {};", matrix_text(m));
+                }
+                _ => {}
+            }
+        };
+        for (i, a) in t.attrs.iter().enumerate() {
+            if !a.has(flags::INPUT) || !a.has(flags::STORABLE) {
+                continue;
+            }
+            if a.is_array() {
+                for (k, v) in n.elements(i) {
+                    let p = PlugRef::element(id, i as i32, *k);
+                    if g.source(&p).is_none() {
+                        line(&p, v, &mut text);
+                    }
+                }
+            } else {
+                let p = PlugRef::new(id, i as i32);
+                if g.source(&p).is_none() && n.value(i) != &a.default_value {
+                    line(&p, n.value(i), &mut text);
+                }
+            }
+        }
+        self.out.push_str(&text);
+    }
+
     fn write_connections(&mut self) {
         let list = self.s.graph.connections();
         for (dst, src) in list {
@@ -3247,6 +3373,22 @@ impl Writer<'_> {
                 continue;
             }
             let (dt, st) = (dn.ty(), sn.ty());
+            let plain = |t: &NodeType| is_plain_node(&t.name) || t.name == "unitConversion";
+            if plain(dt) || plain(st) {
+                // By full attribute name. Maya's matrix outputs are arrays: worldMatrix[0].
+                let name = |p: &PlugRef| {
+                    let text = g.plug_name(p);
+                    let one_of = matches!(g.attr(p).name.as_str(), "worldMatrix" | "worldInverseMatrix" | "parentMatrix" | "parentInverseMatrix");
+                    if one_of && p.element < 0 {
+                        format!("{text}[0]")
+                    } else {
+                        text
+                    }
+                };
+                let (a, b) = (name(&src), name(&dst));
+                self.conn(&a, &b);
+                continue;
+            }
             let curve = anim::is_curve(g, src.node) || DRIVEN_CURVES.contains(&st.name.as_str());
             let driven_curve = DRIVEN_CURVES.contains(&dt.name.as_str());
             if !(curve || self.dag_written(src.node)) || !(driven_curve || self.dag_written(dst.node)) {
@@ -3439,7 +3581,10 @@ pub fn write_text(s: &mut Session, file_name: &str, only: Option<&[NodeId]>) -> 
         }
         if t.is_a("animCurve") || DRIVEN_CURVES.contains(&ty) {
             let output = PlugRef::new(id, t.attr_index("output").unwrap() as i32);
-            let drives = w.s.graph.destinations(&output).iter().any(|d| w.keep.contains(&d.node) && (w.dag_written(d.node) || DRIVEN_CURVES.contains(&w.s.graph.node(d.node).unwrap().ty().name.as_str())));
+            let drives = w.s.graph.destinations(&output).iter().any(|d| {
+                let dt = w.s.graph.node(d.node).unwrap().ty().name.as_str();
+                w.keep.contains(&d.node) && (w.dag_written(d.node) || DRIVEN_CURVES.contains(&dt) || is_plain_node(dt))
+            });
             if drives {
                 w.write_curve(id);
             } else {
@@ -3447,6 +3592,8 @@ pub fn write_text(s: &mut Session, file_name: &str, only: Option<&[NodeId]>) -> 
             }
         } else if let Some(kind) = rig::CONSTRAINT_TYPES.iter().position(|c| *c == ty) {
             w.write_constraint(id, kind);
+        } else if is_plain_node(ty) || ty == "unitConversion" {
+            w.write_plain(id);
         } else if ty == "dagPose" {
             w.write_pose(id);
         } else if ty == crate::display_layers::TYPE_NAME {

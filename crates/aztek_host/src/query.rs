@@ -70,6 +70,9 @@ fn outliner_node(g: &Graph, id: NodeId, shapes: bool, show_intermediate: bool, s
     if (shape && !shapes) || (intermediate && !show_intermediate) {
         return None;
     }
+    if n.ty().dag && n.bool(DagNode::HIDDEN_IN_OUTLINER) {
+        return None;
+    }
     let kids: Vec<Value> = g.children(id).iter().filter_map(|&c| outliner_node(g, c, shapes, show_intermediate, sel)).collect();
     // What the icon shows: a transform over a mesh is a mesh to the user.
     let icon = if n.ty().is_a("joint") {
@@ -238,10 +241,11 @@ fn channels(g: &Graph, id: NodeId, all_inputs: bool) -> Vec<Value> {
             }
             continue;
         }
-        // Keyable as this node has it: setAttr -k hides and shows channels.
+        // Keyable as this node has it (setAttr -k), or shown by setAttr -cb.
         let whole = PlugRef::new(id, i as i32);
         let vector = a.ty == PlugType::Vec3;
-        let keyable = !vector && aztek_scene::anim::is_keyable(g, &whole);
+        let shown = |p: &PlugRef| aztek_scene::anim::is_keyable(g, p) || g.channel_state(p).1;
+        let keyable = !vector && shown(&whole);
         if !vector && !keyable && !(all_inputs && matches!(a.ty, PlugType::Bool | PlugType::Int | PlugType::Float | PlugType::Enum | PlugType::String)) {
             continue;
         }
@@ -249,7 +253,7 @@ fn channels(g: &Graph, id: NodeId, all_inputs: bool) -> Vec<Value> {
         match (a.ty, v) {
             (PlugType::Vec3, PlugValue::Vec3(v)) => {
                 for k in 0..3 {
-                    if !aztek_scene::anim::is_keyable(g, &PlugRef::component(id, i as i32, k as i32)) {
+                    if !shown(&PlugRef::component(id, i as i32, k as i32)) {
                         continue;
                     }
                     let child = if a.child_names[k].is_empty() { format!("{}{}", a.name, ["X", "Y", "Z"][k]) } else { a.child_names[k].clone() };

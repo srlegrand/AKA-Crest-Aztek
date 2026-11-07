@@ -57,6 +57,10 @@ pub struct Session {
     pub current_characters: Vec<NodeId>,
     /// The live surface: what Quad Draw and snapping draw on.
     pub live_surface: Vec<NodeId>,
+    /// optionVar's values.
+    pub option_vars: BTreeMap<String, Value>,
+    /// snapMode's switches.
+    pub snap_modes: BTreeMap<String, bool>,
     /// polyOptions' display settings, polySelectConstraint's state and polyClipboard's contents.
     pub poly_state: crate::mesh_edit::maya_poly::PolyState,
     /// The sculpting tools' settings.
@@ -91,6 +95,8 @@ impl Session {
             buffer_curves: Default::default(),
             current_characters: Vec::new(),
             live_surface: Vec::new(),
+            option_vars: BTreeMap::new(),
+            snap_modes: BTreeMap::new(),
             poly_state: Default::default(),
             sculpt_ctx: Default::default(),
             scene_path: None,
@@ -141,6 +147,10 @@ impl Session {
         // After the modules above: these replace or extend commands they registered.
         crate::mesh_edit::maya_poly::register(&mut s.commands);
         crate::ma_file::register(&mut s.commands);
+        crate::expression::register(&mut s.commands);
+        crate::maya_attrs::register(&mut s.commands);
+        crate::maya_xforms::register(&mut s.commands);
+        crate::maya_scene::register(&mut s.commands);
         // Last: history node types take their attributes from the commands registered above.
         crate::history::register(&mut s.commands);
         crate::instancing::install(&mut s.graph);
@@ -172,6 +182,8 @@ impl Session {
             scene_type: Default::default(),
             buffer_curves: Default::default(),
             current_characters: Default::default(),
+            option_vars: BTreeMap::new(),
+            snap_modes: BTreeMap::new(),
         }
     }
 

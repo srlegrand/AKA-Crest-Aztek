@@ -242,6 +242,31 @@ are accepted and ignored; `loft` takes degrees 1 to 3; `attachSurface` copies it
 it. None of this has been compared with a running Maya: the sphere's CV values, which way U runs on `loft` and `extrude`,
 the direction flags' numbering and the bare commands' axis of 1 0 0 are from memory of Maya's files and docs.
 
+Utility nodes, expressions and core commands, as of 06/11/2026: `multiplyDivide`, `plusMinusAverage`, `condition`,
+`clamp`, `setRange`, `reverse`, `blendColors`, `blendTwoAttr`, `remapValue`, `distanceBetween`, `angleBetween`,
+`vectorProduct`, `pairBlend`, `decomposeMatrix`, `composeMatrix`, `multMatrix` and the other matrix nodes, the quaternion
+nodes, `blendMatrix`, `aimMatrix`, `pickMatrix`, the float, colour and modern math nodes, `closestPointOnMesh`
+(`utility_nodes.rs`). Connections depend on plugs rather than nodes, so `pCube1.tx -> node -> pCube1.ty` runs; array
+elements have components (`input3D[0].input3Dx`) and can drive. `expression` node and command (`expression.rs`) over real
+connections. Transforms: `offsetParentMatrix`, `shear`, limits and `transformLimits`, `inheritsTransform`, inverse
+matrices, `rotateQuaternion`, bounding box attributes, `hiddenInOutliner`. UUIDs and namespaces. Full flag sets for the
+core commands (`maya_attrs.rs`, `maya_xforms.rs`, `maya_scene.rs`).
+
+Differences from Maya in these: `group` goes under the world, not the members' shared parent, because existing tests and
+tools rely on it. `src.t -> dst.r` followed by `dst.r -> src.s` is refused as a cycle, which Maya allows, for the same
+reason. `parentMatrix` read through a connection includes `offsetParentMatrix` (getAttr gives Maya's value). Expression
+numbers are all doubles, so `1/2` is 0.5. `parent -add` makes an instance through `instance`. `closestPointOnMesh` leaves
+`parameterU` and `parameterV` at 0. Limits apply when the node computes, so a plug reading a limited channel directly can
+see the value before the limit. The defaults of `multiplyDivide.input1`, `condition.colorIfTrue` and `floatMath.floatB`
+were written from memory with no Maya to check against. In MEL a 0 or 1 after a
+switch of move, rotate or scale is a value, not the switch's own, so `move -r 1 0 0` reads as it should.
+
+`.ma` files keep utility nodes and expressions, and read Maya's slot spelling of an expression (`.O[0] = .I[0] * 2;`). On
+reading, a `unitConversion` is seen through, its factor dropped, since Aztek's angles are degrees throughout.
+
+Not yet in these: `polyEvaluate -b2` and `-bc2`, `select` of `pCube1.vtx[*]`; `displayCull`, `snapMode` and the display attributes (`displayHandle`, `displayLocalAxis` and so on) hold their values
+but the viewport does not draw from them.
+
 Not yet: weight painting, lattice, wrap, wire, delta mush, spline IK, set driven keys, NURBS curves, the dope sheet,
 the node editor, `.ma` files, the OpenMaya subset.
 
@@ -255,7 +280,7 @@ component scale along the manipulator's axes, B-drag sizing the falloff; W, E, R
 by object type with history inputs and Paint Weights on a joint. Hotbox with zones. Shelves saved between sessions, Shelf
 Editor, middle-drag from the Script Editor, Ctrl+Shift+click on a menu item, `shelf_*.mel` import; Curves / Surfaces and
 Sculpting shelves. Windows: Attribute Spread Sheet, Component Editor with skin weights, Connection Editor, Hypergraph,
-Namespace Editor (listing only until there is a `namespace` command), Channel Control, Modeling Toolkit, Shape Editor,
+Namespace Editor (listing only), Channel Control, Modeling Toolkit, Shape Editor,
 workspaces, main pane only, panel layouts, saved layouts, a panel holding an outliner or editor. Panel menus: cameras,
 `lookThru`, bookmarks, camera tools, gates, safe action; flat, bounding box, X-Ray and its joint and component kinds,
 backface culling; Show filters, `isolateSelect`. Heads up display and `headsUpDisplay`; `polyOptions`. In-View Editor and
@@ -267,5 +292,5 @@ looping in real time.
 Not yet in the interface: Topology symmetry (World X, Y, Z act in object space: `setSymmetry` has no world mode), Cut,
 curve Edit Point and Curve Point modes, UV and Vertex Face component modes in the marking menu, manipulator handles for
 history nodes (T shows their numbers in the view instead), per-object display toggles are not saved with the scene,
-Outliner reorder between siblings waits on a `reorder` command, linear units and Z up. Roll stays in the view, not the
+Outliner reorder between siblings, linear units and Z up. Roll stays in the view, not the
 camera node.

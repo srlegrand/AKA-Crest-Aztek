@@ -260,6 +260,8 @@ pub mod types {
             crate::extrude_modifier::register_types();
             crate::split_rings_modifier::register_types();
             crate::auto_bevel::register_types();
+            crate::utility_nodes::register_types();
+            crate::expression::register_types();
         });
     }
 }
@@ -401,11 +403,32 @@ impl NodeBehavior for Plain {
     }
 }
 
+/// A fresh identity in Maya's form: 8-4-4-4-12 upper case hex.
+fn new_uuid() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    fn mix(mut x: u64) -> u64 {
+        x = (x ^ (x >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+        x = (x ^ (x >> 27)).wrapping_mul(0x94d049bb133111eb);
+        x ^ (x >> 31)
+    }
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0);
+    let count = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let (a, b) = (mix(now ^ count.wrapping_mul(0x9e3779b97f4a7c15)), mix(count ^ now.rotate_left(32) ^ std::process::id() as u64));
+    format!("{:08X}-{:04X}-{:04X}-{:04X}-{:012X}", a >> 32, (a >> 16) & 0xffff, a & 0xffff, b >> 48, b & 0xffff_ffff_ffff)
+}
+
 /// A DG node. Values live here; connections and hierarchy live in `Graph`.
 pub struct Node {
     pub(crate) id: NodeId,
     pub(crate) name: String,
     pub(crate) namespace: String,
+    pub(crate) uuid: String,
+    /// setAttr -k / -cb on one plug: (attr, component) -> (keyable, channel box).
+    pub(crate) channels: BTreeMap<(i32, i32), (bool, bool)>,
+    /// aliasAttr: alias -> attribute.
+    pub(crate) aliases: BTreeMap<String, String>,
     pub(crate) reference: u32,
     pub(crate) data: NodeData,
     /// True once `data.ty` is this node's private copy holding user attrs.
@@ -435,6 +458,9 @@ impl Node {
             id: NO_NODE,
             name: String::new(),
             namespace: String::new(),
+            uuid: new_uuid(),
+            channels: BTreeMap::new(),
+            aliases: BTreeMap::new(),
             reference: 0,
             data: NodeData {
                 ty,
@@ -466,6 +492,14 @@ impl Node {
     /// "" for the root namespace.
     pub fn namespace(&self) -> &str {
         &self.namespace
+    }
+    /// aliasAttr's aliases: alias -> attribute.
+    pub fn aliases(&self) -> &BTreeMap<String, String> {
+        &self.aliases
+    }
+    /// The node's identity, as `ls -uuid` gives it.
+    pub fn uuid(&self) -> &str {
+        &self.uuid
     }
     /// Reference this node was loaded from; 0 for nodes owned by the scene.
     pub fn reference_id(&self) -> u32 {

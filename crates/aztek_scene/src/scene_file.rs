@@ -82,6 +82,14 @@ pub fn serialize(g: &Graph, packed: bool) -> Value {
         let mut node = Map::new();
         node.insert("name".into(), json!(n.name()));
         node.insert("type".into(), json!(n.ty().name));
+        node.insert("uuid".into(), json!(n.uuid()));
+        if !n.aliases().is_empty() {
+            node.insert("aliases".into(), json!(n.aliases()));
+        }
+        let channels: Vec<Value> = n.channels.iter().map(|((a, c), (k, b))| json!([n.ty().attrs[*a as usize].name, c, k, b])).collect();
+        if !channels.is_empty() {
+            node.insert("channels".into(), Value::Array(channels));
+        }
         let p = g.parent(id);
         if p != NO_NODE {
             node.insert("parent".into(), json!(g.full_path(p)));
@@ -154,6 +162,7 @@ pub fn serialize(g: &Graph, packed: bool) -> Value {
         "nodes": nodes,
         "connections": connections,
         "selection": selection,
+        "namespaces": g.namespaces.iter().collect::<Vec<_>>(),
     })
 }
 
@@ -263,6 +272,9 @@ pub fn instantiate(g: &mut Graph, doc: &Value, warnings: &mut Vec<String>) -> Ve
                 continue;
             }
         };
+        if let Some(u) = jn.get("uuid").and_then(Value::as_str) {
+            g.set_uuid(id, u);
+        }
         by_path.insert(key.clone(), id);
         path_of.insert(id, key);
         by_name.entry(name.clone()).or_default().push(id);
@@ -319,6 +331,18 @@ pub fn instantiate(g: &mut Graph, doc: &Value, warnings: &mut Vec<String>) -> Ve
             })();
             if let Err(e) = r {
                 warnings.push(format!("{name}.{attr}: {e}"));
+            }
+        }
+        for (alias, target) in member_obj(jn, "aliases").into_iter().flatten() {
+            if let Some(t) = target.as_str() {
+                g.set_alias(id, alias, Some(t.to_string()));
+            }
+        }
+        for c in member(jn, "channels") {
+            if let (Some(attr), Some(comp), Some(k), Some(b)) = (c[0].as_str(), c[1].as_i64(), c[2].as_bool(), c[3].as_bool()) {
+                if let Some(i) = nt.attr_index(attr) {
+                    g.set_channel_state(&PlugRef { node: id, attr: i as i32, component: comp as i32, element: -1 }, Some(k), Some(b));
+                }
             }
         }
         // After the values, which a lock would otherwise refuse.
@@ -384,6 +408,7 @@ pub fn deserialize(g: &mut Graph, doc: &Value) -> Result<Vec<String>> {
     g.clear();
     g.undo_stack_mut().set_enabled(false);
     instantiate(g, doc, &mut warnings);
+    g.namespaces = member(doc, "namespaces").iter().filter_map(Value::as_str).map(str::to_string).collect();
 
     let mut sel = Vec::new();
     for n in member(doc, "selection") {

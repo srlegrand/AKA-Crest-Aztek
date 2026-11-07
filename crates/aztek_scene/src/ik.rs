@@ -914,7 +914,7 @@ fn wire_chain(g: &mut Graph, handle: NodeId, solver: NodeId, effector: NodeId, c
         let ty = g.node(solver).unwrap().type_arc().clone();
         let attr = match ty.attr_index(&name) {
             Some(a) => a,
-            None => g.add_attr(solver, vec3_attr(&name, &format!("or{i}"), DVec3::ZERO, flags::HIDDEN, "A chain joint's rotate."))?,
+            None => g.add_attr(solver, vec3_attr(&name, &format!("or{i}"), DVec3::ZERO, flags::HIDDEN | flags::OUTPUT, "A chain joint's rotate."))?,
         };
         g.connect(&plug(solver, attr), &plug(j, Transform::ROTATE), true)?;
     }

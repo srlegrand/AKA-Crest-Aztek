@@ -1,5 +1,5 @@
 //! blendShape as Maya's: targets with weights at .weight[i] under aliases named after them, in-betweens, live targets that
-//! bake when deleted, weights per point on the base and on each target. Also aliasAttr, sculptTarget and invertShape.
+//! bake when deleted, weights per point on the base and on each target. Also sculptTarget and invertShape.
 //!
 //! A target holds items keyed as Maya keys them: 5000 + weight * 1000, so full strength at 1 is item 6000. Without a source
 //! connected, an item holds its deltas. With one, the source's points are read each time and the deltas held are from the
@@ -27,16 +27,15 @@ use crate::skin::{asked, modes};
 use crate::transform::Transform;
 
 pub const WEIGHT: usize = BASE_COUNT;
-pub const ALIASES: usize = BASE_COUNT + 1;
-const BLEND: usize = BASE_COUNT + 2;
-const GEOM_TARGET: usize = BASE_COUNT + 3;
-const TARGET_MATRIX: usize = BASE_COUNT + 4;
-const ORIGIN: usize = BASE_COUNT + 5;
-const TOPOLOGY: usize = BASE_COUNT + 6;
+const BLEND: usize = BASE_COUNT + 1;
+const GEOM_TARGET: usize = BASE_COUNT + 2;
+const TARGET_MATRIX: usize = BASE_COUNT + 3;
+const ORIGIN: usize = BASE_COUNT + 4;
+const TOPOLOGY: usize = BASE_COUNT + 5;
 /// The target whose weights the paint tool works on.
-pub const PAINT_TARGET: usize = BASE_COUNT + 7;
-const SCULPT_TARGET: usize = BASE_COUNT + 8;
-const SCULPT_STATE: usize = BASE_COUNT + 9;
+pub const PAINT_TARGET: usize = BASE_COUNT + 6;
+const SCULPT_TARGET: usize = BASE_COUNT + 7;
+const SCULPT_STATE: usize = BASE_COUNT + 8;
 
 const HERO: i32 = 6000;
 
@@ -297,7 +296,6 @@ pub(crate) fn register_types(gf: Arc<NodeType>) {
         doc: "Blends the mesh toward target shapes, one weight per target.".into(),
         own_attrs: vec![
             weight,
-            deform::data_attr("attributeAliasList", "aal", "Aliases of attributes: target names for the weights."),
             deform::data_attr("blendData", "bsd", "Each target's items and weights per point, and the points they were measured from."),
             geom_target,
             crate::rig::matrix_in("inputTargetMatrix", "itm", true, "World matrices of the live targets, as inputGeomTarget."),
@@ -315,46 +313,6 @@ pub(crate) fn register_types(gf: Arc<NodeType>) {
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Aliases
-
-fn set_aliases(g: &mut Graph, n: NodeId, list: Vec<(String, String)>) -> CmdResult<()> {
-    let at = match g.node(n).and_then(|x| x.ty().attr_index("attributeAliasList")) {
-        Some(i) => i,
-        None => g.add_attr(n, deform::data_attr("attributeAliasList", "aal", "Aliases of attributes."))?,
-    };
-    let v = Value::Array(list.into_iter().map(|(a, b)| json!([a, b])).collect());
-    g.set_value(plug(n, at), PlugValue::Data(Some(Arc::new(JsonData(v)))))?;
-    Ok(())
-}
-
-fn alias_attr(s: &mut Session, a: &Args) -> CmdResult {
-    let names = objects(s, a);
-    let g = &mut s.graph;
-    if a.bool("query") {
-        let Some(name) = names.first() else { fail!("aliasAttr: name a node") };
-        let id = crate::rig::find(g, name, "aliasAttr")?;
-        return Ok(json!(g.aliases(id).into_iter().flat_map(|(x, y)| [x, y]).collect::<Vec<_>>()));
-    }
-    if a.bool("remove") {
-        for name in &names {
-            let p = g.plug(name)?;
-            let Some(alias) = g.alias_of(&p) else { continue };
-            let list = g.aliases(p.node).into_iter().filter(|x| x.0 != alias).collect();
-            set_aliases(g, p.node, list)?;
-        }
-        return Ok(json!(true));
-    }
-    let [alias, target] = &names[..] else { fail!("aliasAttr: give the alias, then node.attribute") };
-    let p = g.plug(target)?;
-    let attr = g.attr(&p).name.clone();
-    let path = if p.element >= 0 { format!("{attr}[{}]", p.element) } else { attr };
-    if g.plug(&format!("{}.{alias}", g.path(p.node))).is_ok_and(|q| q != p) {
-        fail!("aliasAttr: {alias} is already an attribute of {}", g.path(p.node));
-    }
-    let mut list: Vec<(String, String)> = g.aliases(p.node).into_iter().filter(|x| x.1 != path).collect();
-    list.push((alias.clone(), path));
-    set_aliases(g, p.node, list)?;
-    Ok(json!(true))
-}
 
 fn free_alias(g: &Graph, n: NodeId, wanted: &str) -> String {
     let taken = |x: &str| g.aliases(n).iter().any(|a| a.0 == x) || g.node(n).is_some_and(|k| k.ty().attr_index(x).is_some());
@@ -444,9 +402,7 @@ fn add_target(g: &mut Graph, n: NodeId, shape: NodeId, spec: &AddTarget) -> CmdR
     if needs_name {
         let alias = free_alias(g, leader, &tname);
         t.name = alias.clone();
-        let mut list = g.aliases(leader);
-        list.push((alias, format!("weight[{}]", spec.index)));
-        set_aliases(g, leader, list)?;
+        g.set_alias(leader, &alias, Some(format!("weight[{}]", spec.index)));
     }
     set_blend(g, n, b)?;
     if live_ok {
@@ -487,8 +443,9 @@ fn remove_target(g: &mut Graph, leader: NodeId, index: i32, item: Option<i32>) -
     }
     let path = format!("weight[{index}]");
     if !blend_of(g, leader).targets.iter().any(|t| t.index == index) {
-        let list = g.aliases(leader).into_iter().filter(|x| x.1 != path).collect();
-        set_aliases(g, leader, list)?;
+        for (alias, _) in g.aliases(leader).into_iter().filter(|x| x.1 == path) {
+            g.set_alias(leader, &alias, None);
+        }
     }
     Ok(())
 }
@@ -1007,16 +964,6 @@ pub(crate) fn register(c: &mut Commands<Session>) {
         .flag(f("weightCount", "wc", ArgType::Any, "Query: how many targets."))
         .flag(f("foreignObject", "fg", ArgType::Bool, "Targets need not match the base: points are taken by number as far as they go."))
         .flag(f("ignoreSelected", "ie", ArgType::Bool, "Use only the objects named, not the selection.")),
-    );
-    c.register(
-        modes(Cmd::new(
-            "aliasAttr",
-            "Another name for an attribute: aliasAttr pSphere2 blendShape1.weight[0]. -q node lists alias, attribute pairs; -rm node.alias \
-             removes one.",
-            alias_attr,
-        ))
-        .positional("alias and node.attribute; a node with -q; node.alias with -rm")
-        .flag(f("remove", "rm", ArgType::Bool, "Remove the alias.")),
     );
     c.register(
         modes(Cmd::new(

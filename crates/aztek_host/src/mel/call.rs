@@ -213,7 +213,8 @@ fn flag_value(fd: &FlagDef, name: &str, toks: &[Tok], i: &mut usize) -> Result<V
     }
     Ok(match fd.ty {
         ArgType::Bool => {
-            if toks.get(*i).is_some_and(is_bool_word) {
+            // move -r 1 0 0: move, rotate and scale take their values positionally, so a 1 after a switch is a value.
+            if !matches!(name, "move" | "rotate" | "scale") && toks.get(*i).is_some_and(is_bool_word) {
                 *i += 1;
                 bool_of(&toks[*i - 1])
             } else {

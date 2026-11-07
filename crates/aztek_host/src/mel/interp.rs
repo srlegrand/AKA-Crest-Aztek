@@ -240,6 +240,10 @@ impl Interp<'_> {
     }
 
     pub fn is_command(&self, name: &str) -> bool {
+        // These answer as MEL expects (about -linux is 1, env lists globals); the registered ones are for Python.
+        if matches!(name, "about" | "env" | "getenv" | "putenv") {
+            return false;
+        }
         call::alias(name).is_some() || self.core.s.commands.find(name).is_some()
     }
 

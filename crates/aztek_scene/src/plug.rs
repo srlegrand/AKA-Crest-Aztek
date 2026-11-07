@@ -631,6 +631,7 @@ pub fn attr_def_to_json(d: &AttrDef) -> Value {
         (flags::UNIQUE, "unique"),
         (flags::FILE, "file"),
         (flags::CHANNEL_BOX, "channelBox"),
+        (flags::OUTPUT, "output"),
     ] {
         if d.flags & flag != 0 {
             j.insert(key.into(), json!(true));
@@ -696,6 +697,7 @@ pub fn attr_def_from_json(j: &Value) -> Result<AttrDef, GraphError> {
         (flags::UNIQUE, "unique"),
         (flags::FILE, "file"),
         (flags::CHANNEL_BOX, "channelBox"),
+        (flags::OUTPUT, "output"),
     ] {
         if b(key) {
             d.flags |= flag;

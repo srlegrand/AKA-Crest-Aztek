@@ -1,9 +1,9 @@
 //! What a deformed mesh gains as in Maya: the intermediate original shape (pCubeShape1Orig) feeding its deformers, and for
 //! each deformer a set of points (cluster1Set). The set is the deformer's membership: a point out of it does not move and
-//! can't be given weight. Also the sets and deformableShape commands.
+//! can't be given weight. Also the deformableShape command.
 
 use aztek_ops::{fail, objects, ArgType, Args, CmdResult, Commands};
-use serde_json::{json, Value};
+use serde_json::json;
 
 use crate::components::{self, ComponentMode};
 use crate::deform::{self, f, floats_of, input_mesh, plug, set_floats, Cmd, DEFORMER_SET, WEIGHTS};
@@ -13,7 +13,6 @@ use crate::node::types;
 use crate::object_sets::{self, Member};
 use crate::plug::{NodeId, PlugRef, PlugValue};
 use crate::session::Session;
-use crate::skin::modes;
 use crate::transform::DagNode;
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -206,70 +205,6 @@ pub fn member_mask(g: &Graph, n: NodeId, capacity: usize) -> Option<Vec<bool>> {
 // ---------------------------------------------------------------------------------------------------------------------
 // Commands
 
-fn set_named(g: &Graph, name: &str) -> CmdResult<NodeId> {
-    match g.find(name)? {
-        Some(id) if g.node(id).is_some_and(object_sets::is_set) => Ok(id),
-        _ => fail!("sets: {name} is not a set"),
-    }
-}
-
-fn members_of(s: &Session, a: &Args) -> CmdResult<Vec<Member>> {
-    let names = a.named();
-    if names.is_empty() {
-        return Ok(object_sets::from_selection(&s.graph));
-    }
-    object_sets::parse(&s.graph, &names).map_err(|e| aztek_ops::CommandError::new(format!("sets: {e}")))
-}
-
-fn sets_cmd(s: &mut Session, a: &Args) -> CmdResult {
-    if a.bool("query") {
-        let names = objects(s, a);
-        let Some(name) = names.first() else { fail!("sets: name a set to query") };
-        let g = &s.graph;
-        let set = set_named(g, name)?;
-        let list = object_sets::members(g, set);
-        if crate::skin::asked(a, "size") {
-            let size: usize = list.iter().map(|m| if m.kind == ComponentMode::Object { 1 } else { m.ids.len() }).sum();
-            return Ok(json!(size));
-        }
-        return Ok(json!(object_sets::format(g, &list)));
-    }
-    if let Some(name) = a.get("isMember").and_then(Value::as_str) {
-        let set = set_named(&s.graph, name)?;
-        let wanted = members_of(s, a)?;
-        let g = &mut s.graph;
-        let wanted = if deformer_of_set(g, set).is_some() { as_points(g, &wanted) } else { wanted };
-        let held = object_sets::members(g, set);
-        let inside = wanted.iter().all(|w| {
-            held.iter().any(|h| h.node == w.node && (h.kind == ComponentMode::Object || (h.kind == w.kind && w.ids.iter().all(|i| h.ids.contains(i)))))
-        });
-        return Ok(json!(inside));
-    }
-    for flag in ["addElement", "forceElement"] {
-        if let Some(name) = a.get(flag).and_then(Value::as_str) {
-            let set = set_named(&s.graph, name)?;
-            let list = members_of(s, a)?;
-            object_sets::add(&mut s.graph, set, &list)?;
-            return Ok(Value::Null);
-        }
-    }
-    if let Some(name) = a.get("remove").and_then(Value::as_str) {
-        let set = set_named(&s.graph, name)?;
-        let list = members_of(s, a)?;
-        object_sets::remove(&mut s.graph, set, &list)?;
-        return Ok(Value::Null);
-    }
-    if let Some(name) = a.get("clear").and_then(Value::as_str) {
-        let set = set_named(&s.graph, name)?;
-        let list = object_sets::members(&s.graph, set);
-        object_sets::remove(&mut s.graph, set, &list)?;
-        return Ok(Value::Null);
-    }
-    let list = if a.bool("empty") { Vec::new() } else { members_of(s, a)? };
-    let set = object_sets::create(&mut s.graph, &a.string("name", ""), &list, false)?;
-    Ok(json!(s.graph.path(set)))
-}
-
 fn deformable_shape(s: &mut Session, a: &Args) -> CmdResult {
     let names = objects(s, a);
     let Some(name) = names.first() else { fail!("deformableShape: name a mesh") };
@@ -303,24 +238,6 @@ fn deformable_shape(s: &mut Session, a: &Args) -> CmdResult {
 }
 
 pub(crate) fn register(c: &mut Commands<Session>) {
-    if c.find("sets").is_none() {
-        c.register(modes(Cmd::new(
-            "sets",
-            "Object sets as Maya's command: sets -n name items makes one, -em empty; -add set items, -rm set items, -fe set items, -cl set; \
-             -im set items tests membership; -q set lists the members, -q -s counts them. On a deformer's set (cluster1Set), this is what \
-             the deformer moves.",
-            sets_cmd,
-        ))
-        .positional("members (the selection when none); the set with -q")
-        .flag(f("name", "n", ArgType::String, "Name of a new set."))
-        .flag(f("empty", "em", ArgType::Bool, "Make the set with no members."))
-        .flag(f("addElement", "add", ArgType::String, "Add the items to this set."))
-        .flag(f("remove", "rm", ArgType::String, "Take the items out of this set."))
-        .flag(f("forceElement", "fe", ArgType::String, "Add the items to this set."))
-        .flag(f("clear", "cl", ArgType::String, "Take everything out of this set."))
-        .flag(f("isMember", "im", ArgType::String, "Whether the items are all in this set."))
-        .flag(f("size", "s", ArgType::Bool, "Query: how many members.")));
-    }
     c.register(
         Cmd::new(
             "deformableShape",

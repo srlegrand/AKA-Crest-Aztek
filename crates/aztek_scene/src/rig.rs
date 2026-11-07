@@ -116,19 +116,19 @@ impl Joint {
     pub const INVERSE_SCALE: usize = Transform::COUNT + 3;
     pub const PREFERRED_ANGLE: usize = Transform::COUNT + 4;
     pub const STIFFNESS: usize = Transform::COUNT + 5;
-    pub const MIN_ROT_LIMIT: usize = Transform::COUNT + 6;
-    pub const MAX_ROT_LIMIT: usize = Transform::COUNT + 7;
+    pub const MIN_ROT_LIMIT: usize = Transform::LIMITS + 4;
+    pub const MAX_ROT_LIMIT: usize = Transform::LIMITS + 5;
     /// minRotXLimitEnable, then Y and Z.
-    pub const MIN_LIMIT_ENABLE: usize = Transform::COUNT + 8;
+    pub const MIN_LIMIT_ENABLE: usize = Transform::COUNT + 6;
     /// maxRotXLimitEnable, then Y and Z.
-    pub const MAX_LIMIT_ENABLE: usize = Transform::COUNT + 11;
+    pub const MAX_LIMIT_ENABLE: usize = Transform::COUNT + 9;
     /// jointTypeX, then Y and Z: the axis may rotate.
-    pub const JOINT_TYPE: usize = Transform::COUNT + 14;
-    pub const DRAW_STYLE: usize = Transform::COUNT + 17;
-    pub const DRAW_LABEL: usize = Transform::COUNT + 18;
-    pub const SIDE: usize = Transform::COUNT + 19;
-    pub const TYPE: usize = Transform::COUNT + 20;
-    pub const OTHER_TYPE: usize = Transform::COUNT + 21;
+    pub const JOINT_TYPE: usize = Transform::COUNT + 12;
+    pub const DRAW_STYLE: usize = Transform::COUNT + 15;
+    pub const DRAW_LABEL: usize = Transform::COUNT + 16;
+    pub const SIDE: usize = Transform::COUNT + 17;
+    pub const TYPE: usize = Transform::COUNT + 18;
+    pub const OTHER_TYPE: usize = Transform::COUNT + 19;
 }
 
 impl TransformBehavior for Joint {
@@ -601,10 +601,25 @@ fn named_bool(name: &str, short: &str, def: bool, doc: &str) -> AttrDef {
 
 fn limit_attr(name: &str, short: &str, prefix: &str, def: f64) -> AttrDef {
     let mut a = vec3_attr(name, short, DVec3::splat(def), flags::INPUT | flags::STORABLE, "A rotate limit per axis, degrees, used when its enable is on.");
+    let pair = if prefix == "min" { "mr" } else { "xr" };
     for (i, axis) in ["X", "Y", "Z"].into_iter().enumerate() {
         a.child_names[i] = format!("{prefix}Rot{axis}Limit");
+        a.child_short[i] = format!("{pair}{}l", axis.to_lowercase());
     }
     a
+}
+
+/// A joint keeps its limit switches as one bool per axis (minRotXLimitEnable), so the transform's Vec3 of them gives up
+/// its children's names here.
+fn unused_enable(name: &str, short: &str) -> AttrDef {
+    AttrDef {
+        name: name.into(),
+        short_name: short.into(),
+        ty: crate::plug::PlugType::Vec3,
+        default_value: PlugValue::Vec3(DVec3::ZERO),
+        flags: flags::INPUT | flags::HIDDEN,
+        ..Default::default()
+    }
 }
 
 fn register_types_now() {
@@ -620,6 +635,8 @@ fn register_types_now() {
         vec3_attr("stiffness", "st", DVec3::ZERO, store, "Resistance to rotating, per axis, 0 to 100."),
         limit_attr("minRotLimit", "mnrl", "min", -360.0),
         limit_attr("maxRotLimit", "mxrl", "max", 360.0),
+        unused_enable("minRotLimitEnable", "mrle"),
+        unused_enable("maxRotLimitEnable", "xrle"),
     ];
     for (prefix, short) in [("min", "mn"), ("max", "mx")] {
         for axis in ["X", "Y", "Z"] {

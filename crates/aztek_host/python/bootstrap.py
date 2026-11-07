@@ -62,9 +62,14 @@ def _command(name):
         result = json.loads(out)
         if isinstance(result, dict) and "__error__" in result:
             raise RuntimeError(result["__error__"])
-        # Maya returns compound attributes as a list of one tuple.
-        if name == "getAttr" and isinstance(result, list) and len(result) == 3 and all(isinstance(x, (int, float)) for x in result):
-            return [tuple(result)]
+        # Maya returns compound attributes as a list of one tuple; a multi attribute of as many elements stays a list.
+        if name == "getAttr" and isinstance(result, list) and len(result) in (2, 3, 4) and all(isinstance(x, (int, float)) for x in result) and not (kwargs or {}).get("mi", (kwargs or {}).get("multiIndices")):
+            size = json.loads(_aztek.call("getAttr", json.dumps(_plain(flat)), json.dumps({"size": True})))
+            if size == 1:
+                return [tuple(result)]
+        # Maya's list queries give None rather than an empty list.
+        if name in ("listRelatives", "listConnections", "listAttr") and result == []:
+            return None
         return result
 
     run.__name__ = name

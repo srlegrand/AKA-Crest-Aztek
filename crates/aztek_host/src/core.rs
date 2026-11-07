@@ -225,6 +225,8 @@ impl Core {
                 if let Some(to) = o.remove("to") {
                     o.insert("by".into(), to);
                 }
+                // The object form's switches mean nothing to the component commands.
+                o.retain(|k, _| matches!(k.as_str(), "by" | "args" | "pivot"));
             }
         }
         let _ = self.exec_plain("select", json!({ "args": comps }));
@@ -257,7 +259,15 @@ impl Core {
     }
 
     /// aztek.cmds.<name>(*args, **kwargs): Maya's spellings, short flags, query and edit modes.
-    pub fn py_call(&mut self, typed: &str, args: Vec<Value>, kwargs: Map<String, Value>) -> Result<Value, String> {
+    pub fn py_call(&mut self, typed: &str, args: Vec<Value>, mut kwargs: Map<String, Value>) -> Result<Value, String> {
+        // optionVar(q='name'): the query flag carrying what is queried.
+        let mut args = args;
+        for k in ["q", "query"] {
+            if let Some(Value::String(what)) = kwargs.get(k).cloned() {
+                args.push(json!(what));
+                kwargs.insert(k.to_string(), json!(true));
+            }
+        }
         let al = mel::alias(typed);
         let name = al.map(|a| a.target.to_string()).unwrap_or(typed.to_string());
         let def_flags: Vec<(String, String, aztek_ops::ArgType)> = match self.s.commands.find(&name) {
