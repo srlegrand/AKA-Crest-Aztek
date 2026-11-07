@@ -67,6 +67,10 @@ Graph Editor, with keyed channels in the channel box and key ticks on the time s
 
 ![Graph Editor](docs/graph-editor.png)
 
+The production rig in another pose, its controls driving joints, skin and blend shapes:
+
+![Production rig posed](docs/rig-pose.png)
+
 Joints, smooth skin and an RP IK handle:
 
 ![Rigging](docs/rigging.png)
