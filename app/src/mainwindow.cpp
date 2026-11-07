@@ -617,6 +617,9 @@ void MainWindow::build_docks() {
     connect(tool_settings_, &ToolSettings::axisOrientation, this, [this](const QString& m) {
         for (ViewportWidget* v : panels_->views()) v->set("axisOrientation", "\"" + m + "\"");
     });
+    connect(tool_settings_, &ToolSettings::stepSnap, this, [this](const QString& k, double x) {
+        for (ViewportWidget* v : panels_->views()) v->set(k, QString::number(x));
+    });
     connect(tool_settings_, &ToolSettings::curveDegree, this, [this](int d) {
         for (ViewportWidget* v : panels_->views()) v->set("curveDegree", QString::number(d));
     });

@@ -579,6 +579,39 @@ pub fn register(s: &mut Session) {
 
     reg(
         s,
+        Cmd::new("polyOptions", "Polygon display in the views: -db borders, -dce crease edges, -dn with -f or -pt normals, -sn their size, -bc backface culling.", |_s, a| {
+            let mut p = Map::new();
+            let on = |k: &str| a.get(k).and_then(Value::as_bool);
+            if let Some(v) = on("displayBorder") {
+                p.insert("borderEdges".into(), json!(v));
+            }
+            if let Some(v) = on("displayCreaseEdge") {
+                p.insert("creaseEdges".into(), json!(v));
+            }
+            if let Some(v) = on("displayNormal") {
+                p.insert(if a.bool("point") { "vertexNormals" } else { "faceNormals" }.into(), json!(v));
+            }
+            if let Some(v) = on("backCulling") {
+                p.insert("backface".into(), json!(v));
+            }
+            if a.has("sizeNormal") {
+                p.insert("normalSize".into(), json!(a.float("sizeNormal", 0.4)));
+            }
+            crate::core::push_ui_request(format!("polyOptions|{}", Value::Object(p)));
+            Ok(Value::Null)
+        })
+        .undoable(false)
+        .flag(f("displayBorder", "db", ArgType::Bool, "Border edges thick."))
+        .flag(f("displayCreaseEdge", "dce", ArgType::Bool, "Crease edges."))
+        .flag(f("displayNormal", "dn", ArgType::Bool, "Normals."))
+        .flag(f("facet", "f", ArgType::Bool, "With -dn: face normals."))
+        .flag(f("point", "pt", ArgType::Bool, "With -dn: vertex normals."))
+        .flag(f("sizeNormal", "sn", ArgType::Float, "Length of the normals."))
+        .flag(f("backCulling", "bc", ArgType::Bool, "Backface culling.")),
+    );
+
+    reg(
+        s,
         Cmd::new("uiPref", "An interface setting the views read: uiPref name value. No value returns it.", |_s, a| {
             let Some(name) = a.pos_str(0).map(str::to_string) else { fail!("uiPref: give a name") };
             let list = a.get("args").and_then(Value::as_array).cloned().unwrap_or_default();

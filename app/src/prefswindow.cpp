@@ -214,7 +214,7 @@ void MainWindow::apply_prefs() {
                                          {"preSelectHilite", s.value("prefs/preSelectHilite", true).toBool()}});
     exec_quiet("keyTangent", QJsonObject{{"global", true}, {"inTangentType", s.value("prefs/defaultInTangent", "auto").toString()}, {"outTangentType", s.value("prefs/defaultOutTangent", "auto").toString()}});
     int undo_len = s.value("prefs/undoQueue", 0).toInt();
-    exec_quiet("undoInfo", undo_len > 0 ? QJsonObject{{"length", undo_len}} : QJsonObject{{"infinity", true}});
+    exec_quiet("undoInfo", QJsonObject{{"limit", undo_len}});
     if (time_slider_) time_slider_->set_tick_width(s.value("prefs/keyTickSize", 2).toInt());
     time_slider_->set_ticks_shown(s.value("prefs/keyTicks", "Active").toString() != "None");
     play_every_frame_ = s.value("prefs/playbackSpeed", "Real-time").toString() == "Play every frame";

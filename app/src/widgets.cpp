@@ -574,6 +574,10 @@ bool CommandLine::eventFilter(QObject* o, QEvent* e) {
     if (o == input_ && e->type() == QEvent::KeyPress) {
         auto* k = static_cast<QKeyEvent*>(e);
         const QStringList& hist = histories_[lang_->text()];
+        if (k->key() == Qt::Key_Escape) {
+            input_->clearFocus();
+            return true;
+        }
         if (k->key() == Qt::Key_Up && !hist.isEmpty()) {
             pos_ = qBound(0, pos_ - 1, int(hist.size()) - 1);
             input_->setText(hist[pos_]);

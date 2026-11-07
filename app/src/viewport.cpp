@@ -87,7 +87,11 @@ void ViewportWidget::ensure() {
         log("// Error: viewport: run on X11 (QT_QPA_PLATFORM=xcb) //", 2);
     }
 #endif
-    if (id_) update();
+    if (id_) {
+        for (auto it = pending_.begin(); it != pending_.end(); ++it) aztek_view_set(id_, it.key().section(':', 0, 0).toUtf8().constData(), it.value().toUtf8().constData());
+        pending_.clear();
+        update();
+    }
 }
 
 void ViewportWidget::showEvent(QShowEvent*) {
@@ -208,7 +212,12 @@ void ViewportWidget::wheelEvent(QWheelEvent* e) {
 
 void ViewportWidget::set(const QString& key, const QString& json) {
     if (!id_) ensure();
-    if (!id_) return;
+    if (!id_) {
+        // One-shot requests mean nothing later. `disp` merges, so its pieces each wait under their own key.
+        if (key == "frame" || key == "home" || key == "viewUndo" || key == "viewRedo" || key == "isolate") return;
+        pending_[key == "disp" ? "disp:" + json : key] = json;
+        return;
+    }
     aztek_view_set(id_, key.toUtf8().constData(), json.toUtf8().constData());
     update();
 }

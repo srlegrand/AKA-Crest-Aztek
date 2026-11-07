@@ -6,6 +6,7 @@
 #include <QJsonObject>
 #include <QLineEdit>
 #include <QMenu>
+#include <QPixmap>
 #include <QWidget>
 #include <QWidgetAction>
 #include <functional>
@@ -156,6 +157,7 @@ private:
     int zone_at(QPoint p) const;
     QWidget* box_;
     QPoint center_;
+    QPixmap under_;
     std::function<QList<MarkItem>(int)> zones_;
 };
 

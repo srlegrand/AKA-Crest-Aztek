@@ -27,6 +27,11 @@ use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 use serde_json::{json, Value};
 
 pub use crate::core::Core;
+
+/// The requests waiting for the shell, for tests.
+pub fn take_ui_requests_for_tests() -> Value {
+    core::take_ui_requests()
+}
 use crate::gpu::{Gpu, Shared};
 use crate::view::View;
 
@@ -443,7 +448,11 @@ pub extern "C" fn aztek_view_hit(id: i32, x: f64, y: f64) -> *mut c_char {
         let Some(v) = views.get_mut(&id) else { return out(String::new()) };
         let items = viewport::gather(&mut core.s.graph);
         v.vp.rect = [0.0, 0.0, v.gpu.extent.width as f64, v.gpu.extent.height as f64];
-        let hit = v.vp.raycast(&items, DVec2::new(x, y)).map(|(i, _, _)| core.s.graph.path(items[i].xf)).unwrap_or_default();
+        let px = DVec2::new(x, y);
+        if let Some(id) = v.vp.pick_rig(&core.s.graph, px) {
+            return out(core.s.graph.path(id));
+        }
+        let hit = v.vp.raycast(&items, px).map(|(i, _, _)| core.s.graph.path(items[i].xf)).unwrap_or_default();
         out(hit)
     })
 }

@@ -817,6 +817,7 @@ impl Viewport {
             "deformer" => self.disp.deformers,
             "locator" => self.disp.locators,
             "curve" => self.disp.curves,
+            "camera" => self.disp.cameras,
             _ => true,
         }
     }
@@ -2110,6 +2111,23 @@ pub fn rig_items(g: &Graph) -> Vec<RigItem> {
             }
             let color = override_color(g, id).unwrap_or([10, 10, 110, 255]);
             out.push(RigItem { node: aztek_scene::dag::transform_of(g, id), color, segs: aztek_scene::curves::curve_lines(n) });
+        } else if ty.is_a("camera") {
+            // A box and a lens, for cameras that show: the default views' are hidden.
+            let (x, y, z) = (w.x_axis.truncate().normalize_or_zero(), w.y_axis.truncate().normalize_or_zero(), w.z_axis.truncate().normalize_or_zero());
+            let k = 0.5;
+            let corner = |a: f64, b: f64, d: f64| c + x * a * k + y * b * k + z * d * k;
+            let mut segs = Vec::new();
+            for d in [0.0, 1.5] {
+                let q = [corner(-1.0, -0.7, d), corner(1.0, -0.7, d), corner(1.0, 0.7, d), corner(-1.0, 0.7, d)];
+                for i in 0..4 {
+                    segs.push((q[i], q[(i + 1) % 4]));
+                    if d > 0.0 {
+                        segs.push((q[i], corner(if i == 0 || i == 3 { -1.0 } else { 1.0 }, if i < 2 { -0.7 } else { 0.7 }, 0.0)));
+                    }
+                }
+            }
+            circle(c - z * k * 0.5, x, y, k * 0.5, &mut segs);
+            out.push(RigItem { node: aztek_scene::dag::transform_of(g, id), color: override_color(g, id).unwrap_or([60, 90, 230, 255]), segs });
         } else if ty.is_a("ikHandle") {
             let k = 0.4 * crate::ui_cmds::pref_f64("ikHandleScale", 1.0);
             let segs = vec![

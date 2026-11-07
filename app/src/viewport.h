@@ -38,6 +38,8 @@ protected:
 private:
     void ensure();
     void mouse(int kind, QMouseEvent* e);
+    // Settings sent before the view's surface exists, latest per key.
+    QHash<QString, QString> pending_;
     int id_ = 0;
     QString camera_;
     bool rmb_pending_ = false;

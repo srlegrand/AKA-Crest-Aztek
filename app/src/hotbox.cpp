@@ -10,11 +10,11 @@
 #include <QPainter>
 #include <QScreen>
 #include <QToolButton>
+#include <cstdlib>
 
 namespace az {
 
 Hotbox::Hotbox(const QList<QMenu*>& menus, int common, QWidget* parent) : QWidget(parent, Qt::Popup | Qt::FramelessWindowHint) {
-    setAttribute(Qt::WA_TranslucentBackground);
     setMouseTracking(true);
     box_ = new QWidget(this);
     auto* grid = new QGridLayout(box_);
@@ -36,7 +36,7 @@ Hotbox::Hotbox(const QList<QMenu*>& menus, int common, QWidget* parent) : QWidge
             row += 1;
             col = 0;
         }
-        if (col == 8) {
+        if (col == 9) {
             row += 1;
             col = 0;
         }
@@ -48,6 +48,7 @@ Hotbox::Hotbox(const QList<QMenu*>& menus, int common, QWidget* parent) : QWidge
 void Hotbox::popup(QPoint global) {
     QScreen* s = QGuiApplication::screenAt(global);
     QRect area = s ? s->geometry() : parentWidget()->window()->geometry();
+    under_ = s ? s->grabWindow(0) : QPixmap();
     setGeometry(area);
     center_ = global - area.topLeft();
     box_->move(center_ - QPoint(box_->width() / 2, box_->height() / 2));
@@ -68,6 +69,8 @@ void Hotbox::paintEvent(QPaintEvent*) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     QRect mid = box_->geometry();
+    if (!under_.isNull()) p.drawPixmap(rect(), under_);
+    p.fillRect(rect(), QColor(0, 0, 0, 90));
     p.setBrush(QColor(40, 40, 40, 215));
     p.setPen(Qt::NoPen);
     p.drawRoundedRect(mid, 5, 5);

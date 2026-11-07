@@ -5,6 +5,7 @@
 #include "host.h"
 #include "markingmenu.h"
 #include "panels.h"
+#include "shelves.h"
 #include "toolsettings.h"
 #include "viewport.h"
 #include "widgets.h"
@@ -146,6 +147,22 @@ void MainWindow::build_runtime() {
     r("PreferencesWindow", "Windows", "Preferences", [this] { show_preferences(); });
     r("HotkeyPreferencesWindow", "Windows", "Hotkey Editor", [this] { show_hotkey_editor(); });
     r("AttributeEditor", "Windows", "Attribute Editor", [this] { show_attribute_editor(); });
+    auto window = [this](const char* name, const char* id, const char* ann) {
+        QString w = id;
+        add_runtime(name, "Windows", ann, [this, w] { show_named_window(w); });
+    };
+    window("SpreadSheetEditor", "spreadSheet", "Attribute Spread Sheet");
+    window("ComponentEditorWindow", "componentEditor", "Component Editor");
+    window("ConnectionEditor", "connectionEditor", "Connection Editor");
+    window("HypergraphHierarchyWindow", "hypergraphHierarchy", "Hypergraph: Hierarchy");
+    window("HypergraphDGWindow", "hypergraphConnections", "Hypergraph: Connections");
+    window("NamespaceEditor", "namespaceEditor", "Namespace Editor");
+    window("ChannelControlEditor", "channelControl", "Channel Control");
+    window("ShapeEditor", "shapeEditor", "Shape Editor");
+    window("ModelingToolkitWindow", "modelingToolkit", "Modeling Toolkit");
+    window("GridOptions", "gridOptions", "Grid Options");
+    window("AddAttribute", "addAttribute", "Add Attribute");
+    r("ShelfEditor", "Windows", "Shelf Editor", [this] { shelf_bar_->open_editor(); });
     r("OutlinerWindow", "Windows", "Outliner", [this] { outliner_dock_->show(); outliner_dock_->raise(); });
     r("ToggleChannelsLayers", "Windows", "Channel Box / Layer Editor", [this] { channel_dock_->setVisible(!channel_dock_->isVisible()); });
     r("FourViewLayout", "Panels", "Four views", [this] { panels_->set_single(false); });
@@ -582,6 +599,8 @@ void MainWindow::handle_ui_request(const QString& r) {
         python(payload);
     } else if (name == "lookThru") {
         if (ViewportWidget* v = active_view()) v->set("camera", "\"" + payload + "\"");
+    } else if (name == "polyOptions") {
+        for (ViewportWidget* v : panels_->views()) v->set("disp", payload);
     } else if (name == "isolate") {
         if (ViewportWidget* v = active_view()) v->set("isolate", payload);
     } else if (name == "hotkey") {
