@@ -230,6 +230,16 @@ fn ls(s: &mut Session, a: &aztek_ops::Args) -> CmdResult {
         let sel = g.selection().to_vec();
         if comps.is_empty() || a.bool("objectsOnly") {
             ids.extend(sel);
+        } else {
+            // Objects selected alongside components. One with components of its own is only hilited.
+            for id in sel {
+                let path = g.path(id);
+                let name = g.node(id).map_or(String::new(), |n| n.name().to_string());
+                let has_comps = comps.iter().any(|c| c.split('.').next().is_some_and(|o| o == path || o == name));
+                if !has_comps {
+                    ids.push(id);
+                }
+            }
         }
     } else if names.is_empty() {
         ids = g.nodes();

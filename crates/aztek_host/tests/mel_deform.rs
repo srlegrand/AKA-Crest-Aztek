@@ -132,3 +132,18 @@ fn duplicating_a_deformed_mesh_leaves_a_plain_mesh() {
     assert_eq!(mel(&mut c, &format!("pointPosition {name}.vtx[0];")), mel(&mut c, "pointPosition a.vtx[0];"));
     assert_eq!(mel(&mut c, "ls -io;"), json!(["aShapeOrig"]), "the copy has no original of its own");
 }
+
+/// `ls -sl` is what is selected now: objects and components don't linger from an earlier selection.
+#[test]
+fn selecting_replaces_components_and_clearing_clears_them() {
+    let mut c = Core::new();
+    mel(&mut c, "polyCube -n a; polyCube -n b; select -r a.vtx[0:1];");
+    assert_eq!(mel(&mut c, "ls -sl;"), json!(["a.vtx[0:1]"]));
+    mel(&mut c, "select -r b;");
+    assert_eq!(mel(&mut c, "ls -sl;"), json!(["b"]));
+    mel(&mut c, "select -r a.vtx[0];");
+    mel(&mut c, "select -cl;");
+    assert_eq!(mel(&mut c, "ls -sl;"), json!([]));
+    mel(&mut c, "select -r a.vtx[0]; select -add b;");
+    assert_eq!(mel(&mut c, "ls -sl;"), json!(["a.vtx[0]", "b"]));
+}
