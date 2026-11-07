@@ -17,7 +17,8 @@ target and status, including where it differs from Maya; [docs/COMMANDS.md](docs
 - **Materials and textures:** lambert, blinn, phong, phongE and surfaceShader with file textures and place2dTexture, assigned to objects or faces; Textured mode (6) in the viewport; Hypershade lists; the image behind the UV Editor.
 - **Rigging:** joints (orient, mirror, insert, segment scale compensate), RP, SC and spline IK, every constraint, smooth
   skin with weight painting, mirror and copy, dual quaternion; lattice, wrap, wire, delta mush, softMod, nonlinears,
-  clusters, blend shapes; a HumanIK subset (skeleton, definition, control rig, retargeting).
+  clusters, blend shapes; a HumanIK subset (skeleton, definition, control rig, retargeting). Controls keep their colours:
+  drawing overrides, templates, reference display, display layer colours and wireframe colours.
 - **Animation:** keys with weighted tangents and infinities, Graph Editor, Dope Sheet, set driven keys, breakdowns,
   copy and paste keys, baking, motion paths, animation layers, character sets and clips.
 - **Scripting:** MEL (procedures, arrays, control flow, backticks), Python, `maya.api.OpenMaya`, Python plug-ins with
