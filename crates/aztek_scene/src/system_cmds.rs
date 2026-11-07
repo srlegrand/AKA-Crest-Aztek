@@ -39,6 +39,8 @@ pub struct Extras {
     pub anim_display: BTreeMap<String, Value>,
     /// recordAttr: plugs marked for recording.
     pub recording: Vec<String>,
+    /// symmetricModelling's settings.
+    pub symmetry: crate::mesh_edit::maya_poly::SymmetryState,
     /// The scene's file references.
     pub references: crate::references::RefTable,
 }
