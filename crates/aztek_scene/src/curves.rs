@@ -305,14 +305,22 @@ impl NodeBehavior for CurveNode {
             Kind::Square => {
                 let (normal, center) = (d.vec3(P0), d.vec3(P0 + 1));
                 let (sl, deg) = (d.float(P0 + 2), d.int(P0 + 3).max(1) as usize);
+                let (sl2, spans) = (d.float(P0 + 4), d.int(P0 + 5).max(1) as usize);
                 let n = normal.normalize_or_zero();
                 let n = if n == DVec3::ZERO { DVec3::Y } else { n };
                 let (u, v) = n.any_orthonormal_pair();
-                let h = sl * 0.5;
-                let corners = [center + (u + v) * h, center + (v - u) * h, center + (-u - v) * h, center + (u - v) * h];
+                let (a, b) = (u * sl * 0.5, v * sl2 * 0.5);
+                let corners = [center + a + b, center - a + b, center - a - b, center + a - b];
+                // Each side is a curve of its own, its CVs evenly along it; the whole square is outputCurve.
+                let count = deg + spans;
+                for k in 0..4 {
+                    let (from, to) = (corners[k], corners[(k + 1) % 4]);
+                    let cvs: Vec<DVec3> = (0..count).map(|i| from.lerp(to, i as f64 / (count - 1) as f64)).collect();
+                    d.set_output(P0 + 6 + k, to_value(NurbsCurve::open(deg, cvs)));
+                }
                 let mut pts: Vec<DVec3> = corners.to_vec();
                 pts.push(corners[0]);
-                Some(NurbsCurve::open(deg.min(1).max(1), pts))
+                Some(NurbsCurve::open(1, pts))
             }
             Kind::Rebuild => input.map(|c| {
                 let spans = d.int(P0);
@@ -726,7 +734,18 @@ pub fn register_types() {
                 "makeNurbsSquare",
                 Kind::Square,
                 "A square.",
-                vec![v_in("normal", "nr", DVec3::Y, "The normal."), v_in("center", "c", DVec3::ZERO, "The centre."), f_in("sideLength1", "sl1", 1.0, "The side."), int_in("degree", "d", 1, "The degree.")],
+                vec![
+                    v_in("normal", "nr", DVec3::Y, "The normal."),
+                    v_in("center", "c", DVec3::ZERO, "The centre."),
+                    f_in("sideLength1", "sl1", 1.0, "The side."),
+                    int_in("degree", "d", 3, "The degree of each side."),
+                    f_in("sideLength2", "sl2", 1.0, "The other side."),
+                    int_in("spansPerSide", "sps", 1, "Spans along each side."),
+                    curve_attr("outputCurve1", "oc1", flags::OUTPUT | flags::HIDDEN, "A side."),
+                    curve_attr("outputCurve2", "oc2", flags::OUTPUT | flags::HIDDEN, "A side."),
+                    curve_attr("outputCurve3", "oc3", flags::OUTPUT | flags::HIDDEN, "A side."),
+                    curve_attr("outputCurve4", "oc4", flags::OUTPUT | flags::HIDDEN, "A side."),
+                ],
             ),
             curve_op_type(
                 "rebuildCurve",

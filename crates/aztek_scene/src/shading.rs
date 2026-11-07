@@ -60,7 +60,7 @@ fn text(name: &str, short: &str, d: &str) -> AttrDef {
     base(name, short, PlugType::String, PlugValue::String(d.into()), STORE)
 }
 fn message() -> AttrDef {
-    base("message", "msg", PlugType::Int, PlugValue::Int(0), OUT | flags::HIDDEN)
+    base("message", "msg", PlugType::Int, PlugValue::Int(0), OUT | flags::HIDDEN | flags::MESSAGE)
 }
 /// A connection point of no value: its elements only ever hold connections.
 fn slots(name: &str, short: &str) -> AttrDef {

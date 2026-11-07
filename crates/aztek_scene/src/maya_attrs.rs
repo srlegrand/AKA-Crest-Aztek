@@ -645,7 +645,7 @@ fn list_attr(s: &mut Session, a: &Args) -> CmdResult {
         if only.is_some_and(|o| o != i) {
             continue;
         }
-        if d.has(flags::HIDDEN) && patterns.is_empty() && only.is_none() {
+        if d.has(flags::HIDDEN) && !d.has(flags::MESSAGE) && patterns.is_empty() && only.is_none() {
             continue;
         }
         if (user && !d.has(flags::USER)) || (write && !d.has(flags::INPUT)) || (settable && !d.has(flags::INPUT)) || false {

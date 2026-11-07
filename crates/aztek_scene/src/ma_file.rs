@@ -162,7 +162,10 @@ impl<'a> Lexer<'a> {
                         self.i += 1;
                     }
                     let w = &self.text[start..self.i];
-                    // Long strings are written "abc" + "def".
+                    // Long strings are written ("abc" + "def").
+                    if w == "(" || w == ")" {
+                        continue;
+                    }
                     if w == "+" && matches!(out.last(), Some(Tok::Str(_))) {
                         joining = true;
                         continue;
@@ -241,6 +244,7 @@ struct AddAttr {
     en: String,
     parent: String,
     keyable: bool,
+    multi: bool,
 }
 
 #[derive(Debug, Default)]
@@ -654,6 +658,10 @@ impl Doc {
                 "-min" | "-minValue" => a.min = val.and_then(Tok::num),
                 "-max" | "-maxValue" => a.max = val.and_then(Tok::num),
                 "-k" | "-keyable" => a.keyable = val.and_then(Tok::truth).unwrap_or(true),
+                "-m" | "-multi" => {
+                    a.multi = true;
+                    used = false;
+                }
                 _ => used = false,
             }
             k += if used { 2 } else { 1 };
@@ -704,6 +712,10 @@ impl Doc {
     /// The one connection into node's attribute (indices ignored unless the name holds them), and its source.
     fn input(&self, node: usize, attrs: &[&str]) -> Option<&Conn> {
         self.conns.iter().find(|c| c.dst == node && attrs.contains(&plain_attr(&c.dst_attr).as_str()))
+    }
+
+    fn index_of(&self, n: &MaNode) -> usize {
+        (n as *const MaNode as usize - self.nodes.as_ptr() as usize) / std::mem::size_of::<MaNode>()
     }
 
     fn children(&self, node: usize) -> impl Iterator<Item = usize> + '_ {
@@ -1019,7 +1031,7 @@ const XFORM_CHANNELS: &[&str] = &[
 ];
 
 /// Rigging and animation nodes that are all attributes and connections.
-const PLAIN_NODES: &[&str] = &["blendWeighted", "makeNurbCircle", "makeNurbPlane", "transformGeometry", "pointOnCurveInfo", "curveInfo", "nearestPointOnCurve", "container", "controller", "timeWarp", "hierarchyTreeNode", "curveFromMeshEdge", "characterMap", "keyingGroup"];
+const PLAIN_NODES: &[&str] = &["blendWeighted", "makeNurbCircle", "makeNurbPlane", "makeNurbsSquare", "motionPath", "ramp", "transformGeometry", "pointOnCurveInfo", "curveInfo", "nearestPointOnCurve", "container", "controller", "timeWarp", "hierarchyTreeNode", "curveFromMeshEdge", "characterMap", "keyingGroup"];
 /// The same under a transform.
 const PLAIN_SHAPES: &[&str] = &["follicle", "distanceDimShape", "paramDimension", "annotationShape", "dropoffLocator", "lattice", "baseLattice", "softModHandle"];
 
@@ -1027,6 +1039,8 @@ const PLAIN_SHAPES: &[&str] = &["follicle", "distanceDimShape", "paramDimension"
 fn is_plain_node(ty: &str) -> bool {
     ty == "expression" || ty == crate::script_node::TYPE || (ty != "unitConversion" && crate::utility_nodes::classification(ty).is_some()) || PLAIN_NODES.contains(&ty) || PLAIN_SHAPES.contains(&ty)
 }
+/// Matrices a file connection may read: they are never set, so they are no channels to write.
+const MATRIX_OUTPUTS: &[&str] = &["matrix", "inverseMatrix", "xformMatrix", "worldMatrix", "worldInverseMatrix", "parentMatrix", "parentInverseMatrix"];
 const LINEAR_CHANNELS: &[&str] = &["translate", "rotatePivot", "scalePivot", "rotatePivotTranslate", "scalePivotTranslate"];
 const ANGLE_CHANNELS: &[&str] = &["rotate", "rotateAxis", "jointOrient"];
 
@@ -1053,7 +1067,7 @@ fn channels_of(t: &NodeType) -> Vec<&'static str> {
         v.extend(["jointOrient", "radius", "segmentScaleCompensate"]);
     }
     if t.is_a("ikHandle") {
-        v.extend(["poleVector", "twist"]);
+        v.extend(["poleVector", "twist", "roll", "ikBlend", "offset", "weight", "poWeight", "priority", "stickiness", "snapEnable", "solverEnable", "rootOnCurve", "dTwistControlEnable", "dWorldUpType", "dForwardAxis", "dWorldUpAxis", "dWorldUpVector", "dWorldUpVectorEnd", "dWorldUpMatrix", "dWorldUpMatrixEnd", "dTwistValueType", "dTwistStart", "dTwistEnd", "dTwistRamp", "dTwistRampMult"]);
     }
     if t.is_a("locator") {
         v.extend(["visibility", "localPosition", "localScale"]);
@@ -1086,7 +1100,7 @@ fn channel(t: &NodeType, attr: &str) -> Option<(usize, i32)> {
     }
     let allowed = channels_of(t);
     for (i, a) in t.attrs.iter().enumerate() {
-        if !a.has(flags::USER) && !allowed.contains(&a.name.as_str()) {
+        if !a.has(flags::USER) && !a.has(flags::MESSAGE) && !allowed.contains(&a.name.as_str()) {
             continue;
         }
         if a.name == attr || (!a.short_name.is_empty() && a.short_name == attr) {
@@ -1101,6 +1115,14 @@ fn channel(t: &NodeType, attr: &str) -> Option<(usize, i32)> {
         }
     }
     None
+}
+
+/// `channel`, or a matrix a connection reads, for what a matrix input on another node takes.
+fn source_channel(t: &NodeType, attr: &str) -> Option<(usize, i32)> {
+    channel(t, attr).or_else(|| {
+        let plain = attr.split('[').next().unwrap_or(attr);
+        t.attrs.iter().position(|a| MATRIX_OUTPUTS.contains(&a.name.as_str()) && (a.name == plain || a.short_name == plain)).map(|i| (i, -1))
+    })
 }
 
 /// The Maya name of an Aztek plug on a written node, for setAttr and connectAttr.
@@ -1332,6 +1354,12 @@ const QUIET_TYPES: &[&str] = &[
     "blindDataTemplate",
 ];
 
+/// A renderer's nodes, which rendering being out of scope leaves behind on saving: RenderMan's, Arnold's, and the plug-ins' display helpers.
+fn is_render_type(ty: &str) -> bool {
+    let arnold = ty.strip_prefix("ai").is_some_and(|r| r.starts_with(|c: char| c.is_ascii_uppercase()));
+    arnold || ty.starts_with("rman") || ty.starts_with("Pxr") || ty.starts_with("d_") || matches!(ty, "displayPoints" | "stereoRigCamera" | "stereoRigTransform")
+}
+
 const DEFAULT_CAMERAS: &[&str] = &["persp", "top", "front", "side", "perspShape", "topShape", "frontShape", "sideShape"];
 
 /// What feeds a mesh shape in the file, walking its input back.
@@ -1503,6 +1531,7 @@ impl Build<'_> {
                 ("enum", _) => PlugType::Enum,
                 ("double3" | "float3", _) => PlugType::Vec3,
                 (_, "string") => PlugType::String,
+                ("message", _) => PlugType::Int,
                 _ => {
                     self.warnings.push(format!("{}.{}: attribute type {}{} skipped", n.name, a.long, a.at, a.dt));
                     continue;
@@ -1518,6 +1547,12 @@ impl Build<'_> {
             let mut flags_on = flags::INPUT | flags::STORABLE | flags::USER;
             if a.keyable {
                 flags_on |= flags::KEYABLE;
+            }
+            if at == "message" {
+                flags_on = flags::INPUT | flags::USER | flags::MESSAGE;
+            }
+            if a.multi {
+                flags_on |= flags::ARRAY;
             }
             let mut def = AttrDef {
                 name: a.long.clone(),
@@ -1602,7 +1637,10 @@ impl Build<'_> {
                         None => seg.name.clone(),
                     })
                     .collect();
-                let Ok(p) = self.s.graph.plug(&format!("{node_path}.{}", text.join("."))) else { continue };
+                let Ok(p) = self.s.graph.plug(&format!("{node_path}.{}", text.join("."))) else {
+                    self.note_drop(&n.ty, &text.join("."), "setAttr");
+                    continue;
+                };
                 let def = self.s.graph.attr(&p).clone();
                 let Some(v) = plug_value(&def, p.component, chunk, 1.0) else { continue };
                 if let Err(e) = self.s.graph.set_value(p, v) {
@@ -1613,6 +1651,14 @@ impl Build<'_> {
     }
 
     /// A connection with a utility node or expression at either end.
+    /// With AZTEK_MA_DROPS set, names what a file held that was not read. For finding what a rig needs.
+    fn note_drop(&self, ty: &str, attr: &str, how: &str) {
+        if std::env::var_os("AZTEK_MA_DROPS").is_some() {
+            let attr: String = attr.chars().map(|c| if c.is_ascii_digit() { '#' } else { c }).collect();
+            eprintln!("DROP {how} {ty}.{attr}");
+        }
+    }
+
     fn plain_connection(&mut self, c: &Conn, sn: usize, sa: &str, src: NodeId, dst: NodeId) {
         let (a, b) = (format!("{}.{sa}", self.s.graph.path(src)), format!("{}.{}", self.s.graph.path(dst), c.dst_attr));
         let plugs = self.s.graph.plug(&a).and_then(|x| self.s.graph.plug(&b).map(|y| (x, y)));
@@ -1709,7 +1755,8 @@ impl Build<'_> {
         }
         let Some(c) = curve else {
             // History that is in the scene gives the curve by connection.
-            if !doc.input(i, &["cr", "create"]).is_some_and(|c| self.id(c.src).is_some()) {
+            // A file can hold a curve shape with no geometry at all, and Maya keeps it that way: that is nothing to warn about.
+            if doc.input(i, &["cr", "create"]).is_some_and(|c| self.id(c.src).is_none()) {
                 self.warnings.push(format!("{}: no stored curve", n.name));
             }
             return;
@@ -2030,6 +2077,25 @@ impl Build<'_> {
         }
     }
 
+    /// What each single chain handle's rotation means, from where the file has it and its start joint.
+    fn single_chain_rests(&mut self) {
+        let doc = self.doc;
+        let single = |n: &MaNode| n.ty == "ikHandle" && doc.input(doc.index_of(n), &["hsv", "ikSolver"]).is_some_and(|c| doc.nodes[c.src].ty == "ikSCsolver");
+        if !doc.nodes.iter().any(single) {
+            return;
+        }
+        self.s.graph.evaluate();
+        for i in 0..doc.nodes.len() {
+            if !single(&doc.nodes[i]) {
+                continue;
+            }
+            let Some(h) = self.id(i) else { continue };
+            let Some(start) = doc.input(i, &["hsj", "startJoint"]).map(|c| c.src) else { continue };
+            let r = doc.nodes[start].vec3(&["r", "rotate"]).unwrap_or(DVec3::ZERO) * doc.ang;
+            crate::ik::set_rest_turn(&mut self.s.graph, h, r);
+        }
+    }
+
     fn create_constraint(&mut self, i: usize, _kind: usize) {
         let doc = self.doc;
         let n = &doc.nodes[i];
@@ -2301,8 +2367,13 @@ impl Build<'_> {
                 PlugRef::new(dst, DagNode::DISPLAY_LAYER as i32)
             } else {
                 match channel(&dt, &plain_dst) {
+                    // An added multi takes the element the file names.
+                    Some((a, comp)) if comp < 0 && dt.attrs[a].is_array() && first_index(&c.dst_attr).is_some() => PlugRef::element(dst, a as i32, first_index(&c.dst_attr).unwrap() as i32),
                     Some((a, comp)) => plug_ref(dst, a, comp),
-                    None => continue,
+                    None => {
+                        self.note_drop(&dt.name, &plain_dst, "connection to");
+                        continue;
+                    }
                 }
             };
             let src_plug = if is_curve {
@@ -2316,9 +2387,12 @@ impl Build<'_> {
                 }
                 PlugRef::new(src, crate::display_layers::DRAW_INFO as i32)
             } else {
-                match channel(&st, &plain_attr(&sa)) {
+                match source_channel(&st, &plain_attr(&sa)) {
                     Some((a, comp)) => plug_ref(src, a, comp),
-                    None => continue,
+                    None => {
+                        self.note_drop(&st.name, &plain_attr(&sa), "connection from");
+                        continue;
+                    }
                 }
             };
             if let Err(e) = self.s.graph.connect(&src_plug, &dst_plug, false) {
@@ -2345,9 +2419,14 @@ impl Build<'_> {
                 let suffix = format!("W{e}");
                 let Some(a) = t.attrs.iter().position(|a| a.has(flags::USER) && a.name.ends_with(&suffix)) else { continue };
                 let st = self.s.graph.node(src).unwrap().type_arc().clone();
-                let out = if st.attr_index("keys").is_some() { st.attr_index("output").map(|x| (x, -1)) } else { channel(&st, &plain_attr(&sa)) };
-                let Some((oa, oc)) = out else { continue };
-                if let Err(e) = self.s.graph.connect(&plug_ref(src, oa, oc), &PlugRef::new(dst, a as i32), true) {
+                // A curve's output, a channel, or by name on a utility node: a condition or plusMinusAverage switching spaces.
+                let out = if st.attr_index("keys").is_some() { st.attr_index("output").map(|x| plug_ref(src, x, -1)) } else { channel(&st, &plain_attr(&sa)).map(|(oa, oc)| plug_ref(src, oa, oc)) };
+                let out = out.or_else(|| self.s.graph.plug(&format!("{}.{sa}", self.s.graph.path(src))).ok());
+                let Some(out) = out else {
+                    self.note_drop(&st.name, &plain_attr(&sa), "weight from");
+                    continue;
+                };
+                if let Err(e) = self.s.graph.connect(&out, &PlugRef::new(dst, a as i32), true) {
                     self.warnings.push(format!("{}.{sa} -> {}.{}: {e}", doc.nodes[sn].name, doc.nodes[c.dst].name, c.dst_attr));
                 }
             } else if is_constraint(c.src) && doc.nodes[c.dst].ty == "pairBlend" {
@@ -2432,7 +2511,7 @@ impl Build<'_> {
     fn report_unused(&mut self) {
         let mut by_type: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
         for (i, n) in self.doc.nodes.iter().enumerate() {
-            if self.used[i] || n.default || QUIET_TYPES.contains(&n.ty.as_str()) {
+            if self.used[i] || n.default || QUIET_TYPES.contains(&n.ty.as_str()) || is_render_type(&n.ty) {
                 continue;
             }
             // Intermediate meshes and their creators nobody used were superseded by stored geometry.
@@ -2663,9 +2742,12 @@ fn build(s: &mut Session, doc: &Doc, import: bool) -> Vec<String> {
     b.fill_deformers();
     for i in 0..count {
         if let Some(kind) = rig::CONSTRAINT_TYPES.iter().position(|t| *t == doc.nodes[i].ty) {
+            // Nothing reads a result until they are all in, except a point on poly constraint looking for its place on a mesh.
+            b.s.graph.evaluation_suspended = doc.nodes[i].ty != "pointOnPolyConstraint";
             b.create_constraint(i, kind);
         }
     }
+    b.s.graph.evaluation_suspended = false;
     b.constraint_connections();
     for i in 0..count {
         if doc.nodes[i].ty == "dagPose" {
@@ -2675,6 +2757,7 @@ fn build(s: &mut Session, doc: &Doc, import: bool) -> Vec<String> {
     for i in 0..count {
         b.apply_locks(i);
     }
+    b.single_chain_rests();
     b.instances();
     b.read_shading_members();
     b.reference_edits();
@@ -3421,9 +3504,7 @@ impl Writer<'_> {
         let n = g.node(id).unwrap();
         let t = n.type_arc().clone();
         let name = n.name().to_string();
-        let tg = t.attr_index("target.targetMatrix").unwrap() as i32;
-        let mut targets: Vec<(i32, NodeId)> = g.connections().into_iter().filter(|(d, _)| d.node == id && d.attr == tg && d.element >= 0).map(|(d, s)| (d.element, s.node)).collect();
-        targets.sort();
+        let targets = crate::constraint::target_nodes(g, id);
         let Some(driven) = crate::constraint::driven_of(g, id).filter(|d| self.keep.contains(d)) else { return };
         if targets.iter().any(|(_, t)| !self.keep.contains(t)) {
             self.warnings.push(format!("{name}: a target is not exported; constraint omitted"));
@@ -3844,7 +3925,10 @@ impl Writer<'_> {
             }
             let plug_of = |t: &NodeType, p: &PlugRef| -> Option<String> {
                 let a = &t.attrs[p.attr as usize];
-                channels_of(t).contains(&a.name.as_str()).then(|| maya_name(a, p.component)).or_else(|| a.has(flags::USER).then(|| maya_name(a, p.component)))
+                (channels_of(t).contains(&a.name.as_str()) || a.has(flags::USER) || a.has(flags::MESSAGE) || MATRIX_OUTPUTS.contains(&a.name.as_str())).then(|| {
+                    let name = maya_name(a, p.component);
+                    if p.element >= 0 { format!("{name}[{}]", p.element) } else { name }
+                })
             };
             let from = if curve {
                 (src.attr as usize == st.attr_index("output").unwrap_or(usize::MAX)).then(|| "o".to_string())
@@ -3876,6 +3960,11 @@ fn attr_add_lines(a: &AttrDef) -> String {
         }
     };
     let mut o = String::new();
+    let m = if a.is_array() { " -m" } else { "" };
+    if a.has(flags::MESSAGE) {
+        let _ = writeln!(o, "\taddAttr -s false -ci true{m} -sn {} -ln {} -at \"message\";", quoted(short), quoted(&a.name));
+        return o;
+    }
     match a.ty {
         PlugType::Float | PlugType::Int | PlugType::Bool => {
             let at = match a.ty {
@@ -3883,7 +3972,7 @@ fn attr_add_lines(a: &AttrDef) -> String {
                 PlugType::Int => "long",
                 _ => "bool",
             };
-            let _ = write!(o, "\taddAttr -ci true{k} -sn {} -ln {}", quoted(short), quoted(&a.name));
+            let _ = write!(o, "\taddAttr -ci true{k}{m} -sn {} -ln {}", quoted(short), quoted(&a.name));
             let dv = a.default_value.scalar().unwrap_or(0.0);
             if dv != 0.0 {
                 let _ = write!(o, " -dv {dv}");

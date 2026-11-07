@@ -99,6 +99,7 @@ const IK_TYPE: usize = 10;
 const IK_REST_POLE: usize = 11;
 const IK_CURVE: usize = 12;
 const IK_ROOT: usize = 13;
+const IK_REST_TURN: usize = 14;
 
 const SYSTEM_SOLVE: usize = 0;
 const SYSTEM_SNAP: usize = 1;
@@ -339,6 +340,7 @@ struct SolveInput<'a> {
     end: DVec3,
     pole: DVec3,
     rest_pole: DVec3,
+    rest_turn: DMat3,
     twist: f64,
     roll: f64,
     kind: SolverKind,
@@ -371,7 +373,7 @@ fn solve_plane(input: &SolveInput) -> Vec<DVec3> {
     let x1 = if to.length() > 1e-9 { to.normalize() } else { x0 };
     let q = match input.kind {
         SolverKind::SingleChain => {
-            let h = rot3(&input.handle);
+            let h = rot3(&input.handle) * input.rest_turn;
             arc(h * x0, x1) * h
         }
         _ => {
@@ -540,6 +542,7 @@ impl NodeBehavior for IkSolve {
                 // Both are in the space of the start joint's parent.
                 pole: d.matrix(IK_PARENT).transform_vector3(d.vec3(IK_POLE)),
                 rest_pole: d.matrix(IK_PARENT).transform_vector3(d.vec3(IK_REST_POLE)),
+                rest_turn: DMat3::from_mat4(d.matrix(IK_REST_TURN)),
                 // Outside spline IK, twist and roll both turn the plane about the handle line.
                 twist: if SolverKind::from_index(d.int(IK_TYPE)) == SolverKind::Spline { d.float(IK_TWIST) } else { d.float(IK_TWIST) + d.float(IK_ROLL) },
                 roll: d.float(IK_ROLL),
@@ -599,7 +602,20 @@ pub(crate) fn register_types() {
             AttrDef { name: "ikSolver".into(), short_name: "hsv".into(), ty: PlugType::String, default_value: PlugValue::String(SOLVER_TYPES[0].into()), flags: store | flags::HIDDEN, doc: "The solver node's name.".into(), ..Default::default() },
             AttrDef { short_name: "fs".into(), flags: store | flags::HIDDEN, ..bool_attr("forceSolver", false, "Run the solver every time.") },
             AttrDef { name: "numSpans".into(), short_name: "ns".into(), ty: PlugType::Int, default_value: PlugValue::Int(1), flags: store | flags::HIDDEN, doc: "Spans of the created curve (spline IK).".into(), ..Default::default() },
-            AttrDef { name: "message".into(), short_name: "msg".into(), ty: PlugType::Int, default_value: PlugValue::Int(0), flags: flags::OUTPUT | flags::HIDDEN, doc: "Connects the handle to its effector.".into(), ..Default::default() },
+            AttrDef { name: "message".into(), short_name: "msg".into(), ty: PlugType::Int, default_value: PlugValue::Int(0), flags: flags::OUTPUT | flags::HIDDEN | flags::MESSAGE, doc: "Connects the handle to its effector.".into(), ..Default::default() },
+            AttrDef { short_name: "dtce".into(), flags: store | flags::HIDDEN, ..bool_attr("dTwistControlEnable", false, "Spline IK: advanced twist on.") },
+            AttrDef { short_name: "dwut".into(), flags: store | flags::HIDDEN, ..enum_attr("dWorldUpType", &["Scene Up", "Object Up", "Object Up (Start/End)", "Object Rotation Up", "Object Rotation Up (Start/End)", "Vector", "Vector (Start/End)", "Relative"], 0, "Spline IK: what up means along the chain.") },
+            AttrDef { short_name: "dfa".into(), flags: store | flags::HIDDEN, ..enum_attr("dForwardAxis", &["Positive X", "Negative X", "Positive Y", "Negative Y", "Positive Z", "Negative Z"], 0, "Spline IK: the joints' axis along the curve.") },
+            AttrDef { short_name: "dwua".into(), flags: store | flags::HIDDEN, ..enum_attr("dWorldUpAxis", &["Positive Y", "Negative Y", "Closest Y", "Positive Z", "Negative Z", "Closest Z", "Positive X", "Negative X", "Closest X"], 0, "Spline IK: the joints' axis towards up.") },
+            AttrDef { child_short: ["dwux".into(), "dwuy".into(), "dwuz".into()], ..vec3_attr("dWorldUpVector", "dwu", DVec3::Y, store | flags::HIDDEN, "Spline IK: up at the start, in the up object's space.") },
+            AttrDef { child_short: ["dwvx".into(), "dwvy".into(), "dwvz".into()], ..vec3_attr("dWorldUpVectorEnd", "dwve", DVec3::Y, store | flags::HIDDEN, "Spline IK: up at the end, in the up object's space.") },
+            matrix_in("dWorldUpMatrix", "dwum", false, "Spline IK: the up object at the start."),
+            matrix_in("dWorldUpMatrixEnd", "dwue", false, "Spline IK: the up object at the end."),
+            AttrDef { short_name: "dtvt".into(), flags: store | flags::HIDDEN, ..enum_attr("dTwistValueType", &["Total", "Start/End", "Ramp"], 0, "Spline IK: where the twist comes from.") },
+            float_attr_short("dTwistStart", "dtws", 0.0, "Spline IK: twist at the start, degrees.", None, None),
+            float_attr_short("dTwistEnd", "dtwe", 0.0, "Spline IK: twist at the end, degrees.", None, None),
+            AttrDef { child_short: ["dtrr".into(), "dtrg".into(), "dtrb".into()], ..vec3_attr("dTwistRamp", "dtra", DVec3::ZERO, store | flags::HIDDEN, "Spline IK: a texture's colour, its red a twist along the chain.") },
+            float_attr_short("dTwistRampMult", "dtrm", 1.0, "Spline IK: what the ramp's value is multiplied by.", None, None),
         ],
         create: Some(Arc::new(|| Box::new(IkHandle))),
         ..Default::default()
@@ -643,6 +659,7 @@ pub(crate) fn register_types() {
             vec3_attr("restPoleVector", "rpv", DVec3::new(0.0, 0.0, -1.0), flags::INPUT | flags::STORABLE | flags::HIDDEN, "The bend side of a chain straight at rest."),
             AttrDef { name: "inCurve".into(), short_name: "ic".into(), ty: PlugType::Data, default_value: PlugValue::Data(None), flags: flags::INPUT | flags::HIDDEN, doc: "Spline IK: the curve, world space.".into(), ..Default::default() },
             vec3_attr("outRootTranslate", "ort", DVec3::ZERO, flags::OUTPUT | flags::HIDDEN, "Spline IK with root on curve: the start joint's translate."),
+            AttrDef { name: "restTurn".into(), short_name: "rtn".into(), ty: PlugType::Matrix, default_value: PlugValue::Matrix(DMat4::IDENTITY), flags: flags::INPUT | flags::STORABLE | flags::HIDDEN, doc: "Single chain: from the handle's rotation to the chain's. A new handle's is the identity.".into(), ..Default::default() },
         ],
         create: Some(Arc::new(|| Box::new(IkSolve))),
         ..Default::default()
@@ -692,6 +709,25 @@ pub(crate) fn set_rest_pole(g: &mut Graph, handle: NodeId, pole: DVec3) {
     if let Some(sv) = solver_of(g, handle) {
         let _ = set_vec3(g, sv, IK_REST_POLE, pole);
     }
+}
+
+/// A file holds a single chain handle wherever it was and the start joint's rotate that goes with it: their difference is what the
+/// handle's rotation means from then on. Call with everything evaluated.
+pub(crate) fn set_rest_turn(g: &mut Graph, handle: NodeId, start_rotate: DVec3) {
+    let Some(sv) = solver_of(g, handle) else { return };
+    let n = g.node(sv).unwrap().data();
+    if SolverKind::from_index(n.int(IK_TYPE)) != SolverKind::SingleChain {
+        return;
+    }
+    let chain = json_of(n, IK_CHAIN);
+    let joints: Vec<ChainJoint> = chain.get("joints").and_then(Value::as_array).map(|a| a.iter().map(chain_joint).collect()).unwrap_or_default();
+    let Some(j) = joints.first() else { return };
+    let parent = n.matrix(IK_PARENT);
+    let h = rot3(&n.matrix(IK_HANDLE));
+    // The chain's turn from its preferred pose, which is what solve_plane turns.
+    let want = rot3(&(parent * j.local(start_rotate))) * rot3(&(parent * j.local(j.pa))).transpose();
+    let turn = h.transpose() * want;
+    let _ = g.set_value(plug(sv, IK_REST_TURN), PlugValue::Matrix(DMat4::from_mat3(turn)));
 }
 
 pub(crate) fn solver_of(g: &Graph, handle: NodeId) -> Option<NodeId> {

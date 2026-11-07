@@ -369,7 +369,13 @@ struct EvalView<'a> {
 /// the node, only against what drives the attr. This is what lets `pCube1.tx -> multiplyDivide1 -> pCube1.ty` run,
 /// which is no cycle in Maya.
 fn passes_through(a: &AttrDef) -> bool {
-    a.has(flags::INPUT) && !a.has(flags::OUTPUT)
+    a.has(flags::MESSAGE) || (a.has(flags::INPUT) && !a.has(flags::OUTPUT))
+}
+
+/// parentMatrix or parentInverseMatrix on a DAG node: they follow from the parent alone, so a node's own inputs may
+/// depend on them. `joint.pim -> multMatrix -> decomposeMatrix -> joint.t` is no cycle in Maya.
+fn from_parent(n: &Node, attr: i32) -> bool {
+    n.data.ty.dag && (attr as usize == Transform::PARENT_MATRIX || attr as usize == crate::transform::DagNode::PARENT_INVERSE_MATRIX)
 }
 
 /// The plugs feeding this plug directly: its own source, its whole Vec3's or its components'.
@@ -392,16 +398,45 @@ fn feeds_of(inputs: &BTreeMap<PlugRef, PlugRef>, p: &PlugRef) -> Vec<PlugRef> {
     out
 }
 
+/// An input of a DAG node that nothing it computes uses: an attribute added to it, its visibility and display settings. Maya's
+/// worldMatrix doesn't depend on these, so what drives them may depend on the node. They are filled in once everything has computed.
+fn computes_nothing(ty: &NodeType, attr: i32) -> bool {
+    let added = ty.attrs[attr as usize].has(flags::USER);
+    (ty.dag && (added || ((attr as usize) < crate::transform::DagNode::COUNT && attr as usize != Transform::PARENT_MATRIX))) || (added && ty.ignores_added_attrs)
+}
+
+/// transMinusRotatePivot on a transform: what is added to a position on a motion path to give translate, so it follows from the pivots
+/// alone. `motionPath.xc + obj.tmrx -> obj.tx` is no cycle in Maya.
+fn from_pivots(n: &Node, attr: i32) -> bool {
+    attr as usize == Transform::TRANS_MINUS_ROTATE_PIVOT && n.data.ty.is_a("transform")
+}
+
+fn pivot_plugs(p: &PlugRef) -> [PlugRef; 2] {
+    [PlugRef { attr: Transform::ROTATE_PIVOT as i32, ..*p }, PlugRef { attr: Transform::ROTATE_PIVOT_TRANSLATE as i32, ..*p }]
+}
+
 /// The nodes a read of `p` has to wait for: p's own node for an output, whatever drives p for a plain input.
-fn read_after(nodes: &HashMap<NodeId, Box<Node>>, inputs: &BTreeMap<PlugRef, PlugRef>, p: &PlugRef, out: &mut Vec<NodeId>, depth: u32) {
+fn read_after(nodes: &HashMap<NodeId, Box<Node>>, rel: &HashMap<NodeId, Relations>, inputs: &BTreeMap<PlugRef, PlugRef>, p: &PlugRef, out: &mut Vec<NodeId>, depth: u32) {
     let Some(n) = nodes.get(&p.node) else { return };
+    if from_parent(n, p.attr) {
+        if let Some(r) = rel.get(&p.node).filter(|r| r.parent != NO_NODE) {
+            out.push(r.parent);
+        }
+        return;
+    }
+    if from_pivots(n, p.attr) {
+        for q in pivot_plugs(p) {
+            read_after(nodes, rel, inputs, &q, out, depth + 1);
+        }
+        return;
+    }
     let pass = n.data.ty.attrs.get(p.attr as usize).is_some_and(passes_through);
     if !pass || depth > 64 {
         out.push(p.node);
         return;
     }
     for s in feeds_of(inputs, p) {
-        read_after(nodes, inputs, &s, out, depth + 1);
+        read_after(nodes, rel, inputs, &s, out, depth + 1);
     }
 }
 
@@ -419,13 +454,26 @@ fn stored_plug(n: &Node, p: &PlugRef) -> PlugValue {
 }
 
 /// A plain input's value as its node would pull it, following what drives it. Its drivers have already computed.
-fn resolve_input(nodes: &HashMap<NodeId, Box<Node>>, inputs: &BTreeMap<PlugRef, PlugRef>, held: &BTreeSet<PlugRef>, p: &PlugRef, depth: u32) -> PlugValue {
+fn resolve_input(nodes: &HashMap<NodeId, Box<Node>>, rel: &HashMap<NodeId, Relations>, inputs: &BTreeMap<PlugRef, PlugRef>, held: &BTreeSet<PlugRef>, p: &PlugRef, depth: u32) -> PlugValue {
     let Some(n) = nodes.get(&p.node) else { return PlugValue::Float(0.0) };
+    if from_parent(n, p.attr) {
+        let parent = rel.get(&p.node).map_or(NO_NODE, |r| r.parent);
+        let world = nodes.get(&parent).map_or(DMat4::IDENTITY, |up| up.matrix(Transform::WORLD_MATRIX));
+        let inverse = p.attr as usize != Transform::PARENT_MATRIX;
+        return PlugValue::Matrix(if !inverse || world.determinant().abs() < 1e-300 { if inverse { DMat4::IDENTITY } else { world } } else { world.inverse() });
+    }
+    if from_pivots(n, p.attr) && depth <= 64 {
+        let [a, b] = pivot_plugs(p).map(|q| resolve_input(nodes, rel, inputs, held, &q, depth + 1));
+        return match (a, b) {
+            (PlugValue::Float(x), PlugValue::Float(y)) => PlugValue::Float(-(x + y)),
+            (x, y) => PlugValue::Vec3(-(x.as_vec3() + y.as_vec3())),
+        };
+    }
     let a = &n.data.ty.attrs[p.attr as usize];
     if !passes_through(a) || depth > 64 {
         return stored_plug(n, p);
     }
-    let read = |s: &PlugRef| resolve_input(nodes, inputs, held, s, depth + 1);
+    let read = |s: &PlugRef| resolve_input(nodes, rel, inputs, held, s, depth + 1);
     let mut v = stored_plug(n, p);
     if !held.contains(p) {
         if let Some(s) = inputs.get(p) {
@@ -609,6 +657,9 @@ impl EvalView<'_> {
             if !self.held.is_empty() && self.held.contains(dp) {
                 continue;
             }
+            if computes_nothing(&ty, dp.attr) {
+                continue;
+            }
             let passed = self.passed.get(sp);
             let from_element;
             let sv = if let Some(v) = passed {
@@ -708,6 +759,8 @@ impl EvalView<'_> {
 /// The scene's dependency graph plus its transform hierarchy. Main thread only, except `evaluate()` which fans compute
 /// out over the rayon pool. Every mutation records undo.
 pub struct Graph {
+    /// While a file is read: evaluating as each node arrives costs a pass per constraint and nothing reads the results.
+    pub(crate) evaluation_suspended: bool,
     /// The evaluation pass rig nodes were last brought in step with the scene at (see rig.rs).
     pub(crate) rig_synced_pass: u64,
     nodes: HashMap<NodeId, Box<Node>>,
@@ -787,6 +840,7 @@ impl Graph {
     pub fn new() -> Self {
         Self {
             rig_synced_pass: u64::MAX,
+            evaluation_suspended: false,
             nodes: HashMap::new(),
             names: HashMap::new(),
             rel: HashMap::new(),
@@ -2384,13 +2438,53 @@ impl Graph {
     /// only on what drives it, so `pCube1.tx -> multiplyDivide1 -> pCube1.ty` is fine and
     /// `pCube1.worldMatrix -> multMatrix1 -> pCube1.tx` is not. A direct attribute to attribute link back to `dst`'s node
     /// stays refused, as it always was here.
+    fn debug_cycle(&self, src: &PlugRef, dst: &PlugRef) {
+        let mut came: HashMap<NodeId, (NodeId, String)> = HashMap::new();
+        let mut q = std::collections::VecDeque::new();
+        q.push_back(src.node);
+        came.insert(src.node, (0, String::new()));
+        while let Some(x) = q.pop_front() {
+            if x == dst.node && x != src.node { break; }
+            let mut push = |y: NodeId, how: String, q: &mut std::collections::VecDeque<NodeId>| { if !came.contains_key(&y) { came.insert(y, (x, how)); q.push_back(y); } };
+            for (d, s) in inputs_of(&self.inputs, x) {
+                if self.node(x).is_some_and(|n| computes_nothing(n.type_arc(), d.attr)) { continue; }
+                let Some(n) = self.node(s.node) else { continue };
+                let a = &n.ty().attrs[s.attr as usize];
+                if from_parent(n, s.attr) { let p = self.parent(s.node); if p != NO_NODE { push(p, format!("{}<-pm {}", self.plug_name(d), self.plug_name(s)), &mut q); } continue; }
+                if a.has(flags::MESSAGE) { continue; }
+                push(s.node, format!("{} <- {}", self.plug_name(d), self.plug_name(s)), &mut q);
+            }
+            let p = self.parent(x);
+            if p != NO_NODE { push(p, "parent".into(), &mut q); }
+        }
+        eprintln!("CYCLE {} -> {}", self.plug_name(src), self.plug_name(dst));
+        let mut c = dst.node;
+        while c != src.node && came.contains_key(&c) {
+            let (b, how) = &came[&c];
+            eprintln!("   {} : {}", self.path(c), how);
+            c = *b;
+        }
+    }
+
     fn reads_depend_on(&self, src: &PlugRef, dst: &PlugRef) -> bool {
+        let dst_computes_nothing = self.node(dst.node).is_some_and(|n| computes_nothing(n.type_arc(), dst.attr));
         let mut stack = vec![(*src, src.node != dst.node)];
         let mut seen_nodes = HashSet::new();
         let mut seen_plugs = HashSet::new();
         while let Some((p, direct)) = stack.pop() {
             let Some(n) = self.node(p.node) else { continue };
             if !seen_plugs.insert(p) {
+                continue;
+            }
+            if from_parent(n, p.attr) {
+                let parent = self.parent(p.node);
+                if parent != NO_NODE {
+                    stack.push((PlugRef::new(parent, Transform::WORLD_MATRIX as i32), false));
+                }
+                continue;
+            }
+            if from_pivots(n, p.attr) {
+                stack.extend(pivot_plugs(&p).map(|q| (q, direct)));
                 continue;
             }
             let a = &n.ty().attrs[p.attr as usize];
@@ -2403,13 +2497,14 @@ impl Graph {
                 stack.extend(feeds_of(&self.inputs, &p).into_iter().map(|s| (s, direct)));
                 continue;
             }
-            if p.node == dst.node {
+            if p.node == dst.node && !dst_computes_nothing {
                 return true;
             }
             if !seen_nodes.insert(p.node) {
                 continue;
             }
-            stack.extend(inputs_of(&self.inputs, p.node).map(|(_, s)| (*s, false)));
+            let ty = n.type_arc();
+            stack.extend(inputs_of(&self.inputs, p.node).filter(|(d, _)| !computes_nothing(ty, d.attr)).map(|(_, s)| (*s, false)));
             let parent = self.parent(p.node);
             if parent != NO_NODE && !n.ty().free_of_parent {
                 stack.push((PlugRef::new(parent, Transform::WORLD_MATRIX as i32), false));
@@ -2513,6 +2608,7 @@ impl Graph {
             )));
         }
         if self.reads_depend_on(src, &dst) {
+            if std::env::var("AZTEK_CYCLE").is_ok() { self.debug_cycle(src, &dst); }
             return Err(GraphError::invalid("connection would create a cycle"));
         }
 
@@ -2877,6 +2973,9 @@ impl Graph {
             )));
         }
         def.flags |= flags::USER | flags::INPUT | flags::STORABLE;
+        if def.has(flags::MESSAGE) {
+            def.flags &= !flags::STORABLE;
+        }
         if def.ty == PlugType::Vec3 {
             for (c, axis) in ['X', 'Y', 'Z'].into_iter().enumerate() {
                 if def.child_names[c].is_empty() {
@@ -3158,6 +3257,10 @@ impl Graph {
                     if first {
                         self.held.remove(dst);
                     }
+                    // A message link carries nothing to recompute.
+                    if self.nodes.get(&dst.node).is_some_and(|d| d.data.ty.attrs[dst.attr as usize].has(flags::MESSAGE)) {
+                        continue;
+                    }
                     stack.push(dst.node);
                 }
             }
@@ -3275,6 +3378,9 @@ impl Graph {
     }
 
     pub fn evaluate(&mut self) {
+        if self.evaluation_suspended {
+            return;
+        }
         if DEFER_MESHES.with(|d| d.get()) > 0 && self.any_dirty {
             let roots: Vec<NodeId> = self
                 .nodes
@@ -3376,10 +3482,15 @@ impl Graph {
             }
         }
         let mut reads = Vec::new();
+        let mut late = Vec::new();
         for (dst, src) in &self.inputs {
             if pending.contains_key(&dst.node) {
+                if self.nodes.get(&dst.node).is_some_and(|n| computes_nothing(&n.data.ty, dst.attr)) {
+                    late.push(*dst);
+                    continue;
+                }
                 reads.clear();
-                read_after(&self.nodes, &self.inputs, src, &mut reads, 0);
+                read_after(&self.nodes, &self.rel, &self.inputs, src, &mut reads, 0);
                 for &up in &reads {
                     add_edge(up, dst.node, &mut pending);
                 }
@@ -3396,9 +3507,9 @@ impl Graph {
             let mut passed = HashMap::new();
             for id in &level {
                 for (_, src) in inputs_of(&self.inputs, *id) {
-                    let pass = self.nodes.get(&src.node).is_some_and(|n| passes_through(&n.data.ty.attrs[src.attr as usize]));
+                    let pass = self.nodes.get(&src.node).is_some_and(|n| from_parent(n, src.attr) || from_pivots(n, src.attr) || passes_through(&n.data.ty.attrs[src.attr as usize]));
                     if pass && !passed.contains_key(src) {
-                        passed.insert(*src, resolve_input(&self.nodes, &self.inputs, &self.held, src, 0));
+                        passed.insert(*src, resolve_input(&self.nodes, &self.rel, &self.inputs, &self.held, src, 0));
                     }
                 }
             }
@@ -3445,6 +3556,30 @@ impl Graph {
                 }
             }
             level = next;
+        }
+        for dst in late {
+            if self.held.contains(&dst) {
+                continue;
+            }
+            let v = resolve_input(&self.nodes, &self.rel, &self.inputs, &self.held, &dst, 0);
+            let Some(n) = self.nodes.get_mut(&dst.node) else { continue };
+            let slot = if dst.element >= 0 {
+                match n.data.elements.get_mut(dst.attr as usize).and_then(|els| els.iter_mut().find(|(i, _)| *i == dst.element)) {
+                    Some((_, x)) => x,
+                    None => continue,
+                }
+            } else {
+                &mut n.data.values[dst.attr as usize]
+            };
+            if dst.component >= 0 {
+                if let (PlugValue::Vec3(x), Some(s)) = (&mut *slot, v.scalar()) {
+                    x[dst.component as usize] = s;
+                }
+            } else if std::mem::discriminant(slot) == std::mem::discriminant(&v) {
+                *slot = v;
+            } else if let Some(s) = v.scalar() {
+                slot.assign_scalar(s);
+            }
         }
     }
 

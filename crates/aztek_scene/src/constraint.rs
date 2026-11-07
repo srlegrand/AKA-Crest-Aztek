@@ -88,6 +88,13 @@ const WORLD_UP_TYPE: usize = 23;
 const WORLD_UP_MATRIX: usize = 24;
 const T_CURVE: usize = 25;
 const T_PIVOT: usize = 26;
+// A target only its position counts for is read plug by plug, as Maya reads it: tpm * (tt + trp + trt). Its rotation may depend on what
+// the constraint drives without that being a cycle.
+const T_PARENT: usize = 27;
+const T_TRANSLATE: usize = 28;
+const T_ROTATE_TRANSLATE: usize = 29;
+const T_OFFSET_PARENT: usize = 30;
+const T_SCALE: usize = 31;
 
 /// A target's world matrix with its origin moved to its rotate pivot, which is where Maya constrains to.
 fn at_pivot(m: DMat4, rp: DVec3) -> DMat4 {
@@ -102,9 +109,11 @@ pub struct ConstraintNode {
     kind: usize,
 }
 
+/// A matrix's scale as a scale constraint reads it: a mirrored one has its Z negative, which offsets of (1, 1, -1) in rigs from Maya show.
 fn scale_of(m: &DMat4) -> DVec3 {
     let m3 = DMat3::from_mat4(*m);
-    DVec3::new(m3.x_axis.length(), m3.y_axis.length(), m3.z_axis.length())
+    let z = if m3.determinant() < 0.0 { -1.0 } else { 1.0 };
+    DVec3::new(m3.x_axis.length(), m3.y_axis.length(), z * m3.z_axis.length())
 }
 
 /// Blends rotations by weight. interpType 2 (Shortest) and the default Average take each the short way round from the
@@ -136,14 +145,20 @@ fn suffix_attr(ty: &NodeType, letter: char, index: i32) -> Option<usize> {
 }
 
 fn targets_in(d: &NodeData) -> Vec<Weighted> {
-    d.elements(T_MATRIX)
+    let weight = |i: i32| suffix_attr(d.ty(), 'W', i).map(|a| d.float(a)).unwrap_or(1.0);
+    let vec_at = |attr: usize, i: i32| d.element(attr, i).map_or(DVec3::ZERO, |p| p.as_vec3());
+    let mut out: Vec<Weighted> = d
+        .elements(T_MATRIX)
         .iter()
-        .map(|(i, v)| Weighted {
-            index: *i,
-            matrix: at_pivot(v.as_matrix(), d.element(T_PIVOT, *i).map_or(DVec3::ZERO, |p| p.as_vec3())),
-            weight: suffix_attr(d.ty(), 'W', *i).map(|a| d.float(a)).unwrap_or(1.0),
-        })
-        .collect()
+        .map(|(i, v)| Weighted { index: *i, matrix: at_pivot(v.as_matrix(), vec_at(T_PIVOT, *i)), weight: weight(*i) })
+        .collect();
+    for (i, pm) in d.elements(T_PARENT) {
+        let opm = d.element(T_OFFSET_PARENT, *i).map_or(DMat4::IDENTITY, |m| m.as_matrix());
+        let at = vec_at(T_TRANSLATE, *i) + vec_at(T_PIVOT, *i) + vec_at(T_ROTATE_TRANSLATE, *i);
+        out.push(Weighted { index: *i, matrix: pm.as_matrix() * opm * DMat4::from_translation(at), weight: weight(*i) });
+    }
+    out.sort_by_key(|x| x.index);
+    out
 }
 
 /// What each target contributes after normalizing, and what is left to the rest position. Weights that sum below 1
@@ -310,11 +325,13 @@ impl NodeBehavior for ConstraintNode {
                 e = rotate_for(d, &with_rest(qs));
             }
             SCALE => {
-                let ps = scale_of(&pm).max(DVec3::splat(1e-12));
+                let ps = scale_of(&pm);
+                let ps = DVec3::new(if ps.x.abs() < 1e-12 { 1e-12 } else { ps.x }, if ps.y.abs() < 1e-12 { 1e-12 } else { ps.y }, if ps.z.abs() < 1e-12 { 1e-12 } else { ps.z });
                 let mut sum = rest_s * rest;
                 for (x, &w) in ts.iter().zip(&share) {
                     let o = if offset == DVec3::ZERO { DVec3::ONE } else { offset };
-                    sum += scale_of(&x.matrix) / ps * o * w;
+                    let own = d.element(T_SCALE, x.index).map_or(DVec3::ONE, |v| v.as_vec3());
+                    sum += scale_of(&x.matrix) * own / ps * o * w;
                 }
                 s = sum;
             }
@@ -428,7 +445,8 @@ fn aim_rotation(d: &NodeData, dir: DVec3, eye: DVec3, pm: &DMat4, rest_e: DVec3)
     let up = d.vec3(UP_VECTOR);
     let inv = pm.inverse();
     let dir = inv.transform_vector3(dir);
-    match world_up_at(d, eye) {
+    // With no direction to go on, a zero world up vector among them, it is the shortest turn: Maya offsets stored in such rigs say so.
+    match world_up_at(d, eye).filter(|u| u.length_squared() > 1e-18) {
         Some(world_up) => aim_frame(dir, inv.transform_vector3(world_up), aim, up),
         None => {
             let rest = local_frame(d, rest_e);
@@ -499,6 +517,11 @@ pub(crate) fn register_types() {
                     ..Default::default()
                 },
                 array_vec("target.targetRotatePivot", "trp", "Each target's rotate pivot: the place on it that constrains."),
+                matrix_in("target.targetParentMatrix", "tpm", true, "The parent matrix of a target only its position counts for."),
+                array_vec("target.targetTranslate", "tt", "That target's translate."),
+                array_vec("target.targetRotateTranslate", "trt", "That target's rotatePivotTranslate."),
+                matrix_in("target.targetOffsetParentMatrix", "topm", true, "That target's offsetParentMatrix."),
+                array_vec("target.targetScale", "ts", "A scale constraint target's scale."),
             ],
             create: Some(Arc::new(move || Box::new(ConstraintNode { kind: k }))),
             ..Default::default()
@@ -641,8 +664,10 @@ fn split_target<'a>(name: &'a str) -> (&'a str, Option<&'a str>) {
     }
 }
 
-fn target_nodes(g: &Graph, c: NodeId) -> Vec<(i32, NodeId)> {
-    g.elements(&plug(c, T_MATRIX)).iter().filter_map(|e| g.source(e).map(|s| (e.element, s.node))).collect()
+pub(crate) fn target_nodes(g: &Graph, c: NodeId) -> Vec<(i32, NodeId)> {
+    let mut out: Vec<(i32, NodeId)> = [T_MATRIX, T_PARENT].iter().flat_map(|&a| g.elements(&plug(c, a))).filter_map(|e| g.source(&e).map(|s| (e.element, s.node))).collect();
+    out.sort();
+    out
 }
 
 fn alias_stem(g: &Graph, t: NodeId) -> String {
@@ -700,9 +725,20 @@ fn add_float(g: &mut Graph, c: NodeId, name: &str, value: f64, lo: Option<f64>, 
 
 /// Adds a target: its matrix (and surface), its weight attr, and for point on poly its UV attrs.
 fn add_target(g: &mut Graph, c: NodeId, kind: usize, target: NodeId, component: Option<&str>, weight: f64, driven: NodeId) -> CmdResult<i32> {
-    let index = g.elements(&plug(c, T_MATRIX)).iter().map(|e| e.element).max().map(|m| m + 1).unwrap_or(0);
+    let index = target_nodes(g, c).iter().map(|e| e.0).max().map(|m| m + 1).unwrap_or(0);
     let xf = crate::dag::transform_of(g, target);
-    g.connect(&plug(xf, Transform::WORLD_MATRIX), &PlugRef::element(c, T_MATRIX as i32, index), false)?;
+    let inherits = g.node(xf).is_some_and(|n| !n.ty().is_a("transform") || n.data().bool(Transform::INHERITS_TRANSFORM));
+    if matches!(kind, POINT | AIM | POLE) && inherits {
+        g.connect(&plug(xf, Transform::PARENT_MATRIX), &PlugRef::element(c, T_PARENT as i32, index), false)?;
+        g.connect(&plug(xf, Transform::TRANSLATE), &PlugRef::element(c, T_TRANSLATE as i32, index), false)?;
+        g.connect(&plug(xf, Transform::ROTATE_PIVOT_TRANSLATE), &PlugRef::element(c, T_ROTATE_TRANSLATE as i32, index), false)?;
+        g.connect(&plug(xf, Transform::OFFSET_PARENT_MATRIX), &PlugRef::element(c, T_OFFSET_PARENT as i32, index), false)?;
+    } else if kind == SCALE && inherits {
+        g.connect(&plug(xf, Transform::PARENT_MATRIX), &PlugRef::element(c, T_PARENT as i32, index), false)?;
+        g.connect(&plug(xf, Transform::SCALE), &PlugRef::element(c, T_SCALE as i32, index), false)?;
+    } else {
+        g.connect(&plug(xf, Transform::WORLD_MATRIX), &PlugRef::element(c, T_MATRIX as i32, index), false)?;
+    }
     // Geometry targets are read through their full matrix.
     if !matches!(kind, GEOMETRY | NORMAL | POINT_ON_POLY) {
         g.connect(&plug(xf, Transform::ROTATE_PIVOT), &PlugRef::element(c, T_PIVOT as i32, index), false)?;
@@ -738,6 +774,9 @@ fn remove_target(g: &mut Graph, c: NodeId, index: i32) -> CmdResult<()> {
         return Ok(());
     }
     g.disconnect(&PlugRef::element(c, T_MATRIX as i32, index));
+    for attr in [T_PARENT, T_TRANSLATE, T_ROTATE_TRANSLATE, T_OFFSET_PARENT, T_SCALE] {
+        g.disconnect(&PlugRef::element(c, attr as i32, index));
+    }
     g.disconnect(&PlugRef::element(c, T_GEOMETRY as i32, index));
     g.disconnect(&PlugRef::element(c, T_CURVE as i32, index));
     g.disconnect(&PlugRef::element(c, T_PIVOT as i32, index));
