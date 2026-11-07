@@ -243,7 +243,11 @@ fn table() -> Vec<Spec> {
     // The file node's rotateUV is .ro, place2dTexture's is .r.
     file.push(fl("rotateUV", "ro", 0.0));
     let mut own = vec![
-        text("fileTextureName", "ftn", ""),
+        {
+            let mut a = text("fileTextureName", "ftn", "");
+            a.flags |= flags::FILE | flags::IMAGE;
+            a
+        },
         text("colorSpace", "cs", "sRGB"),
         on("ignoreColorSpaceFileRules", "ifr", false),
         base("filterType", "ft", PlugType::Int, PlugValue::Int(3), STORE),

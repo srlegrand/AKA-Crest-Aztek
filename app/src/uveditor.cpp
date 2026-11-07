@@ -300,6 +300,21 @@ void UvCanvas::frame(bool selected) {
     update();
 }
 
+void UvCanvas::set_image(const QString& path, QPointF repeat, QPointF offset) {
+    image_repeat_ = repeat;
+    image_offset_ = offset;
+    if (path == image_path_) return;
+    image_path_ = path;
+    image_ = QImage();
+    if (path.isEmpty()) return;
+    int w = 0, h = 0;
+    QByteArray utf = path.toUtf8();
+    if (unsigned char* data = aztek_image_load(utf.constData(), &w, &h)) {
+        image_ = QImage(data, w, h, QImage::Format_RGBA8888).copy();
+        aztek_image_free(data, w, h);
+    }
+}
+
 void UvCanvas::paintEvent(QPaintEvent*) {
     QPainter p(this);
     p.fillRect(rect(), QColor(64, 64, 64));
@@ -314,6 +329,18 @@ void UvCanvas::paintEvent(QPaintEvent*) {
             }
     } else {
         p.fillRect(unit, QColor(78, 78, 78));
+    }
+    // The image: one tile per repeat over the 0-1 square, as the material maps it.
+    if (show_image && !image_.isNull() && image_repeat_.x() > 0 && image_repeat_.y() > 0) {
+        double tu = 1.0 / image_repeat_.x(), tv = 1.0 / image_repeat_.y();
+        double u0 = -image_offset_.x() * tu, v0 = -image_offset_.y() * tv;
+        p.save();
+        p.setClipRect(unit);
+        p.setRenderHint(QPainter::SmoothPixmapTransform);
+        for (double v = v0 - std::ceil(v0 / tv) * tv; v < 1.0; v += tv)
+            for (double u = u0 - std::ceil(u0 / tu) * tu; u < 1.0; u += tu)
+                p.drawImage(QRectF(to_screen(QPointF(u, v + tv)), to_screen(QPointF(u + tu, v))), image_);
+        p.restore();
     }
     QPointF lo = to_uv(QPointF(0, height())), hi = to_uv(QPointF(width(), 0));
     double step = scale_ > 150 ? 0.1 : 1.0;
@@ -768,6 +795,13 @@ UvEditor::UvEditor(QWidget* parent) : QWidget(parent) {
     bar->addAction("-90", [this] { run("polyEditUV", {{"angle", -90.0}}); });
     bar->addAction("+90", [this] { run("polyEditUV", {{"angle", 90.0}}); });
     bar->addSeparator();
+    QAction* display_image = bar->addAction("Image", [this](bool on) {
+        canvas_->show_image = on;
+        canvas_->update();
+    });
+    display_image->setCheckable(true);
+    display_image->setChecked(true);
+    display_image->setToolTip("Display Image: the material's texture behind the UVs");
     QAction* checker = bar->addAction("Checker", [this](bool on) {
         canvas_->show_checker = on;
         canvas_->update();
@@ -803,6 +837,10 @@ void UvEditor::run(const QString& cmd, const QJsonObject& call, bool on_selectio
 
 void UvEditor::refresh() {
     canvas_->set_data(query("uvData").toObject());
+    QJsonObject t = query("uvTexture").toObject();
+    QJsonArray r = t["repeat"].toArray(), o = t["offset"].toArray();
+    canvas_->set_image(t["path"].toString(), r.isEmpty() ? QPointF(1, 1) : QPointF(r.at(0).toDouble(), r.at(1).toDouble()), o.isEmpty() ? QPointF(0, 0) : QPointF(o.at(0).toDouble(), o.at(1).toDouble()));
+    canvas_->update();
 }
 
 } // namespace az

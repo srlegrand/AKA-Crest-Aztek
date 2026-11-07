@@ -2,6 +2,7 @@
 // projection, unfold, layout, cut and sew tools.
 #pragma once
 #include <QHash>
+#include <QImage>
 #include <QJsonArray>
 #include <array>
 #include <QJsonObject>
@@ -40,6 +41,9 @@ public:
     // The UVs to act on, as polyEditUV arguments (pCube1.map[...]); falls back to the scene selection.
     QJsonArray targets() const;
     bool show_checker = false;
+    // The material's image behind the UVs; what Image > Display Image turns off.
+    bool show_image = true;
+    void set_image(const QString& path, QPointF repeat, QPointF offset);
     bool shaded = true;
 signals:
     void picked();
@@ -52,6 +56,9 @@ protected:
     void keyPressEvent(QKeyEvent*) override;
     void contextMenuEvent(QContextMenuEvent*) override;
 private:
+    QImage image_;
+    QString image_path_;
+    QPointF image_repeat_{1, 1}, image_offset_{0, 0};
     QPointF to_screen(QPointF uv) const;
     QPointF to_uv(QPointF p) const;
     // Selected maps per mesh, from the local UV selection or the scene's components.

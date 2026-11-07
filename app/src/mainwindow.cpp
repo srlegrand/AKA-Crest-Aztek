@@ -638,6 +638,7 @@ void MainWindow::build_menu_set(const QString& set) {
     for (QMenu* m : set_menus_) m->deleteLater();
     set_menus_.clear();
     QList<QMenu*> menus = {file_menu(), edit_menu(), create_menu(), select_menu(), modify_menu(), display_menu(), windows_menu()};
+    menus << lighting_shading_menu();
     if (set == "Modeling")
         menus << mesh_menu() << edit_mesh_menu() << mesh_tools_menu() << mesh_display_menu() << curves_menu() << surfaces_menu() << uv_menu() << deform_menu();
     else if (set == "Rigging")

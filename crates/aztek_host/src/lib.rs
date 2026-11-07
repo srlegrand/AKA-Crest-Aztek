@@ -114,6 +114,26 @@ pub extern "C" fn aztek_free(p: *mut c_char) {
     }
 }
 
+/// An image file decoded for the interface, whichever format: RGBA, top row first. Null when it can't be read. The
+/// caller gives it back to `aztek_image_free` with the same size.
+#[no_mangle]
+pub extern "C" fn aztek_image_load(path: *const c_char, width: *mut i32, height: *mut i32) -> *mut u8 {
+    let Ok(d) = textures::decode(&cstr(path)) else { return std::ptr::null_mut() };
+    unsafe {
+        *width = d.width as i32;
+        *height = d.height as i32;
+    }
+    Box::into_raw(d.rgba.into_boxed_slice()) as *mut u8
+}
+
+#[no_mangle]
+pub extern "C" fn aztek_image_free(data: *mut u8, width: i32, height: i32) {
+    if !data.is_null() {
+        let len = width as usize * height as usize * 4;
+        unsafe { drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(data, len))) };
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn aztek_init() {
     with(|_| ());
@@ -238,6 +258,9 @@ pub extern "C" fn aztek_query(what: *const c_char, arg: *const c_char) -> *mut c
             }
             "editors" => query::editors(c, &arg),
             "uvData" => query::uv_data(c),
+            "shading" => query::shading(c),
+            "uvTexture" => query::uv_texture(c),
+            "texturePath" => query::texture_path(c, &arg),
             "attributeEditor" => query::attribute_editor(c, &arg),
             "layers" => query::layers(c),
             "state" => query::state(c),

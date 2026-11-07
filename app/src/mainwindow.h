@@ -151,6 +151,12 @@ private:
     void show_tool_settings();
     void show_dope_sheet();
     void show_node_editor();
+    void show_hypershade();
+    // Assigning materials, to the object under the marking menu or the selection when hit is empty.
+    void assign_new_material(const QString& hit = QString());
+    void assign_existing_material_menu(QMenu* menu, const QString& hit = QString());
+    void material_attributes(const QString& hit = QString());
+    QMenu* lighting_shading_menu();
     void show_set_driven_key();
     void time_slider_menu(QPoint global);
     void update_title();
@@ -165,6 +171,7 @@ private:
     QWidget* uv_window_ = nullptr;
     QWidget* dope_window_ = nullptr;
     QWidget* node_window_ = nullptr;
+    QWidget* hypershade_window_ = nullptr;
     QWidget* sdk_window_ = nullptr;
     CommandLine* command_line_ = nullptr;
     TimeSlider* time_slider_ = nullptr;

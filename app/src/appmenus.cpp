@@ -751,6 +751,8 @@ QMenu* MainWindow::windows_menu() {
     named(anim_ed, "Shape Editor", "shapeEditor");
     if (has_command_named("expression")) named(anim_ed, "Expression Editor", "expressionEditor");
     else todo(anim_ed, "Expression Editor");
+    QMenu* render_ed = m->addMenu("Rendering Editors");
+    render_ed->addAction("Hypershade", this, &MainWindow::show_hypershade);
     QMenu* rig_ed = m->addMenu("Rigging Editors");
     rig_ed->addAction("Node Editor", this, &MainWindow::show_node_editor);
     rig_ed->addAction("Set Driven Key", this, &MainWindow::show_set_driven_key);
@@ -1078,6 +1080,15 @@ void MainWindow::object_marking_items(const QString& hit, QPoint, QList<MarkItem
                  {"Face", 4, mode_to("face")}, {"UV Shell", 5, {}, false}, {"Vertex", 6, mode_to("vertex")}, {"Multi", 7, {}, false}};
     }
     items.append(common);
+    if (shape_type == "mesh" || shape_type == "nurbsSurface") {
+        items.append({"Assign New Material...", -1, [this, hit] { assign_new_material(hit); }});
+        items.append({"Assign Existing Material...", -1, [this, hit] {
+            QMenu menu;
+            assign_existing_material_menu(&menu, hit);
+            menu.exec(QCursor::pos());
+        }});
+        items.append({"Material Attributes...", -1, [this, hit] { material_attributes(hit); }});
+    }
     items.append(history);
 }
 

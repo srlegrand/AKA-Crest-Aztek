@@ -151,6 +151,7 @@ void MainWindow::build_runtime() {
     r("NodeEditorWindow", "Windows", "Node Editor", [this] { show_node_editor(); });
     r("SetDrivenKeyOptions", "Windows", "Set Driven Key", [this] { show_set_driven_key(); });
     r("UVEditor", "Windows", "UV Editor", [this] { show_uv_editor(); });
+    r("HypershadeWindow", "Windows", "Hypershade", [this] { show_hypershade(); });
     r("TextureViewWindow", "Windows", "UV Editor", [this] { show_uv_editor(); });
     r("PreferencesWindow", "Windows", "Preferences", [this] { show_preferences(); });
     r("HotkeyPreferencesWindow", "Windows", "Hotkey Editor", [this] { show_hotkey_editor(); });

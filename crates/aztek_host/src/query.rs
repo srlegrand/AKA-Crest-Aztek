@@ -344,6 +344,11 @@ fn node_attrs(g: &Graph, id: NodeId) -> Value {
             "min": a.soft_min.or(a.min_value),
             "max": a.soft_max.or(a.max_value),
             "connected": g.source(&aztek_scene::plug::PlugRef::new(id, i as i32)).is_some(),
+            "source": g.source(&aztek_scene::plug::PlugRef::new(id, i as i32)).map(|s| g.path(s.node)),
+            "color": a.flags & flags::COLOR != 0,
+            "pair": !a.child_names[0].is_empty() && a.child_names[2].is_empty(),
+            "file": a.flags & flags::FILE != 0,
+            "mappable": a.flags & flags::COLOR != 0 && a.flags & flags::INPUT != 0 && aztek_scene::shading::is_material_type(n.ty()),
         }));
     }
     json!({"name": n.name(), "path": path, "type": n.ty().name, "doc": n.ty().doc, "attrs": attrs})
@@ -371,6 +376,15 @@ pub fn attribute_editor(core: &Core, path: &str) -> Value {
             if g.node(s).is_some_and(|n| n.ty().is_a("mesh")) {
                 tabs.extend(aztek_scene::history::history_of(g, s).into_iter().filter(|&h| g.node(h).is_some_and(|n| !n.ty().dag)));
             }
+            // Its shading groups and their materials, the last tabs as in Maya.
+            for sg in aztek_scene::shading::groups_of(g, s) {
+                if !tabs.contains(&sg) {
+                    tabs.push(sg);
+                }
+                if let Some(m) = aztek_scene::shading::material_of_group(g, sg).filter(|m| !tabs.contains(m)) {
+                    tabs.push(m);
+                }
+            }
         }
     } else if is_shape(g, id) {
         let xf = aztek_scene::dag::transform_of(g, id);
@@ -379,6 +393,69 @@ pub fn attribute_editor(core: &Core, path: &str) -> Value {
         }
     }
     json!({"focus": g.path(id), "tabs": tabs.iter().map(|&t| node_attrs(g, t)).collect::<Vec<_>>()})
+}
+
+/// The file node's image found on disk, for its Attribute Editor: {resolved} or nothing.
+pub fn texture_path(core: &mut Core, node: &str) -> Value {
+    let project = aztek_scene::shading::project_dir(&mut core.s);
+    let scene = core.s.scene_path.clone();
+    let g = &mut core.s.graph;
+    let Ok(p) = g.plug(&format!("{node}.fileTextureName")) else { return Value::Null };
+    let written = match g.value(&p) {
+        Ok(PlugValue::String(x)) => x,
+        _ => String::new(),
+    };
+    let found = aztek_scene::shading::resolve_texture_uncached(&written, scene.as_deref(), project.as_deref());
+    json!({"written": written, "resolved": found.map(|p| p.display().to_string())})
+}
+
+/// The Hypershade's lists: materials with their colour and groups, textures with their images, utilities.
+pub fn shading(core: &mut Core) -> Value {
+    let project = aztek_scene::shading::project_dir(&mut core.s);
+    let scene = core.s.scene_path.clone();
+    let g = &mut core.s.graph;
+    let mut ids = g.nodes();
+    ids.sort_unstable();
+    let (mut materials, mut textures, mut utilities) = (Vec::new(), Vec::new(), Vec::new());
+    for id in ids {
+        let Some(n) = g.node(id) else { continue };
+        let t = n.type_arc().clone();
+        let name = g.path(id);
+        if aztek_scene::shading::is_material_type(&t) {
+            let sg = aztek_scene::shading::group_of_material(g, id, false).ok().flatten();
+            let drawn = sg.and_then(|s| aztek_scene::shading::draw_material(g, s, scene.as_deref(), project.as_deref()));
+            let color = drawn.as_ref().map(|d| d.color);
+            let map = drawn.as_ref().and_then(|d| d.color_map.as_ref()).and_then(|m| m.resolved.clone());
+            materials.push(json!({"name": name, "type": t.name, "group": sg.map(|s| g.path(s)), "color": color, "image": map}));
+        } else if aztek_scene::shading::is_texture_type(&t) {
+            let p = g.plug(&format!("{name}.fileTextureName"));
+            let written = p.ok().and_then(|p| g.value(&p).ok()).and_then(|v| if let PlugValue::String(x) = v { Some(x) } else { None }).unwrap_or_default();
+            let found = aztek_scene::shading::resolve_texture(&written, scene.as_deref(), project.as_deref());
+            textures.push(json!({"name": name, "type": t.name, "written": written, "image": found.map(|p| p.display().to_string())}));
+        } else if aztek_scene::shading::classification(&t.name).is_some_and(|c| c.starts_with("utility")) && t.name != "materialInfo" {
+            utilities.push(json!({"name": name, "type": t.name}));
+        }
+    }
+    json!({"materials": materials, "textures": textures, "utilities": utilities})
+}
+
+/// The image to draw behind the UV Editor's UVs: the first selected mesh's first material with a file on its colour.
+pub fn uv_texture(core: &mut Core) -> Value {
+    let project = aztek_scene::shading::project_dir(&mut core.s);
+    let scene = core.s.scene_path.clone();
+    let g = &mut core.s.graph;
+    for id in g.selection().to_vec() {
+        let Some(m) = components::as_mesh(g, id) else { continue };
+        for sg in aztek_scene::shading::groups_of(g, m) {
+            let Some(d) = aztek_scene::shading::draw_material(g, sg, scene.as_deref(), project.as_deref()) else { continue };
+            if let Some(t) = d.color_map {
+                if let Some(path) = t.resolved {
+                    return json!({"path": path, "repeat": t.repeat, "offset": t.offset});
+                }
+            }
+        }
+    }
+    Value::Null
 }
 
 pub fn layers(core: &Core) -> Value {

@@ -33,6 +33,10 @@ void aztek_ui_progress_cancel(void);
 int aztek_ui_in_hook(void);
 void aztek_idle(void);
 
+// An image file as RGBA, top row first; null when it can't be read. Given back with its size.
+unsigned char* aztek_image_load(const char* path, int* width, int* height);
+void aztek_image_free(unsigned char* data, int width, int height);
+
 enum { AZTEK_XCB = 1, AZTEK_XLIB = 2, AZTEK_WIN32 = 3, AZTEK_WAYLAND = 4 };
 
 int aztek_view_create(int platform, void* display, uint64_t window, void* extra, int width, int height, double dpr,

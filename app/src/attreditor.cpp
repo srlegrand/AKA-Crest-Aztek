@@ -6,6 +6,10 @@
 
 #include <QApplication>
 #include <QCheckBox>
+#include <QColorDialog>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QMenu>
 #include <QComboBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
@@ -79,7 +83,25 @@ const QList<Section>& sections_for(const QString& type) {
     static const QList<Section> skin{
         {"Skin Cluster Attributes", "envelope skinningMethod useComponents maxInfluences maintainMaxInfluences normalizeWeights weightDistribution deformUserNormals"},
         {"Node Behaviour", "caching nodeState frozen"}};
+    static const QList<Section> material{
+        {"Common Material Attributes", "color outColor transparency outTransparency ambientColor incandescence normalCamera diffuse translucence translucenceDepth translucenceFocus baseColor base metalness opacity"},
+        {"Specular Shading", "cosinePower eccentricity specularRollOff angle spreadX spreadY roughness highlightSize whiteness specularColor specular specularRoughness reflectivity reflectedColor reflectionLimit fresnelRefractiveIndex"},
+        {"Special Effects", "hideSource glowIntensity emission emissionColor outGlowColor"},
+        {"Matte Opacity", "matteOpacityMode matteOpacity outMatteOpacity"},
+        {"Raytrace Options", "refractions refractiveIndex refractionLimit lightAbsorbance surfaceThickness shadowAttenuation chromaticAberration reflectionSpecularity"}};
+    static const QList<Section> file{
+        {"File Attributes", "fileTextureName colorSpace ignoreColorSpaceFileRules filterType filter filterOffset useFrameExtension frameExtension frameOffset uvTilingMode"},
+        {"Color Balance", "defaultColor colorGain colorOffset alphaGain alphaOffset alphaIsLuminance invert exposure"},
+        {"Effects", "fileHasAlpha"},
+        {"2d Texture Placement", "coverage translateFrame rotateFrame mirrorU mirrorV wrapU wrapV stagger repeatUV offset rotateUV noiseUV"}};
+    static const QList<Section> place{{"2d Texture Placement Attributes", "coverage translateFrame rotateFrame mirrorU mirrorV wrapU wrapV stagger repeatUV offset rotateUV noiseUV"}};
+    static const QList<Section> group{{"Shading Group Attributes", "surfaceShader volumeShader displacementShader imageShader renderableOnlySet annotation"}};
     static const QList<Section> other{{"Node Behaviour", "caching nodeState frozen"}};
+    static const QSet<QString> materials{"lambert", "blinn", "phong", "phongE", "anisotropic", "surfaceShader", "standardSurface"};
+    if (materials.contains(type)) return material;
+    if (type == "file") return file;
+    if (type == "place2dTexture") return place;
+    if (type == "shadingEngine") return group;
     if (type == "transform" || type == "ikHandle" || type == "locator") return xf;
     if (type == "joint") return joint;
     if (type == "mesh") return mesh;
@@ -128,9 +150,117 @@ QWidget* ranged_field(const QJsonObject& a, double lo, double hi, QWidget* paren
     return row;
 }
 
+// A linear colour as the swatch shows it.
+QColor swatch_color(const QJsonArray& v) {
+    auto enc = [](double x) { return qBound(0, int(std::pow(qBound(0.0, x, 1.0), 1.0 / 2.2) * 255.0 + 0.5), 255); };
+    return QColor(enc(v.at(0).toDouble()), enc(v.at(1).toDouble()), enc(v.at(2).toDouble()));
+}
+
+// The usual network behind a slot: a file node, its placement, the image, and its connection.
+void make_file_texture(const QString& plug, const QString& path) {
+    QString file = exec("shadingNode", QJsonObject{{"args", QJsonArray{"file"}}, {"asTexture", true}}).toString();
+    QString place = exec("shadingNode", QJsonObject{{"args", QJsonArray{"place2dTexture"}}, {"asUtility", true}}).toString();
+    if (file.isEmpty() || place.isEmpty()) return;
+    exec("defaultNavigation", QJsonObject{{"connectToExisting", true}, {"source", place}, {"destination", file}});
+    set_plug(file + ".fileTextureName", path, "string");
+    exec("defaultNavigation", QJsonObject{{"connectToExisting", true}, {"source", file}, {"destination", plug}});
+}
+
+const char* kImageFilter = "Images (*.png *.jpg *.jpeg *.tga *.bmp *.tif *.tiff);;All Files (*)";
+
+// A colour: its swatch, and the slot a texture goes in.
+QWidget* color_field(const QJsonObject& a, QWidget* parent) {
+    QString plug = a["plug"].toString();
+    bool ro = a["output"].toBool() || a["connected"].toBool();
+    auto* w = new QWidget(parent);
+    auto* h = new QHBoxLayout(w);
+    h->setContentsMargins(0, 0, 0, 0);
+    h->setSpacing(3);
+    auto* swatch = new QPushButton(w);
+    swatch->setFixedSize(56, 18);
+    QColor shown = swatch_color(a["value"].toArray());
+    swatch->setStyleSheet(QString("background-color: %1; border: 1px solid #222;").arg(shown.name()));
+    swatch->setEnabled(!ro);
+    swatch->setObjectName("colorSwatch");
+    QObject::connect(swatch, &QPushButton::clicked, swatch, [swatch, plug, shown] {
+        QColor c = QColorDialog::getColor(shown, swatch, "Color");
+        if (!c.isValid()) return;
+        auto dec = [](int x) { return std::pow(x / 255.0, 2.2); };
+        exec("setAttr", QJsonObject{{"args", QJsonArray{plug, dec(c.red()), dec(c.green()), dec(c.blue())}}, {"type", "double3"}});
+    });
+    h->addWidget(swatch);
+    if (a["mappable"].toBool()) {
+        QString source = a["source"].toString();
+        auto* slot = new QToolButton(w);
+        slot->setObjectName("textureSlot");
+        slot->setText(source.isEmpty() ? QString::fromUtf8("\u25a6") : QString("\u2192 ") + source);
+        slot->setToolTip(source.isEmpty() ? "Map a file texture" : "Go to " + source + ". Right click to break the connection.");
+        slot->setContextMenuPolicy(Qt::CustomContextMenu);
+        QObject::connect(slot, &QToolButton::clicked, slot, [slot, plug, source] {
+            if (!source.isEmpty()) {
+                exec("select", args(QJsonArray{source}));
+                return;
+            }
+            QString path = QFileDialog::getOpenFileName(slot, "Choose an image", QString(), kImageFilter);
+            if (!path.isEmpty()) make_file_texture(plug, path);
+        });
+        QObject::connect(slot, &QToolButton::customContextMenuRequested, slot, [slot, plug, source](const QPoint& at) {
+            if (source.isEmpty()) return;
+            QMenu m;
+            m.addAction("Break Connection", [plug] {
+                QJsonArray from = ask("listConnections", QJsonObject{{"args", QJsonArray{plug}}, {"plugs", true}, {"destination", false}}).toArray();
+                if (!from.isEmpty()) exec("disconnectAttr", args(QJsonArray{from.at(0), plug}));
+            });
+            m.exec(slot->mapToGlobal(at));
+        });
+        h->addWidget(slot);
+    }
+    h->addStretch(1);
+    return w;
+}
+
+// A file node's path: what is written, a browse button, and where it was found.
+QWidget* file_field(const QJsonObject& a, QWidget* parent) {
+    QString plug = a["plug"].toString();
+    auto* w = new QWidget(parent);
+    auto* v = new QVBoxLayout(w);
+    v->setContentsMargins(0, 0, 0, 0);
+    v->setSpacing(2);
+    auto* row = new QHBoxLayout();
+    row->setSpacing(3);
+    auto* e = new QLineEdit(a["value"].toString(), w);
+    QObject::connect(e, &QLineEdit::textEdited, e, [e] { e->setProperty("editing", true); });
+    QObject::connect(e, &QLineEdit::editingFinished, e, [e, plug] {
+        if (!e->property("editing").toBool()) return;
+        e->setProperty("editing", false);
+        set_plug(plug, e->text(), "string");
+    });
+    auto* browse = new QToolButton(w);
+    browse->setIcon(icon("open", 16));
+    browse->setToolTip("Browse for an image");
+    QObject::connect(browse, &QToolButton::clicked, browse, [browse, plug] {
+        QString path = QFileDialog::getOpenFileName(browse, "Choose an image", QString(), kImageFilter);
+        if (!path.isEmpty()) set_plug(plug, path, "string");
+    });
+    row->addWidget(e, 1);
+    row->addWidget(browse);
+    v->addLayout(row);
+    QJsonObject where = query("texturePath", plug.section('.', 0, 0)).toObject();
+    QString found = where["resolved"].toString();
+    QString written = where["written"].toString();
+    if (!written.isEmpty()) {
+        auto* note = new QLabel(found.isEmpty() ? QString("Not found") : found == written ? QString() : "Found: " + found, w);
+        note->setWordWrap(true);
+        if (!note->text().isEmpty()) v->addWidget(note);
+    }
+    return w;
+}
+
 QWidget* attr_field(const QJsonObject& a, QWidget* parent) {
     QString type = a["type"].toString(), plug = a["plug"].toString();
     bool ro = a["output"].toBool() || a["connected"].toBool();
+    if (type == "vec3" && a["color"].toBool()) return color_field(a, parent);
+    if (type == "string" && a["file"].toBool() && !ro) return file_field(a, parent);
     if (type == "bool") {
         auto* cb = new QCheckBox(parent);
         cb->setChecked(a["value"].toBool());
@@ -153,7 +283,7 @@ QWidget* attr_field(const QJsonObject& a, QWidget* parent) {
         h->setSpacing(3);
         QJsonArray v = a["value"].toArray();
         QJsonArray kids = a["children"].toArray();
-        for (int k = 0; k < 3; ++k) {
+        for (int k = 0; k < (a["pair"].toBool() ? 2 : 3); ++k) {
             auto* e = new QLineEdit(fmt3(v.at(k).toDouble()), w);
             e->setReadOnly(ro);
             QString child = kids.at(k).toString();
