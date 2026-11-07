@@ -796,6 +796,7 @@ pub struct Locator;
 impl Locator {
     pub const LOCAL_POSITION: usize = Shape::COUNT;
     pub const LOCAL_SCALE: usize = Shape::COUNT + 1;
+    pub const WORLD_POSITION: usize = Shape::COUNT + 2;
 
     /// The locator shape; base is the shape type.
     pub fn make_type(base: Arc<NodeType>) -> NodeType {
@@ -806,7 +807,11 @@ impl Locator {
             icon: "crosshair".into(),
             base: Some(base),
             dag: true,
-            own_attrs: vec![local_position, local_scale],
+            own_attrs: vec![
+                local_position,
+                local_scale,
+                vec3_attr("worldPosition", "wp", DVec3::ZERO, flags::OUTPUT, "Where the locator is in the world."),
+            ],
             create: Some(Arc::new(|| Box::new(Locator))),
             ..Default::default()
         }
@@ -815,7 +820,9 @@ impl Locator {
 
 impl NodeBehavior for Locator {
     fn compute(&mut self, _ctx: &EvalContext, d: &mut NodeData) {
-        Shape::compute_matrices(d)
+        Shape::compute_matrices(d);
+        let p = d.matrix(DagNode::WORLD_MATRIX).transform_point3(d.vec3(Self::LOCAL_POSITION));
+        d.set_output(Self::WORLD_POSITION, PlugValue::Vec3(p));
     }
     fn as_any(&self) -> &dyn Any {
         self

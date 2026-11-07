@@ -863,7 +863,17 @@ pub fn register(c: &mut Commands<Session>) {
         )
         .positional("faces or meshes")
         .flag(f("percentageSpace", "ps", ArgType::Float, Value::Null, "Space between shells, percent of the square."))
-        .flag(f("layout", "lm", ArgType::Int, Value::Null, "Accepted for Maya scripts."))
+        .flag(f("layoutMethod", "lm", ArgType::Int, Value::Null, "Accepted for Maya scripts."))
+        .flag(f("layout", "l", ArgType::Int, Value::Null, "Accepted for Maya scripts."))
+        .flag(f("percentageSpaceLegacy", "pb", ArgType::Any, Value::Null, "Accepted for Maya scripts."))
+        .flag(f("insertBeforeDeformers", "ibd", ArgType::Any, Value::Null, "Accepted for Maya scripts."))
+        .flag(f("createNewMap", "cm", ArgType::Any, Value::Null, "Accepted for Maya scripts."))
+        .flag(f("scaleMode", "sc", ArgType::Int, Value::Null, "Accepted for Maya scripts."))
+        .flag(f("optimize", "o", ArgType::Int, Value::Null, "Accepted for Maya scripts."))
+        .flag(f("worldSpace", "ws", ArgType::Any, Value::Null, "Accepted for Maya scripts."))
+        .flag(f("uvSetName", "uvs", ArgType::String, Value::Null, "Accepted for Maya scripts."))
+        .flag(f("constructionHistory", "ch", ArgType::Any, Value::Null, "Accepted for Maya scripts."))
+        .flag(f("name", "n", ArgType::String, Value::Null, "Accepted for Maya scripts."))
         .flag(f("planes", "p", ArgType::Int, Value::Null, "Accepted for Maya scripts (six planes).")),
     );
 

@@ -1006,6 +1006,25 @@ impl Graph {
         self.changed(Change::Cleared, NO_NODE, None);
     }
 
+    /// What Maya makes of a name it can't take: each bad character becomes an underscore, a leading digit gets one before it.
+    pub fn legal_name(name: &str) -> String {
+        let mut out = String::with_capacity(name.len() + 1);
+        let mut start = true;
+        for c in name.chars() {
+            if c == ':' {
+                out.push(c);
+                start = true;
+                continue;
+            }
+            if c.is_ascii_digit() && start {
+                out.push('_');
+            }
+            out.push(if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' });
+            start = false;
+        }
+        out
+    }
+
     pub fn valid_name(name: &str) -> bool {
         if name.is_empty() {
             return false;
@@ -1170,9 +1189,13 @@ impl Graph {
         if parent != NO_NODE && !self.node(parent).is_some_and(|p| p.ty().dag) {
             return Err(GraphError::invalid("parent must be a transform"));
         }
-        if !name.is_empty() && !Self::valid_name(name) {
-            return Err(GraphError::invalid(format!("invalid name '{name}'")));
-        }
+        let fixed;
+        let name = if !name.is_empty() && !Self::valid_name(name) {
+            fixed = Self::legal_name(name);
+            fixed.as_str()
+        } else {
+            name
+        };
 
         let reg = registered(ty);
         let mut n = Box::new(Node::new(reg.clone(), create()));
@@ -1453,9 +1476,11 @@ impl Graph {
         let n = self
             .node(id)
             .ok_or_else(|| GraphError::invalid("no such node"))?;
-        if !Self::valid_name(name) {
-            return Err(GraphError::invalid(format!("invalid name '{name}'")));
+        if name.is_empty() {
+            return Err(GraphError::invalid("a node's name can't be empty"));
         }
+        let fixed = Self::legal_name(name);
+        let name = if Self::valid_name(name) { name } else { fixed.as_str() };
         let old_name = n.name.clone();
         let conformed = self.conform_name(n.ty(), name, true)?;
         let new_name = self.unique_name(&conformed, self.parent(id), id, self.naming.unique_names);
