@@ -115,6 +115,20 @@ pub fn run(core: &mut Core, src: &str) -> Result<J, String> {
 }
 
 /// A callback's run: no echo and no result lines, its print output kept. The error comes back to the caller.
+/// As `run_callback`, with the script's value: nothing echoed, and what it prints is printed.
+pub fn call_for_value(core: &mut Core, src: &str) -> Result<J, String> {
+    core.mel_state.running += 1;
+    let mut it = Interp { core };
+    let r = it.run_quiet(src, None);
+    it.flush_print();
+    core.mel_state.running -= 1;
+    match r {
+        Ok(v) | Err(Flow::Return(v)) => Ok(v.to_json()),
+        Err(Flow::Break | Flow::Continue) => Ok(J::Null),
+        Err(Flow::Error(m)) => Err(m),
+    }
+}
+
 pub fn run_callback(core: &mut Core, src: &str) -> Result<(), String> {
     core.mel_state.running += 1;
     let mut it = Interp { core };

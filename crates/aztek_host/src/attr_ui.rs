@@ -7,7 +7,7 @@
 
 use std::cell::RefCell;
 
-use aztek_ops::{fail, ArgType, Args, CmdResult, CommandDef, CommandError, FlagDef};
+use aztek_ops::{fail, ArgType, Args, CmdResult, CommandDef, CommandError, CommandHost, FlagDef};
 use aztek_scene::Session;
 use serde_json::{json, Map, Value};
 
@@ -217,21 +217,52 @@ fn sync_tool_buttons() {
     }
 }
 
+fn mel_argument(a: &Value) -> String {
+    match a {
+        Value::String(t) => format!("\"{}\"", t.replace('\\', "\\\\").replace('"', "\\\"")),
+        // Strings and numbers in braces, as MEL writes an array.
+        Value::Array(l) => format!("{{{}}}", l.iter().map(mel_argument).collect::<Vec<_>>().join(",")),
+        o => o.to_string(),
+    }
+}
+
+/// A drag begins on a control: -dragCallback answers with the messages it carries. `{path, x, y, modifiers}`.
+pub(crate) fn drag_start(core: &mut Core, arg: &str) -> Value {
+    let ev: Value = serde_json::from_str(arg).unwrap_or(Value::Null);
+    let path = ev["path"].as_str().unwrap_or("");
+    let Some(cb) = control_prop(path, "dragCallback") else { return json!([]) };
+    let v = call_for_value(core, &cb, &[json!(path), ev["x"].clone(), ev["y"].clone(), ev["modifiers"].clone()]).unwrap_or(Value::Null);
+    match v {
+        Value::Null => json!([]),
+        o => Value::Array(flat(&o).iter().map(|x| json!(text(x))).collect()),
+    }
+}
+
+pub fn drag_start_for_tests(core: &mut Core, arg: &str) -> Value {
+    drag_start(core, arg)
+}
+
+/// A drop on a control: -dropCallback gets where it came from and its messages, as one undo step.
+fn drop_on(core: &mut Core, path: &str, ev: &Value) {
+    let Some(cb) = control_prop(path, "dropCallback") else { return };
+    core.s.open_undo_chunk("drop");
+    let r = call_for_value(core, &cb, &[ev["dropFrom"].clone(), json!(path), ev["messages"].clone(), ev["x"].clone(), ev["y"].clone(), ev["dragType"].clone()]);
+    core.s.close_undo_chunk();
+    if let Err(m) = r {
+        core.push(format!("// Error: {m} //"), crate::core::LineKind::Error);
+    }
+    core.version += 1;
+}
+
 /// A script's own value: a string is the name of a MEL procedure, given `args` after it.
 pub(crate) fn call_for_value(core: &mut Core, cb: &Value, args: &[Value]) -> Result<Value, String> {
     match cb {
         Value::String(src) => {
             let quoted: Vec<String> = args
                 .iter()
-                .map(|a| match a {
-                    Value::String(t) => format!("\"{}\"", t.replace('\\', "\\\\").replace('"', "\\\"")),
-                    o => o.to_string(),
-                })
+                .map(mel_argument)
                 .collect();
-            let lines = core.log.len();
-            let r = core.mel_checked(&format!("{src} {};", quoted.join(" ")));
-            core.log.truncate(lines);
-            r
+            crate::mel::call_for_value(core, &format!("{src} {};", quoted.join(" ")))
         }
         Value::Object(o) => {
             if let Some(id) = o.get("__pycb__").and_then(Value::as_i64) {
@@ -297,6 +328,9 @@ pub(crate) fn shell_changed(core: &mut Core, ev: &Value) {
     let path = ev["path"].as_str().unwrap_or("").to_string();
     if let Some(e) = ev.get("cellEdit") {
         cell_edit(core, &path, e);
+    }
+    if ev.get("dropFrom").is_some() {
+        drop_on(core, &path, ev);
     }
     let fired: Vec<&str> = ev["fire"].as_array().map(|f| f.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
     let dragging = fired.contains(&"dragCommand");
@@ -405,6 +439,11 @@ pub(crate) fn after_command(s: &mut Session, cmd: &str, a: &Args, made: &CmdResu
             call.insert("maxTime".to_string(), json!(a.float("maxRange", 120.0)));
         }
         let _ = s.run("playbackOptions", Value::Object(call));
+    }
+    if a.bool("edit") && cmd == "workspaceControl" && (a.has("dockToMainWindow") || a.has("dockToControl") || a.has("dockToPanel") || a.has("tabToControl")) {
+        if let Some(n) = &name {
+            let _ = model_edit(n, &Map::from_iter([("floating".to_string(), json!(false))]));
+        }
     }
     if cmd == "toolButton" && a.has("select") && a.bool("select") {
         if let Some(t) = name.as_deref().and_then(|n| control_prop(n, "tool")).map(|t| flat(&t)).and_then(|t| t.first().map(text)) {

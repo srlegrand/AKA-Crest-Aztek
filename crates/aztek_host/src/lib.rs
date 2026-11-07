@@ -221,6 +221,7 @@ pub extern "C" fn aztek_query(what: *const c_char, arg: *const c_char) -> *mut c
                 Value::Null
             }
             "runtimeCommands" => ui_cmds::runtime_commands(),
+            "uiDrag" => attr_ui::drag_start(c, &arg),
             "panelSync" => {
                 panel_cmds::shell_sync(&serde_json::from_str(&arg).unwrap_or(json!({})));
                 Value::Null

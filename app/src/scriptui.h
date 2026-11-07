@@ -7,12 +7,14 @@
 #include <QJsonObject>
 #include <QList>
 #include <QObject>
+#include <QPoint>
 #include <QPointer>
 #include <QString>
 #include <functional>
 
 class QAction;
 class QActionGroup;
+class QDockWidget;
 class QLabel;
 class QMainWindow;
 class QMenu;
@@ -51,6 +53,8 @@ private:
     void build_control(Item* it, const QJsonObject& props);
     void build_layout(Item* it, const QJsonObject& props);
     void build_window(Item* it, const QJsonObject& props);
+    void place_dock(Item* it, const QJsonObject& props, bool made);
+    QDockWidget* dock_named(const QString& name) const;
     void build_group(Item* it, const QJsonObject& props);
     void build_menu(Item* it, Item* parent, const QJsonObject& props);
     void build_menu_item(Item* it, Item* parent, const QJsonObject& props);
@@ -82,6 +86,7 @@ private:
     bool wait_cursor_ = false;
     QHash<QString, QActionGroup*> radio_groups_;
     QPointer<QLabel> in_view_;
+    QPoint drag_from_;
 };
 
 // Called by the Host poller.

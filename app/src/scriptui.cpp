@@ -22,7 +22,12 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QDockWidget>
 #include <QDoubleSpinBox>
+#include <QDrag>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QMimeData>
 #include <QFileDialog>
 #include <QFile>
 #include <QFrame>
@@ -319,6 +324,42 @@ protected:
     }
 };
 
+// A workspace or dock control's place in the main window.
+class ScriptDock : public QDockWidget {
+public:
+    using QDockWidget::QDockWidget;
+    std::function<void()> on_close;
+protected:
+    void closeEvent(QCloseEvent* e) override {
+        if (on_close) on_close();
+        e->accept();
+    }
+};
+
+// The cells of a paneLayout configuration: (row, column, row span, column span), pane by pane.
+struct PaneCell { int r, c, rs, cs; };
+
+QList<PaneCell> pane_cells(const QString& cfg) {
+    if (cfg == "vertical2") return {{0, 0, 1, 1}, {0, 1, 1, 1}};
+    if (cfg == "horizontal2") return {{0, 0, 1, 1}, {1, 0, 1, 1}};
+    if (cfg == "vertical3") return {{0, 0, 1, 1}, {0, 1, 1, 1}, {0, 2, 1, 1}};
+    if (cfg == "horizontal3") return {{0, 0, 1, 1}, {1, 0, 1, 1}, {2, 0, 1, 1}};
+    if (cfg == "top3") return {{0, 0, 1, 2}, {1, 0, 1, 1}, {1, 1, 1, 1}};
+    if (cfg == "left3") return {{0, 0, 2, 1}, {0, 1, 1, 1}, {1, 1, 1, 1}};
+    if (cfg == "bottom3") return {{0, 0, 1, 1}, {0, 1, 1, 1}, {1, 0, 1, 2}};
+    if (cfg == "right3") return {{0, 0, 1, 1}, {1, 0, 1, 1}, {0, 1, 2, 1}};
+    if (cfg == "vertical4") return {{0, 0, 1, 1}, {0, 1, 1, 1}, {0, 2, 1, 1}, {0, 3, 1, 1}};
+    if (cfg == "horizontal4") return {{0, 0, 1, 1}, {1, 0, 1, 1}, {2, 0, 1, 1}, {3, 0, 1, 1}};
+    if (cfg == "top4") return {{0, 0, 1, 3}, {1, 0, 1, 1}, {1, 1, 1, 1}, {1, 2, 1, 1}};
+    if (cfg == "left4") return {{0, 0, 3, 1}, {0, 1, 1, 1}, {1, 1, 1, 1}, {2, 1, 1, 1}};
+    if (cfg == "bottom4") return {{0, 0, 1, 1}, {0, 1, 1, 1}, {0, 2, 1, 1}, {1, 0, 1, 3}};
+    if (cfg == "right4") return {{0, 0, 1, 1}, {1, 0, 1, 1}, {2, 0, 1, 1}, {0, 1, 3, 1}};
+    if (cfg == "quad") return {{0, 0, 1, 1}, {0, 1, 1, 1}, {1, 0, 1, 1}, {1, 1, 1, 1}};
+    return {{0, 0, 1, 1}};
+}
+
+const char* const CONTROL_MIME = "application/x-aztek-control";
+
 // A frame's header: the arrow when it can collapse, then its label.
 QString frame_title(const QString& label, bool collapsable, bool collapsed) {
     if (!collapsable) return label;
@@ -352,6 +393,8 @@ struct ScriptUi::Item {
     // Option menus: the combo box, and frame layouts' collapse arrow.
     QPushButton* arrow = nullptr;
     QFrame* frame = nullptr;
+    // Workspace and dock controls, and a window a dock control holds.
+    QPointer<QDockWidget> dock;
     // Popup menus: the button and modifiers that bring them up.
     int popup_button = 3;
 };
@@ -506,12 +549,147 @@ void ScriptUi::build_window(Item* it, const QJsonObject& props) {
         win->on_resize = nullptr;
         win->show();
     }
+    if (it->kind == "workspaceControl" || it->kind == "dockControl") {
+        auto* dock = new ScriptDock(title, main_);
+        dock->setObjectName(it->path);
+        win->setWindowFlags(Qt::Widget);
+        dock->setWidget(win);
+        dock->on_close = win->on_close;
+        win->on_close = nullptr;
+        it->dock = dock;
+        QString own = it->path;
+        connect(dock, &QDockWidget::topLevelChanged, this, [own](bool floating) {
+            QJsonObject ev{{"path", own}, {"set", QJsonObject{{"floating", floating}}}};
+            QByteArray text = QJsonDocument(ev).toJson(QJsonDocument::Compact);
+            aztek_ui_event(text.constData());
+        });
+        main_->addDockWidget(Qt::RightDockWidgetArea, dock);
+        dock->hide();
+        place_dock(it, props, true);
+    }
     if (as_bool(props["menuBar"])) menu_bar_of(it);
+}
+
+// A control scripts name for docking to: another script's, or one of the application's by Maya's name for it.
+QDockWidget* ScriptUi::dock_named(const QString& name) const {
+    if (Item* i = items_.value(name))
+        if (i->dock) return i->dock;
+    static const QHash<QString, QString> titles{{"Outliner", "Outliner"}, {"ChannelBoxLayerEditor", "Channel Box / Layer Editor"}, {"AttributeEditor", "Attribute Editor"}, {"ToolSettings", "Tool Settings"}};
+    QString title = titles.value(name, name);
+    for (QDockWidget* d : main_->findChildren<QDockWidget*>())
+        if (d->windowTitle() == title) return d;
+    return nullptr;
+}
+
+void ScriptUi::place_dock(Item* it, const QJsonObject& props, bool made) {
+    QDockWidget* dock = it->dock;
+    if (!dock) return;
+    auto area_of = [](const QString& s) {
+        return s == "left" ? Qt::LeftDockWidgetArea : s == "top" ? Qt::TopDockWidgetArea : s == "bottom" ? Qt::BottomDockWidgetArea : Qt::RightDockWidgetArea;
+    };
+    // Beside another: second comes after first in Qt's split, so left and top change them round.
+    auto beside = [this, dock](QDockWidget* other, const QString& side) {
+        if (!other) return;
+        // Qt leaves a hidden dock in the tab group of the other: it has to be showing to split.
+        dock->show();
+        main_->addDockWidget(main_->dockWidgetArea(other), dock);
+        Qt::Orientation o = (side == "left" || side == "right") ? Qt::Horizontal : Qt::Vertical;
+        if (side == "left" || side == "top") {
+            main_->splitDockWidget(other, dock, o);
+            main_->splitDockWidget(dock, other, o);
+        } else {
+            main_->splitDockWidget(other, dock, o);
+        }
+    };
+    bool placed = false;
+    if (props.contains("label")) dock->setWindowTitle(props["label"].toString());
+    if (props.contains("dockToMainWindow")) {
+        QJsonArray v = flat(props["dockToMainWindow"]);
+        Qt::DockWidgetArea area = area_of(v.isEmpty() ? QString() : v[0].toString());
+        bool tab = v.size() > 1 && as_bool(v[1]);
+        dock->setFloating(false);
+        QDockWidget* neighbour = nullptr;
+        for (QDockWidget* d : main_->findChildren<QDockWidget*>())
+            if (d != dock && d->isVisible() && !d->isFloating() && main_->dockWidgetArea(d) == area) {
+                neighbour = d;
+                break;
+            }
+        main_->addDockWidget(area, dock);
+        if (tab && neighbour) main_->tabifyDockWidget(neighbour, dock);
+        placed = true;
+    }
+    if (props.contains("dockToControl")) {
+        QJsonArray v = flat(props["dockToControl"]);
+        if (v.size() >= 2) {
+            dock->setFloating(false);
+            beside(dock_named(v[0].toString()), v[1].toString());
+            placed = true;
+        }
+    }
+    if (props.contains("dockToPanel")) {
+        QJsonArray v = flat(props["dockToPanel"]);
+        if (v.size() >= 2) {
+            dock->setFloating(false);
+            main_->addDockWidget(area_of(v[1].toString()), dock);
+            placed = true;
+        }
+    }
+    if (props.contains("tabToControl")) {
+        QJsonArray v = flat(props["tabToControl"]);
+        if (!v.isEmpty()) {
+            if (QDockWidget* other = dock_named(v[0].toString())) {
+                dock->setFloating(false);
+                main_->tabifyDockWidget(other, dock);
+                placed = true;
+            }
+        }
+    }
+    if (props.contains("area")) {
+        dock->setFloating(false);
+        main_->addDockWidget(area_of(props["area"].toString()), dock);
+        placed = true;
+    }
+    if (props.contains("allowedArea")) {
+        Qt::DockWidgetAreas allowed;
+        for (const QString& s : strings(props["allowedArea"])) {
+            if (s == "all") allowed = Qt::AllDockWidgetAreas;
+            else allowed |= area_of(s);
+        }
+        dock->setAllowedAreas(allowed);
+    }
+    if (props.contains("floating")) {
+        dock->setFloating(as_bool(props["floating"]));
+    } else if (made && !placed && it->kind == "workspaceControl") {
+        dock->setFloating(true);
+    }
+    if (dock->isFloating() && (props.contains("initialWidth") || props.contains("initialHeight"))) {
+        dock->resize(int(as_number(props["initialWidth"], dock->width())), int(as_number(props["initialHeight"], dock->height())));
+    }
+    // A dock control holds a window made before it.
+    if (it->kind == "dockControl" && props.contains("content")) {
+        if (Item* c = items_.value(props["content"].toString())) {
+            if (c->w && c->w != it->w) {
+                c->w->setWindowFlags(Qt::Widget);
+                it->layout->addWidget(c->w);
+                c->dock = dock;
+                c->w->show();
+            }
+        }
+    }
+    if (!made && (placed || props.contains("floating"))) {
+        dock->show();
+        dock->raise();
+    }
 }
 
 void ScriptUi::show_window(Item* it) {
     QWidget* w = it->w;
     if (!w) return;
+    if (it->dock) {
+        it->dock->show();
+        it->dock->raise();
+        return;
+    }
     bool sized = it->props.contains("width") || it->props.contains("height");
     if (!sized || as_bool(it->prop("resizeToFitChildren"))) {
         w->adjustSize();
@@ -580,7 +758,26 @@ void ScriptUi::build_menu_item(Item* it, Item* parent, const QJsonObject& props)
         it->action = it->menu->menuAction();
         return;
     }
-    if (as_bool(props["optionBox"])) label = "Options for the item above...";
+    if (as_bool(props["optionBox"])) {
+        // The box goes on the row of the item before it; with none to go on, it is an item of its own.
+        int at = parent->kids.indexOf(it);
+        Item* before = at > 0 ? parent->kids[at - 1] : nullptr;
+        if (before && before->action && !before->menu && !as_bool(before->prop("divider")) && !as_bool(before->prop("optionBox"))) {
+            QString main_path = before->path, box_path = it->path;
+            QString text = before->action->text();
+            auto* row = new OptionRow(text, QString(), [this, main_path] { fire(main_path, QJsonObject(), QJsonArray{"command"}, QJsonArray{false}); }, [this, box_path] {
+                // The box closes the menu as a choice does.
+                while (QWidget* p = QApplication::activePopupWidget()) p->close();
+                fire(box_path, QJsonObject(), QJsonArray{"command"}, QJsonArray{false});
+            }, m);
+            m->insertAction(before->action, row);
+            m->removeAction(before->action);
+            before->action->deleteLater();
+            before->action = row;
+            return;
+        }
+        label = "Options...";
+    }
     it->action = m->addAction(label);
     QString path = it->path;
     connect(it->action, &QAction::triggered, this, [this, path](bool checked) {
@@ -798,6 +995,37 @@ void ScriptUi::apply_layout(Item* it, const QJsonObject& props) {
         }
         if (props.contains("selectTabIndex")) it->tabs->setCurrentIndex(int(as_number(props["selectTabIndex"])) - 1);
         if (props.contains("tabsVisible")) it->tabs->tabBar()->setVisible(as_bool(props["tabsVisible"], true));
+    } else if (k == "paneLayout") {
+        // Sizes in percent of the layout: what is not given is shared by the rest of the row or column.
+        QJsonObject sizes = it->prop("paneSizes").toObject();
+        if (it->grid && !sizes.isEmpty()) {
+            QList<PaneCell> cells = pane_cells(it->prop("configuration").toString("single"));
+            QHash<int, int> cols, rows;
+            int ncols = 0, nrows = 0;
+            for (const PaneCell& c : cells) {
+                ncols = qMax(ncols, c.c + c.cs);
+                nrows = qMax(nrows, c.r + c.rs);
+            }
+            for (int i = 0; i < cells.size(); ++i) {
+                QJsonArray s = sizes[QString::number(i + 1)].toArray();
+                if (s.size() < 2) continue;
+                if (cells[i].cs == 1) cols[cells[i].c] = s[0].toInt();
+                if (cells[i].rs == 1) rows[cells[i].r] = s[1].toInt();
+            }
+            auto spread = [](QGridLayout* g, const QHash<int, int>& given, int n, bool columns) {
+                int used = 0;
+                for (int v : given) used += v;
+                int rest = n - given.size();
+                int share = rest > 0 ? qMax(1, (100 - used) / rest) : 0;
+                for (int i = 0; i < n; ++i) {
+                    int v = qMax(1, given.value(i, share));
+                    if (columns) g->setColumnStretch(i, v);
+                    else g->setRowStretch(i, v);
+                }
+            };
+            spread(it->grid, cols, ncols, true);
+            spread(it->grid, rows, nrows, false);
+        }
     } else if (it->grid && k != "paneLayout") {
         // Column widths: cw (index, width) pairs or the numbered family; widths hold, the adjustable column takes the rest.
         QJsonArray cw = flat(it->prop("columnWidth"));
@@ -893,31 +1121,13 @@ void ScriptUi::place(Item* parent, Item* child) {
         QSignalBlocker block(parent->tabs);
         parent->tabs->addTab(w, labels.contains(child->path) ? labels[child->path].toString() : child->name);
     } else if (k == "paneLayout") {
-        // Cells for each configuration: (row, column, row span, column span).
-        struct Cell { int r, c, rs, cs; };
-        QString cfg = parent->prop("configuration").toString("single");
-        QList<Cell> cells;
-        if (cfg == "vertical2") cells = {{0, 0, 1, 1}, {0, 1, 1, 1}};
-        else if (cfg == "horizontal2") cells = {{0, 0, 1, 1}, {1, 0, 1, 1}};
-        else if (cfg == "vertical3") cells = {{0, 0, 1, 1}, {0, 1, 1, 1}, {0, 2, 1, 1}};
-        else if (cfg == "horizontal3") cells = {{0, 0, 1, 1}, {1, 0, 1, 1}, {2, 0, 1, 1}};
-        else if (cfg == "top3") cells = {{0, 0, 1, 2}, {1, 0, 1, 1}, {1, 1, 1, 1}};
-        else if (cfg == "left3") cells = {{0, 0, 2, 1}, {0, 1, 1, 1}, {1, 1, 1, 1}};
-        else if (cfg == "bottom3") cells = {{0, 0, 1, 1}, {0, 1, 1, 1}, {1, 0, 1, 2}};
-        else if (cfg == "right3") cells = {{0, 0, 1, 1}, {1, 0, 1, 1}, {0, 1, 2, 1}};
-        else if (cfg == "vertical4") cells = {{0, 0, 1, 1}, {0, 1, 1, 1}, {0, 2, 1, 1}, {0, 3, 1, 1}};
-        else if (cfg == "horizontal4") cells = {{0, 0, 1, 1}, {1, 0, 1, 1}, {2, 0, 1, 1}, {3, 0, 1, 1}};
-        else if (cfg == "top4") cells = {{0, 0, 1, 3}, {1, 0, 1, 1}, {1, 1, 1, 1}, {1, 2, 1, 1}};
-        else if (cfg == "left4") cells = {{0, 0, 3, 1}, {0, 1, 1, 1}, {1, 1, 1, 1}, {2, 1, 1, 1}};
-        else if (cfg == "bottom4") cells = {{0, 0, 1, 1}, {0, 1, 1, 1}, {0, 2, 1, 1}, {1, 0, 1, 3}};
-        else if (cfg == "right4") cells = {{0, 0, 1, 1}, {1, 0, 1, 1}, {2, 0, 1, 1}, {0, 1, 3, 1}};
-        else if (cfg == "quad") cells = {{0, 0, 1, 1}, {0, 1, 1, 1}, {1, 0, 1, 1}, {1, 1, 1, 1}};
-        else cells = {{0, 0, 1, 1}};
+        QList<PaneCell> cells = pane_cells(parent->prop("configuration").toString("single"));
         if (parent->next_cell < cells.size()) {
-            Cell c = cells[parent->next_cell];
+            PaneCell c = cells[parent->next_cell];
             parent->grid->addWidget(w, c.r, c.c, c.rs, c.cs);
             for (int i = 0; i < c.rs; ++i) parent->grid->setRowStretch(c.r + i, 1);
             for (int i = 0; i < c.cs; ++i) parent->grid->setColumnStretch(c.c + i, 1);
+            apply_layout(parent, QJsonObject());
         } else {
             // More than it has panes: Maya keeps them unmanaged.
             w->setParent(parent->body);
@@ -945,6 +1155,11 @@ void ScriptUi::remove(Item* it) {
     }
     items_.remove(it->path);
     embedded_.remove(it->name);
+    if (it->dock && (it->kind == "workspaceControl" || it->kind == "dockControl")) {
+        main_->removeDockWidget(it->dock);
+        it->dock->hide();
+        it->dock->deleteLater();
+    }
     if (it->action && !it->menu) {
         it->action->deleteLater();
     } else if (it->menu) {
@@ -1979,9 +2194,20 @@ void ScriptUi::apply_common(Item* it, const QJsonObject& props) {
         if (props.contains("manage")) w->setVisible(as_bool(props["manage"], true));
     } else if (props.contains("visible")) {
         if (as_bool(props["visible"])) show_window(it);
+        else if (it->dock) it->dock->hide();
         else w->hide();
     }
     if (props.contains("annotation")) w->setToolTip(props["annotation"].toString());
+    if (props.contains("hasDrag") || props.contains("hasDrop")) {
+        // Children ignore a middle drag only if told to: the group's parts report as the group.
+        QList<QWidget*> all = w->findChildren<QWidget*>();
+        all << w;
+        for (QWidget* x : all) {
+            x->setProperty("azDragPath", it->path);
+            x->installEventFilter(this);
+            if (props.contains("hasDrop") || it->props.contains("hasDrop")) x->setAcceptDrops(true);
+        }
+    }
     if (props.contains("title") && it->kind != "progressWindow") w->setWindowTitle(props["title"].toString());
     if (props.contains("topLeftCorner")) {
         QJsonArray a = flat(props["topLeftCorner"]);
@@ -2015,7 +2241,9 @@ void ScriptUi::edit(Item* it, const QJsonObject& props) {
         if (props.contains("button")) it->popup_button = int(as_number(props["button"], 3));
         return;
     }
-    if (k.endsWith("Layout") || k == "scriptedPanel") {
+    if (k == "workspaceControl" || k == "dockControl") {
+        place_dock(it, props, false);
+    } else if (k.endsWith("Layout") || k == "scriptedPanel") {
         apply_layout(it, props);
     } else {
         apply_control(it, props);
@@ -2031,6 +2259,49 @@ void ScriptUi::edit(Item* it, const QJsonObject& props) {
 bool ScriptUi::eventFilter(QObject* o, QEvent* e) {
     auto* w = qobject_cast<QWidget*>(o);
     if (!w) return false;
+    // Drags between controls: the middle button, as in Maya.
+    const QString drag_path = w->property("azDragPath").toString();
+    if (!drag_path.isEmpty()) {
+        Item* di = items_.value(drag_path);
+        if (e->type() == QEvent::MouseButtonPress && static_cast<QMouseEvent*>(e)->button() == Qt::MiddleButton) {
+            drag_from_ = static_cast<QMouseEvent*>(e)->globalPosition().toPoint();
+            if (di && di->props.contains("hasDrag")) return true;
+        } else if (e->type() == QEvent::MouseMove && (static_cast<QMouseEvent*>(e)->buttons() & Qt::MiddleButton) && di && di->props.contains("hasDrag")) {
+            auto* me = static_cast<QMouseEvent*>(e);
+            if ((me->globalPosition().toPoint() - drag_from_).manhattanLength() > QApplication::startDragDistance()) {
+                int mods = (me->modifiers() & Qt::ShiftModifier ? 1 : 0) | (me->modifiers() & Qt::ControlModifier ? 4 : 0) | (me->modifiers() & Qt::AltModifier ? 8 : 0);
+                QPoint at = me->position().toPoint();
+                QJsonObject ask_it{{"path", drag_path}, {"x", at.x()}, {"y", at.y()}, {"modifiers", mods}};
+                QJsonValue msgs = query("uiDrag", QString::fromUtf8(QJsonDocument(ask_it).toJson(QJsonDocument::Compact)));
+                QJsonObject data{{"path", drag_path}, {"messages", msgs}};
+                auto* mime = new QMimeData();
+                mime->setData(CONTROL_MIME, QJsonDocument(data).toJson(QJsonDocument::Compact));
+                auto* drag = new QDrag(w);
+                drag->setMimeData(mime);
+                drag->exec(Qt::CopyAction);
+                return true;
+            }
+        } else if (e->type() == QEvent::DragEnter || e->type() == QEvent::DragMove) {
+            auto* de = static_cast<QDropEvent*>(e);
+            if (de->mimeData()->hasFormat(CONTROL_MIME) && di && di->props.contains("hasDrop")) {
+                static_cast<QDragMoveEvent*>(e)->acceptProposedAction();
+                return true;
+            }
+        } else if (e->type() == QEvent::Drop) {
+            auto* de = static_cast<QDropEvent*>(e);
+            if (de->mimeData()->hasFormat(CONTROL_MIME) && di && di->props.contains("hasDrop")) {
+                QJsonObject data = QJsonDocument::fromJson(de->mimeData()->data(CONTROL_MIME)).object();
+                QPoint at = de->position().toPoint();
+                QJsonObject ev{{"path", drag_path}, {"dropFrom", data["path"]}, {"messages", data["messages"]}, {"x", at.x()}, {"y", at.y()}, {"dragType", 1}};
+                de->acceptProposedAction();
+                QByteArray text = QJsonDocument(ev).toJson(QJsonDocument::Compact);
+                aztek_ui_event(text.constData());
+                Host::get()->poke();
+                sync();
+                return true;
+            }
+        }
+    }
     // Popup menus on what they are parented to.
     if (e->type() == QEvent::MouseButtonPress && w->property("azPopupOwner").toBool()) {
         auto* me = static_cast<QMouseEvent*>(e);

@@ -565,6 +565,77 @@ fn paint_contexts_act_on_what_the_brush_takes() {
 }
 
 #[test]
+fn menu_items_say_what_they_are() {
+    let mut c = Core::new();
+    ok(&mut c, "window w -mb 1; menu m; menuItem -l \"Do\" one; menuItem -ob 1 box; menuItem -cb 1 chk;");
+    assert_eq!(ok(&mut c, "menuItem -q -iob box;"), json!(true));
+    assert_eq!(ok(&mut c, "menuItem -q -iob one;"), json!(false));
+    assert_eq!(ok(&mut c, "menuItem -q -icb chk;"), json!(true));
+    errors(&mut c);
+}
+
+#[test]
+fn panes_keep_their_sizes() {
+    let mut c = Core::new();
+    ok(&mut c, "window w; paneLayout -cn \"vertical2\" -ps 1 30 100 pl;");
+    assert_eq!(ok(&mut c, "paneLayout -q -ps pl;"), json!([30, 100]));
+    aztek_host::scriptui::take_ops();
+    ok(&mut c, "paneLayout -e -ps 2 70 100 pl;");
+    assert_eq!(ok(&mut c, "paneLayout -q -ps pl;"), json!([30, 100, 70, 100]));
+    let ops = aztek_host::scriptui::take_ops();
+    assert_eq!(ops[0]["props"]["paneSizes"]["1"], json!([30, 100]), "{ops:?}");
+    errors(&mut c);
+}
+
+#[test]
+fn workspace_controls_say_where_they_are() {
+    let mut c = Core::new();
+    ok(&mut c, "workspaceControl -l \"Free\" free;");
+    assert_eq!(ok(&mut c, "workspaceControl -q -fl free;"), json!(true));
+    ok(&mut c, "workspaceControl -dtm \"right\" 1 fixed;");
+    assert_eq!(ok(&mut c, "workspaceControl -q -fl fixed;"), json!(false));
+    ok(&mut c, "workspaceControl -e -dtc \"Outliner\" \"bottom\" free;");
+    assert_eq!(ok(&mut c, "workspaceControl -q -fl free;"), json!(false));
+    ok(&mut c, "window dw; columnLayout; text; dockControl -a \"left\" -con dw -l \"Dock\" dc;");
+    assert_eq!(ok(&mut c, "dockControl -q -a dc;"), json!("left"));
+    assert_eq!(ok(&mut c, "dockControl -q -fl dc;"), json!(false));
+    errors(&mut c);
+}
+
+#[test]
+fn drags_carry_messages_to_the_drop() {
+    let mut c = Core::new();
+    ok(&mut c, "global string $gGot = \"\";");
+    ok(&mut c, "global proc string[] dragIt(string $ctl, int $x, int $y, int $mods) { return {\"one\", \"two\"}; }");
+    ok(&mut c, "global proc dropIt(string $from, string $to, string $msgs[], int $x, int $y, int $type) { global string $gGot; $gGot = ($from + \">\" + $to + \":\" + $msgs[1] + \":\" + $x); }");
+    ok(&mut c, "window w; columnLayout col; button -dgc \"dragIt\" a; button -dpc \"dropIt\" b;");
+    let ops = aztek_host::scriptui::take_ops();
+    assert!(ops.iter().any(|o| o["props"]["hasDrag"] == true), "{ops:?}");
+    assert!(ops.iter().any(|o| o["props"]["hasDrop"] == true), "{ops:?}");
+    let msgs = aztek_host::attr_ui::drag_start_for_tests(&mut c, &json!({"path": "w|col|a", "x": 3, "y": 4, "modifiers": 0}).to_string());
+    assert_eq!(msgs, json!(["one", "two"]));
+    c.ui_event(&json!({"path": "w|col|b", "dropFrom": "w|col|a", "messages": msgs, "x": 7, "y": 8, "dragType": 1}));
+    assert_eq!(ok(&mut c, "global string $gGot; $x = $gGot;"), json!("w|col|a>w|col|b:two:7"));
+    errors(&mut c);
+}
+
+#[test]
+fn movies_go_through_ffmpeg() {
+    use aztek_host::panel_cmds::{find_program, movie_arguments, movie_file_name};
+    assert!(find_program("surely-no-program-has-this-name").is_none());
+    assert_eq!(movie_file_name("/a.b/shot", "qt"), "/a.b/shot.mov");
+    assert_eq!(movie_file_name("/a/shot", "avi"), "/a/shot.avi");
+    assert_eq!(movie_file_name("/a/shot.mp4", "movie"), "/a/shot.mp4");
+    let args = movie_arguments("/t/frame.%06d.png", 24.0, "/a/shot.mov");
+    assert_eq!(args.first().map(String::as_str), Some("-y"));
+    assert_eq!(args.last().map(String::as_str), Some("/a/shot.mov"));
+    assert!(args.iter().any(|x| x == "24"));
+    let mut c = Core::new();
+    assert!(ok(&mut c, "playblast -q -fmt;").to_string().contains("movie"));
+    errors(&mut c);
+}
+
+#[test]
 fn names_and_paths_as_maya_returns_them() {
     let mut c = Core::new();
     assert_eq!(ok(&mut c, "window;"), json!("window1"));

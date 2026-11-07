@@ -503,6 +503,16 @@ fn apply(m: &mut Model, id: Id, flags: &Map<String, Value>) -> Result<Map<String
             if let Some(c) = m.controls.get_mut(&id) {
                 c.props.insert(key.clone(), cb);
             }
+            // The shell has no use for scripts, but has to know a control takes part in drags.
+            match key.as_str() {
+                "dragCallback" => {
+                    changed.insert("hasDrag".to_string(), json!(true));
+                }
+                "dropCallback" => {
+                    changed.insert("hasDrop".to_string(), json!(true));
+                }
+                _ => {}
+            }
             continue;
         }
         apply_one(m, id, &kind, key, raw, &mut changed)?;
@@ -625,6 +635,15 @@ fn apply_one(m: &mut Model, id: Id, kind: &str, key: &str, raw: &Value, changed:
             }
         }
         ("scriptTable", _) => table_flag(m, id, key, raw, changed),
+        ("paneLayout", "paneSize") => {
+            let mut sizes = m.get(id).and_then(|c| c.props.get("paneSizes")).and_then(Value::as_object).cloned().unwrap_or_default();
+            for ch in vals.chunks(3) {
+                if let [pane, w, h] = ch {
+                    sizes.insert((number(pane) as i64).to_string(), json!([number(w) as i64, number(h) as i64]));
+                }
+            }
+            set(m, id, "paneSizes", Value::Object(sizes), changed);
+        }
         ("scrollField", "clear") => {
             if truth(raw) {
                 set(m, id, "text", json!(""), changed);
@@ -1053,6 +1072,7 @@ fn default_value(c: &Control, key: &str) -> Value {
         (k, "maxValue") if k.ends_with("Slider") || k.ends_with("ScrollBar") => hundred(k),
         (k, "value" | "value1" | "value2" | "value3" | "value4" | "step") if is_int_kind(k) || is_float_kind(k) => zero(k),
         ("window" | "workspaceControl" | "dockControl", "title" | "label") => json!(c.name),
+        ("dockControl", "area") => json!("left"),
         (k, "label") if !is_group(k) => json!(c.name),
         (k, "label") if is_group(k) => json!(""),
         (_, "text" | "placeholderText" | "annotation" | "docTag" | "image" | "status") => json!(""),
@@ -1186,6 +1206,16 @@ fn query(m: &Model, id: Id, key: &str) -> Value {
             }
         }
         "underPointerRow" | "underPointerColumn" => json!(0),
+        "isOptionBox" => json!(c.props.get("optionBox").is_some_and(truth)),
+        "isCheckBox" => json!(c.props.contains_key("checkBox")),
+        "isRadioButton" => json!(c.props.contains_key("radioButton")),
+        "paneSize" => {
+            // Width and height of each pane given, in the panes' order.
+            let sizes = c.props.get("paneSizes").and_then(Value::as_object).cloned().unwrap_or_default();
+            let mut keys: Vec<i64> = sizes.keys().filter_map(|k| k.parse().ok()).collect();
+            keys.sort_unstable();
+            Value::Array(keys.iter().flat_map(|k| flat(&sizes[&k.to_string()])).collect())
+        }
         "collectionItemArray" => no_list(kids_named(&collection_members(m, id))),
         "numberOfCollectionItems" => json!(collection_members(m, id).len()),
         "allItems" => {
@@ -1496,10 +1526,15 @@ fn after_create(cmd: &str, result: &CmdResult, a: &Args) {
         run_soon(callback_value(script), Vec::new());
     }
     let name = result.as_ref().ok().and_then(Value::as_str).unwrap_or("").to_string();
+    let docked = a.has("dockToMainWindow") || a.has("dockToControl") || a.has("dockToPanel") || a.has("tabToControl");
     with_model(|m| {
         if let Some(i) = m.find(&name) {
             if let Some(c) = m.controls.get_mut(&i) {
                 c.props.insert("visible".into(), json!(true));
+                // It floats until it is docked.
+                if !c.props.contains_key("floating") {
+                    c.props.insert("floating".into(), json!(!docked));
+                }
             }
         }
     });
