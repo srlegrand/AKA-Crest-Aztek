@@ -1028,10 +1028,11 @@ fn mark_seams(m: &mut Mesh, ids: &[i64]) {
 const XFORM_CHANNELS: &[&str] = &[
     "visibility", "translate", "rotate", "scale", "rotateOrder", "rotatePivot", "scalePivot", "rotatePivotTranslate", "scalePivotTranslate", "rotateAxis", "shear", "offsetParentMatrix",
     "inheritsTransform", "displayHandle", "displayRotatePivot", "displayScalePivot", "displayLocalAxis", "selectHandle", "template", "lodVisibility", "hiddenInOutliner",
+    "minTransLimit", "maxTransLimit", "minTransLimitEnable", "maxTransLimitEnable", "minRotLimit", "maxRotLimit", "minRotLimitEnable", "maxRotLimitEnable", "minScaleLimit", "maxScaleLimit", "minScaleLimitEnable", "maxScaleLimitEnable",
 ];
 
 /// Rigging and animation nodes that are all attributes and connections.
-const PLAIN_NODES: &[&str] = &["blendWeighted", "makeNurbCircle", "makeNurbPlane", "makeNurbsSquare", "motionPath", "ramp", "transformGeometry", "pointOnCurveInfo", "curveInfo", "nearestPointOnCurve", "container", "controller", "timeWarp", "hierarchyTreeNode", "curveFromMeshEdge", "characterMap", "keyingGroup"];
+const PLAIN_NODES: &[&str] = &["blendWeighted", "makeNurbCircle", "makeNurbPlane", "makeNurbsSquare", "motionPath", "ramp", "extrude", "reverseSurface", "transformGeometry", "pointOnCurveInfo", "curveInfo", "nearestPointOnCurve", "container", "controller", "timeWarp", "hierarchyTreeNode", "curveFromMeshEdge", "characterMap", "keyingGroup"];
 /// The same under a transform.
 const PLAIN_SHAPES: &[&str] = &["follicle", "distanceDimShape", "paramDimension", "annotationShape", "dropoffLocator", "lattice", "baseLattice", "softModHandle"];
 
@@ -1312,6 +1313,9 @@ fn curve_keys(n: &MaNode, doc: &Doc, fps: f64) -> Keys {
 /// Node types read without comment: Maya's scene furniture, and nodes whose data Aztek takes from elsewhere.
 const QUIET_TYPES: &[&str] = &[
     "",
+    "createColorSet",
+    "deleteComponent",
+    "polyDelEdge",
     "groupId",
     "groupParts",
     "shadingEngine",
@@ -1376,9 +1380,36 @@ struct Chain {
     deformers: Vec<(usize, i64)>,
     /// Nodes on the way that cannot be replayed.
     lost: Vec<usize>,
+    /// Faces and edges deleted from the stored mesh, source first.
+    deletions: Vec<usize>,
 }
 
 const INPUT_ATTRS: &[&str] = &["i", "inMesh", "ip", "inputPolymesh", "ig", "inputGeometry", "ip.ig", "input.inputGeometry"];
+
+/// A deleteComponent's faces or a polyDelEdge's edges, off a mesh the file stored before them.
+fn apply_deletion(n: &MaNode, m: &mut Mesh) {
+    let Some(list) = n.set_of(&["dc", "deleteComponents", "ics", "inputComponents"]) else { return };
+    let (mut faces, mut edges) = (Vec::new(), Vec::new());
+    for t in &list.values {
+        let Some(text) = t.text() else { continue };
+        let (out, inner) = if let Some(x) = text.strip_prefix("f[") {
+            (&mut faces, x)
+        } else if let Some(x) = text.strip_prefix("e[") {
+            (&mut edges, x)
+        } else {
+            continue;
+        };
+        let inner = inner.trim_end_matches(']');
+        let (a, b) = inner.split_once(':').unwrap_or((inner, inner));
+        if let (Ok(a), Ok(b)) = (a.parse::<u32>(), b.parse::<u32>()) {
+            out.extend(a..=b);
+        }
+    }
+    faces.retain(|&f| m.face_valid(f));
+    edges.retain(|&e| e < m.edge_capacity() && m.edge_valid(e));
+    aztek_geo::ops::basic::delete_faces(m, &faces, None);
+    aztek_geo::ops::basic::delete_edges(m, &edges, None);
+}
 
 fn walk_chain(doc: &Doc, shape: usize, stored: &HashMap<usize, MaMesh>) -> Chain {
     let mut c = Chain::default();
@@ -1406,7 +1437,9 @@ fn walk_chain(doc: &Doc, shape: usize, stored: &HashMap<usize, MaMesh>) -> Chain
             "skinCluster" => c.deformers.insert(0, (next, index)),
             t if deformers::is_file_deformer(t) => c.deformers.insert(0, (next, index)),
             "tweak" => c.vertex_tweaks.push(next),
-            "groupParts" | "groupId" | "unitConversion" => {}
+            // A colour set changes no points.
+            "groupParts" | "groupId" | "unitConversion" | "createColorSet" => {}
+            "deleteComponent" | "polyDelEdge" => c.deletions.insert(0, next),
             t if creator_attrs(t).is_some() => {
                 c.creator = Some(next);
                 break;
@@ -1643,6 +1676,13 @@ impl Build<'_> {
                 };
                 let def = self.s.graph.attr(&p).clone();
                 let Some(v) = plug_value(&def, p.component, chunk, 1.0) else { continue };
+                if n.ty == "expression" && matches!(self.s.graph.attr(&p).name.as_str(), "expression") {
+                    if let PlugValue::String(src) = &v {
+                        if let Err(e) = crate::expression::parse(src) {
+                            self.warnings.push(format!("{}: {e}", n.name));
+                        }
+                    }
+                }
                 if let Err(e) = self.s.graph.set_value(p, v) {
                     self.warnings.push(format!("{}.{}: {e}", n.name, text.join(".")));
                 }
@@ -1660,7 +1700,13 @@ impl Build<'_> {
     }
 
     fn plain_connection(&mut self, c: &Conn, sn: usize, sa: &str, src: NodeId, dst: NodeId) {
-        let (a, b) = (format!("{}.{sa}", self.s.graph.path(src)), format!("{}.{}", self.s.graph.path(dst), c.dst_attr));
+        // An extrude's profile and path are the first two of its curves here.
+        let to = match (self.doc.nodes[c.dst].ty.as_str(), c.dst_attr.as_str()) {
+            ("extrude", "pr" | "profile") => "ic[0]",
+            ("extrude", "pt" | "path") => "ic[1]",
+            (_, attr) => attr,
+        };
+        let (a, b) = (format!("{}.{sa}", self.s.graph.path(src)), format!("{}.{to}", self.s.graph.path(dst)));
         let plugs = self.s.graph.plug(&a).and_then(|x| self.s.graph.plug(&b).map(|y| (x, y)));
         let r = plugs.and_then(|(x, y)| self.s.graph.connect(&x, &y, true));
         if let Err(e) = r {
@@ -1708,6 +1754,10 @@ impl Build<'_> {
         let Some(shape) = self.id(i) else { return };
         if self.chain_nurbs(i, crate::curves::CurveShape::LOCAL, crate::curves::CurveShape::CREATE) {
             return;
+        }
+        // Fed straight by another curve, as an original with its deformers taken off leaves it.
+        if let Some(src) = self.doc.input(i, &["cr", "create"]).filter(|c| self.doc.nodes[c.src].ty == "nurbsCurve").and_then(|c| self.id(c.src)) {
+            let _ = self.s.graph.connect(&PlugRef::new(src, crate::curves::CurveShape::LOCAL as i32), &PlugRef::new(shape, crate::curves::CurveShape::CREATE as i32), false);
         }
         let doc = self.doc;
         let n = &doc.nodes[i];
@@ -1859,6 +1909,9 @@ impl Build<'_> {
             let mut m = tweaked(self, base, &chain.tweaks);
             for &t in &chain.vertex_tweaks {
                 deformers::apply_vertex_tweaks(doc, &mut m, t);
+            }
+            for &k in &chain.deletions {
+                apply_deletion(&doc.nodes[k], &mut m);
             }
             Source::Stored(m)
         } else if let Some(c) = chain.creator {
@@ -2157,6 +2210,28 @@ impl Build<'_> {
         if Graph::valid_name(&n.name) {
             call["name"] = json!(n.name);
         }
+        // Only the channels the file wires: a rig can hold a translate's Y out of a point constraint.
+        let wired = |whole: &str, parts: [&str; 3]| -> Option<Vec<&'static str>> {
+            let mut on = [false; 3];
+            let mut any = false;
+            for c in doc.conns.iter().filter(|c| c.src == i) {
+                let a = plain_attr(&c.src_attr);
+                if a == whole {
+                    return Some(Vec::new());
+                }
+                if let Some(k) = parts.iter().position(|p| *p == a) {
+                    on[k] = true;
+                    any = true;
+                }
+            }
+            any.then(|| (0..3).filter(|&k| !on[k]).map(|k| ["x", "y", "z"][k]).collect())
+        };
+        let groups = [("skipTranslate", wired("ct", ["ctx", "cty", "ctz"])), ("skipRotate", wired("cr", ["crx", "cry", "crz"])), ("skipScale", wired("cs", ["csx", "csy", "csz"]))];
+        if groups.iter().any(|g| g.1.is_some()) && cmd != "poleVectorConstraint" {
+            for (flag, skip) in groups {
+                call[flag] = json!(skip.unwrap_or_else(|| vec!["x", "y", "z"]));
+            }
+        }
         let made = match self.s.run(&cmd, call) {
             Ok(v) => v,
             Err(e) => {
@@ -2412,7 +2487,16 @@ impl Build<'_> {
                 let (Some(src), Some(dst)) = (self.id(c.src), self.id(c.dst)) else { continue };
                 self.plain_connection(c, c.src, &c.src_attr, src, dst);
             } else if is_constraint(c.dst) && c.src != c.dst {
-                let Some(e) = plain_attr(&c.dst_attr).strip_prefix('w').and_then(|x| x.parse::<usize>().ok()) else { continue };
+                let Some(e) = plain_attr(&c.dst_attr).strip_prefix('w').and_then(|x| x.parse::<usize>().ok()) else {
+                    // What else a rig drives on one: whether it runs, and its offset.
+                    if matches!(plain_attr(&c.dst_attr).as_str(), "nds" | "nodeState" | "o" | "offset" | "ox" | "oy" | "oz" | "offsetX" | "offsetY" | "offsetZ") {
+                        let (sn, sa) = self.real_source(c);
+                        if let (Some(src), Some(dst)) = (self.id(sn), self.id(c.dst)) {
+                            self.plain_connection(c, sn, &sa, src, dst);
+                        }
+                    }
+                    continue;
+                };
                 let (sn, sa) = self.real_source(c);
                 let (Some(src), Some(dst)) = (self.id(sn), self.id(c.dst)) else { continue };
                 let t = self.s.graph.node(dst).unwrap().type_arc().clone();

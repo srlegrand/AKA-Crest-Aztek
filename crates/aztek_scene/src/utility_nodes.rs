@@ -370,6 +370,31 @@ impl NodeBehavior for Utility {
 }
 
 /// name, classification, doc, attributes, compute.
+/// A ramp's colour at a place along it, its entries held on the node.
+pub(crate) fn colour_ramp_at(d: &NodeData, at_v: f64) -> DVec3 {
+    let (pa, ca) = (at(d, "colorEntryList.position"), at(d, "colorEntryList.color"));
+    let mut keys: Vec<(f64, DVec3)> = d.elements(pa).iter().map(|(k, p)| (p.scalar().unwrap_or(0.0), d.element_or(ca, *k).as_vec3())).collect();
+    keys.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let (Some(first), Some(last)) = (keys.first(), keys.last()) else { return DVec3::ZERO };
+    if at_v <= first.0 {
+        return first.1;
+    }
+    if at_v >= last.0 {
+        return last.1;
+    }
+    let none = i(d, "interpolation") == 0;
+    for w in keys.windows(2) {
+        if at_v <= w[1].0 {
+            if none {
+                return w[0].1;
+            }
+            let span = (w[1].0 - w[0].0).max(1e-12);
+            return w[0].1.lerp(w[1].1, (at_v - w[0].0) / span);
+        }
+    }
+    last.1
+}
+
 struct Spec(&'static str, &'static str, &'static str, Vec<AttrDef>, Compute);
 
 fn binary_float(name: &'static str, doc: &'static str, c: Compute) -> Spec {
@@ -468,6 +493,25 @@ fn table() -> Vec<Spec> {
                 let t = f(d, "blender");
                 let o = v(d, "color1") * t + v(d, "color2") * (1.0 - t);
                 set(d, "output", o);
+            }),
+        Spec("ramp", "utility/color", "A colour along V or U, from entries each with a position and a colour.",
+            vec![
+                en("type", "t", 0, &["V Ramp", "U Ramp", "Diagonal Ramp", "Radial Ramp", "Circular Ramp", "Box Ramp", "UV Ramp", "Four Corner Ramp", "Tartan Ramp"]),
+                en("interpolation", "in", 1, &["None", "Linear", "Exponential Up", "Exponential Down", "Smooth", "Bump", "Spike"]),
+                fin("uCoord", "u", 0.0),
+                fin("vCoord", "v", 0.0),
+                kid("colorEntryList", "cel", fin("position", "ep", 0.0)),
+                kid("colorEntryList", "cel", cin("color", "ec", [0.0, 0.0, 0.0])),
+                two(vec_kids("uvCoord", "uv", [0.0; 3], IN, [("U", "u"), ("V", "v"), ("", "")])),
+                two(vec_kids("uvFilterSize", "fs", [0.0; 3], IN, [("X", "x"), ("Y", "y"), ("", "")])),
+                cout("outColor", "oc"),
+                fout("outAlpha", "oa"),
+            ],
+            |d| {
+                let at_v = if i(d, "type") == 1 { f(d, "uCoord") } else { f(d, "vCoord") };
+                let o = colour_ramp_at(d, at_v);
+                set(d, "outColor", o);
+                set(d, "outAlpha", (o.x + o.y + o.z) / 3.0);
             }),
         Spec("blendTwoAttr", "utility/general", "Blends input[current] toward input[current + 1] by attributesBlender.",
             vec![iin("current", "c", 0), multi(fin("input", "i", 0.0)), fin("attributesBlender", "ab", 0.0), fout("output", "o")],

@@ -107,6 +107,8 @@ const WORLD_UP_NAMES: [&str; 5] = ["scene", "object", "objectrotation", "vector"
 
 pub struct ConstraintNode {
     kind: usize,
+    /// Computed at least once. A node blocked from the start holds its rest values.
+    ran: bool,
 }
 
 /// A matrix's scale as a scale constraint reads it: a mirrored one has its Z negative, which offsets of (1, 1, -1) in rigs from Maya show.
@@ -278,8 +280,16 @@ impl NodeBehavior for ConstraintNode {
     fn compute(&mut self, _ctx: &EvalContext, d: &mut NodeData) {
         // Anything but Normal: the outputs stay as they were.
         if d.int(NODE_STATE) != 0 {
+            if !self.ran {
+                self.ran = true;
+                let (t, e, s) = (d.vec3(REST_T), d.vec3(REST_R), d.vec3(REST_S));
+                d.set_output(OUT_T, PlugValue::Vec3(t));
+                d.set_output(OUT_R, PlugValue::Vec3(e));
+                d.set_output(OUT_S, PlugValue::Vec3(s));
+            }
             return;
         }
+        self.ran = true;
         let ts = targets_in(d);
         let rest_on = d.bool(ENABLE_REST);
         let Some((share, rest)) = shares(&ts, rest_on) else { return };
@@ -321,7 +331,7 @@ impl NodeBehavior for ConstraintNode {
                 t = sum;
             }
             ORIENT => {
-                let qs: Vec<(DQuat, f64)> = ts.iter().zip(&share).map(|(x, &w)| (DQuat::from_mat3(&(pr.transpose() * rot3(&x.matrix) * mat3(offset, RotateOrder::Xyz))), w)).collect();
+                let qs: Vec<(DQuat, f64)> = ts.iter().zip(&share).map(|(x, &w)| (DQuat::from_mat3(&(pr.transpose() * rot3(&x.matrix) * mat3(offset, RotateOrder::from_index(d.int(ROTATE_ORDER))))), w)).collect();
                 e = rotate_for(d, &with_rest(qs));
             }
             SCALE => {
@@ -345,7 +355,7 @@ impl NodeBehavior for ConstraintNode {
                     }
                     let dir = at / total - eye;
                     if let Some(frame) = aim_rotation(d, dir, eye, &pm, rest_e) {
-                        let frame = frame * mat3(offset, RotateOrder::Xyz);
+                        let frame = frame * mat3(offset, RotateOrder::from_index(d.int(ROTATE_ORDER)));
                         e = rotate_for(d, &with_rest(vec![(DQuat::from_mat3(&frame), total)]));
                     }
                 }
@@ -384,7 +394,7 @@ impl NodeBehavior for ConstraintNode {
                 }
                 if total > 1e-12 {
                     if let Some(frame) = aim_rotation(d, dir, eye, &pm, rest_e) {
-                        let frame = frame * mat3(offset, RotateOrder::Xyz);
+                        let frame = frame * mat3(offset, RotateOrder::from_index(d.int(ROTATE_ORDER)));
                         e = rotate_for(d, &with_rest(vec![(DQuat::from_mat3(&frame), total)]));
                     }
                 }
@@ -405,7 +415,7 @@ impl NodeBehavior for ConstraintNode {
                 }
                 if total > 1e-12 {
                     if let Some(frame) = aim_rotation(d, dir, eye, &pm, rest_e) {
-                        let frame = frame * mat3(offset, RotateOrder::Xyz);
+                        let frame = frame * mat3(offset, RotateOrder::from_index(d.int(ROTATE_ORDER)));
                         e = rotate_for(d, &with_rest(vec![(DQuat::from_mat3(&frame), total)]));
                     }
                 }
@@ -523,7 +533,7 @@ pub(crate) fn register_types() {
                 matrix_in("target.targetOffsetParentMatrix", "topm", true, "That target's offsetParentMatrix."),
                 array_vec("target.targetScale", "ts", "A scale constraint target's scale."),
             ],
-            create: Some(Arc::new(move || Box::new(ConstraintNode { kind: k }))),
+            create: Some(Arc::new(move || Box::new(ConstraintNode { kind: k, ran: false }))),
             ..Default::default()
         })
         .expect(name);

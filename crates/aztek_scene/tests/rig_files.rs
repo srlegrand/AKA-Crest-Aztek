@@ -403,6 +403,90 @@ fn a_long_expression_is_read_whole() {
 }
 
 #[test]
+fn an_expression_may_hold_or_and_a_set_attr() {
+    let body = "createNode transform -n \"a\";\ncreateNode transform -n \"b\";\ncreateNode expression -n \"ex\";\n\tsetAttr \".ixp\" -type \"string\" \"if((.I[0]>0)||(.I[0]<-1)){\\nsetAttr a.ty (.I[0]*2);}\\n.O[0] = .I[0]+1;\";\nconnectAttr \"a.tx\" \"ex.in[0]\";\nconnectAttr \"ex.out[0]\" \"b.tx\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "b.tx"), &[1.0], "ran");
+}
+
+#[test]
+fn a_cluster_on_some_of_a_curves_cvs_moves_only_those() {
+    let body = "createNode transform -n \"c\";\ncreateNode nurbsCurve -n \"cShape\" -p \"c\";\n\tsetAttr -k off \".v\";\ncreateNode nurbsCurve -n \"cShapeOrig\" -p \"c\";\n\tsetAttr -k off \".v\";\n\tsetAttr \".io\" yes;\n\tsetAttr \".cc\" -type \"nurbsCurve\" \n\t\t1 2 0 no 3\n\t\t3 0 1 2\n\t\t3\n\t\t0 0 0\n\t\t1 0 0\n\t\t2 0 0\n\t\t;\ncreateNode transform -n \"h\";\n\tsetAttr \".t\" -type \"double3\" 0 5 0 ;\ncreateNode clusterHandle -n \"hShape\" -p \"h\";\ncreateNode cluster -n \"cl\";\ncreateNode groupParts -n \"gp\";\n\tsetAttr \".ic\" -type \"componentList\" 1 \"cv[2]\";\nconnectAttr \"cShapeOrig.ws\" \"gp.ig\";\nconnectAttr \"gp.og\" \"cl.ip[0].ig\";\nconnectAttr \"cl.og[0]\" \"cShape.cr\";\nconnectAttr \"h.wm\" \"cl.ma\";\nconnectAttr \"hShape.x\" \"cl.x\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    let id = s.graph.find("cShape").unwrap().unwrap();
+    let c = aztek_scene::curves::world_curve(&mut s.graph, id).unwrap();
+    assert_near(c.cvs[2].to_array().to_vec(), &[2.0, 5.0, 0.0], "the member moved");
+    assert_near(c.cvs[0].to_array().to_vec(), &[0.0, 0.0, 0.0], "the others did not");
+}
+
+#[test]
+fn a_constraint_drives_only_the_channels_the_file_wires() {
+    let body = "createNode transform -n \"tgt\";\n\tsetAttr \".t\" -type \"double3\" 1 2 3 ;\ncreateNode transform -n \"obj\";\n\tsetAttr \".t\" -type \"double3\" 0 9 0 ;\ncreateNode pointConstraint -n \"pc\" -p \"obj\";\n\taddAttr -dcb 0 -ci true -k true -sn \"w0\" -ln \"tgtW0\" -dv 1 -min 0 -at \"double\";\nconnectAttr \"tgt.t\" \"pc.tg[0].tt\";\nconnectAttr \"tgt.pm\" \"pc.tg[0].tpm\";\nconnectAttr \"pc.w0\" \"pc.tg[0].tw\";\nconnectAttr \"pc.ctx\" \"obj.tx\";\nconnectAttr \"pc.ctz\" \"obj.tz\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "obj.t"), &[1.0, 9.0, 3.0], "Y as stored");
+}
+
+#[test]
+fn a_blocked_constraint_holds_its_rest() {
+    let body = "createNode transform -n \"tgt\";\n\tsetAttr \".t\" -type \"double3\" 1 2 3 ;\ncreateNode transform -n \"sw\";\n\taddAttr -ci true -k true -sn \"st\" -ln \"st\" -dv 2 -at \"double\";\ncreateNode transform -n \"obj\";\n\tsetAttr \".t\" -type \"double3\" 4 5 6 ;\ncreateNode pointConstraint -n \"pc\" -p \"obj\";\n\taddAttr -dcb 0 -ci true -k true -sn \"w0\" -ln \"tgtW0\" -dv 1 -min 0 -at \"double\";\n\tsetAttr \".rst\" -type \"double3\" 4 5 6 ;\nconnectAttr \"tgt.t\" \"pc.tg[0].tt\";\nconnectAttr \"tgt.pm\" \"pc.tg[0].tpm\";\nconnectAttr \"pc.w0\" \"pc.tg[0].tw\";\nconnectAttr \"pc.ctx\" \"obj.tx\";\nconnectAttr \"pc.cty\" \"obj.ty\";\nconnectAttr \"pc.ctz\" \"obj.tz\";\nconnectAttr \"sw.st\" \"pc.nds\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "obj.t"), &[4.0, 5.0, 6.0], "blocked");
+    s.run("setAttr", json!({"args": ["sw.st", 0.0]})).unwrap();
+    assert_near(get(&mut s, "obj.t"), &[1.0, 2.0, 3.0], "running");
+}
+
+#[test]
+fn an_extrude_and_a_colour_set_come_from_a_file() {
+    let curve = |n: &str, pts: &str| format!("createNode transform -n \"{n}\";\ncreateNode nurbsCurve -n \"{n}Shape\" -p \"{n}\";\n\tsetAttr -k off \".v\";\n\tsetAttr \".cc\" -type \"nurbsCurve\" \n\t\t1 1 0 no 3\n\t\t2 0 1\n\t\t2\n\t\t{pts}\n\t\t;\n");
+    let body = format!("{}{}createNode extrude -n \"ex\";\n\tsetAttr \".fpt\" yes;\ncreateNode reverseSurface -n \"rs\";\ncreateNode transform -n \"srf\";\ncreateNode nurbsSurface -n \"srfShape\" -p \"srf\";\nconnectAttr \"prof1Shape.ws\" \"ex.pr\";\nconnectAttr \"path1Shape.ws\" \"ex.pt\";\nconnectAttr \"ex.os\" \"rs.is\";\nconnectAttr \"rs.os\" \"srfShape.cr\";\ncreateNode transform -n \"m\";\ncreateNode mesh -n \"mShape\" -p \"m\";\ncreateNode mesh -n \"mShapeOrig\" -p \"m\";\n\tsetAttr \".io\" yes;\n\tsetAttr -s 3 \".vt[0:2]\" 0 0 0 1 0 0 0 1 0;\n\tsetAttr -s 3 \".ed[0:2]\" 0 1 0 1 2 0 2 0 0;\n\tsetAttr -ch 3 \".fc[0]\" -type \"polyFaces\" f 3 0 1 2;\ncreateNode createColorSet -n \"cc\";\nconnectAttr \"mShapeOrig.w\" \"cc.ig\";\nconnectAttr \"cc.og\" \"mShape.i\";\n", curve("prof1", "0 0 0\n\t\t1 0 0"), curve("path1", "0 0 0\n\t\t0 5 0"));
+    let (mut s, w) = load(&body);
+    assert!(w.is_empty(), "{w:?}");
+    let id = s.graph.find("srfShape").unwrap().unwrap();
+    assert!(s.graph.source(&aztek_scene::plug::PlugRef::new(id, aztek_scene::surfaces::SurfaceShape::CREATE as i32)).is_some(), "wired");
+    assert_eq!(s.run("polyEvaluate", json!({"args": ["mShape"], "vertex": true})).unwrap(), json!(3));
+}
+
+#[test]
+fn a_ramp_reads_its_entries() {
+    let body = "createNode ramp -n \"rp\";\n\tsetAttr -s 2 \".cel\";\n\tsetAttr \".cel[0].ep\" 0;\n\tsetAttr \".cel[0].ec\" -type \"float3\" 0 0 0 ;\n\tsetAttr \".cel[1].ep\" 1;\n\tsetAttr \".cel[1].ec\" -type \"float3\" 4 0 0 ;\n\tsetAttr \".v\" 0.25;\ncreateNode transform -n \"o\";\nconnectAttr \"rp.ocr\" \"o.tx\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "o.tx"), &[1.0], "a quarter of the way");
+}
+
+#[test]
+fn a_curve_fed_by_its_original_has_its_points_and_percentage_is_of_the_range() {
+    let body = "createNode transform -n \"c\";\ncreateNode nurbsCurve -n \"cShape\" -p \"c\";\n\tsetAttr -k off \".v\";\ncreateNode nurbsCurve -n \"cShapeOrig\" -p \"c\";\n\tsetAttr -k off \".v\";\n\tsetAttr \".io\" yes;\n\tsetAttr \".cc\" -type \"nurbsCurve\" \n\t\t1 2 0 no 3\n\t\t3 0 1 2\n\t\t3\n\t\t0 0 0\n\t\t1 0 0\n\t\t11 0 0\n\t\t;\nconnectAttr \"cShapeOrig.ws\" \"cShape.cr\";\ncreateNode pointOnCurveInfo -n \"pc\";\n\tsetAttr \".pr\" 0.5;\n\tsetAttr \".top\" yes;\nconnectAttr \"cShape.ws\" \"pc.ic\";\ncreateNode transform -n \"o\";\nconnectAttr \"pc.p\" \"o.t\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "o.t"), &[1.0, 0.0, 0.0], "half the range is the middle CV, a sixth of the length");
+}
+
+#[test]
+fn a_transform_limit_can_be_driven() {
+    let body = "createNode transform -n \"sw\";\n\taddAttr -ci true -k true -sn \"on\" -ln \"on\" -min 0 -max 1 -at \"bool\";\ncreateNode transform -n \"o\";\n\tsetAttr \".t\" -type \"double3\" 5 0 0 ;\n\tsetAttr \".mxtl\" -type \"double3\" 2 0 0 ;\nconnectAttr \"sw.on\" \"o.xtxe\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(world_at(&mut s, "o"), &[5.0, 0.0, 0.0], "off");
+    s.run("setAttr", json!({"args": ["sw.on", true]})).unwrap();
+    assert_near(world_at(&mut s, "o"), &[2.0, 0.0, 0.0], "held");
+}
+
+#[test]
+fn a_control_point_on_a_curve_with_history_is_a_move() {
+    let body = "createNode transform -n \"c\";\ncreateNode nurbsCurve -n \"cShape\" -p \"c\";\n\tsetAttr -k off \".v\";\n\tsetAttr \".tw\" yes;\ncreateNode nurbsCurve -n \"cShapeOrig\" -p \"c\";\n\tsetAttr -k off \".v\";\n\tsetAttr \".io\" yes;\n\tsetAttr \".cc\" -type \"nurbsCurve\" \n\t\t1 1 0 no 3\n\t\t2 0 1\n\t\t2\n\t\t1 0 0\n\t\t2 0 0\n\t\t;\ncreateNode transform -n \"j\";\n\tsetAttr \".t\" -type \"double3\" 0 3 0 ;\nconnectAttr \"cShapeOrig.ws\" \"cShape.cr\";\nconnectAttr \"j.t\" \"cShape.cp[1]\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    let id = s.graph.find("cShape").unwrap().unwrap();
+    let c = aztek_scene::curves::world_curve(&mut s.graph, id).unwrap();
+    assert_near(c.cvs[1].to_array().to_vec(), &[2.0, 3.0, 0.0], "on top of the original");
+}
+
+#[test]
 fn an_aim_with_a_zero_up_vector_turns_the_shortest_way() {
     let body = "createNode transform -n \"tgt\";\n\tsetAttr \".t\" -type \"double3\" 1 0 1 ;\ncreateNode transform -n \"obj\";\ncreateNode aimConstraint -n \"ac\" -p \"obj\";\n\taddAttr -dcb 0 -ci true -sn \"w0\" -ln \"tgtW0\" -dv 1 -at \"double\";\n\tsetAttr \".a\" -type \"double3\" 0 0 1 ;\n\tsetAttr \".wu\" -type \"double3\" 0 0 0 ;\nconnectAttr \"tgt.t\" \"ac.tg[0].tt\";\nconnectAttr \"tgt.pm\" \"ac.tg[0].tpm\";\nconnectAttr \"ac.w0\" \"ac.tg[0].tw\";\nconnectAttr \"obj.t\" \"ac.ct\";\nconnectAttr \"ac.crx\" \"obj.rx\";\nconnectAttr \"ac.cry\" \"obj.ry\";\nconnectAttr \"ac.crz\" \"obj.rz\";\n";
     let (mut s, w) = load(body);

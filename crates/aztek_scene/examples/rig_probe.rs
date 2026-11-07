@@ -26,6 +26,22 @@ fn main() {
             println!("{plug}: {:.1} ms per change", t.elapsed().as_secs_f64() * 1000.0 / 30.0);
             continue;
         }
+        // expressions: says which expression nodes don't parse.
+        if a == "expressions" {
+            for id in s.graph.nodes() {
+                let Some(n) = s.graph.node(id) else { continue };
+                if n.ty().name != "expression" {
+                    continue;
+                }
+                let Some(at) = n.ty().attr_index("expression") else { continue };
+                if let aztek_scene::plug::PlugValue::String(src) = n.value(at) {
+                    if let Err(e) = aztek_scene::expression::parse(src) {
+                        println!("{}: {e}", n.name());
+                    }
+                }
+            }
+            continue;
+        }
         if a == "touch" {
             // Dirties everything and evaluates again: a result that moves was not settled.
             for id in s.graph.nodes() {

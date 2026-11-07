@@ -72,7 +72,14 @@ fn component_ids(values: &[Tok], count: u32) -> Vec<u32> {
     let mut out = Vec::new();
     for t in values {
         let Some(text) = t.text() else { continue };
-        let Some(inner) = text.strip_prefix("vtx[").or_else(|| text.strip_prefix("cp[")).and_then(|x| x.strip_suffix(']')) else { continue };
+        if let Some((u, v)) = text.strip_prefix("cv[").and_then(|x| x.split_once("][")) {
+            // A surface's CVs: only every one of them is understood here.
+            if u == "*" && v == "*]" {
+                out.extend(0..count);
+            }
+            continue;
+        }
+        let Some(inner) = text.strip_prefix("vtx[").or_else(|| text.strip_prefix("cp[")).or_else(|| text.strip_prefix("cv[")).and_then(|x| x.strip_suffix(']')) else { continue };
         if inner == "*" {
             out.extend(0..count);
         } else if let Some((a, b)) = inner.split_once(':') {
@@ -230,8 +237,8 @@ impl Build<'_> {
         }
 
         let capacity = self.s.graph.value(&deform::plug(id, IN)).ok().and_then(|v| v.as_mesh().map(|m| m.point_capacity())).unwrap_or(0);
-        self.read_members(&d, capacity);
-        self.read_weights(&d, capacity);
+        let members = self.read_members(&d, capacity);
+        self.read_weights(&d, capacity, members.as_deref());
 
         if t.is_a("nonLinear") {
             self.read_nonlinear(&d, &t);
@@ -265,27 +272,37 @@ impl Build<'_> {
         }
     }
 
-    fn read_members(&mut self, d: &FileDeformer, capacity: u32) {
+    /// The points the deformer acts on, when that isn't all of them.
+    fn read_members(&mut self, d: &FileDeformer, capacity: u32) -> Option<Vec<u32>> {
         let doc = self.doc;
-        let conn = doc.conns.iter().find(|c| c.dst == d.doc && matches!(plain_attr(&c.dst_attr).as_str(), "ip.ig" | "input.inputGeometry") && first_index(&c.dst_attr).unwrap_or(0) == d.geometry);
-        let Some(conn) = conn else { return };
+        let conn = doc.conns.iter().find(|c| c.dst == d.doc && matches!(plain_attr(&c.dst_attr).as_str(), "ip.ig" | "input.inputGeometry") && first_index(&c.dst_attr).unwrap_or(0) == d.geometry)?;
         let parts = &doc.nodes[conn.src];
         if parts.ty != "groupParts" {
-            return;
+            return None;
         }
-        let Some(set) = parts.set_of(&["ic", "inputComponents"]) else { return };
+        let set = parts.set_of(&["ic", "inputComponents"])?;
         let ids = component_ids(&set.values, capacity);
-        if ids.len() < capacity as usize {
-            let _ = crate::deform_sets::replace_members(&mut self.s.graph, d.id, d.shape, &ids);
+        if ids.len() >= capacity as usize {
+            return None;
         }
+        let _ = crate::deform_sets::replace_members(&mut self.s.graph, d.id, d.shape, &ids);
+        Some(ids)
     }
 
-    fn read_weights(&mut self, d: &FileDeformer, capacity: u32) {
+    fn read_weights(&mut self, d: &FileDeformer, capacity: u32, members: Option<&[u32]>) {
         let lists = read_weights(&self.doc.nodes[d.doc]);
-        let Some(list) = lists.get(d.geometry as usize).filter(|l| !l.is_empty()) else { return };
-        // Maya's default for a point it doesn't list is 1.
-        let mut w = vec![1.0; capacity as usize];
-        for &(p, v) in list {
+        let list = lists.get(d.geometry as usize).filter(|l| !l.is_empty());
+        if list.is_none() && members.is_none() {
+            return;
+        }
+        // Maya's default for a point it doesn't list is 1, and a point out of the set doesn't move.
+        let mut w = vec![if members.is_some() { 0.0 } else { 1.0 }; capacity as usize];
+        for &p in members.unwrap_or(&[]) {
+            if let Some(x) = w.get_mut(p as usize) {
+                *x = 1.0;
+            }
+        }
+        for &(p, v) in list.map_or(&[][..], |l| l.as_slice()) {
             if let Some(x) = w.get_mut(p as usize) {
                 *x = v;
             }
@@ -459,6 +476,8 @@ impl Build<'_> {
                     continue;
                 }
                 let attr = if matches!(plain_dst.as_str(), "ma" | "matrix") { "handleMatrix" } else { c.dst_attr.as_str() };
+                // A wrap's driver may be a curve.
+                let from = if matches!(plain_dst.as_str(), "dp" | "driverPoints") { self.target_source(src, from.clone()) } else { from.clone() };
                 self.connect_quietly(&from, &format!("{path}.{attr}"));
             }
         }

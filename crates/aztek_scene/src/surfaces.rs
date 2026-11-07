@@ -500,6 +500,7 @@ pub(crate) struct ExtrudeOptions {
     pub scale: f64,
     pub rotation: f64,
     pub fixed_path: bool,
+    pub profile_normal: bool,
 }
 
 /// Maya's extrude: U along the profile, V along the path. Distance moves it straight; flat keeps the profile's
@@ -540,9 +541,21 @@ pub(crate) fn extrude_surface(profile: &NurbsCurve, path: Option<&NurbsCurve>, o
     }
     let axis = if start_t == DVec3::ZERO { DVec3::Z } else { start_t };
     let q0 = way.cvs[0];
+    // The profile turned so its plane is square to the path's start.
+    let lift = if o.profile_normal && lap.len() > 2 {
+        let mut n = DVec3::ZERO;
+        for k in 0..lap.len() {
+            n += (lap[k] - center).cross(lap[(k + 1) % lap.len()] - center);
+        }
+        let n = n.normalize_or_zero();
+        let n = if n.dot(axis) < 0.0 { -n } else { n };
+        if n == DVec3::ZERO { DQuat::IDENTITY } else { DQuat::from_rotation_arc(n, axis) }
+    } else {
+        DQuat::IDENTITY
+    };
     Some(NurbsSurface::from_curves(profile, &way, |i, j| {
         let s = ((params[j] - lo) / (hi - lo).max(1e-12)).clamp(0.0, 1.0);
-        let local = DQuat::from_axis_angle(axis, o.rotation.to_radians() * s) * ((profile.cvs[i] - center) * (1.0 + (o.scale - 1.0) * s));
+        let local = DQuat::from_axis_angle(axis, o.rotation.to_radians() * s) * (lift * (profile.cvs[i] - center) * (1.0 + (o.scale - 1.0) * s));
         let base = if o.fixed_path && path.is_some() { way.cvs[j] } else { center + way.cvs[j] - q0 };
         base + turns[j] * local
     }))
