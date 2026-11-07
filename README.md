@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/logo.png" alt="Aztek" width="420"></p>
+<p align="center"><img src="docs/splash.png" alt="Aztek"></p>
 
 [![Build](https://github.com/srlegrand/Aztek/actions/workflows/build.yml/badge.svg)](https://github.com/srlegrand/Aztek/actions/workflows/build.yml)
 
@@ -49,8 +49,6 @@ blendShapes, 82 IK handles, follicles, ribbons and wires. It opens in about 3 se
 - **Playblast** to images or, through ffmpeg, to a movie.
 - **Interface:** menu sets, shelves with an editor, hotkey editor, marking menus, hotbox, channel box, outliner, attribute
   editor, node editor, tool settings, panel layouts, workspaces.
-
-![Splash](docs/splash.png)
 
 ![Aztek](docs/screenshot.png)
 
