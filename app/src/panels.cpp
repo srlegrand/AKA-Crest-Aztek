@@ -1,4 +1,5 @@
 #include "panels.h"
+#include "colorchooser.h"
 #include <QStyle>
 #include <QMouseEvent>
 #include "host.h"
@@ -402,12 +403,14 @@ LayerEditor::LayerEditor(QWidget* parent) : Panel(parent) {
             int t = (it->data(2, Qt::UserRole).toInt() + 1) % 3;
             exec("setAttr", args(QJsonArray{layer + ".displayType", t}));
         } else if (col == 3) {
-            QColor c = QColorDialog::getColor(it->background(3).color(), this, "Layer Color");
-            if (c.isValid()) {
-                exec("setAttr", args(QJsonArray{layer + ".useColor", true}));
-                exec("setAttr", args(QJsonArray{layer + ".colorR", c.redF()}));
-                exec("setAttr", args(QJsonArray{layer + ".colorG", c.greenF()}));
-                exec("setAttr", args(QJsonArray{layer + ".colorB", c.blueF()}));
+            ColorChoice c = choose_display_color(this, "Layer Color", it->data(3, Qt::UserRole).toInt(), it->data(3, Qt::UserRole + 1).toBool(), it->data(3, Qt::UserRole + 2).value<QColor>());
+            if (c.accepted) {
+                exec("setAttr", args(QJsonArray{layer + ".overrideRGBColors", c.use_rgb}));
+                if (c.use_rgb) {
+                    exec("setAttr", QJsonObject{{"args", QJsonArray{layer + ".overrideColorRGB", c.rgb.redF(), c.rgb.greenF(), c.rgb.blueF()}}, {"type", "double3"}});
+                } else {
+                    exec("setAttr", args(QJsonArray{layer + ".color", c.index}));
+                }
             }
         }
     });
@@ -456,6 +459,11 @@ void LayerEditor::refresh() {
             QJsonArray c = l["color"].toArray();
             it->setBackground(3, QColor::fromRgbF(c[0].toDouble(), c[1].toDouble(), c[2].toDouble()));
         }
+        QJsonArray rgb = l["rgb"].toArray();
+        it->setData(3, Qt::UserRole, l["colorIndex"].toInt());
+        it->setData(3, Qt::UserRole + 1, l["useRgb"].toBool());
+        it->setData(3, Qt::UserRole + 2, QColor::fromRgbF(rgb[0].toDouble(), rgb[1].toDouble(), rgb[2].toDouble()));
+        it->setToolTip(3, "Layer color. Click to choose.");
         it->setFlags((it->flags() | Qt::ItemIsDragEnabled) & ~Qt::ItemIsDropEnabled);
         it->setToolTip(4, QString("%1 members. Double-click to select them.").arg(l["members"].toArray().size()));
     }

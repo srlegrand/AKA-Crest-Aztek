@@ -164,7 +164,7 @@ pub fn effectively_visible_with(g: &Graph, id: NodeId, inherit: bool) -> bool {
     let mut n = id;
     while n != NO_NODE {
         if let Some(node) = g.node(n) {
-            if node.ty().dag && (!node.bool(Transform::VISIBILITY) || crate::display_layers::hidden_by_own_layer(g, n)) {
+            if node.ty().dag && (!node.bool(Transform::VISIBILITY) || crate::draw_style::hidden_by_override(g, n)) {
                 return false;
             }
         }
@@ -254,6 +254,23 @@ fn vec3_out(name: &str, short: &str, children: [&str; 3], child_short: [&str; 3]
     vec3_named(name, short, DVec3::ZERO, flags::OUTPUT | flags::HIDDEN, children, child_short, "")
 }
 
+/// A stored colour of three floats, with Maya's names for its children.
+fn color3(name: &str, short: &str, kids: [&str; 3], kid_short: [&str; 3], doc: &str) -> AttrDef {
+    AttrDef {
+        name: name.into(),
+        short_name: short.into(),
+        ty: PlugType::Vec3,
+        default_value: PlugValue::Vec3(DVec3::ZERO),
+        flags: crate::node::IN_STORE | flags::COLOR,
+        child_names: kids.map(String::from),
+        child_short: kid_short.map(String::from),
+        min_value: Some(0.0),
+        max_value: Some(1.0),
+        doc: doc.into(),
+        ..Default::default()
+    }
+}
+
 /// Maya's dagNode: what every node in the hierarchy has, transforms and shapes alike. Abstract.
 #[derive(Clone, Default)]
 pub struct DagNode;
@@ -282,7 +299,21 @@ impl DagNode {
     pub const BOUNDING_BOX_MAX: usize = 20;
     pub const BOUNDING_BOX_SIZE: usize = 21;
     pub const CENTER: usize = 22;
-    pub const COUNT: usize = 23;
+    pub const OVERRIDE_LEVEL_OF_DETAIL: usize = 23;
+    pub const OVERRIDE_SHADING: usize = 24;
+    pub const OVERRIDE_TEXTURING: usize = 25;
+    pub const OVERRIDE_PLAYBACK: usize = 26;
+    pub const OVERRIDE_VISIBILITY: usize = 27;
+    pub const HIDE_ON_PLAYBACK: usize = 28;
+    pub const OVERRIDE_COLOR_A: usize = 29;
+    pub const USE_OBJECT_COLOR: usize = 30;
+    pub const OBJECT_COLOR: usize = 31;
+    pub const OBJECT_COLOR_RGB: usize = 32;
+    pub const WIRE_COLOR_RGB: usize = 33;
+    pub const USE_OUTLINER_COLOR: usize = 34;
+    pub const OUTLINER_COLOR: usize = 35;
+    pub const SELECTION_CHILD_HIGHLIGHTING: usize = 36;
+    pub const COUNT: usize = 37;
 
     /// Outputs every DAG node has that follow from its matrices. `parent` is the parent's world matrix, without
     /// offsetParentMatrix.
@@ -337,12 +368,12 @@ impl DagNode {
                     ..Default::default()
                 },
                 AttrDef {
-                    name: "displayLayer".into(),
-                    short_name: "dl".into(),
+                    name: "drawOverride".into(),
+                    short_name: "do".into(),
                     ty: PlugType::Int,
                     default_value: PlugValue::Int(0),
                     flags: flags::INPUT | flags::HIDDEN,
-                    doc: "Display layer membership: connected from a displayLayer's drawInfo.".into(),
+                    doc: "The drawing overrides as one plug: a displayLayer's drawInfo connects here, and then drives them all.".into(),
                     ..Default::default()
                 },
                 AttrDef {
@@ -360,7 +391,7 @@ impl DagNode {
                     ty: PlugType::Bool,
                     default_value: PlugValue::Bool(false),
                     flags: IN_STORE,
-                    doc: "Use this node's own display settings: colour and display type.".into(),
+                    doc: "Turns the other drawing overrides on.".into(),
                     ..Default::default()
                 },
                 AttrDef {
@@ -370,7 +401,7 @@ impl DagNode {
                     default_value: PlugValue::Int(0),
                     flags: IN_STORE,
                     enum_names: vec!["Normal".into(), "Template".into(), "Reference".into()],
-                    doc: "Normal, Template (grey, unpickable) or Reference (unpickable).".into(),
+                    doc: "Normal, Template (grey wire, not pickable in the viewport) or Reference (not pickable in the viewport).".into(),
                     ..Default::default()
                 },
                 AttrDef {
@@ -393,7 +424,7 @@ impl DagNode {
                     doc: "Take the colour from overrideColorRGB instead of the index.".into(),
                     ..Default::default()
                 },
-                crate::node::vec3_attr("overrideColorRGB", "ovrgb", DVec3::ZERO, IN_STORE, "The override colour, 0 to 1 per channel."),
+                color3("overrideColorRGB", "ovrgb", ["overrideColorR", "overrideColorG", "overrideColorB"], ["ovcr", "ovcg", "ovcb"], "The override colour, 0 to 1 per channel."),
                 AttrDef {
                     name: "ghosting".into(),
                     short_name: "gh".into(),
@@ -432,13 +463,65 @@ impl DagNode {
                 },
                 out_matrix("worldInverseMatrix", "wim", "Inverse of worldMatrix."),
                 out_matrix("parentInverseMatrix", "pim", "Inverse of the parent's world matrix."),
-                bool_in("template", "tmp", false, "Drawn grey and not pickable."),
+                bool_in("template", "tmp", false, "Drawn as a grey wire and not pickable in the viewport, children included."),
                 bool_in("lodVisibility", "lodv", true, "Level of detail visibility."),
                 bool_in("hiddenInOutliner", "hio", false, "Left out of the Outliner."),
                 vec3_out("boundingBoxMin", "bbmn", ["boundingBoxMinX", "boundingBoxMinY", "boundingBoxMinZ"], ["bbnx", "bbny", "bbnz"]),
                 vec3_out("boundingBoxMax", "bbmx", ["boundingBoxMaxX", "boundingBoxMaxY", "boundingBoxMaxZ"], ["bbxx", "bbxy", "bbxz"]),
                 vec3_out("boundingBoxSize", "bbsi", ["boundingBoxSizeX", "boundingBoxSizeY", "boundingBoxSizeZ"], ["bbsx", "bbsy", "bbsz"]),
                 vec3_out("center", "c", ["centerX", "centerY", "centerZ"], ["cx", "cy", "cz"]),
+                AttrDef {
+                    name: "overrideLevelOfDetail".into(),
+                    short_name: "ovlod".into(),
+                    ty: PlugType::Enum,
+                    default_value: PlugValue::Int(0),
+                    flags: IN_STORE,
+                    enum_names: vec!["Full".into(), "Bounding Box".into()],
+                    doc: "Full, or drawn as a bounding box.".into(),
+                    ..Default::default()
+                },
+                bool_in("overrideShading", "ovs", true, "Off draws a wireframe in shaded display."),
+                bool_in("overrideTexturing", "ovt", true, "Off leaves textures out in shaded display."),
+                bool_in("overridePlayback", "ovp", true, "Off leaves the object out of the view during playback."),
+                bool_in("overrideVisibility", "ovv", true, "Off hides the object."),
+                bool_in("hideOnPlayback", "hpb", false, "Hide the object while the animation plays."),
+                AttrDef {
+                    name: "overrideColorA".into(),
+                    short_name: "ovca".into(),
+                    ty: PlugType::Float,
+                    default_value: PlugValue::Float(1.0),
+                    flags: IN_STORE,
+                    min_value: Some(0.0),
+                    max_value: Some(1.0),
+                    doc: "The override colour's alpha, if supported.".into(),
+                    ..Default::default()
+                },
+                AttrDef {
+                    name: "useObjectColor".into(),
+                    short_name: "uoc".into(),
+                    ty: PlugType::Enum,
+                    default_value: PlugValue::Int(0),
+                    flags: IN_STORE,
+                    enum_names: vec!["Type Default".into(), "Object Color".into(), "Wire Color RGB".into()],
+                    doc: "Wireframe colour: 0 by type and preference, 1 objectColor, 2 wireColorRGB.".into(),
+                    ..Default::default()
+                },
+                AttrDef {
+                    name: "objectColor".into(),
+                    short_name: "oc".into(),
+                    ty: PlugType::Int,
+                    default_value: PlugValue::Int(0),
+                    flags: IN_STORE,
+                    min_value: Some(0.0),
+                    max_value: Some(7.0),
+                    doc: "Dormant wireframe colour, one of the eight user colours, 0 to 7.".into(),
+                    ..Default::default()
+                },
+                color3("objectColorRGB", "obcc", ["objectColorR", "objectColorG", "objectColorB"], ["obcr", "obcg", "obcb"], "Floating point object colour."),
+                color3("wireColorRGB", "wfcc", ["wireColorR", "wireColorG", "wireColorB"], ["wfcr", "wfcg", "wfcb"], "Floating point wireframe colour, used when useObjectColor is 2."),
+                bool_in("useOutlinerColor", "uocol", false, "Show the name in the Outliner in outlinerColor."),
+                color3("outlinerColor", "oclr", ["outlinerColorR", "outlinerColorG", "outlinerColorB"], ["oclrr", "oclrg", "oclrb"], "The name's colour in the Outliner."),
+                bool_in("selectionChildHighlighting", "sech", true, "Highlight this node when something above it is selected."),
             ],
             ..Default::default()
         }

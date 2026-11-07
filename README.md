@@ -22,7 +22,8 @@ blendShapes, 82 IK handles, follicles, ribbons and wires. It opens in about 3 se
 - **Materials and textures:** lambert, blinn, phong, phongE and surfaceShader with file textures and place2dTexture, assigned to objects or faces; Textured mode (6) in the viewport; Hypershade lists; the image behind the UV Editor.
 - **Rigging:** joints (orient, mirror, insert, segment scale compensate), RP, SC and spline IK, every constraint, smooth
   skin with weight painting, mirror and copy, dual quaternion; lattice, wrap, wire, delta mush, softMod, nonlinears,
-  clusters, blend shapes; a HumanIK subset (skeleton, definition, control rig, retargeting).
+  clusters, blend shapes; a HumanIK subset (skeleton, definition, control rig, retargeting). Controls keep their colours:
+  drawing overrides, templates, reference display, display layer colours and wireframe colours.
 
   ![A quadruped skeleton posed with the rotate tool](docs/quadruped-rig.png)
 - **Animation:** keys with weighted tangents and infinities, Graph Editor, Dope Sheet, set driven keys, breakdowns,

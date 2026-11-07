@@ -117,16 +117,16 @@ fn template_and_reference_are_drawn_but_not_pickable_colour() {
     assert!(visible(&mut s, &cube));
     assert!(dl::pickable(&s.graph, id(&s, &other)));
 
-    run(&mut s, "displayLayer", json!({"args": [layer], "displayType": "reference", "color": [1.0, 0.0, 0.0]}));
+    run(&mut s, "displayLayer", json!({"args": [layer], "displayType": "reference", "rgbColor": [1.0, 0.0, 0.0]}));
     assert!(!dl::pickable(&s.graph, c));
-    assert_eq!(dl::display(&s.graph, c).color.unwrap().x, 1.0);
+    assert_eq!(dl::display(&s.graph, c).color.unwrap()[0], 1.0);
 
     // A child in a layer of its own follows that one, not its parent's.
     run(&mut s, "createDisplayLayer", json!({"args": [cube]}));
     assert!(dl::pickable(&s.graph, c));
     assert!(dl::display(&s.graph, c).color.is_none());
 
-    run(&mut s, "displayLayer", json!({"args": [layer], "useColor": false}));
+    run(&mut s, "displayLayer", json!({"args": [layer], "color": 0}));
     assert!(run(&mut s, "displayLayer", json!({"args": [layer]}))["color"].is_null());
     assert!(s.run("displayLayer", json!({"args": [layer], "displayType": "ghost"})).is_err());
     assert!(s.run("displayLayer", json!({"args": [cube]})).is_err());

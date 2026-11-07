@@ -63,6 +63,20 @@ fn is_shape(g: &Graph, id: NodeId) -> bool {
     g.node(id).is_some_and(|n| n.ty().is_a("shape"))
 }
 
+/// A transform with shapes reads as what its shapes are, since those are hidden in the usual Outliner view.
+fn outliner_display(g: &Graph, id: NodeId) -> i32 {
+    use aztek_scene::draw_style::{display_kind, DisplayKind};
+    let own = display_kind(g, id);
+    if own != DisplayKind::Normal || !g.node(id).is_some_and(|n| n.ty().is_a("transform")) {
+        return own as i32;
+    }
+    let kinds: Vec<DisplayKind> = aztek_scene::dag::shapes(g, id, false).iter().map(|&s| display_kind(g, s)).collect();
+    match kinds.first() {
+        Some(&k) if kinds.iter().all(|&x| x == k) => k as i32,
+        _ => own as i32,
+    }
+}
+
 fn outliner_node(g: &Graph, id: NodeId, shapes: bool, show_intermediate: bool, sel: &[NodeId]) -> Option<Value> {
     let n = g.node(id)?;
     let shape = n.ty().is_a("shape");
@@ -98,6 +112,9 @@ fn outliner_node(g: &Graph, id: NodeId, shapes: bool, show_intermediate: bool, s
         "selected": sel.contains(&id),
         "visible": !n.ty().dag || n.bool(DagNode::VISIBILITY),
         "intermediate": intermediate,
+        // 0 normal, 1 template, 2 reference, inherited; the name's colour when useOutlinerColor is on.
+        "display": outliner_display(g, id),
+        "outlinerColor": (n.ty().dag && n.bool(DagNode::USE_OUTLINER_COLOR)).then(|| n.data().vec3(DagNode::OUTLINER_COLOR).to_array()),
         "children": kids,
     }))
 }
@@ -338,7 +355,7 @@ fn node_attrs(g: &Graph, id: NodeId) -> Value {
             "plug": format!("{path}.{}", a.name),
             "nice": attr_nice(a),
             "type": type_name(a.ty),
-            "value": value_json(n.value(i)),
+            "value": value_json(&aztek_scene::draw_style::through_layer(g, &aztek_scene::plug::PlugRef::new(id, i as i32)).unwrap_or_else(|| n.value(i).clone())),
             "enum": a.enum_names,
             "children": a.child_names,
             "output": a.flags & flags::OUTPUT != 0,
@@ -347,8 +364,10 @@ fn node_attrs(g: &Graph, id: NodeId) -> Value {
             "doc": a.doc,
             "min": a.soft_min.or(a.min_value),
             "max": a.soft_max.or(a.max_value),
-            "connected": g.source(&aztek_scene::plug::PlugRef::new(id, i as i32)).is_some(),
+            "connected": g.source(&aztek_scene::plug::PlugRef::new(id, i as i32)).is_some() || aztek_scene::draw_style::driven_by_layer(g, &aztek_scene::plug::PlugRef::new(id, i as i32)),
             "source": g.source(&aztek_scene::plug::PlugRef::new(id, i as i32)).map(|s| g.path(s.node)),
+            // Wire and interface colours are shown as they are stored; materials' are linear.
+            "displayColor": matches!(a.name.as_str(), "overrideColorRGB" | "objectColorRGB" | "wireColorRGB" | "outlinerColor"),
             "color": a.flags & flags::COLOR != 0,
             "pair": !a.child_names[0].is_empty() && a.child_names[2].is_empty(),
             "file": a.flags & flags::FILE != 0,
@@ -477,7 +496,10 @@ pub fn layers(core: &Core) -> Value {
             "displayType": n.int(aztek_scene::display_layers::DISPLAY_TYPE),
             "order": n.int(aztek_scene::display_layers::DISPLAY_ORDER),
             "playback": !n.bool(aztek_scene::display_layers::HIDE_ON_PLAYBACK),
-            "color": if n.bool(aztek_scene::display_layers::USE_COLOR) { let c = n.vec3(aztek_scene::display_layers::COLOR); json!([c.x, c.y, c.z]) } else { Value::Null },
+            "color": aztek_scene::display_layers::layer_color(n).map_or(Value::Null, |c| json!(c)),
+            "colorIndex": n.int(aztek_scene::display_layers::COLOR),
+            "useRgb": n.bool(aztek_scene::display_layers::OVERRIDE_RGB_COLORS),
+            "rgb": n.vec3(aztek_scene::display_layers::OVERRIDE_COLOR_RGB).to_array(),
             "members": members,
         }));
     }

@@ -26,9 +26,6 @@ pub struct Extras {
     pub cycle_check: Option<bool>,
     pub evaluation_mode: Option<String>,
     pub thread_count: Option<i64>,
-    pub display_color: BTreeMap<(String, bool), i64>,
-    pub display_rgb: BTreeMap<String, [f64; 4]>,
-    pub color_index: BTreeMap<i64, [f64; 3]>,
     pub display_pref: BTreeMap<String, Value>,
     pub display_stats: BTreeMap<String, Value>,
     pub display_surface: BTreeMap<(NodeId, String), bool>,
@@ -297,38 +294,22 @@ fn cycle_check(s: &mut Session, a: &Args) -> CmdResult {
 // ---------------------------------------------------------------------------------------------------------------------
 // Display colours
 
-/// Palette entries 0 to 31, Maya's defaults.
-const INDEX_COLORS: [[u8; 3]; 32] = [
-    [120, 120, 120], [0, 0, 0], [64, 64, 64], [153, 153, 153], [155, 0, 40], [0, 4, 96], [0, 0, 255], [0, 70, 25],
-    [38, 0, 67], [200, 0, 200], [138, 72, 51], [63, 35, 31], [153, 38, 0], [255, 0, 0], [0, 255, 0], [0, 65, 153],
-    [255, 255, 255], [255, 255, 0], [100, 220, 255], [67, 255, 163], [255, 176, 176], [228, 172, 121], [255, 255, 99], [0, 153, 84],
-    [161, 106, 48], [158, 161, 48], [104, 161, 48], [48, 161, 93], [48, 161, 161], [48, 103, 161], [111, 48, 161], [161, 48, 106],
-];
+use crate::draw_style::{self, DISPLAY_COLORS};
 
-/// (name, dormant index, active index).
-const DISPLAY_COLORS: &[(&str, i64, i64)] = &[
-    ("lead", 19, 19), ("background", 2, 2), ("curve", 5, 18), ("cv", 8, 18), ("hull", 25, 18), ("joint", 28, 20), ("locator", 5, 20),
-    ("nurbsCurve", 1, 18), ("nurbsSurface", 1, 19), ("polymesh", 5, 19), ("template", 3, 3), ("light", 16, 18), ("camera", 5, 18), ("cluster", 5, 18), ("lattice", 5, 18),
-    ("ikHandle", 5, 18), ("dimension", 5, 18), ("referenceLayer", 2, 2),
-];
-
-fn display_color(s: &mut Session, a: &Args) -> CmdResult {
+fn display_color(_s: &mut Session, a: &Args) -> CmdResult {
     if a.bool("list") {
         return Ok(Value::Array(DISPLAY_COLORS.iter().map(|c| json!(c.0)).collect()));
     }
     if a.bool("resetToFactory") || a.bool("resetToSaved") {
-        s.extras.display_color.clear();
+        draw_style::reset_display_indices();
         return Ok(Value::Null);
     }
     let Some(name) = a.pos_str(0).map(str::to_string) else { fail!("displayColor: name a colour") };
     let active = a.bool("active");
     let known = DISPLAY_COLORS.iter().find(|c| c.0 == name);
     if a.bool("query") {
-        if known.is_none() && !s.extras.display_color.contains_key(&(name.clone(), active)) {
-            fail!("displayColor: no colour named {name}");
-        }
-        let def = known.map(|c| if active { c.2 } else { c.1 }).unwrap_or(0);
-        return Ok(json!(s.extras.display_color.get(&(name, active)).copied().unwrap_or(def)));
+        let Some(i) = draw_style::display_index(&name, active) else { fail!("displayColor: no colour named {name}") };
+        return Ok(json!(i));
     }
     let Some(i) = a.positional.get(1).and_then(Value::as_i64) else { fail!("displayColor: give an index, 1 to 31") };
     if !(0..=31).contains(&i) {
@@ -337,11 +318,11 @@ fn display_color(s: &mut Session, a: &Args) -> CmdResult {
     if known.is_none() && !a.bool("create") {
         fail!("displayColor: no colour named {name}; use -create");
     }
-    s.extras.display_color.insert((name, active), i);
+    draw_style::set_display_index(&name, active, i);
     Ok(Value::Null)
 }
 
-fn display_rgb(s: &mut Session, a: &Args) -> CmdResult {
+fn display_rgb(_s: &mut Session, a: &Args) -> CmdResult {
     const NAMED: &[(&str, [f64; 4])] = &[
         ("background", [0.63, 0.63, 0.63, 1.0]),
         ("backgroundTop", [0.54, 0.62, 0.70, 1.0]),
@@ -355,13 +336,13 @@ fn display_rgb(s: &mut Session, a: &Args) -> CmdResult {
         return Ok(Value::Array(NAMED.iter().map(|c| json!(format!("{} {} {} {}", c.0, c.1[0], c.1[1], c.1[2]))).collect()));
     }
     if a.bool("resetToFactory") || a.bool("resetToSaved") {
-        s.extras.display_rgb.clear();
+        draw_style::reset_display_rgb();
         return Ok(Value::Null);
     }
     let Some(name) = a.pos_str(0).map(str::to_string) else { fail!("displayRGBColor: name a colour") };
     let known = NAMED.iter().find(|c| c.0 == name).map(|c| c.1);
     if a.bool("query") {
-        let Some(v) = s.extras.display_rgb.get(&name).copied().or(known) else { fail!("displayRGBColor: no colour named {name}") };
+        let Some(v) = draw_style::display_rgb(&name).or(known) else { fail!("displayRGBColor: no colour named {name}") };
         return Ok(if a.bool("alpha") { json!([v[0], v[1], v[2], v[3]]) } else { json!([v[0], v[1], v[2]]) });
     }
     let n: Vec<f64> = a.positional.iter().skip(1).filter_map(Value::as_f64).collect();
@@ -371,31 +352,28 @@ fn display_rgb(s: &mut Session, a: &Args) -> CmdResult {
     if known.is_none() && !a.bool("create") {
         fail!("displayRGBColor: no colour named {name}; use -create");
     }
-    s.extras.display_rgb.insert(name, [n[0], n[1], n[2], n.get(3).copied().unwrap_or(1.0)]);
+    draw_style::set_display_rgb(&name, [n[0], n[1], n[2], n.get(3).copied().unwrap_or(1.0)]);
     Ok(Value::Null)
 }
 
-fn color_index(s: &mut Session, a: &Args) -> CmdResult {
+fn color_index(_s: &mut Session, a: &Args) -> CmdResult {
     if a.bool("resetToFactory") || a.bool("resetToSaved") {
-        s.extras.color_index.clear();
+        draw_style::reset_palette();
         return Ok(Value::Null);
     }
     let Some(i) = a.positional.first().and_then(Value::as_i64) else { fail!("colorIndex: give an index") };
+    // Entry 0 means no colour: it can be asked about, not set.
+    if a.bool("query") && (0..=31).contains(&i) {
+        return Ok(json!(draw_style::palette(i)));
+    }
     if !(1..=31).contains(&i) {
         fail!("colorIndex: the index must be 1 to 31");
-    }
-    if a.bool("query") {
-        let v = s.extras.color_index.get(&i).copied().unwrap_or_else(|| {
-            let c = INDEX_COLORS[i as usize];
-            [c[0] as f64 / 255.0, c[1] as f64 / 255.0, c[2] as f64 / 255.0]
-        });
-        return Ok(json!(v));
     }
     let n: Vec<f64> = a.positional.iter().skip(1).filter_map(Value::as_f64).collect();
     if n.len() < 3 {
         fail!("colorIndex: give r g b");
     }
-    s.extras.color_index.insert(i, [n[0], n[1], n[2]]);
+    draw_style::set_palette(i, [n[0], n[1], n[2]]);
     Ok(Value::Null)
 }
 

@@ -2,6 +2,7 @@
 // actions they share.
 #include "mainwindow.h"
 #include "aztek.h"
+#include "colorchooser.h"
 #include "editors.h"
 #include "host.h"
 #include "icons.h"
@@ -562,6 +563,7 @@ QMenu* MainWindow::display_menu() {
     cmd(obj, "Untemplate", "toggle", QJsonObject{{"template", true}, {"state", false}});
     cmd(obj, "Bounding Box", "toggle", QJsonObject{{"boundingBox", true}, {"state", true}});
     cmd(obj, "No Bounding Box", "toggle", QJsonObject{{"boundingBox", true}, {"state", false}});
+    m->addAction("Wireframe Color...", this, [this] { show_wireframe_color_window(this); });
     QMenu* xf = m->addMenu("Transform Display");
     cmd(xf, "Local Rotation Axes", "toggle", QJsonObject{{"localAxis", true}});
     cmd(xf, "Rotate Pivots", "toggle", QJsonObject{{"rotatePivot", true}});

@@ -105,6 +105,7 @@ pub fn playing() -> Option<i32> {
 pub fn set_playing(on: bool, forward: bool) {
     PLAYING.store(on, Ordering::Relaxed);
     PLAY_FORWARD.store(forward, Ordering::Relaxed);
+    crate::draw_style::set_play_direction(if !on { 0 } else if forward { 1 } else { -1 });
 }
 
 #[derive(Clone, Debug)]

@@ -37,7 +37,15 @@ fn compound_of(g: &Graph, path: &str) -> Option<(NodeId, Vec<usize>)> {
         return None;
     }
     let id = g.find(node).ok().flatten()?;
-    let kids = compound_children(g.node(id)?.ty(), attr);
+    let n = g.node(id)?;
+    // drawOverride and drawInfo are one plug for connections, and read and set as compounds.
+    if n.ty().dag && matches!(attr, "do" | "drawOverride") {
+        return Some((id, crate::draw_style::OVERRIDE_CHILDREN.to_vec()));
+    }
+    if crate::display_layers::is_layer(n) && matches!(attr, "di" | "drawInfo") {
+        return Some((id, crate::draw_style::LAYER_CHILDREN.to_vec()));
+    }
+    let kids = compound_children(n.ty(), attr);
     (!kids.is_empty()).then_some((id, kids))
 }
 
@@ -125,6 +133,9 @@ fn bounds_value(g: &mut Graph, p: &PlugRef) -> Option<DVec3> {
 }
 
 fn read(g: &mut Graph, p: &PlugRef) -> CmdResult {
+    if let Some(v) = crate::draw_style::through_layer(g, p) {
+        return Ok(to_json(&v));
+    }
     if let Some(v) = bounds_value(g, p) {
         return Ok(if p.component >= 0 { json!(v[p.component as usize]) } else { json!([v.x, v.y, v.z]) });
     }
@@ -219,7 +230,7 @@ fn read_args(g: &mut Graph, a: &Args) -> CmdResult {
         return Ok(json!(g.channel_state(&p).1));
     }
     if a.bool("settable") {
-        let driven = g.source(&p).is_some() || (p.component >= 0 && g.source(&PlugRef { component: -1, ..p }).is_some());
+        let driven = g.source(&p).is_some() || (p.component >= 0 && g.source(&PlugRef { component: -1, ..p }).is_some()) || crate::draw_style::driven_by_layer(g, &p);
         return Ok(json!(def.has(flags::INPUT) && !g.is_locked(&p) && !driven));
     }
     if a.bool("size") {
@@ -255,6 +266,9 @@ fn set_attr(s: &mut Session, a: &Args, prev: &aztek_ops::RunFn<Session>) -> CmdR
     let compound = compound_of(&s.graph, &name).map(|(id, kids)| kids.into_iter().map(|k| PlugRef::new(id, k as i32)).collect::<Vec<_>>()).or_else(|| group_element(&s.graph, &name));
     if let Some(kids) = compound {
         let vals = number_list(values);
+        if kids.iter().any(|p| crate::draw_style::driven_by_layer(&s.graph, p)) {
+            fail!("setAttr: The attribute '{name}' is locked or connected and cannot be modified.");
+        }
         for (p, v) in kids.iter().zip(vals.iter()) {
             let def = s.graph.attr(p).clone();
             s.graph.set_value(*p, from_json(&def, v)?)?;
@@ -262,6 +276,9 @@ fn set_attr(s: &mut Session, a: &Args, prev: &aztek_ops::RunFn<Session>) -> CmdR
         return Ok(Value::Null);
     }
     let p = s.graph.plug(&name)?;
+    if !values.is_empty() && crate::draw_style::driven_by_layer(&s.graph, &p) {
+        fail!("setAttr: The attribute '{name}' is locked or connected and cannot be modified.");
+    }
     if a.has("keyable") {
         crate::anim::set_keyable(&mut s.graph, &p, a.bool("keyable"))?;
         // A keyable channel is in the channel box as that; -cb is for the ones that aren't.
@@ -323,6 +340,10 @@ fn set_attr(s: &mut Session, a: &Args, prev: &aztek_ops::RunFn<Session>) -> CmdR
 }
 
 fn pairs_for_compound(g: &Graph, src: &str, dst: &str) -> Option<Vec<(PlugRef, PlugRef)>> {
+    // A layer's drawInfo goes to drawOverride as one connection.
+    if split_plug(src).is_some_and(|(_, a)| matches!(a, "di" | "drawInfo")) {
+        return None;
+    }
     let (si, sk) = compound_of(g, src)?;
     let (di, dk) = compound_of(g, dst)?;
     (sk.len() == dk.len()).then(|| sk.into_iter().zip(dk).map(|(x, y)| (PlugRef::new(si, x as i32), PlugRef::new(di, y as i32))).collect())

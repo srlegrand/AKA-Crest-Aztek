@@ -3567,6 +3567,8 @@ impl Graph {
         }
         plug.attr as usize == Transform::VISIBILITY
             || plug.attr as usize == Transform::DISPLAY_LAYER
+            || plug.attr as usize == crate::transform::DagNode::OVERRIDE_ENABLED
+            || plug.attr as usize == crate::transform::DagNode::OVERRIDE_VISIBILITY
     }
 
     fn changed(&mut self, c: Change, id: NodeId, plug: Option<PlugRef>) {
