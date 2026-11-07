@@ -1048,7 +1048,7 @@ fn channels_of(t: &NodeType) -> Vec<&'static str> {
     if t.is_a("locator") {
         v.extend(["visibility", "localPosition", "localScale"]);
     }
-    if t.is_a("mesh") {
+    if t.is_a("mesh") || t.is_a("nurbsCurve") || t.is_a("nurbsSurface") {
         v.extend(["visibility", "intermediateObject"]);
     }
     if let Some(attrs) = creator_attrs(&t.name) {
@@ -1990,6 +1990,14 @@ impl Build<'_> {
             Ok(v) => {
                 let Some(h) = v.get(0).and_then(Value::as_str).and_then(|p| self.s.graph.find(p).ok().flatten()) else { return };
                 self.ids[i] = Some(h);
+                // The effector keeps its name from the file, for what it connects to.
+                if let Some(e) = crate::ik::effector_of(&self.s.graph, h) {
+                    let name = doc.nodes[effector].name.clone();
+                    if Graph::valid_name(&name) {
+                        let _ = self.s.graph.rename(e, &name);
+                    }
+                    self.ids[effector] = Some(e);
+                }
                 let parent = self.nearest_parent(i);
                 if parent != NO_NODE {
                     let _ = self.s.graph.set_parent(h, parent, false, usize::MAX);
@@ -2029,7 +2037,7 @@ impl Build<'_> {
             .find(|c| c.src == i && matches!(plain_attr(&c.src_attr).as_str(), "ctx" | "cty" | "ctz" | "ct" | "crx" | "cry" | "crz" | "cr" | "csx" | "csy" | "csz" | "cs"))
             .map(|c| c.dst)
             // A constraint blended with animation goes through a pairBlend; what it drives is what that drives.
-            .map(|d| if doc.nodes[d].ty == "pairBlend" { doc.conns.iter().find(|c| c.src == d && matches!(plain_attr(&c.src_attr).as_str(), "ot" | "otx" | "oty" | "otz" | "or" | "orx" | "ory" | "orz")).map_or(d, |c| c.dst) } else { d })
+            .map(|d| if doc.nodes[d].ty == "pairBlend" { doc.conns.iter().find(|c| c.src == d && matches!(plain_attr(&c.src_attr).as_str(), "ot" | "otx" | "oty" | "otz" | "or" | "orx" | "ory" | "orz" | "outTranslate" | "outTranslateX" | "outTranslateY" | "outTranslateZ" | "outRotate" | "outRotateX" | "outRotateY" | "outRotateZ")).map_or(d, |c| c.dst) } else { d })
             .or_else(|| doc.input(i, &["cpim"]).map(|c| c.src))
             .or(n.parent);
         let Some(driven_id) = driven.and_then(|d| self.id(d)) else {
@@ -2249,6 +2257,10 @@ impl Build<'_> {
         for c in &doc.conns {
             let Some(dst) = self.id(c.dst) else { continue };
             let dt = self.s.graph.node(dst).unwrap().type_arc().clone();
+            // The handle's command wired the effector to the end joint.
+            if dt.name == "ikEffector" {
+                continue;
+            }
             let (sn, sa) = self.real_source(c);
             let Some(src) = self.id(sn) else { continue };
             let st = self.s.graph.node(src).unwrap().type_arc().clone();
@@ -3063,8 +3075,12 @@ impl Writer<'_> {
             return false;
         }
         let t = n.ty();
-        if t.is_a("mesh") || t.is_a("nurbsCurve") || t.is_a("nurbsSurface") {
+        // A curve or surface's original holds what its deformers read; a mesh's is baked into its shape's history.
+        if t.is_a("mesh") {
             return !n.bool(DagNode::INTERMEDIATE_OBJECT);
+        }
+        if t.is_a("nurbsCurve") || t.is_a("nurbsSurface") {
+            return true;
         }
         // The default cameras are the application's own; every scene has them.
         if crate::cameras::is_default_camera(&self.s.graph, id) {
@@ -3107,11 +3123,18 @@ impl Writer<'_> {
             if ty == "lattice" {
                 self.write_lattice_points(id);
             }
+            if ty == "nurbsCurve" || ty == "nurbsSurface" {
+                if self.s.graph.node(id).is_some_and(|n| n.bool(DagNode::INTERMEDIATE_OBJECT)) {
+                    let _ = writeln!(self.out, "\tsetAttr \".io\" yes;");
+                }
+            }
             if ty == "nurbsCurve" {
                 self.write_nurbs_curve(id);
+                self.write_nurbs_chain(id, crate::curves::CurveShape::CREATE);
             }
             if ty == "nurbsSurface" {
                 self.write_nurbs_surface(id);
+                self.write_nurbs_chain(id, crate::surfaces::SurfaceShape::CREATE);
             }
             if ty == "camera" {
                 self.write_camera(id);
@@ -3440,9 +3463,44 @@ impl Writer<'_> {
             3 => &[("cs", "s")],
             _ => &[("cr", "r")],
         };
-        for (o, a) in outs {
-            for axis in ["x", "y", "z"] {
-                conns.push((format!("{c}.{o}{axis}"), format!("{path}.{a}{axis}")));
+        // Blended with animation, the outputs feed a pairBlend, and it drives the object.
+        let mut blended = false;
+        for (attr, short) in [("constraintTranslate", "ct"), ("constraintRotate", "cr")] {
+            let Some(at) = t.attr_index(attr) else { continue };
+            for k in 0..3 {
+                let axis = ["x", "y", "z"][k];
+                let mut out = g.destinations(&PlugRef::component(id, at as i32, k as i32));
+                for d in g.destinations(&PlugRef::new(id, at as i32)) {
+                    out.push(PlugRef::component(d.node, d.attr, k as i32));
+                }
+                for d in out {
+                    if let Some(n) = g.node(d.node).filter(|n| n.ty().name == "pairBlend") {
+                        let child = &n.ty().attrs[d.attr as usize].child_short[d.component.max(0) as usize];
+                        conns.push((format!("{c}.{short}{axis}"), format!("{}.{child}", g.path(d.node))));
+                        blended = true;
+                    }
+                }
+            }
+        }
+        if !blended {
+            for (o, a) in outs {
+                for axis in ["x", "y", "z"] {
+                    conns.push((format!("{c}.{o}{axis}"), format!("{path}.{a}{axis}")));
+                }
+            }
+        }
+        if let Some(src) = t.attr_index("worldUpMatrix").and_then(|a| g.source(&PlugRef::new(id, a as i32))) {
+            conns.push((format!("{}.wm", g.path(src.node)), format!("{c}.wum")));
+        }
+        {
+            let n = g.node(id).unwrap();
+            for (attr, short) in [("restTranslate", "rst"), ("restRotate", "rsrr")] {
+                if let Some(i) = t.attr_index(attr) {
+                    let _ = writeln!(body, "\tsetAttr \".{short}\" -type \"double3\" {} ;", vec_text(n.data().vec3(i)));
+                }
+            }
+            if let Some(i) = t.attr_index("enableRestPosition") {
+                let _ = writeln!(body, "\tsetAttr \".erp\" {};", if n.bool(i) { "yes" } else { "no" });
             }
         }
         self.pending.push(body);
@@ -3471,7 +3529,10 @@ impl Writer<'_> {
             return;
         }
         let data = rig::json_of(g.node(sv).unwrap().data(), st.attr_index("chain").unwrap());
-        let solver = data.get("solver").and_then(Value::as_str).unwrap_or("ikRPsolver").to_string();
+        let _ = data;
+        let solver = st.attr_index("solverType").map_or(0, |a| g.node(sv).unwrap().data().int(a) as usize);
+        let solver = crate::ik::SOLVER_TYPES.get(solver).copied().unwrap_or("ikRPsolver").to_string();
+        let spline_curve = st.attr_index("inCurve").and_then(|a| g.source(&PlugRef::new(sv, a as i32))).map(|c| g.path(c.node));
         let parent = g.parent(end);
         if parent == NO_NODE {
             return;
@@ -3495,6 +3556,9 @@ impl Writer<'_> {
         self.conn(&format!("{sp}.msg"), &format!("{hp}.hsj"));
         self.conn(&format!("{eff_path}.hp"), &format!("{hp}.hee"));
         self.conn(&format!("{solver}.msg"), &format!("{hp}.hsv"));
+        if let Some(curve) = spline_curve {
+            self.conn(&format!("{curve}.ws"), &format!("{hp}.ic"));
+        }
         for axis in ["x", "y", "z"] {
             self.conn(&format!("{ep}.t{axis}"), &format!("{eff_path}.t{axis}"));
         }
@@ -3674,6 +3738,27 @@ impl Writer<'_> {
             let (dt, st) = (dn.ty(), sn.ty());
             if crate::deform::is_deformer(&dt.name) || crate::deform::is_deformer(&st.name) {
                 self.deformer_connection(src, dst);
+                continue;
+            }
+            // What drives a constraint's target weight: its short name is w and the target's index.
+            if rig::CONSTRAINT_TYPES.contains(&dt.name.as_str()) {
+                let attr = &dt.attrs[dst.attr as usize];
+                let index = attr.has(flags::USER).then(|| attr.name.rsplit('W').next().and_then(|x| x.parse::<usize>().ok())).flatten();
+                if let Some(e) = index {
+                    let from = if st.attr_index("keys").is_some() { "o".to_string() } else { g.plug_name(&src).rsplit('.').next().unwrap_or("").to_string() };
+                    let (a, b) = (g.path(src.node), g.path(dst.node));
+                    self.conn(&format!("{a}.{from}"), &format!("{b}.w{e}"));
+                }
+                continue;
+            }
+            // Written by write_constraint, which knows Maya's short names.
+            if rig::CONSTRAINT_TYPES.contains(&st.name.as_str()) && dt.name == "pairBlend" {
+                continue;
+            }
+            // A CV something drives.
+            if dt.name == crate::curves::SHAPE_TYPE && dst.attr as usize == crate::curves::CurveShape::CONTROL_POINTS {
+                let (a, b) = (g.plug_name(&src), g.path(dst.node));
+                self.conn(&a, &format!("{b}.cp[{}]", dst.element));
                 continue;
             }
             let plain = |t: &NodeType| is_plain_node(&t.name) || t.name == "unitConversion";
@@ -3903,7 +3988,7 @@ pub fn write_text(s: &mut Session, file_name: &str, only: Option<&[NodeId]>) -> 
             let output = PlugRef::new(id, t.attr_index("output").unwrap() as i32);
             let drives = w.s.graph.destinations(&output).iter().any(|d| {
                 let dt = w.s.graph.node(d.node).unwrap().ty().name.as_str();
-                w.keep.contains(&d.node) && (w.dag_written(d.node) || DRIVEN_CURVES.contains(&dt) || is_plain_node(dt) || crate::deform::is_deformer(dt))
+                w.keep.contains(&d.node) && (rig::CONSTRAINT_TYPES.contains(&dt) || w.dag_written(d.node) || DRIVEN_CURVES.contains(&dt) || is_plain_node(dt) || crate::deform::is_deformer(dt))
             });
             if drives {
                 w.write_curve(id);
@@ -3930,6 +4015,8 @@ pub fn write_text(s: &mut Session, file_name: &str, only: Option<&[NodeId]>) -> 
             // Goes with its deformer.
         } else if t.is_a("mesh") {
             // Intermediate shapes: geometry is baked.
+        } else if matches!(ty, crate::nurbs_nodes::TO_POINTS | crate::nurbs_nodes::FROM_POINTS | "ikEffector" | "ikRPsolver" | "ikSCsolver" | "ikSplineSolver" | "ikSystem") || ty == crate::history::TWEAK_TYPE {
+            // Written as Maya's connections and tweak nodes with their shape, and with each IK handle.
         } else if matches!(n.name(), "defaultLightSet" | "defaultObjectSet") {
             // Every scene has these.
         } else if !n_is_baked(&t) {

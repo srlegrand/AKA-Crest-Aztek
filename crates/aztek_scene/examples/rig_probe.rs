@@ -9,6 +9,13 @@ fn main() {
     ma_file::open_scene(&mut s, &args[1]).expect("open");
     s.graph.evaluate();
     for a in &args[2..] {
+        if let Some(path) = a.strip_prefix("save=") {
+            match ma_file::write_file(&mut s, path, ma_file::Format::of_path(path), None) {
+                Ok(w) => w.iter().for_each(|x| println!("save warning: {x}")),
+                Err(e) => println!("save failed: {e}"),
+            }
+            continue;
+        }
         if a == "touch" {
             // Dirties everything and evaluates again: a result that moves was not settled.
             for id in s.graph.nodes() {
