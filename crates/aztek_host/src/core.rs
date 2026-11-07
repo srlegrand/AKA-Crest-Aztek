@@ -634,6 +634,7 @@ thread_local! {
 
 pub const UI_COMMANDS: &[(&str, &str)] = &[
     ("GraphEditor", "Open the Graph Editor."),
+    ("AztekFeedback", "Report that something doesn't feel right."),
     ("NodeEditorWindow", "Open the Node Editor."),
     ("DopeSheetEditor", "Open the Dope Sheet."),
     ("SetDrivenKeyOptions", "Open the Set Driven Key window."),
