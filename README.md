@@ -23,12 +23,16 @@ blendShapes, 82 IK handles, follicles, ribbons and wires. It opens in about 3 se
 - **Rigging:** joints (orient, mirror, insert, segment scale compensate), RP, SC and spline IK, every constraint, smooth
   skin with weight painting, mirror and copy, dual quaternion; lattice, wrap, wire, delta mush, softMod, nonlinears,
   clusters, blend shapes; a HumanIK subset (skeleton, definition, control rig, retargeting).
+
+  ![A quadruped skeleton posed with the rotate tool](docs/quadruped-rig.png)
 - **Animation:** keys with weighted tangents and infinities, Graph Editor, Dope Sheet, set driven keys, breakdowns,
   copy and paste keys, baking, motion paths, animation layers, character sets and clips.
 - **Deformers:** blendShape in full (Shape Editor, in-between and live targets), sculpt, jiggle, shrinkWrap, proximityWrap,
   curveWarp, wrinkle, morph and more; deformer weights painted with the Paint Attribute tool or exported.
 - **Files:** `.ma` read and written in Maya's layout, deformer chains, constraints, utility nodes, expressions, materials,
   NURBS and references with their edits included; namespaces, instances, locked nodes, Z up.
+
+  ![A character rig opened from a .ma file](docs/rig-file.png)
 - **Scripting:** MEL (procedures, arrays, control flow, backticks), Python, `maya.api.OpenMaya`, Python plug-ins with
   `MPxCommand` and `MPxNode`; `scriptJob`, `scriptNode` and `evalDeferred`.
 - **Script-built interface:** `window`, layouts, controls, menus and dialogs from MEL or Python become Qt widgets;
