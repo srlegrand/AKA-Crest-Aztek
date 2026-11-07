@@ -370,21 +370,25 @@ QMenu* MainWindow::mesh_menu() {
     cmd(b, "Union", "polyBoolean", QJsonObject{{"operation", "union"}});
     cmd(b, "Difference", "polyBoolean", QJsonObject{{"operation", "difference"}});
     cmd(b, "Intersection", "polyBoolean", QJsonObject{{"operation", "intersection"}});
-    cmd(m, "Combine", "polyCombine", {}, QString(), true);
+    cmd(m, "Combine", "polyUnite", {}, QString(), true);
     cmd(m, "Separate", "polySeparate");
     m->addSeparator();
     cmd(m, "Conform", "polyConformToObject", {}, QString(), true);
     cmd(m, "Fill Hole", "polyFillHole", {}, QString(), true);
     cmd(m, "Reduce", "polyReduce", {}, QString(), true);
-    cmd(m, "Smooth", "polySubdivide", {}, QString(), true);
+    cmd(m, "Remesh", "polyRemesh", {}, QString(), true);
+    cmd(m, "Retopologize", "polyRetopo", {}, QString(), true);
+    cmd(m, "Smooth", "polySmooth", {}, QString(), true);
     cmd(m, "Average Vertices", "polyAverageVertex", {}, QString(), true);
     cmd(m, "Triangulate", "polyTriangulate", {}, QString(), true);
     cmd(m, "Quadrangulate", "polyQuadrangulate", {}, QString(), true);
     m->addSeparator();
-    cmd(m, "Mirror", "polyMirror", {}, QString(), true);
+    cmd(m, "Mirror", "polyMirrorFace", {}, QString(), true);
     cmd(m, "Symmetrize", "symmetrize", {}, QString(), true);
     m->addSeparator();
-    cmd(m, "Cleanup...", "meshCheck", {}, QString(), true);
+    cmd(m, "Transfer Attributes", "transferAttributes", {}, QString(), true);
+    cmd(m, "Cleanup...", "polyCleanup", QJsonObject{{"selectOnly", true}, {"nsided", true}, {"nonManifold", true}, {"lamina", true}, {"zeroGeometry", true}}, QString(), true);
+    cmd(m, "Mesh Check", "meshCheck", {}, QString(), true);
     return m;
 }
 
@@ -393,9 +397,12 @@ QMenu* MainWindow::edit_mesh_menu() {
     QLabel* comp = new QLabel("  Components", m);
     comp->setObjectName("menuSection");
     cmd(m, "Bevel", "polyBevel", {}, "Ctrl+B", true);
+    cmd(m, "Add Divisions", "polySubdivideFacet", {}, QString(), true);
     cmd(m, "Bridge", "polyBridge", {}, QString(), true);
+    cmd(m, "Chamfer Vertices", "polyChamferVtx", {}, QString(), true);
     cmd(m, "Collapse", "polyCollapse");
-    cmd(m, "Connect", "polyConnect");
+    cmd(m, "Connect", "polyConnectComponents", {}, QString(), true);
+    cmd(m, "Detach", "polyDetachEdges");
     cmd(m, "Extrude", "polyExtrude", {}, "Ctrl+E", true);
     cmd(m, "Inset", "polyInset", {}, QString(), true);
     cmd(m, "Merge", "polyMerge", {}, QString(), true);
@@ -408,9 +415,12 @@ QMenu* MainWindow::edit_mesh_menu() {
     m->addSeparator();
     cmd(m, "Delete Edge/Vertex", "polyDissolve", {}, "Ctrl+Delete");
     cmd(m, "Edit Edge Flow", "polyEditEdgeFlow", {}, QString(), true);
+    cmd(m, "Flip Triangle Edge", "polyFlipEdge");
     cmd(m, "Spin Edge", "polySpinEdge");
-    cmd(m, "Poke Face", "polyPoke");
-    cmd(m, "Duplicate", "polyDuplicateFaces");
+    cmd(m, "Poke Face", "polyPoke", {}, QString(), true);
+    cmd(m, "Wedge", "polyWedgeFace", {}, QString(), true);
+    cmd(m, "Assign Invisible Faces", "polyHole", {}, QString(), true);
+    cmd(m, "Duplicate", "polyChipOff", {}, QString(), true);
     cmd(m, "Extract", "polyExtract", {}, QString(), true);
     m->addSeparator();
     cmd(m, "Grid Fill", "polyGridFill", {}, QString(), true);
@@ -458,6 +468,8 @@ QMenu* MainWindow::mesh_display_menu() {
     cmd(m, "Harden Edge", "polySoftEdge", QJsonObject{{"angle", 0.0}});
     cmd(m, "Soft/Hard Edges", "polySoftEdge", {}, QString(), true);
     m->addSeparator();
+    cmd(m, "Average Normals", "polyAverageNormal", {}, QString(), true);
+    cmd(m, "Set to Face", "polySetToFaceNormal");
     cmd(m, "Lock Normals", "polyLockNormals");
     cmd(m, "Unlock Normals", "polyUnlockNormals");
     cmd(m, "Face Weighted Normals", "polyWeightedNormals", {}, QString(), true);

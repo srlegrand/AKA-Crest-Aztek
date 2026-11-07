@@ -117,7 +117,8 @@ fn component_selection_and_modeling_ops() {
     let c = first(run(&mut s, "polyCombine", json!({"args": [a, b], "name": "Both"})));
     assert_eq!(faces(&mut s, &c), 12);
     let parts = run(&mut s, "polySeparate", json!({"args": [c]}));
-    assert_eq!(parts.as_array().unwrap().len(), 2);
+    // Two transforms, then a polySeparate node for each.
+    assert_eq!(parts.as_array().unwrap().len(), 4);
 }
 
 #[test]

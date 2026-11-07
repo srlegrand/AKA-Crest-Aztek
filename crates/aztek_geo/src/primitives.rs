@@ -1489,3 +1489,282 @@ pub fn make_pipe(o: &PipeOptions) -> Mesh {
         o.cut_caps,
     )
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Prism, pyramid, helix, platonic solids, soccer ball, super shape
+
+/// Corner UVs from a planar view down Y, fitted to 0..1.
+fn planar_uvs(m: &mut Mesh) {
+    let b = m.bounds();
+    let size = b.size();
+    let (sx, sz) = (size.x.max(1e-9), size.z.max(1e-9));
+    let corners: Vec<(Index, DVec3)> = (0..m.corner_capacity()).filter(|&c| m.corner_valid(c)).map(|c| (c, m.position(m.corner_point(c)))).collect();
+    let uv = m.corner_attrs_mut().get_or_add::<[f32; 2]>(names::uv(0).as_str());
+    for (c, p) in corners {
+        uv[c as usize] = [((p.x - b.min.x) / sx) as f32, ((p.z - b.min.z) / sz) as f32];
+    }
+}
+
+fn polygons(points: &[DVec3], faces: &[Vec<Index>]) -> Mesh {
+    let sizes: Vec<Index> = faces.iter().map(|f| f.len() as Index).collect();
+    let indices: Vec<Index> = faces.iter().flatten().copied().collect();
+    let mut m = Mesh::from_polygons(points, &sizes, &indices);
+    planar_uvs(&mut m);
+    m
+}
+
+/// Rings of quads closing an n-gon cap: rings of points shrink to the middle, the innermost closed by one n-gon.
+/// first is the rim's first point id, n its count; flip reverses the winding.
+fn cap_rings(points: &mut Vec<DVec3>, faces: &mut Vec<Vec<Index>>, first: Index, n: Index, rings: i32, flip: bool) {
+    let mut rim: Vec<Index> = (first..first + n).collect();
+    let center: DVec3 = rim.iter().map(|&p| points[p as usize]).sum::<DVec3>() / n as f64;
+    let add = |mut f: Vec<Index>, faces: &mut Vec<Vec<Index>>| {
+        if flip {
+            f.reverse();
+        }
+        faces.push(f);
+    };
+    for r in 1..rings.max(1) {
+        let t = r as f64 / rings as f64;
+        let start = points.len() as Index;
+        for i in 0..n {
+            let q = points[(first + i) as usize];
+            points.push(q.lerp(center, t));
+        }
+        let inner: Vec<Index> = (start..start + n).collect();
+        for i in 0..n as usize {
+            let j = (i + 1) % n as usize;
+            add(vec![rim[i], rim[j], inner[j], inner[i]], faces);
+        }
+        rim = inner;
+    }
+    add(rim, faces);
+}
+
+/// polyPrism: an n-sided column, length along Y, sides side_length wide.
+pub fn make_prism(length: f64, side_length: f64, sides: i32, sub_height: i32, sub_caps: i32) -> Mesh {
+    let n = sides.max(3) as Index;
+    let rows = sub_height.max(1) as Index;
+    let radius = side_length / (2.0 * (PI / n as f64).sin());
+    let mut points = Vec::new();
+    for r in 0..=rows {
+        let y = length * (r as f64 / rows as f64 - 0.5);
+        for i in 0..n {
+            let a = TAU * i as f64 / n as f64;
+            points.push(DVec3::new(radius * a.cos(), y, -radius * a.sin()));
+        }
+    }
+    let mut faces = Vec::new();
+    for r in 0..rows {
+        for i in 0..n {
+            let j = (i + 1) % n;
+            faces.push(vec![r * n + i, r * n + j, (r + 1) * n + j, (r + 1) * n + i]);
+        }
+    }
+    cap_rings(&mut points, &mut faces, 0, n, sub_caps, true);
+    cap_rings(&mut points, &mut faces, rows * n, n, sub_caps, false);
+    polygons(&points, &faces)
+}
+
+/// polyPyramid: an n-sided base with sides side_length long and one tip, centred on the origin.
+pub fn make_pyramid(side_length: f64, sides: i32, sub_height: i32, sub_caps: i32) -> Mesh {
+    let n = sides.max(3) as Index;
+    let rows = sub_height.max(1) as Index;
+    let radius = side_length / (2.0 * (PI / n as f64).sin());
+    let height = (side_length * side_length - radius * radius).max(side_length * side_length * 0.25).sqrt();
+    let mut points = Vec::new();
+    for r in 0..rows {
+        let t = r as f64 / rows as f64;
+        for i in 0..n {
+            let a = TAU * i as f64 / n as f64 + PI / n as f64;
+            points.push(DVec3::new(radius * (1.0 - t) * a.cos(), height * (t - 0.5), -radius * (1.0 - t) * a.sin()));
+        }
+    }
+    let tip = points.len() as Index;
+    points.push(DVec3::new(0.0, height * 0.5, 0.0));
+    let mut faces = Vec::new();
+    for r in 0..rows {
+        for i in 0..n {
+            let j = (i + 1) % n;
+            if r + 1 == rows {
+                faces.push(vec![r * n + i, r * n + j, tip]);
+            } else {
+                faces.push(vec![r * n + i, r * n + j, (r + 1) * n + j, (r + 1) * n + i]);
+            }
+        }
+    }
+    cap_rings(&mut points, &mut faces, 0, n, sub_caps, true);
+    polygons(&points, &faces)
+}
+
+/// polyHelix: a tube of section radius wound coils times over height, the whole width across. direction 1 is
+/// counterclockwise going up.
+#[allow(clippy::too_many_arguments)]
+pub fn make_helix(coils: f64, height: f64, width: f64, radius: f64, direction: i32, sub_axis: i32, sub_coil: i32, sub_caps: i32) -> Mesh {
+    let around = sub_axis.max(3) as Index;
+    let steps = (sub_coil.max(1) as f64 * coils.max(0.01)).round().max(1.0) as Index;
+    let sign = if direction == 0 { -1.0 } else { 1.0 };
+    let mut points = Vec::new();
+    for s in 0..=steps {
+        let t = s as f64 / steps as f64;
+        let a = sign * TAU * coils * t;
+        let center = DVec3::new(width * 0.5 * a.cos(), height * (t - 0.5), -width * 0.5 * a.sin());
+        let out = DVec3::new(a.cos(), 0.0, -a.sin());
+        let along = DVec3::new(-sign * width * 0.5 * TAU * coils * a.sin(), height, -sign * width * 0.5 * TAU * coils * a.cos()).normalize_or_zero();
+        let side = along.cross(out).normalize_or_zero();
+        let up = side.cross(along).normalize_or_zero();
+        for i in 0..around {
+            let b = TAU * i as f64 / around as f64;
+            points.push(center + (up * b.cos() + side * b.sin()) * radius);
+        }
+    }
+    let mut faces = Vec::new();
+    for s in 0..steps {
+        for i in 0..around {
+            let j = (i + 1) % around;
+            faces.push(vec![s * around + i, s * around + j, (s + 1) * around + j, (s + 1) * around + i]);
+        }
+    }
+    cap_rings(&mut points, &mut faces, 0, around, sub_caps, true);
+    cap_rings(&mut points, &mut faces, steps * around, around, sub_caps, false);
+    polygons(&points, &faces)
+}
+
+fn icosahedron() -> (Vec<DVec3>, Vec<[Index; 3]>) {
+    let t = (1.0 + 5f64.sqrt()) * 0.5;
+    let raw = [
+        (-1.0, t, 0.0), (1.0, t, 0.0), (-1.0, -t, 0.0), (1.0, -t, 0.0),
+        (0.0, -1.0, t), (0.0, 1.0, t), (0.0, -1.0, -t), (0.0, 1.0, -t),
+        (t, 0.0, -1.0), (t, 0.0, 1.0), (-t, 0.0, -1.0), (-t, 0.0, 1.0),
+    ];
+    let pts = raw.iter().map(|&(x, y, z)| DVec3::new(x, y, z).normalize()).collect();
+    let tris = vec![
+        [0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11],
+        [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
+        [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9],
+        [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1],
+    ];
+    (pts, tris)
+}
+
+/// The triangles round each vertex of a closed triangle mesh, walked in order.
+fn fans(n: usize, tris: &[[Index; 3]]) -> Vec<Vec<usize>> {
+    let mut out = Vec::new();
+    for v in 0..n as Index {
+        let mut fan = Vec::new();
+        let start = tris.iter().position(|t| t.contains(&v)).unwrap();
+        let mut cur = start;
+        loop {
+            fan.push(cur);
+            let t = tris[cur];
+            let i = t.iter().position(|&x| x == v).unwrap();
+            let next_v = t[(i + 2) % 3];
+            // The triangle across the edge v - next_v runs it the other way.
+            cur = tris.iter().position(|o| (0..3).any(|k| o[k] == v && o[(k + 1) % 3] == next_v)).unwrap();
+            if cur == start {
+                break;
+            }
+        }
+        out.push(fan);
+    }
+    out
+}
+
+fn dodecahedron() -> (Vec<DVec3>, Vec<Vec<Index>>) {
+    let (pts, tris) = icosahedron();
+    let centers: Vec<DVec3> = tris.iter().map(|t| (pts[t[0] as usize] + pts[t[1] as usize] + pts[t[2] as usize]).normalize()).collect();
+    let faces = fans(pts.len(), &tris).into_iter().map(|f| f.into_iter().map(|i| i as Index).collect()).collect();
+    (centers, faces)
+}
+
+/// polyPlatonicSolid: 0 dodecahedron, 1 icosahedron, 2 octahedron, 3 tetrahedron, points radius from the centre.
+pub fn make_platonic(solid: i32, radius: f64) -> Mesh {
+    let (pts, faces): (Vec<DVec3>, Vec<Vec<Index>>) = match solid {
+        1 => {
+            let (p, t) = icosahedron();
+            (p, t.iter().map(|x| x.to_vec()).collect())
+        }
+        2 => (
+            vec![DVec3::X, DVec3::Y, DVec3::Z, DVec3::NEG_X, DVec3::NEG_Y, DVec3::NEG_Z],
+            vec![vec![0, 1, 2], vec![2, 1, 3], vec![3, 1, 5], vec![5, 1, 0], vec![2, 4, 0], vec![3, 4, 2], vec![5, 4, 3], vec![0, 4, 5]],
+        ),
+        3 => (
+            [DVec3::new(1.0, 1.0, 1.0), DVec3::new(-1.0, -1.0, 1.0), DVec3::new(-1.0, 1.0, -1.0), DVec3::new(1.0, -1.0, -1.0)].iter().map(|v| v.normalize()).collect(),
+            vec![vec![0, 2, 1], vec![0, 1, 3], vec![0, 3, 2], vec![1, 2, 3]],
+        ),
+        _ => dodecahedron(),
+    };
+    let scaled: Vec<DVec3> = pts.iter().map(|p| *p * radius).collect();
+    polygons(&scaled, &faces)
+}
+
+/// The soccer ball: a truncated icosahedron, 12 pentagons and 20 hexagons, points radius from the centre.
+pub fn make_soccer_ball(radius: f64) -> Mesh {
+    let (pts, tris) = icosahedron();
+    let mut out: Vec<DVec3> = Vec::new();
+    let mut keyed: BTreeMap<(Index, Index), Index> = BTreeMap::new();
+    let mut at = |a: Index, b: Index| -> Index {
+        *keyed.entry((a, b)).or_insert_with(|| {
+            out.push(pts[a as usize].lerp(pts[b as usize], 1.0 / 3.0).normalize() * radius);
+            (out.len() - 1) as Index
+        })
+    };
+    let mut faces = Vec::new();
+    for t in &tris {
+        let [a, b, c] = *t;
+        faces.push(vec![at(a, b), at(b, a), at(b, c), at(c, b), at(c, a), at(a, c)]);
+    }
+    for (v, fan) in fans(pts.len(), &tris).into_iter().enumerate() {
+        let v = v as Index;
+        let mut face = Vec::new();
+        for ti in fan {
+            let t = tris[ti];
+            let i = t.iter().position(|&x| x == v).unwrap();
+            face.push(at(v, t[(i + 1) % 3]));
+        }
+        faces.push(face);
+    }
+    polygons(&out, &faces)
+}
+
+/// One side of a superformula: how far out the shape reaches at angle a.
+fn superformula(a: f64, m: f64, n1: f64, n2: f64, n3: f64) -> f64 {
+    let p = (m * a / 4.0).cos().abs().powf(n2) + (m * a / 4.0).sin().abs().powf(n3);
+    if p <= 0.0 {
+        return 1.0;
+    }
+    p.powf(-1.0 / n1.max(1e-6))
+}
+
+/// polySuperShape: the spherical product of two superformulas, closed at its poles.
+pub fn make_super_shape(radius: f64, around: i32, down: i32, h: [f64; 4], v: [f64; 4]) -> Mesh {
+    let n = around.max(3) as Index;
+    let rows = down.max(2) as Index;
+    let mut points = vec![];
+    let surface = |theta: f64, phi: f64| {
+        let r1 = superformula(theta, h[0], h[1], h[2], h[3]);
+        let r2 = superformula(phi, v[0], v[1], v[2], v[3]);
+        DVec3::new(r1 * theta.cos() * r2 * phi.cos(), r2 * phi.sin(), -r1 * theta.sin() * r2 * phi.cos()) * radius
+    };
+    points.push(surface(0.0, -FRAC_PI_2));
+    for r in 1..rows {
+        let phi = -FRAC_PI_2 + PI * r as f64 / rows as f64;
+        for i in 0..n {
+            points.push(surface(TAU * i as f64 / n as f64, phi));
+        }
+    }
+    let top = points.len() as Index;
+    points.push(surface(0.0, FRAC_PI_2));
+    let ring = |r: Index, i: Index| 1 + (r - 1) * n + i % n;
+    let mut faces = Vec::new();
+    for i in 0..n {
+        faces.push(vec![0, ring(1, i + 1), ring(1, i)]);
+        faces.push(vec![top, ring(rows - 1, i), ring(rows - 1, i + 1)]);
+    }
+    for r in 1..rows - 1 {
+        for i in 0..n {
+            faces.push(vec![ring(r, i), ring(r, i + 1), ring(r + 1, i + 1), ring(r + 1, i)]);
+        }
+    }
+    polygons(&points, &faces)
+}

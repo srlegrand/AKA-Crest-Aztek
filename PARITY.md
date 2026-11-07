@@ -89,14 +89,41 @@ Step 1 (scene model), as of 05/11/2026:
 - Component strings: `select("pCube1.f[0:2]")` with add, deselect and toggle; `ls(sl=True)` returns the current
   mode's components as ranges, `flatten=True` one per item.
 
-Still destructive (they bake the history before them): knife, target weld, symmetrize, combine and separate, bridge
-along a path, edits under radial symmetry, vertex moves with symmetry on (the symmetry pairs live on the stored
-mesh), and the commands not yet looked at. Node names that differ from Maya's where Aztek's edit has no Maya twin:
+Polygon command set, as of 06/11/2026 (`crates/aztek_scene/src/mesh_edit/maya_poly*`, `tests/maya_poly.rs`): the reference's
+command names run natively with all their flags, taken from the reference's tables. Component arguments are read by
+the command and leave the selection alone; commands return their history node, or [transform, node]. Query and edit
+reach each node's attributes by the reference's names, short names included (`polyExtrudeFace1.ltz`). Primitives:
+`polyCube`, `polyPlane`, `polySphere`, `polyCylinder`, `polyCone`, `polyTorus`, `polyDisc`, `polyPipe` answer to the
+reference's attribute names, old names as aliases; `polyPrism`, `polyPyramid`, `polyHelix`, `polyPlatonicSolid`,
+`polyPrimitive`, `polySoccerBall`, `polySuperShape` are new. New or now native with a node: extrude facet, edge and
+vertex (with divisions, local and world moves, along a curve), `polyMoveVertex/Edge/Facet`, `polyChipOff`, `polyBevel3`,
+`polySplitRing`, `polyMergeVertex/Edge/Facet`, `polyDelVertex/Edge/Facet`, `polyCollapseEdge/Facet`, `polyChamferVtx`,
+`polyCircularize`, `polyConnectComponents`, `polySplitVertex`, `polySplitEdge`, `polyDetachEdges`, `polySubdivideFacet/Edge`,
+`polyPoke`, `polyWedgeFace`, `polyDuplicateEdge`, `polyFlipEdge`, `polyHole`, `polyAverageVertex`, `polySplit` (`-ep -fp
+-ip -pc`), `polyProjectCurve`, `polyAppend`, `polyCreateFacet`, `polySmooth`, `polyReduce` (`-p -trm -vct -tct`),
+`polyRemesh`, `polyRetopo`, `polyMirrorFace`, `polyUnite`, `polySeparate`, `polyCBoolOp`, `polyBoolOp`, `polyBooleanCmd`,
+`transferAttributes` (live), `polyNormal`, `polyNormalPerVertex`, `polySetToFaceNormal`, `polyAverageNormal`,
+`polyColorPerVertex`, `polyColorSet`, `polyUVSet`, `polyMoveUV`, `polyMergeUV`, `polyLayoutUV`, `polyCopyUV`, `polyForceUV`,
+`polyContourProjection`. Without nodes: `polyInfo`, `polySelect`, `polySelectConstraint` (state, `-q`, `-rs`, `-pp`),
+`polySelectSp`, `polyListComponentConversion`, `filterExpand`, `polyCleanup`, `polyCleanupArgList`, `polyClipboard`,
+`polyPasteFace`, `polyOptions` (a table for scripts), `meshReorder`, `polyPinUV`.
+
+Falls short of the reference: `polySeparate` makes one node per shell rather than one with several outputs;
+`polyExtrudeFacet -inc` keeps the curve's samples, so a later change to the curve doesn't follow; `polyWedgeFace` and
+`polyMirrorFace` have no smoothing; `polySmooth` on part of a mesh relaxes the new points rather than running Catmull-Clark,
+`-mth 1` ignores `-ps -ro`, and the `osd` flags are accepted only; `polyHole` marks faces but they still draw;
+`polyContourProjection` is a planar projection unfolded; `polyCreateFacet` and `polyAppend` take no holes; `-roundCap` is
+accepted and the ends stay flat; `polySubdivideFacet -m 1` is one fan per level, from memory, not checked against the
+original. Mixed `-ep` and `-fp` run edges first, since flags don't keep their order across kinds.
+
+Still destructive (they bake the history before them): target weld, symmetrize, bridge along a path, `meshReorder`,
+`polyPinUV`, `polyClipboard -ps`, `polyCleanup` when it fixes, `polyTransfer` of vertices and colours, edits under radial
+symmetry, vertex moves with symmetry on (the symmetry pairs live on the stored mesh). Node names that differ from Maya's where Aztek's edit has no Maya twin:
 `polySplitRingsFace/Edge`, `polyOffsetLoop`, `polyMergeCenter`, `polyDissolveVertex/Edge`, `polyBevelFace`,
 `polyBridgeFace/Edge`, `polyGridFillVertex/Edge/Face`, `polyConnectVertex/Edge`, `polyDuplicateFaces`,
 `polyWeightedNormals`, `polyUnlockNormals`, `polySpinEdge`.
 
-Next: the remaining destructive edits, then step 2 (query and edit modes, Maya flag names and defaults).
+Next: the remaining destructive edits.
 
 Application, as of 06/11/2026: Qt Widgets shell over the Rust core (`cmake --build build`, see README.md). Menus by
 menu set (Modeling, Rigging, Animation), status line, shelves (Poly Modeling, General, Rigging, Animation, UV Editing,

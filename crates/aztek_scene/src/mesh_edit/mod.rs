@@ -19,6 +19,7 @@ use crate::session::Session;
 
 pub mod component_ops;
 pub mod knife;
+pub mod maya_poly;
 pub mod mesh_ops;
 pub mod normals;
 pub mod symmetry;
@@ -264,61 +265,89 @@ fn edit_selected_impl(
 
     let g = &mut s.graph;
     g.open_chunk(label);
-    let r = (|| -> CmdResult<()> {
-        let mut new_sel = current_selection(g);
-        let mut result_kind = None;
-        for (node, sel) in targets {
-            let spec = symmetry_spec(g, node);
-            // Radial symmetry isn't recorded in history yet: those edits stay destructive.
-            let record = history.filter(|_| crate::history::can_record(g, node) && spec.as_ref().is_none_or(|s| s.radial.is_none()));
-            let (base, mut mesh) = if record.is_some() {
-                g.evaluate();
-                (None, modifiers::cage(g, node).map(|m| (*m).clone()).unwrap_or_default())
-            } else {
-                let base = base_plug(g, node)?;
-                let mesh = base_mesh(g, &base);
-                (Some(base), mesh)
-            };
-            if spec.is_some() {
-                // Stores the pairs onto the mesh (and reports a re-match) before the edit runs.
-                symmetry_for(g, node, &mut mesh);
-            }
-            let applied = crate::history::apply_edit(&mut mesh, spec.as_ref(), &sel, kind, f)?;
-            let (r, remap) = (applied.result, applied.remap);
-            // The other kinds' selections follow the new ids, so they come back when their mode does.
-            remap_selection(&mut new_sel, node, &remap);
-            if let Some(k) = r.kind {
-                result_kind = Some(k);
-                let maps = [&remap.points, &remap.edges, &remap.faces];
-                let mapped = remap_ids(&r.ids, maps[slot(k)]);
-                if mapped.is_empty() {
-                    new_sel[slot(k)].remove(&node);
-                } else {
-                    new_sel[slot(k)].insert(node, mapped);
-                }
-            }
-            match (base, record) {
-                (Some(base), _) => store_edited(g, node, base, mesh, &remap)?,
-                (None, Some((op, a))) => {
-                    crate::history::insert(g, node, op, a, &sel, spec.as_ref())?;
-                    modifiers::base_remapped(g, node, &remap, &Arc::new(mesh));
-                }
-                (None, None) => unreachable!(),
-            }
-        }
-        let [p, e, fs] = new_sel;
-        components::set_all(g, p, e, fs);
-        // A component mode is the user's: repeated edits (bridge after bridge) must not bounce it to the result's
-        // kind.
-        if let Some(k) = result_kind {
-            if from == ComponentMode::Object {
-                components::set_mode_undoable(g, k);
-            }
-        }
-        Ok(())
-    })();
+    let r = apply_targets(g, kind, targets, f, history, Some(from));
     g.close_chunk();
-    r.map(|_| Value::Null)
+    r.map(|made| names_of(&s.graph, &made))
+}
+
+/// The history nodes an edit made, as commands return them; Null when it recorded none.
+pub(crate) fn names_of(g: &Graph, made: &[NodeId]) -> Value {
+    if made.is_empty() {
+        Value::Null
+    } else {
+        Value::Array(made.iter().map(|&n| Value::String(g.path(n))).collect())
+    }
+}
+
+/// Runs an edit on the given components of each mesh, recording a history node when history is on and the call's
+/// constructionHistory flag allows it. `follow` is the component mode the components were selected from: the result
+/// becomes the selection. Without it they were named in the call, and the selection only follows the new ids.
+pub(crate) fn apply_targets(
+    g: &mut Graph,
+    kind: ComponentMode,
+    targets: BTreeMap<NodeId, Ids>,
+    f: &mut EditFn,
+    history: Option<(&crate::history::HistoryOp, &Args)>,
+    follow: Option<ComponentMode>,
+) -> CmdResult<Vec<NodeId>> {
+    let mut made = Vec::new();
+    let mut new_sel = current_selection(g);
+    let mut result_kind = None;
+    for (node, sel) in targets {
+        let spec = symmetry_spec(g, node);
+        // Radial symmetry isn't recorded in history yet: those edits stay destructive.
+        let record = history.filter(|(_, a)| {
+            crate::history::can_record(g, node)
+                && spec.as_ref().is_none_or(|s| s.radial.is_none())
+                && a.get("constructionHistory").and_then(Value::as_bool) != Some(false)
+        });
+        let (base, mut mesh) = if record.is_some() {
+            g.evaluate();
+            (None, modifiers::cage(g, node).map(|m| (*m).clone()).unwrap_or_default())
+        } else {
+            let base = base_plug(g, node)?;
+            let mesh = base_mesh(g, &base);
+            (Some(base), mesh)
+        };
+        if spec.is_some() {
+            // Stores the pairs onto the mesh (and reports a re-match) before the edit runs.
+            symmetry_for(g, node, &mut mesh);
+        }
+        let applied = crate::history::apply_edit(&mut mesh, spec.as_ref(), &sel, kind, f)?;
+        let (r, remap) = (applied.result, applied.remap);
+        // The other kinds' selections follow the new ids, so they come back when their mode does.
+        remap_selection(&mut new_sel, node, &remap);
+        if let (Some(k), true) = (r.kind, follow.is_some()) {
+            result_kind = Some(k);
+            let maps = [&remap.points, &remap.edges, &remap.faces];
+            let mapped = remap_ids(&r.ids, maps[slot(k)]);
+            if mapped.is_empty() {
+                new_sel[slot(k)].remove(&node);
+            } else {
+                new_sel[slot(k)].insert(node, mapped);
+            }
+        }
+        match (base, record) {
+            (Some(base), _) => store_edited(g, node, base, mesh, &remap)?,
+            (None, Some((op, a))) => {
+                let h = crate::history::insert(g, node, op, a, &sel, spec.as_ref())?;
+                let name = a.string("name", "");
+                if !name.is_empty() {
+                    g.rename(h, &name)?;
+                }
+                made.push(h);
+                modifiers::base_remapped(g, node, &remap, &Arc::new(mesh));
+            }
+            (None, None) => unreachable!(),
+        }
+    }
+    let [p, e, fs] = new_sel;
+    components::set_all(g, p, e, fs);
+    // A component mode is the user's: repeated edits (bridge after bridge) must not bounce it to the result's kind.
+    if let (Some(k), Some(ComponentMode::Object)) = (result_kind, follow) {
+        components::set_mode_undoable(g, k);
+    }
+    Ok(made)
 }
 
 pub fn with_mirror(m: &Mesh, s: Option<&SymmetryMap>, ids: &[Index], kind: ComponentMode) -> Ids {

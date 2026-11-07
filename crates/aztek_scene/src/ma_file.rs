@@ -964,11 +964,11 @@ const ANGLE_CHANNELS: &[&str] = &["rotate", "rotateAxis", "jointOrient"];
 
 /// Creator nodes: (type, [(Maya short name, Aztek attribute)]).
 const CREATORS: &[(&str, &[(&str, &str)])] = &[
-    ("polyCube", &[("w", "width"), ("h", "height"), ("d", "depth"), ("sw", "subdivisionsX"), ("sh", "subdivisionsY"), ("sd", "subdivisionsZ")]),
+    ("polyCube", &[("w", "width"), ("h", "height"), ("d", "depth"), ("sw", "subdivisionsWidth"), ("sh", "subdivisionsHeight"), ("sd", "subdivisionsDepth")]),
     ("polySphere", &[("r", "radius"), ("sa", "subdivisionsAxis"), ("sh", "subdivisionsHeight")]),
     ("polyCylinder", &[("r", "radius"), ("h", "height"), ("sa", "subdivisionsAxis"), ("sh", "subdivisionsHeight"), ("sc", "subdivisionsCaps")]),
     ("polyCone", &[("r", "radius"), ("h", "height"), ("sa", "subdivisionsAxis"), ("sh", "subdivisionsHeight"), ("sc", "subdivisionsCap")]),
-    ("polyPlane", &[("w", "width"), ("h", "depth"), ("sw", "subdivisionsX"), ("sh", "subdivisionsZ")]),
+    ("polyPlane", &[("w", "width"), ("h", "height"), ("sw", "subdivisionsWidth"), ("sh", "subdivisionsHeight")]),
     ("polyTorus", &[("r", "radius"), ("sr", "sectionRadius"), ("sa", "subdivisionsAxis"), ("sh", "subdivisionsHeight")]),
 ];
 
