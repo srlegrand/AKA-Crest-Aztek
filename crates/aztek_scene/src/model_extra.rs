@@ -129,7 +129,9 @@ fn selected_cvs(g: &Graph) -> Vec<(NodeId, Vec<u32>)> {
         .iter()
         .filter_map(|(&n, ids)| {
             let shape = curves::as_curve(g, n)?;
-            (!ids.is_empty()).then(|| (shape, ids.clone()))
+            // select -clear leaves the component lists alone, so only those of selected objects count.
+            let chosen = g.is_selected(n) || g.is_selected(shape) || g.is_selected(crate::dag::transform_of(g, shape));
+            (chosen && !ids.is_empty()).then(|| (shape, ids.clone()))
         })
         .collect()
 }
@@ -348,7 +350,9 @@ fn uv_targets(s: &Session, a: &Args) -> CmdResult<Vec<(NodeId, Vec<u32>)>> {
     if out.is_empty() {
         for (&n, ids) in components::selected_all(g, ComponentMode::Vertex) {
             if let Some(shape) = surfaces::as_surface(g, n) {
-                out.push((shape, ids.clone()));
+                if g.is_selected(n) || g.is_selected(shape) || g.is_selected(crate::dag::transform_of(g, shape)) {
+                    out.push((shape, ids.clone()));
+                }
             }
         }
     }

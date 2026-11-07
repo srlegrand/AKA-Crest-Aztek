@@ -411,7 +411,7 @@ fn tangent_blend(a: &NurbsCurve, ta: &[DVec3], b: &NurbsCurve, tb: &[DVec3], dep
 fn out_of_edge(s: &NurbsSurface, dir: i64, value: f64, along: f64) -> DVec3 {
     let ((ulo, uhi), (vlo, vhi)) = (s.domain_u(), s.domain_v());
     let (u, v) = if dir == 0 { (value, along) } else { (along, value) };
-    let (du, dv, _) = s.eval_ders(u, v);
+    let (_, du, dv) = s.eval_ders(u, v);
     let (t0, lo, hi) = if dir == 0 { (du, ulo, uhi) } else { (dv, vlo, vhi) };
     if (value - lo).abs() < (hi - value).abs() {
         -t0
@@ -551,7 +551,7 @@ fn across_tangents(s: &NurbsSurface, dir: i64, value: f64, samples: usize) -> (N
         .map(|k| {
             let t = k as f64 / n as f64;
             let (u, v) = if dir == 0 { (value, vlo + (vhi - vlo) * t) } else { (ulo + (uhi - ulo) * t, value) };
-            let (du, dv, _) = s.eval_ders(u, v);
+            let (_, du, dv) = s.eval_ders(u, v);
             let (t0, lo, hi) = if dir == 0 { (du, ulo, uhi) } else { (dv, vlo, vhi) };
             // Out of the surface at its edge; along itself anywhere else.
             if (value - lo).abs() < (hi - value).abs() { -t0 } else { t0 }
@@ -843,7 +843,7 @@ fn register_types() {
                     t.tangent(t.closest_param(end))
                 } else if let Some(s) = srf(d, P + 1) {
                     let (u, v) = s.closest_point(end);
-                    let (du, dv, _) = s.eval_ders(u, v);
+                    let (_, du, dv) = s.eval_ders(u, v);
                     if d.int(P + 5) == 2 { dv } else { du }
                 } else {
                     DVec3::ZERO
