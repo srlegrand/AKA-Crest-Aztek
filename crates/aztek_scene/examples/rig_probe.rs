@@ -16,6 +16,16 @@ fn main() {
             }
             continue;
         }
+        // speed=node.attr: how long a change to it takes to reach everything downstream.
+        if let Some(plug) = a.strip_prefix("speed=") {
+            let t = std::time::Instant::now();
+            for k in 0..30 {
+                s.run("setAttr", serde_json::json!({"args": [plug, k as f64 * 0.2]})).expect(plug);
+                s.graph.evaluate();
+            }
+            println!("{plug}: {:.1} ms per change", t.elapsed().as_secs_f64() * 1000.0 / 30.0);
+            continue;
+        }
         if a == "touch" {
             // Dirties everything and evaluates again: a result that moves was not settled.
             for id in s.graph.nodes() {

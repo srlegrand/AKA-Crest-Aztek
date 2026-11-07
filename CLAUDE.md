@@ -62,6 +62,10 @@ command once on release so the history shows one Maya-style line.
 
 The GitHub Action `.github/workflows/build.yml` builds Linux and Windows on every push to main.
 
+Checking a real `.ma` with no UI: `cargo run --release -p aztek_scene --example load_ma -- file.ma` lists warnings and how far the
+rig is from what the file stored; `--example rig_diff -- a.ma b.ma node.attr=value` compares two files under a pose. Rig files and their
+textures from elsewhere stay out of the repo: tests use small `.ma` text written by hand (`tests/rig_files.rs`).
+
 Checking the UI without a display: run under Xvfb and look at the pictures.
 
     xvfb-run -a -s "-screen 0 1700x1050x24" ./build/aztek --script scene.mel --screenshot out.png

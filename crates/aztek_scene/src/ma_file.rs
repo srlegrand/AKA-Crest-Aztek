@@ -2556,10 +2556,17 @@ fn build(s: &mut Session, doc: &Doc, import: bool) -> Vec<String> {
             continue;
         }
         b.used[i] = true;
+        // The scene's own cameras take what the file says; importing leaves them alone.
+        if !import {
+            b.ids[i] = b.s.graph.find(&n.name).ok().flatten();
+        }
         if let Some(p) = n.parent {
             let only_cameras = doc.children(p).all(|k| doc.nodes[k].ty == "camera");
             if only_cameras {
                 b.used[p] = true;
+                if !import {
+                    b.ids[p] = b.s.graph.find(&doc.nodes[p].name).ok().flatten();
+                }
             }
         }
     }
@@ -3187,6 +3194,22 @@ impl Writer<'_> {
         if !c.trim.is_empty() {
             let _ = writeln!(self.out, "\taddAttr -ci true -sn \"aztekTrim\" -ln \"aztekTrim\" -dt \"string\";");
             let _ = writeln!(self.out, "\tsetAttr \".aztekTrim\" -type \"string\" {};", quoted(&crate::surfaces::trim_to_json(&c.trim).to_string()));
+        }
+    }
+
+    /// The four default cameras, marked -s as Maya marks them: every scene has them and a file only says where they are.
+    fn write_default_cameras(&mut self) {
+        for name in ["persp", "top", "front", "side"] {
+            let Ok(Some(tr)) = self.s.graph.find(name) else { continue };
+            let Some(shape) = crate::cameras::shape_of(&self.s.graph, tr) else { continue };
+            if !crate::cameras::is_default_camera(&self.s.graph, tr) {
+                continue;
+            }
+            let shape_name = self.s.graph.node(shape).map_or(String::new(), |n| n.name().to_string());
+            let _ = writeln!(self.out, "createNode transform -s -n {};", quoted(name));
+            self.write_channels(tr);
+            let _ = writeln!(self.out, "createNode camera -s -n {} -p {};", quoted(&shape_name), quoted(name));
+            self.write_camera(shape);
         }
     }
 
@@ -3965,6 +3988,9 @@ pub fn write_text(s: &mut Session, file_name: &str, only: Option<&[NodeId]>) -> 
     let _ = writeln!(w.out, "fileInfo \"version\" \"{}\";", env!("CARGO_PKG_VERSION"));
     w.out.push_str(&ref_head);
 
+    if only.is_none() {
+        w.write_default_cameras();
+    }
     for r in roots {
         w.write_dag(r);
     }
@@ -4174,6 +4200,8 @@ pub fn open_scene(s: &mut Session, path: &str) -> Result<Vec<String>, String> {
     let text = read_scene_text(path)?;
     let warnings = if Format::of_path(path) == Format::MayaAscii {
         let _ = s.run("newScene", json!({}));
+        // Here and not at the next command: a script can use a camera straight after opening a file.
+        crate::cameras::make_defaults(&mut s.graph);
         let g = &mut s.graph;
         g.begin_batch();
         g.undo_stack_mut().set_enabled(false);

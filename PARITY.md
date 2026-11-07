@@ -302,7 +302,7 @@ switch of move, rotate or scale is a value, not the switch's own, so `move -r 1 
 `.ma` files keep utility nodes and expressions, and read Maya's slot spelling of an expression (`.O[0] = .I[0] * 2;`). On
 reading, a `unitConversion` is seen through, its factor dropped, since Aztek's angles are degrees throughout.
 
-Not yet in these: `polyEvaluate -b2` and `-bc2`, `select` of `pCube1.vtx[*]`; `displayCull`, `snapMode` and the display attributes (`displayHandle`, `displayLocalAxis` and so on) hold their values
+Not yet in these: `displayCull`, `snapMode` and the display attributes (`displayHandle`, `displayLocalAxis` and so on) hold their values
 but the viewport does not draw from them.
 
 (As of that date. All of these have since been done; see below.)
@@ -417,3 +417,42 @@ Less than Maya does, in these:
 Deformers save and load in `.ma` as Maya lays them out: Orig shape, groupParts and groupId, the deformer, its objectSet, `.wl` weights, `.gm`. blendShape uses `.it[g].itg[i].iti[k].ipt/.ict`, `.tw`, `.bw` and `attributeAlias`; live targets connect at `.igt`. cluster and nonLinear handles are a transform with Maya's shape (clusterHandle, deformBend and so on), with nonlinear settings on the shape. A deformer on several meshes reads from `.ip[n]`/`.og[n]` into one node per mesh, with the followers linked to the leader. Point moves in a `tweak` node go into the Orig geometry; a polyTweak below a deformer stays in the chain. Data that Maya's attributes can't hold goes in an added string attribute, aztekState. Other history below a deformer still bakes, with a warning.
 
 To check against Maya: the `.cc` lattice layout, whether a file opens without a set for every deformer, the skinCluster's own groupParts, and scripted reading of a real rig.
+
+## A real rig (07/11/2026)
+
+Tested against a production rig made in Maya 2020: a character of 1,588 transforms, 414 joints, 37 skinClusters, 17 blendShapes, 102
+follicles, 82 IK handles, ribbons, wires and pose readers. `crates/aztek_scene/examples/load_ma.rs` loads any `.ma` with no UI and
+reports warnings and how far the result is from what the file says: influences against their bind matrices, channels against the values
+Maya stored, meshes against their originals. `rig_diff.rs` compares two files under a pose. `tests/rig_files.rs` holds each fault found,
+from small `.ma` files written by hand.
+
+Works on that rig: opens in about 3 seconds with nothing dropped but render settings and polyBridgeEdge history (its meshes hold their
+geometry); every stored channel comes out as saved, to within 0.2 degrees on the eyelid joints; body, arm IK and FK, legs, spine, head, jaw, lips,
+cheeks, brows and blink all reach the final meshes; 13 to 44 ms per change; saving and reopening gives the same result under every pose
+tried, to the last digit.
+
+Added or fixed for it:
+
+- A node connected to itself no longer hangs the graph.
+- `follicle`, on surfaces and meshes: X along U, Y along V, Z the normal. It may drive its own transform (`free_of_parent` on its type).
+- `transformGeometry`, makeNurbCircle and makeNurbPlane in files; curve `.cp[k]` drivable; `blendWeighted` and `pointOnCurveInfo` read.
+- Deformers on curves and surfaces: `nurbsToPoints` and `pointsToNurbs` carry the CVs through skinCluster, blendShape, wire and tweak.
+  They are extra nodes in `listHistory`, which Maya does not have. They are not saved: files hold Maya's own connections.
+- Constraints go to the target's rotate pivot; aim, normal and tangent work in the parent's frame; a mirrored matrix is a rotation with
+  every axis scaled by -1. Weights can be driven (space switches), world up objects connect, rest values read and write, pairBlend between
+  constraint and object.
+- Pole vectors are in the space of the start joint's parent. A file's stored pole is the chain's rest reference.
+- Spline IK from files, and it keeps rootOnCurve.
+- Live blendShape targets from meshes (`.w`). Importing no longer pins a driven plug at the value in the file.
+- The default cameras exist as soon as a file opens, take the file's values, and are written with `-s`.
+
+Shallower than Maya:
+
+- Nothing here has been compared with Maya running. The checks are against values Maya saved at rest; posed results are only checked to be
+  plausible and the same after saving. Whether Maya opens what Aztek writes is unchecked.
+- Follicle hair, simulation and most of its attributes are ignored: it is a point and frame. `pu` and `pv` are clamped to 0 to 1.
+- Spline IK ignores advanced twist (`.dwut`, `.dwum`, `.dwue`), and stretch comes only from what the rig wires up.
+- blendWeighted ignores `.w`. A periodic curve's skin weights cover its first lap only.
+- A mesh named the same as its transform needs a path: `hair|hair`, as in Maya.
+- A wire reads driver curves by sampling; `.sc` (scale) on a wire is not used.
+- A rest error of 5.3 on one mesh of that rig is unexplained. It is probably the blend targets the file has on at weight 1, but this has not been shown.

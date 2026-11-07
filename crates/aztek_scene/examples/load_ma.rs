@@ -220,7 +220,7 @@ fn stored_check(s: &mut Session, path: &str) {
     }
     causes.sort_by(|a, b| a.0.cmp(&b.0));
     println!("stored check: {checked} nodes, {} differ, {} with nothing wrong upstream", bad.len(), causes.len());
-    for (name, t, r) in causes.iter().take(90) {
+    for (name, t, r) in causes.iter().take(usize::MAX) {
         println!("  t {t:9.3} r {r:9.3}  {name}");
     }
 }

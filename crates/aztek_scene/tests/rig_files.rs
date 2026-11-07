@@ -275,3 +275,26 @@ fn a_driven_weight_survives_saving() {
     s.run("setAttr", json!({"args": ["sw.Follow", 1.0]})).unwrap();
     assert_near(get(&mut s, "obj.translate"), &[5.0, 0.0, 0.0], "weight 1");
 }
+
+#[test]
+fn opening_a_file_keeps_the_scenes_cameras_where_it_says() {
+    let dir = std::env::temp_dir().join(format!("aztek_rig_files_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("cam.ma");
+    let text = format!("{HEAD}createNode transform -s -n \"persp\";\n\tsetAttr \".t\" -type \"double3\" 1 2 3 ;\ncreateNode camera -s -n \"perspShape\" -p \"persp\";\n\tsetAttr \".fl\" 50;\n\tsetAttr \".coi\" 7;\n");
+    std::fs::write(&path, text).unwrap();
+    let mut s = Session::new();
+    aztek_scene::ma_file::open_scene(&mut s, path.to_str().unwrap()).unwrap();
+    assert_near(get(&mut s, "persp.translate"), &[1.0, 2.0, 3.0], "where the file has it");
+    assert_near(get(&mut s, "perspShape.focalLength"), &[50.0], "the lens");
+    assert!(s.graph.find("top").unwrap().is_some(), "the others exist too");
+    // And it goes round.
+    let (saved, _) = aztek_scene::ma_file::write_text(&mut s, "cam.ma", None);
+    assert!(saved.contains("createNode transform -s -n \"persp\""), "{saved}");
+    std::fs::write(&path, saved).unwrap();
+    let mut again = Session::new();
+    aztek_scene::ma_file::open_scene(&mut again, path.to_str().unwrap()).unwrap();
+    assert_near(get(&mut again, "persp.translate"), &[1.0, 2.0, 3.0], "after saving");
+    assert_near(get(&mut again, "perspShape.focalLength"), &[50.0], "the lens after saving");
+    std::fs::remove_dir_all(dir).ok();
+}
