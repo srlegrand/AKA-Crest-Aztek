@@ -121,6 +121,7 @@ pub fn register_types() {
                 str_in("text", "txt"),
                 attr("displayArrow", "daro", PlugType::Bool, PlugValue::Bool(true), IN_STORE, "Draw the line to the object."),
                 vec3_attr("targetPosition", "tp", DVec3::ZERO, IN_STORE, "What the line points at, world space."),
+                attr("dagObjectMatrix", "dom", PlugType::Matrix, PlugValue::Matrix(glam::DMat4::IDENTITY), flags::INPUT | flags::HIDDEN | flags::ARRAY, "The object the line points at: its world matrix."),
             ],
             create: Some(Arc::new(|| Box::new(PlainShape))),
             ..Default::default()
@@ -137,7 +138,18 @@ pub fn register_types() {
         });
         for (name, doc, attrs) in [
             ("container", "Groups nodes so they read as one thing.", vec![attr("member", "mb", PlugType::String, PlugValue::String(String::new()), IN_STORE | flags::ARRAY, "Each node in it."), attr("isAsset", "isa", PlugType::Bool, PlugValue::Bool(false), IN_STORE, "Made with -asset.")]),
-            ("controller", "Tags an object as an animation control, with its place among the controls.", vec![str_in("controllerObject", "co"), str_in("parentController", "pc")]),
+            ("controller", "Tags an object as an animation control, with its place among the controls.", {
+                let link = |name: &str, short: &str, array: u32, doc: &str| attr(name, short, PlugType::Int, PlugValue::Int(0), flags::INPUT | flags::MESSAGE | flags::HIDDEN | array, doc);
+                vec![
+                    link("controllerObject", "act", 0, "The object this tags: its message."),
+                    link("parent", "pare", 0, "Connected to the parent tag's children."),
+                    link("children", "child", flags::ARRAY, "The tags under this one."),
+                    attr("prepopulate", "prep", PlugType::Bool, PlugValue::Bool(true), IN_STORE, "Evaluate the controls below ahead of use."),
+                    attr("parentprepopulate", "ppp", PlugType::Bool, PlugValue::Bool(true), IN_STORE, "Take prepopulate from the parent."),
+                    attr("cycleWalkSibling", "cwsb", PlugType::Bool, PlugValue::Bool(false), IN_STORE, "Pick walking cycles among siblings."),
+                    attr("visibilityMode", "vism", PlugType::Enum, PlugValue::Int(0), IN_STORE, "When the control shows."),
+                ]
+            }),
             (
                 "jointCluster",
                 "A joint's rigid bind settings. Kept for scripts: nothing softens here.",
@@ -166,7 +178,8 @@ pub fn shape_lines(n: &crate::node::Node) -> Option<Vec<(DVec3, DVec3)>> {
     }
     if t.name == "annotationShape" {
         let o = n.data().matrix(DagNode::WORLD_MATRIX).w_axis.truncate();
-        return Some(if n.data().bool(Shape::COUNT + 1) { vec![(o, n.data().vec3(AN_TARGET))] } else { Vec::new() });
+        let target = n.data().elements(Shape::COUNT + 3).first().map_or(n.data().vec3(AN_TARGET), |(_, m)| m.as_matrix().w_axis.truncate());
+        return Some(if n.data().bool(Shape::COUNT + 1) { vec![(o, target)] } else { Vec::new() });
     }
     if t.name == "paramDimension" || t.name == "dropoffLocator" {
         let o = n.data().matrix(DagNode::WORLD_MATRIX).w_axis.truncate();
@@ -539,23 +552,34 @@ fn container_cmd(s: &mut Session, a: &Args) -> CmdResult {
 
 const CTL_OBJECT: usize = 0;
 const CTL_PARENT: usize = 1;
+const CTL_CHILDREN: usize = 2;
+
+fn message_of(g: &Graph, id: NodeId) -> Option<PlugRef> {
+    let a = g.node(id)?.ty().attr_index("message")?;
+    Some(plug(id, a))
+}
 
 fn tag_of(g: &Graph, obj: NodeId) -> Option<NodeId> {
-    g.nodes().into_iter().find(|&c| is_type(g, c, "controller") && g.node(c).is_some_and(|n| matches!(n.value(CTL_OBJECT), PlugValue::String(t) if resolve_ref(g, t) == Some(obj))))
+    g.destinations(&message_of(g, obj)?).into_iter().find(|d| d.attr as usize == CTL_OBJECT && is_type(g, d.node, "controller")).map(|d| d.node)
 }
 
 fn object_of_tag(g: &Graph, tag: NodeId) -> Option<NodeId> {
-    match g.node(tag)?.value(CTL_OBJECT) {
-        PlugValue::String(t) => resolve_ref(g, t),
-        _ => None,
-    }
+    g.source(&plug(tag, CTL_OBJECT)).map(|s| s.node)
 }
 
+/// As Maya wires it: a tag's `parent` goes into its parent's `children`.
 fn parent_tag(g: &Graph, tag: NodeId) -> Option<NodeId> {
-    match g.node(tag)?.value(CTL_PARENT) {
-        PlugValue::String(t) if !t.is_empty() => resolve_ref(g, t),
-        _ => None,
+    g.destinations(&plug(tag, CTL_PARENT)).into_iter().find(|d| d.attr as usize == CTL_CHILDREN).map(|d| d.node)
+}
+
+fn set_parent_tag(g: &mut Graph, tag: NodeId, parent: Option<NodeId>) -> CmdResult<()> {
+    for d in g.destinations(&plug(tag, CTL_PARENT)) {
+        g.disconnect(&d);
     }
+    if let Some(p) = parent {
+        g.connect(&plug(tag, CTL_PARENT), &plug(p, CTL_CHILDREN), true)?;
+    }
+    Ok(())
 }
 
 fn controller_cmd(s: &mut Session, a: &Args) -> CmdResult {
@@ -590,7 +614,7 @@ fn controller_cmd(s: &mut Session, a: &Args) -> CmdResult {
     if a.bool("unparent") {
         for n in &names {
             if let Some(tag) = tag_named(g, n)? {
-                g.set_value(plug(tag, CTL_PARENT), PlugValue::String(String::new()))?;
+                set_parent_tag(g, tag, None)?;
             }
         }
         return Ok(Value::Null);
@@ -607,8 +631,8 @@ fn controller_cmd(s: &mut Session, a: &Args) -> CmdResult {
             }
             let short = g.node(id).unwrap().name().to_string();
             let tag = g.create_node(&t, &format!("{short}_tag"), NO_NODE, true)?;
-            let text = node_ref(g, id);
-            g.set_value(plug(tag, CTL_OBJECT), PlugValue::String(text))?;
+            let Some(msg) = message_of(g, id) else { fail!("controller: {n} has no message") };
+            g.connect(&msg, &plug(tag, CTL_OBJECT), true)?;
             made.push(json!(g.path(tag)));
             Ok(tag)
         };
@@ -619,8 +643,7 @@ fn controller_cmd(s: &mut Session, a: &Args) -> CmdResult {
         for n in &names {
             let tag = tagged(g, n)?;
             if let Some(p) = parent {
-                let text = node_ref(g, p);
-                g.set_value(plug(tag, CTL_PARENT), PlugValue::String(text))?;
+                set_parent_tag(g, tag, Some(p))?;
             }
         }
         Ok(made)

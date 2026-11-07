@@ -106,6 +106,8 @@ impl CurveShape {
     pub const DISP_EP: usize = Shape::COUNT + 12;
     pub const LINE_WIDTH: usize = Shape::COUNT + 13;
     pub const CONTROL_POINTS: usize = Shape::COUNT + 14;
+    /// editPoints: xValueEp, yValueEp, zValueEp, three arrays.
+    pub const EDIT_POINTS: usize = Shape::COUNT + 15;
 }
 
 impl NodeBehavior for CurveShape {
@@ -135,9 +137,11 @@ impl NodeBehavior for CurveShape {
                 }
             }
         }
+        // With history feeding the shape a control point is a move on top of it, as Maya's tweaks are; with none it is the CV.
+        let moves = curve_value(d.value(Self::CREATE)).is_some();
         for (i, v) in d.elements(Self::CONTROL_POINTS) {
             if let (Some(p), PlugValue::Vec3(x)) = (c.cvs.get_mut(*i as usize), v) {
-                *p = *x;
+                *p = if moves { *p + *x } else { *x };
             }
         }
         if c.form == Form::Periodic && !d.elements(Self::CONTROL_POINTS).is_empty() {
@@ -153,6 +157,15 @@ impl NodeBehavior for CurveShape {
         let (lo, hi) = c.domain();
         d.set_output(Self::MIN_VALUE, PlugValue::Float(lo));
         d.set_output(Self::MAX_VALUE, PlugValue::Float(hi));
+        // Where the curve is at each knot, in object space.
+        if d.elements.len() <= Self::EDIT_POINTS + 2 {
+            d.elements.resize_with(d.values.len(), Vec::new);
+        }
+        let mut us: Vec<f64> = c.knots.iter().copied().filter(|u| *u >= lo && *u <= hi).collect();
+        us.dedup();
+        for k in 0..3 {
+            d.elements[Self::EDIT_POINTS + k] = us.iter().enumerate().map(|(i, u)| (i as i32, PlugValue::Float(c.eval(*u)[k]))).collect();
+        }
         d.set_output(Self::WORLD_SPACE, to_value(c.transformed(&world)));
         d.set_output(Self::LOCAL, to_value(c));
     }
@@ -305,14 +318,22 @@ impl NodeBehavior for CurveNode {
             Kind::Square => {
                 let (normal, center) = (d.vec3(P0), d.vec3(P0 + 1));
                 let (sl, deg) = (d.float(P0 + 2), d.int(P0 + 3).max(1) as usize);
+                let (sl2, spans) = (d.float(P0 + 4), d.int(P0 + 5).max(1) as usize);
                 let n = normal.normalize_or_zero();
                 let n = if n == DVec3::ZERO { DVec3::Y } else { n };
                 let (u, v) = n.any_orthonormal_pair();
-                let h = sl * 0.5;
-                let corners = [center + (u + v) * h, center + (v - u) * h, center + (-u - v) * h, center + (u - v) * h];
+                let (a, b) = (u * sl * 0.5, v * sl2 * 0.5);
+                let corners = [center + a + b, center - a + b, center - a - b, center + a - b];
+                // Each side is a curve of its own, its CVs evenly along it; the whole square is outputCurve.
+                let count = deg + spans;
+                for k in 0..4 {
+                    let (from, to) = (corners[k], corners[(k + 1) % 4]);
+                    let cvs: Vec<DVec3> = (0..count).map(|i| from.lerp(to, i as f64 / (count - 1) as f64)).collect();
+                    d.set_output(P0 + 6 + k, to_value(NurbsCurve::open(deg, cvs)));
+                }
                 let mut pts: Vec<DVec3> = corners.to_vec();
                 pts.push(corners[0]);
-                Some(NurbsCurve::open(deg.min(1).max(1), pts))
+                Some(NurbsCurve::open(1, pts))
             }
             Kind::Rebuild => input.map(|c| {
                 let spans = d.int(P0);
@@ -387,7 +408,12 @@ struct PointOnCurveNode;
 impl NodeBehavior for PointOnCurveNode {
     fn compute(&mut self, _ctx: &EvalContext, d: &mut NodeData) {
         let Some(c) = curve_value(d.value(0)).cloned() else { return };
-        let u = if d.bool(2) { c.param_at_fraction(d.float(1)) } else { d.float(1) };
+        let u = if d.bool(2) {
+            let (lo, hi) = c.domain();
+            lo + (hi - lo) * d.float(1)
+        } else {
+            d.float(1)
+        };
         let t = c.tangent(u);
         d.set_output(3, PlugValue::Vec3(c.eval(u)));
         d.set_output(4, PlugValue::Vec3(t));
@@ -501,6 +527,7 @@ impl NodeBehavior for SurfNode {
                         scale: d.float(S_P),
                         rotation: d.float(S_P + 1),
                         fixed_path: d.bool(S_P + 6),
+                        profile_normal: d.bool(S_P + 7),
                     };
                     crate::surfaces::extrude_surface(profile, curves.get(1), o)
                 }),
@@ -702,6 +729,9 @@ pub fn register_types() {
                 store_bool("dispEP", false, "Show edit points."),
                 AttrDef { flags: stored, ..f_in("lineWidth", "lw", -1.0, "Line width; -1 uses the default.") },
                 crate::attr_defs::vec3_attr("controlPoints", "cp", DVec3::ZERO, flags::INPUT | flags::HIDDEN | flags::ARRAY, "A CV's place in object space, when something drives it."),
+                AttrDef { flags: flags::OUTPUT | flags::HIDDEN | flags::ARRAY, ..float_out("editPoints.xValueEp", "eps.xve", "An edit point's X.") },
+                AttrDef { flags: flags::OUTPUT | flags::HIDDEN | flags::ARRAY, ..float_out("editPoints.yValueEp", "eps.yve", "An edit point's Y.") },
+                AttrDef { flags: flags::OUTPUT | flags::HIDDEN | flags::ARRAY, ..float_out("editPoints.zValueEp", "eps.zve", "An edit point's Z.") },
             ],
             create: Some(Arc::new(|| Box::new(CurveShape))),
             ..Default::default()
@@ -726,7 +756,18 @@ pub fn register_types() {
                 "makeNurbsSquare",
                 Kind::Square,
                 "A square.",
-                vec![v_in("normal", "nr", DVec3::Y, "The normal."), v_in("center", "c", DVec3::ZERO, "The centre."), f_in("sideLength1", "sl1", 1.0, "The side."), int_in("degree", "d", 1, "The degree.")],
+                vec![
+                    v_in("normal", "nr", DVec3::Y, "The normal."),
+                    v_in("center", "c", DVec3::ZERO, "The centre."),
+                    f_in("sideLength1", "sl1", 1.0, "The side."),
+                    int_in("degree", "d", 3, "The degree of each side."),
+                    f_in("sideLength2", "sl2", 1.0, "The other side."),
+                    int_in("spansPerSide", "sps", 1, "Spans along each side."),
+                    curve_attr("outputCurve1", "oc1", flags::OUTPUT | flags::HIDDEN, "A side."),
+                    curve_attr("outputCurve2", "oc2", flags::OUTPUT | flags::HIDDEN, "A side."),
+                    curve_attr("outputCurve3", "oc3", flags::OUTPUT | flags::HIDDEN, "A side."),
+                    curve_attr("outputCurve4", "oc4", flags::OUTPUT | flags::HIDDEN, "A side."),
+                ],
             ),
             curve_op_type(
                 "rebuildCurve",
@@ -766,7 +807,7 @@ pub fn register_types() {
             own_attrs: vec![
                 curve_attr("inputCurve", "ic", flags::INPUT | flags::HIDDEN, "The curve."),
                 f_in("parameter", "pr", 0.0, "The parameter, or a fraction of the length with turnOnPercentage."),
-                store_bool("turnOnPercentage", false, "parameter is a fraction 0 to 1 of the curve's length."),
+                AttrDef { short_name: "top".into(), ..store_bool("turnOnPercentage", false, "parameter is a fraction 0 to 1 of the curve's parameter range.") },
                 vec3_attr("position", "p", DVec3::ZERO, flags::OUTPUT, "The point."),
                 vec3_attr("tangent", "t", DVec3::ZERO, flags::OUTPUT, "The tangent."),
                 vec3_attr("normalizedTangent", "nt", DVec3::ZERO, flags::OUTPUT, "The unit tangent."),
@@ -801,7 +842,9 @@ pub fn register_types() {
                     int_in("divisions", "dv", 8, "Mesh points per span of the profile."),
                     v_in("direction", "d", DVec3::Y, "Direction with no path."),
                     f_in("length", "l", 1.0, "Length with no path."),
-                    store_bool("fixedPath", false, "The surface sits on the path, not where the profile is."),
+                    AttrDef { short_name: "fpt".into(), ..store_bool("fixedPath", false, "The surface sits on the path, not where the profile is.") },
+                    AttrDef { short_name: "upn".into(), ..store_bool("useProfileNormal", false, "The profile's normal is turned along the path's start.") },
+                    int_in("useComponentPivot", "ucp", 0, "Where the profile's pivot is: 1 its middle."),
                 ],
             ),
             surf_type(

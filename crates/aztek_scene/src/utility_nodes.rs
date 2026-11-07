@@ -54,6 +54,7 @@ fn en(name: &str, short: &str, d: i64, names: &[&str]) -> AttrDef {
     a.enum_names = names.iter().map(|s| s.to_string()).collect();
     a
 }
+const PAIR_MODES: [&str; 3] = ["Blend Inputs", "Input 1 only", "Input 2 only"];
 const ORDERS: [&str; 6] = ["xyz", "yzx", "zxy", "xzy", "yxz", "zyx"];
 
 fn vec_kids(name: &str, short: &str, d: [f64; 3], fl: u32, kids: [(&str, &str); 3]) -> AttrDef {
@@ -84,6 +85,11 @@ fn cin(name: &str, short: &str, d: [f64; 3]) -> AttrDef {
 }
 fn cout(name: &str, short: &str) -> AttrDef {
     vec_kids(name, short, [0.0; 3], OUT | flags::COLOR, RGB)
+}
+/// A Vec3 whose children's short names don't follow from its own.
+fn kids_named(mut a: AttrDef, short: [&str; 3]) -> AttrDef {
+    a.child_short = short.map(str::to_string);
+    a
 }
 /// Two children: input2Dx, input2Dy. Held in a Vec3 whose third child has no name.
 fn two(mut a: AttrDef) -> AttrDef {
@@ -364,6 +370,31 @@ impl NodeBehavior for Utility {
 }
 
 /// name, classification, doc, attributes, compute.
+/// A ramp's colour at a place along it, its entries held on the node.
+pub(crate) fn colour_ramp_at(d: &NodeData, at_v: f64) -> DVec3 {
+    let (pa, ca) = (at(d, "colorEntryList.position"), at(d, "colorEntryList.color"));
+    let mut keys: Vec<(f64, DVec3)> = d.elements(pa).iter().map(|(k, p)| (p.scalar().unwrap_or(0.0), d.element_or(ca, *k).as_vec3())).collect();
+    keys.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let (Some(first), Some(last)) = (keys.first(), keys.last()) else { return DVec3::ZERO };
+    if at_v <= first.0 {
+        return first.1;
+    }
+    if at_v >= last.0 {
+        return last.1;
+    }
+    let none = i(d, "interpolation") == 0;
+    for w in keys.windows(2) {
+        if at_v <= w[1].0 {
+            if none {
+                return w[0].1;
+            }
+            let span = (w[1].0 - w[0].0).max(1e-12);
+            return w[0].1.lerp(w[1].1, (at_v - w[0].0) / span);
+        }
+    }
+    last.1
+}
+
 struct Spec(&'static str, &'static str, &'static str, Vec<AttrDef>, Compute);
 
 fn binary_float(name: &'static str, doc: &'static str, c: Compute) -> Spec {
@@ -373,7 +404,7 @@ fn binary_float(name: &'static str, doc: &'static str, c: Compute) -> Spec {
 fn table() -> Vec<Spec> {
     vec![
         Spec("multiplyDivide", "utility/general", "Multiplies, divides or raises input1 by input2, per channel.",
-            vec![en("operation", "op", 1, &["noOperation", "multiply", "divide", "power"]), vin("input1", "i1", [1.0; 3]), vin("input2", "i2", [1.0; 3]), vout("output", "o")],
+            vec![en("operation", "op", 1, &["noOperation", "multiply", "divide", "power"]), vin("input1", "i1", [0.0; 3]), vin("input2", "i2", [1.0; 3]), vout("output", "o")],
             |d| {
                 let (x, y) = (v(d, "input1"), v(d, "input2"));
                 let o = match i(d, "operation") {
@@ -445,7 +476,7 @@ fn table() -> Vec<Spec> {
                 set(d, "output", o);
             }),
         Spec("setRange", "utility/general", "Maps value from the old range to the new one, held inside the range.",
-            vec![vin("value", "v", [0.0; 3]), vin("min", "n", [0.0; 3]), vin("max", "m", [0.0; 3]), vin("oldMin", "on", [0.0; 3]), vin("oldMax", "om", [0.0; 3]), vout("outValue", "ov")],
+            vec![vin("value", "v", [0.0; 3]), vin("min", "n", [0.0; 3]), vin("max", "m", [0.0; 3]), vin("oldMin", "on", [0.0; 3]), vin("oldMax", "om", [0.0; 3]), vout("outValue", "o")],
             |d| {
                 let (x, lo, hi, a, c) = (v(d, "value"), v(d, "min"), v(d, "max"), v(d, "oldMin"), v(d, "oldMax"));
                 let mut o = DVec3::ZERO;
@@ -461,6 +492,37 @@ fn table() -> Vec<Spec> {
             |d| {
                 let t = f(d, "blender");
                 let o = v(d, "color1") * t + v(d, "color2") * (1.0 - t);
+                set(d, "output", o);
+            }),
+        Spec("ramp", "utility/color", "A colour along V or U, from entries each with a position and a colour.",
+            vec![
+                en("type", "t", 0, &["V Ramp", "U Ramp", "Diagonal Ramp", "Radial Ramp", "Circular Ramp", "Box Ramp", "UV Ramp", "Four Corner Ramp", "Tartan Ramp"]),
+                en("interpolation", "in", 1, &["None", "Linear", "Exponential Up", "Exponential Down", "Smooth", "Bump", "Spike"]),
+                fin("uCoord", "u", 0.0),
+                fin("vCoord", "v", 0.0),
+                kid("colorEntryList", "cel", fin("position", "ep", 0.0)),
+                kid("colorEntryList", "cel", cin("color", "ec", [0.0, 0.0, 0.0])),
+                two(vec_kids("uvCoord", "uv", [0.0; 3], IN, [("U", "u"), ("V", "v"), ("", "")])),
+                two(vec_kids("uvFilterSize", "fs", [0.0; 3], IN, [("X", "x"), ("Y", "y"), ("", "")])),
+                cout("outColor", "oc"),
+                fout("outAlpha", "oa"),
+                crate::rig::data_attr("rampKeys", "rkk", "Each entry's position and value, for what samples the ramp itself: spline IK's twist."),
+            ],
+            |d| {
+                let (pa, ca) = (at(d, "colorEntryList.position"), at(d, "colorEntryList.color"));
+                let mut keys: Vec<(f64, f64)> = d.elements(pa).iter().map(|(k, p)| (p.scalar().unwrap_or(0.0), d.element_or(ca, *k).as_vec3().x)).collect();
+                keys.sort_by(|a, b| a.0.total_cmp(&b.0));
+                let json: serde_json::Value = keys.iter().map(|k| serde_json::json!([k.0, k.1])).collect();
+                set(d, "rampKeys", PlugValue::Data(Some(Arc::new(crate::rig::JsonData(json)))));
+                let at_v = if i(d, "type") == 1 { f(d, "uCoord") } else { f(d, "vCoord") };
+                let o = colour_ramp_at(d, at_v);
+                set(d, "outColor", o);
+                set(d, "outAlpha", (o.x + o.y + o.z) / 3.0);
+            }),
+        Spec("unitConversion", "utility/general", "input times conversionFactor. Angles are degrees everywhere here, so only a factor beyond the change of angle units needs one.",
+            vec![fin("input", "i", 0.0), fin("conversionFactor", "cf", 1.0), fout("output", "o")],
+            |d| {
+                let o = f(d, "input") * f(d, "conversionFactor");
                 set(d, "output", o);
             }),
         Spec("blendTwoAttr", "utility/general", "Blends input[current] toward input[current + 1] by attributesBlender.",
@@ -572,19 +634,34 @@ fn table() -> Vec<Spec> {
                 numbered("inTranslate", "it", 2),
                 numbered("inRotate", "ir", 2),
                 en("rotInterpolation", "ri", 0, &["Euler Angles", "Quaternions"]),
+                en("translateXMode", "txm", 0, &PAIR_MODES),
+                en("translateYMode", "tym", 0, &PAIR_MODES),
+                en("translateZMode", "tzm", 0, &PAIR_MODES),
+                en("rotateMode", "rm", 0, &PAIR_MODES),
                 en("rotateOrder", "ro", 0, &ORDERS),
                 vout("outTranslate", "ot"),
                 vout("outRotate", "or"),
             ],
             |d| {
                 let w = f(d, "weight");
-                let t = v(d, "inTranslate1").lerp(v(d, "inTranslate2"), w);
+                let (t1, t2) = (v(d, "inTranslate1"), v(d, "inTranslate2"));
+                let mut t = t1.lerp(t2, w);
+                for (k, mode) in ["translateXMode", "translateYMode", "translateZMode"].into_iter().enumerate() {
+                    match i(d, mode) {
+                        1 => t[k] = t1[k],
+                        2 => t[k] = t2[k],
+                        _ => {}
+                    }
+                }
                 let (r1, r2) = (v(d, "inRotate1"), v(d, "inRotate2"));
-                let r = if i(d, "rotInterpolation") == 1 {
-                    let ord = order(d, "rotateOrder");
-                    quat_euler(rotation_quat(r1, ord).slerp(rotation_quat(r2, ord), w), ord)
-                } else {
-                    r1.lerp(r2, w)
+                let r = match i(d, "rotateMode") {
+                    1 => r1,
+                    2 => r2,
+                    _ if i(d, "rotInterpolation") == 1 => {
+                        let ord = order(d, "rotateOrder");
+                        quat_euler(rotation_quat(r1, ord).slerp(rotation_quat(r2, ord), w), ord)
+                    }
+                    _ => r1.lerp(r2, w),
                 };
                 set(d, "outTranslate", t);
                 set(d, "outRotate", r);
@@ -735,10 +812,11 @@ fn table() -> Vec<Spec> {
                 fin("envelope", "env", 1.0),
                 kid("target", "tgt", min_in("targetMatrix", "tmat")),
                 kid("target", "tgt", fin("weight", "wgt", 1.0)),
-                kid("target", "tgt", fin("translateWeight", "tw", 1.0)),
-                kid("target", "tgt", fin("rotateWeight", "rw", 1.0)),
-                kid("target", "tgt", fin("scaleWeight", "sw", 1.0)),
-                kid("target", "tgt", fin("shearWeight", "shw", 1.0)),
+                kid("target", "tgt", bin("useMatrix", "umt", true)),
+                kid("target", "tgt", fin("translateWeight", "tra", 1.0)),
+                kid("target", "tgt", fin("rotateWeight", "rot", 1.0)),
+                kid("target", "tgt", fin("scaleWeight", "sca", 1.0)),
+                kid("target", "tgt", fin("shearWeight", "she", 1.0)),
                 mout("outputMatrix", "omat"),
             ],
             |d| {
@@ -754,6 +832,10 @@ fn table() -> Vec<Spec> {
                 let (mut t, r, mut s, mut sh) = decompose_full(&m(d, "inputMatrix"));
                 let mut q = DQuat::from_mat3(&r);
                 for k in idx {
+                    // A target with useMatrix off is skipped.
+                    if d.element_or(at(d, "target.useMatrix"), k).scalar().unwrap_or(1.0) == 0.0 {
+                        continue;
+                    }
                     let w = |a: usize| d.element_or(a, k).scalar().unwrap_or(1.0) * d.element_or(attrs[0], k).scalar().unwrap_or(1.0) * env;
                     let (tt, tr, ts, tsh) = decompose_full(&d.element_or(ma, k).as_matrix());
                     t = t.lerp(tt, w(attrs[1]));
@@ -764,7 +846,7 @@ fn table() -> Vec<Spec> {
                 set(d, "outputMatrix", compose(t, DMat3::from_quat(q), sh, s));
             }),
         Spec("pickMatrix", "utility/general", "Keeps only the chosen parts of a matrix.",
-            vec![min_in("inputMatrix", "imat"), bin("useTranslate", "utr", true), bin("useRotate", "uro", true), bin("useScale", "usc", true), bin("useShear", "ush", true), mout("outputMatrix", "omat")],
+            vec![min_in("inputMatrix", "imat"), bin("useTranslate", "tra", true), bin("useRotate", "rot", true), bin("useScale", "sca", true), bin("useShear", "she", true), mout("outputMatrix", "tmat")],
             |d| {
                 let (t, r, s, sh) = decompose_full(&m(d, "inputMatrix"));
                 let o = compose(
@@ -779,15 +861,15 @@ fn table() -> Vec<Spec> {
             vec![
                 min_in("inputMatrix", "imat"),
                 fin("envelope", "env", 1.0),
-                vin("primaryInputAxis", "pia", [1.0, 0.0, 0.0]),
-                en("primaryMode", "pmod", 1, &["Lock Axis", "Aim", "Align"]),
-                vin("primaryTargetVector", "ptv", [1.0, 0.0, 0.0]),
-                min_in("primaryTargetMatrix", "ptmat"),
-                vin("secondaryInputAxis", "sia", [0.0, 1.0, 0.0]),
-                en("secondaryMode", "smod", 0, &["None", "Aim", "Align"]),
-                vin("secondaryTargetVector", "stv", [0.0, 1.0, 0.0]),
-                min_in("secondaryTargetMatrix", "stmat"),
-                mout("outputMatrix", "omat"),
+                kids_named(vin("primaryInputAxis", "pmi", [1.0, 0.0, 0.0]), ["pmx", "pmy", "pmz"]),
+                en("primaryMode", "prmd", 1, &["Lock Axis", "Aim", "Align"]),
+                kids_named(vin("primaryTargetVector", "pmiv", [0.0, 0.0, 0.0]), ["pmvx", "pmvy", "pmvz"]),
+                min_in("primaryTargetMatrix", "pmat"),
+                kids_named(vin("secondaryInputAxis", "smi", [0.0, 1.0, 0.0]), ["smx", "smy", "smz"]),
+                en("secondaryMode", "sm", 0, &["None", "Aim", "Align"]),
+                kids_named(vin("secondaryTargetVector", "smiv", [0.0, 0.0, 0.0]), ["smvx", "smvy", "smvz"]),
+                min_in("secondaryTargetMatrix", "smat"),
+                mout("outputMatrix", "tmat"),
             ],
             |d| {
                 let input = m(d, "inputMatrix");
@@ -935,6 +1017,7 @@ pub fn register_types() {
             doc: doc.into(),
             own_attrs,
             create: Some(Arc::new(move || Box::new(Utility(compute)))),
+            ignores_added_attrs: true,
             ..Default::default()
         })
         .expect(name);

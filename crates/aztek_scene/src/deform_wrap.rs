@@ -107,6 +107,14 @@ impl NodeBehavior for Wrap {
             let (p, inf) = (e[0] as usize, e[1] as i32);
             let Some((_, pts)) = drivers.iter().find(|(i, _)| *i == inf) else { continue };
             let (Some(&a), Some(&b), Some(&c)) = (pts.get(e[2] as usize), pts.get(e[3] as usize), pts.get(e[4] as usize)) else { continue };
+            // Bound to a point of a driver with no faces, such as a curve: it keeps its offset.
+            if e[2] == e[3] && e[3] == e[4] {
+                if p < sum.len() {
+                    sum[p] += (a + DVec3::new(e[7], e[8], e[9])) * e[10];
+                    bound[p] = true;
+                }
+                continue;
+            }
             let Some((o, x, y, n)) = frame(a, b, c, e[5], e[6]) else { continue };
             if p < sum.len() {
                 sum[p] += (o + x * e[7] + y * e[8] + n * e[9]) * e[10];
@@ -165,9 +173,13 @@ pub(crate) fn bind(g: &mut Graph, n: NodeId) -> CmdResult<()> {
     let (max_distance, exclusive, auto, threshold, surface) = (node.float(MAX_DISTANCE), node.bool(EXCLUSIVE), node.bool(AUTO_THRESHOLD), node.float(THRESHOLD), node.int(FALLOFF_MODE) == 1);
     // Every influence's triangles, in world space.
     let mut tris: Vec<(i32, [u32; 3], [DVec3; 3])> = Vec::new();
+    let mut loose: Vec<(i32, u32, DVec3)> = Vec::new();
     for (i, v) in node.elements(DRIVER_POINTS) {
         let Some(m) = v.as_mesh() else { continue };
         let w = node.element(DRIVER_MATRIX, *i).map_or(DMat4::IDENTITY, |x| x.as_matrix());
+        if m.num_faces() == 0 {
+            loose.extend((0..m.point_capacity()).filter(|&p| m.point_valid(p)).map(|p| (*i, p, w.transform_point3(m.position(p)))));
+        }
         for face in (0..m.face_capacity()).filter(|&x| m.face_valid(x)) {
             let pts = m.face_points(face);
             for k in 1..pts.len().saturating_sub(1) {
@@ -181,10 +193,15 @@ pub(crate) fn bind(g: &mut Graph, n: NodeId) -> CmdResult<()> {
     let bound: Vec<Vec<f64>> = (0..points.len())
         .into_par_iter()
         .map(|p| {
-            if !valid[p] || tris.is_empty() {
+            if !valid[p] {
                 return Vec::new();
             }
             let q = points[p];
+            if tris.is_empty() {
+                let Some(near) = loose.iter().min_by(|a, b| (a.2 - q).length_squared().total_cmp(&(b.2 - q).length_squared())) else { return Vec::new() };
+                let (off, id) = (q - near.2, near.1 as f64);
+                return vec![p as f64, near.0 as f64, id, id, id, 0.0, 0.0, off.x, off.y, off.z, 1.0];
+            }
             let mut near: Vec<(f64, usize, f64, f64)> = tris
                 .iter()
                 .enumerate()

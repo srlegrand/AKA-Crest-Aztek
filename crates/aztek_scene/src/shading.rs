@@ -60,7 +60,7 @@ fn text(name: &str, short: &str, d: &str) -> AttrDef {
     base(name, short, PlugType::String, PlugValue::String(d.into()), STORE)
 }
 fn message() -> AttrDef {
-    base("message", "msg", PlugType::Int, PlugValue::Int(0), OUT | flags::HIDDEN)
+    base("message", "msg", PlugType::Int, PlugValue::Int(0), OUT | flags::HIDDEN | flags::MESSAGE)
 }
 /// A connection point of no value: its elements only ever hold connections.
 fn slots(name: &str, short: &str) -> AttrDef {
@@ -948,6 +948,9 @@ pub fn resolve_texture_uncached(written: &str, scene: Option<&str>, project: Opt
         if let Some(up) = d.parent() {
             folders.push(up.join("sourceimages"));
         }
+        // Rigs handed round as a folder often keep their images in one of these beside the scene.
+        folders.push(d.join("Textures"));
+        folders.push(d.join("textures"));
     }
     if let Some(i) = written.to_lowercase().find("sourceimages/") {
         let sub = &written[i + "sourceimages/".len()..];

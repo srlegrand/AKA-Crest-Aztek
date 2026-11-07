@@ -298,3 +298,347 @@ fn opening_a_file_keeps_the_scenes_cameras_where_it_says() {
     assert_near(get(&mut again, "perspShape.focalLength"), &[50.0], "the lens after saving");
     std::fs::remove_dir_all(dir).ok();
 }
+
+// Faults found opening two more production rigs, written small.
+
+#[test]
+fn every_node_has_a_message() {
+    let body = "createNode transform -n \"obj\";\ncreateNode multiplyDivide -n \"md\";\ncreateNode transform -n \"hub\";\n\taddAttr -s false -ci true -m -sn \"links\" -ln \"links\" -at \"message\";\nconnectAttr \"obj.msg\" \"hub.links[0]\";\nconnectAttr \"md.msg\" \"hub.links[1]\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    let listed = s.run("listAttr", json!({"args": ["md"]})).unwrap();
+    assert!(listed.as_array().unwrap().iter().any(|a| a == "message"), "{listed}");
+    let c = s.run("listConnections", json!({"args": ["hub.links"], "source": true, "destination": false})).unwrap();
+    assert_eq!(c, json!(["obj", "md"]));
+    let (out, _) = aztek_scene::ma_file::write_text(&mut s, "m.ma", None);
+    assert!(out.contains("-m -sn \"links\" -ln \"links\" -at \"message\""), "{out}");
+    assert!(out.contains("connectAttr \"md.message\" \"hub.links[1]\";"), "{out}");
+    let mut b = Session::new();
+    let w = read_text(&mut b, &out, false);
+    assert!(w.is_empty(), "{w:?}");
+    assert_eq!(b.run("listConnections", json!({"args": ["hub.links"], "source": true, "destination": false})).unwrap(), json!(["obj", "md"]));
+}
+
+#[test]
+fn a_node_may_read_its_own_parent_inverse_matrix() {
+    let body = "createNode transform -n \"grp\";\n\tsetAttr \".t\" -type \"double3\" 1 2 3 ;\ncreateNode transform -n \"src\";\n\tsetAttr \".t\" -type \"double3\" 5 5 5 ;\ncreateNode joint -n \"jnt\" -p \"grp\";\ncreateNode multMatrix -n \"mm\";\ncreateNode decomposeMatrix -n \"dm\";\nconnectAttr \"src.wm\" \"mm.i[0]\";\nconnectAttr \"jnt.pim\" \"mm.i[1]\";\nconnectAttr \"mm.o\" \"dm.imat\";\nconnectAttr \"dm.ot\" \"jnt.t\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(world_at(&mut s, "jnt"), &[5.0, 5.0, 5.0], "on the source");
+    s.run("setAttr", json!({"args": ["grp.tx", 3.0]})).unwrap();
+    assert_near(world_at(&mut s, "jnt"), &[5.0, 5.0, 5.0], "after the parent moved");
+}
+
+#[test]
+fn a_point_constraint_reads_no_rotation_from_its_target() {
+    // The target turns as what the constraint drives moves, as an IK chain's start joint does in a stretch setup. No cycle in Maya.
+    let body = "createNode transform -n \"tgt\";\n\tsetAttr \".t\" -type \"double3\" 2 0 0 ;\ncreateNode transform -n \"obj\";\ncreateNode pointConstraint -n \"pc\" -p \"obj\";\n\taddAttr -dcb 0 -ci true -k true -sn \"w0\" -ln \"tgtW0\" -dv 1 -min 0 -at \"double\";\nconnectAttr \"tgt.t\" \"pc.tg[0].tt\";\nconnectAttr \"tgt.rp\" \"pc.tg[0].trp\";\nconnectAttr \"tgt.rpt\" \"pc.tg[0].trt\";\nconnectAttr \"tgt.pm\" \"pc.tg[0].tpm\";\nconnectAttr \"pc.w0\" \"pc.tg[0].tw\";\nconnectAttr \"pc.ctx\" \"obj.tx\";\nconnectAttr \"pc.cty\" \"obj.ty\";\nconnectAttr \"pc.ctz\" \"obj.tz\";\ncreateNode locator -n \"reader\";\ncreateNode multiplyDivide -n \"md\";\nconnectAttr \"obj.t\" \"md.i1\";\nconnectAttr \"md.o\" \"tgt.r\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "obj.t"), &[2.0, 0.0, 0.0], "on the target");
+    assert_near(get(&mut s, "tgt.r"), &[2.0, 0.0, 0.0], "and what it drives turns the target");
+}
+
+#[test]
+fn an_added_attribute_driven_from_below_is_no_cycle() {
+    // A control showing a length measured from the joints it moves.
+    let body = "createNode transform -n \"ctrl\";\n\taddAttr -ci true -sn \"len\" -ln \"len\" -at \"double\";\ncreateNode transform -n \"obj\" -p \"ctrl\";\n\tsetAttr \".t\" -type \"double3\" 4 0 0 ;\ncreateNode decomposeMatrix -n \"dm\";\nconnectAttr \"obj.wm\" \"dm.imat\";\nconnectAttr \"dm.otx\" \"ctrl.len\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "ctrl.len"), &[4.0], "read after everything computed");
+    s.run("setAttr", json!({"args": ["ctrl.tx", 3.0]})).unwrap();
+    assert_near(get(&mut s, "ctrl.len"), &[7.0], "follows");
+    // The same on a utility node, whose added attribute a save keeps.
+    let body = "createNode distanceBetween -n \"db\";\n\taddAttr -ci true -k true -sn \"extra\" -ln \"extra\" -at \"double\";\ncreateNode addDoubleLinear -n \"adl\";\nconnectAttr \"db.d\" \"adl.i1\";\nconnectAttr \"adl.o\" \"db.extra\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    let (out, _) = aztek_scene::ma_file::write_text(&mut s, "e.ma", None);
+    let mut b = Session::new();
+    let w = read_text(&mut b, &out, false);
+    assert!(w.is_empty(), "{w:?}");
+}
+
+#[test]
+fn a_motion_path_drives_translate_with_trans_minus_rotate_pivot() {
+    let body = "createNode transform -n \"curve1\";\ncreateNode nurbsCurve -n \"curveShape1\" -p \"curve1\";\n\tsetAttr -k off \".v\";\n\tsetAttr \".cc\" -type \"nurbsCurve\" \n\t\t1 1 0 no 3\n\t\t2 0 1\n\t\t2\n\t\t0 0 0\n\t\t10 0 0\n\t\t;\ncreateNode transform -n \"obj\";\n\tsetAttr \".rp\" -type \"double3\" 0 1 0 ;\ncreateNode motionPath -n \"mp\";\n\tsetAttr \".u\" 0.5;\n\tsetAttr \".fm\" yes;\ncreateNode addDoubleLinear -n \"ax\";\ncreateNode addDoubleLinear -n \"ay\";\nconnectAttr \"curveShape1.ws\" \"mp.gp\";\nconnectAttr \"obj.tmrx\" \"ax.i1\";\nconnectAttr \"mp.xc\" \"ax.i2\";\nconnectAttr \"obj.tmry\" \"ay.i1\";\nconnectAttr \"mp.yc\" \"ay.i2\";\nconnectAttr \"ax.o\" \"obj.tx\";\nconnectAttr \"ay.o\" \"obj.ty\";\nconnectAttr \"mp.msg\" \"obj.sml\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "obj.t"), &[5.0, -1.0, 0.0], "its pivot on the curve");
+    assert_near(get(&mut s, "obj.tmrp"), &[0.0, -1.0, 0.0], "minus the pivot");
+    let (out, _) = aztek_scene::ma_file::write_text(&mut s, "m.ma", None);
+    let mut b = Session::new();
+    let w = read_text(&mut b, &out, false);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut b, "obj.t"), &[5.0, -1.0, 0.0], "after a save");
+}
+
+#[test]
+fn make_nurbs_square_gives_a_curve_per_side() {
+    let body = "createNode makeNurbsSquare -n \"sq\";\ncreateNode transformGeometry -n \"tg\";\n\tsetAttr \".txf\" -type \"matrix\" 2 0 0 0 0 2 0 0 0 0 2 0 0 5 0 1;\ncreateNode transform -n \"side\";\ncreateNode nurbsCurve -n \"sideShape\" -p \"side\";\nconnectAttr \"sq.oc1\" \"tg.ig\";\nconnectAttr \"tg.og\" \"sideShape.cr\";\ncreateNode curveInfo -n \"ci\";\nconnectAttr \"sideShape.ws\" \"ci.ic\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "ci.al"), &[2.0], "one unit side, scaled by 2");
+}
+
+#[test]
+fn controller_tags_are_wired_as_maya_wires_them() {
+    let body = "createNode transform -n \"a\";\ncreateNode transform -n \"b\";\ncreateNode controller -n \"a_tag\";\ncreateNode controller -n \"b_tag\";\nconnectAttr \"a.msg\" \"a_tag.act\";\nconnectAttr \"b.msg\" \"b_tag.act\";\nconnectAttr \"b_tag.pare\" \"a_tag.child[0]\";\nconnectAttr \"a_tag.prep\" \"b_tag.prep\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_eq!(s.run("controller", json!({"args": ["b"], "query": true, "parent": true})).unwrap(), json!("a"));
+    assert_eq!(s.run("controller", json!({"args": ["a"], "query": true, "children": true})).unwrap(), json!(["b"]));
+    s.run("controller", json!({"args": ["b", "a"], "parent": "a"})).ok();
+    let (out, _) = aztek_scene::ma_file::write_text(&mut s, "c.ma", None);
+    assert!(out.contains("connectAttr \"b_tag.parent\" \"a_tag.children[0]\";"), "{out}");
+    assert!(out.contains("connectAttr \"a.message\" \"a_tag.controllerObject\";"), "{out}");
+}
+
+#[test]
+fn renderer_nodes_are_quiet() {
+    let body = "createNode rmanGlobals -s -n \"rmanGlobals\";\ncreateNode PxrPathTracer -n \"tracer\";\ncreateNode d_openexr -n \"exr\";\ncreateNode rmanDisplay -n \"disp\";\ncreateNode aiOptions -s -n \"defaultArnoldRenderOptions\";\ncreateNode aiAOVFilter -n \"filter\";\ncreateNode displayPoints -n \"dp\";\n";
+    let (_, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+}
+
+#[test]
+fn a_long_expression_is_read_whole() {
+    let body = "createNode transform -n \"a\";\ncreateNode transform -n \"b\";\ncreateNode expression -n \"ex\";\n\tsetAttr -s 1 \".in\";\n\tsetAttr -s 1 \".out\";\n\tsetAttr \".ixp\" -type \"string\" (\n\t\t\"float $v = .I[0];\\n\"\n\t\t+ \".O[0] = $v + 1;\");\nconnectAttr \"a.tx\" \"ex.in[0]\";\nconnectAttr \"ex.out[0]\" \"b.tx\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "b.tx"), &[1.0], "ran");
+    s.run("setAttr", json!({"args": ["a.tx", 2.0]})).unwrap();
+    assert_near(get(&mut s, "b.tx"), &[3.0], "follows");
+}
+
+#[test]
+fn an_expression_may_hold_or_and_a_set_attr() {
+    let body = "createNode transform -n \"a\";\ncreateNode transform -n \"b\";\ncreateNode expression -n \"ex\";\n\tsetAttr \".ixp\" -type \"string\" \"if((.I[0]>0)||(.I[0]<-1)){\\nsetAttr a.ty (.I[0]*2);}\\n.O[0] = .I[0]+1;\";\nconnectAttr \"a.tx\" \"ex.in[0]\";\nconnectAttr \"ex.out[0]\" \"b.tx\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "b.tx"), &[1.0], "ran");
+}
+
+#[test]
+fn a_cluster_on_some_of_a_curves_cvs_moves_only_those() {
+    let body = "createNode transform -n \"c\";\ncreateNode nurbsCurve -n \"cShape\" -p \"c\";\n\tsetAttr -k off \".v\";\ncreateNode nurbsCurve -n \"cShapeOrig\" -p \"c\";\n\tsetAttr -k off \".v\";\n\tsetAttr \".io\" yes;\n\tsetAttr \".cc\" -type \"nurbsCurve\" \n\t\t1 2 0 no 3\n\t\t3 0 1 2\n\t\t3\n\t\t0 0 0\n\t\t1 0 0\n\t\t2 0 0\n\t\t;\ncreateNode transform -n \"h\";\n\tsetAttr \".t\" -type \"double3\" 0 5 0 ;\ncreateNode clusterHandle -n \"hShape\" -p \"h\";\ncreateNode cluster -n \"cl\";\ncreateNode groupParts -n \"gp\";\n\tsetAttr \".ic\" -type \"componentList\" 1 \"cv[2]\";\nconnectAttr \"cShapeOrig.ws\" \"gp.ig\";\nconnectAttr \"gp.og\" \"cl.ip[0].ig\";\nconnectAttr \"cl.og[0]\" \"cShape.cr\";\nconnectAttr \"h.wm\" \"cl.ma\";\nconnectAttr \"hShape.x\" \"cl.x\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    let id = s.graph.find("cShape").unwrap().unwrap();
+    let c = aztek_scene::curves::world_curve(&mut s.graph, id).unwrap();
+    assert_near(c.cvs[2].to_array().to_vec(), &[2.0, 5.0, 0.0], "the member moved");
+    assert_near(c.cvs[0].to_array().to_vec(), &[0.0, 0.0, 0.0], "the others did not");
+}
+
+#[test]
+fn a_constraint_drives_only_the_channels_the_file_wires() {
+    let body = "createNode transform -n \"tgt\";\n\tsetAttr \".t\" -type \"double3\" 1 2 3 ;\ncreateNode transform -n \"obj\";\n\tsetAttr \".t\" -type \"double3\" 0 9 0 ;\ncreateNode pointConstraint -n \"pc\" -p \"obj\";\n\taddAttr -dcb 0 -ci true -k true -sn \"w0\" -ln \"tgtW0\" -dv 1 -min 0 -at \"double\";\nconnectAttr \"tgt.t\" \"pc.tg[0].tt\";\nconnectAttr \"tgt.pm\" \"pc.tg[0].tpm\";\nconnectAttr \"pc.w0\" \"pc.tg[0].tw\";\nconnectAttr \"pc.ctx\" \"obj.tx\";\nconnectAttr \"pc.ctz\" \"obj.tz\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "obj.t"), &[1.0, 9.0, 3.0], "Y as stored");
+    let (out, _) = aztek_scene::ma_file::write_text(&mut s, "p.ma", None);
+    let mut b = Session::new();
+    let w = read_text(&mut b, &out, false);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut b, "obj.t"), &[1.0, 9.0, 3.0], "and after a save");
+}
+
+#[test]
+fn a_blocked_constraint_holds_its_rest() {
+    let body = "createNode transform -n \"tgt\";\n\tsetAttr \".t\" -type \"double3\" 1 2 3 ;\ncreateNode transform -n \"sw\";\n\taddAttr -ci true -k true -sn \"st\" -ln \"st\" -dv 2 -at \"double\";\ncreateNode transform -n \"obj\";\n\tsetAttr \".t\" -type \"double3\" 4 5 6 ;\ncreateNode pointConstraint -n \"pc\" -p \"obj\";\n\taddAttr -dcb 0 -ci true -k true -sn \"w0\" -ln \"tgtW0\" -dv 1 -min 0 -at \"double\";\n\tsetAttr \".rst\" -type \"double3\" 4 5 6 ;\nconnectAttr \"tgt.t\" \"pc.tg[0].tt\";\nconnectAttr \"tgt.pm\" \"pc.tg[0].tpm\";\nconnectAttr \"pc.w0\" \"pc.tg[0].tw\";\nconnectAttr \"pc.ctx\" \"obj.tx\";\nconnectAttr \"pc.cty\" \"obj.ty\";\nconnectAttr \"pc.ctz\" \"obj.tz\";\nconnectAttr \"sw.st\" \"pc.nds\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "obj.t"), &[4.0, 5.0, 6.0], "blocked");
+    s.run("setAttr", json!({"args": ["sw.st", 0.0]})).unwrap();
+    assert_near(get(&mut s, "obj.t"), &[1.0, 2.0, 3.0], "running");
+}
+
+#[test]
+fn an_extrude_and_a_colour_set_come_from_a_file() {
+    let curve = |n: &str, pts: &str| format!("createNode transform -n \"{n}\";\ncreateNode nurbsCurve -n \"{n}Shape\" -p \"{n}\";\n\tsetAttr -k off \".v\";\n\tsetAttr \".cc\" -type \"nurbsCurve\" \n\t\t1 1 0 no 3\n\t\t2 0 1\n\t\t2\n\t\t{pts}\n\t\t;\n");
+    let body = format!("{}{}createNode extrude -n \"ex\";\n\tsetAttr \".fpt\" yes;\ncreateNode reverseSurface -n \"rs\";\ncreateNode transform -n \"srf\";\ncreateNode nurbsSurface -n \"srfShape\" -p \"srf\";\nconnectAttr \"prof1Shape.ws\" \"ex.pr\";\nconnectAttr \"path1Shape.ws\" \"ex.pt\";\nconnectAttr \"ex.os\" \"rs.is\";\nconnectAttr \"rs.os\" \"srfShape.cr\";\ncreateNode transform -n \"m\";\ncreateNode mesh -n \"mShape\" -p \"m\";\ncreateNode mesh -n \"mShapeOrig\" -p \"m\";\n\tsetAttr \".io\" yes;\n\tsetAttr -s 3 \".vt[0:2]\" 0 0 0 1 0 0 0 1 0;\n\tsetAttr -s 3 \".ed[0:2]\" 0 1 0 1 2 0 2 0 0;\n\tsetAttr -ch 3 \".fc[0]\" -type \"polyFaces\" f 3 0 1 2;\ncreateNode createColorSet -n \"cc\";\nconnectAttr \"mShapeOrig.w\" \"cc.ig\";\nconnectAttr \"cc.og\" \"mShape.i\";\n", curve("prof1", "0 0 0\n\t\t1 0 0"), curve("path1", "0 0 0\n\t\t0 5 0"));
+    let (mut s, w) = load(&body);
+    assert!(w.is_empty(), "{w:?}");
+    let id = s.graph.find("srfShape").unwrap().unwrap();
+    assert!(s.graph.source(&aztek_scene::plug::PlugRef::new(id, aztek_scene::surfaces::SurfaceShape::CREATE as i32)).is_some(), "wired");
+    assert_eq!(s.run("polyEvaluate", json!({"args": ["mShape"], "vertex": true})).unwrap(), json!(3));
+}
+
+#[test]
+fn a_ramp_reads_its_entries() {
+    let body = "createNode ramp -n \"rp\";\n\tsetAttr -s 2 \".cel\";\n\tsetAttr \".cel[0].ep\" 0;\n\tsetAttr \".cel[0].ec\" -type \"float3\" 0 0 0 ;\n\tsetAttr \".cel[1].ep\" 1;\n\tsetAttr \".cel[1].ec\" -type \"float3\" 4 0 0 ;\n\tsetAttr \".v\" 0.25;\ncreateNode transform -n \"o\";\nconnectAttr \"rp.ocr\" \"o.tx\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "o.tx"), &[1.0], "a quarter of the way");
+}
+
+#[test]
+fn a_curve_fed_by_its_original_has_its_points_and_percentage_is_of_the_range() {
+    let body = "createNode transform -n \"c\";\ncreateNode nurbsCurve -n \"cShape\" -p \"c\";\n\tsetAttr -k off \".v\";\ncreateNode nurbsCurve -n \"cShapeOrig\" -p \"c\";\n\tsetAttr -k off \".v\";\n\tsetAttr \".io\" yes;\n\tsetAttr \".cc\" -type \"nurbsCurve\" \n\t\t1 2 0 no 3\n\t\t3 0 1 2\n\t\t3\n\t\t0 0 0\n\t\t1 0 0\n\t\t11 0 0\n\t\t;\nconnectAttr \"cShapeOrig.ws\" \"cShape.cr\";\ncreateNode pointOnCurveInfo -n \"pc\";\n\tsetAttr \".pr\" 0.5;\n\tsetAttr \".top\" yes;\nconnectAttr \"cShape.ws\" \"pc.ic\";\ncreateNode transform -n \"o\";\nconnectAttr \"pc.p\" \"o.t\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "o.t"), &[1.0, 0.0, 0.0], "half the range is the middle CV, a sixth of the length");
+}
+
+#[test]
+fn a_transform_limit_can_be_driven() {
+    let body = "createNode transform -n \"sw\";\n\taddAttr -ci true -k true -sn \"on\" -ln \"on\" -min 0 -max 1 -at \"bool\";\ncreateNode transform -n \"o\";\n\tsetAttr \".t\" -type \"double3\" 5 0 0 ;\n\tsetAttr \".mxtl\" -type \"double3\" 2 0 0 ;\nconnectAttr \"sw.on\" \"o.xtxe\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(world_at(&mut s, "o"), &[5.0, 0.0, 0.0], "off");
+    s.run("setAttr", json!({"args": ["sw.on", true]})).unwrap();
+    assert_near(world_at(&mut s, "o"), &[2.0, 0.0, 0.0], "held");
+}
+
+#[test]
+fn a_control_point_on_a_curve_with_history_is_a_move() {
+    let body = "createNode transform -n \"c\";\ncreateNode nurbsCurve -n \"cShape\" -p \"c\";\n\tsetAttr -k off \".v\";\n\tsetAttr \".tw\" yes;\ncreateNode nurbsCurve -n \"cShapeOrig\" -p \"c\";\n\tsetAttr -k off \".v\";\n\tsetAttr \".io\" yes;\n\tsetAttr \".cc\" -type \"nurbsCurve\" \n\t\t1 1 0 no 3\n\t\t2 0 1\n\t\t2\n\t\t1 0 0\n\t\t2 0 0\n\t\t;\ncreateNode transform -n \"j\";\n\tsetAttr \".t\" -type \"double3\" 0 3 0 ;\nconnectAttr \"cShapeOrig.ws\" \"cShape.cr\";\nconnectAttr \"j.t\" \"cShape.cp[1]\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    let id = s.graph.find("cShape").unwrap().unwrap();
+    let c = aztek_scene::curves::world_curve(&mut s.graph, id).unwrap();
+    assert_near(c.cvs[1].to_array().to_vec(), &[2.0, 3.0, 0.0], "on top of the original");
+    let (out, _) = aztek_scene::ma_file::write_text(&mut s, "p.ma", None);
+    let mut b = Session::new();
+    let w = read_text(&mut b, &out, false);
+    assert!(w.is_empty(), "{w:?}");
+    let id = b.graph.find("cShape").unwrap().unwrap();
+    let c = aztek_scene::curves::world_curve(&mut b.graph, id).unwrap();
+    assert_near(c.cvs[1].to_array().to_vec(), &[2.0, 3.0, 0.0], "and after a save");
+}
+
+#[test]
+fn an_offset_rotation_is_in_the_driven_objects_rotate_order() {
+    // One turn in YZX order. Read in XYZ it is a different turn, so the object would miss the stored rotation.
+    let body = format!(
+        "createNode transform -n \"tgt\";\ncreateNode transform -n \"obj\";\n\tsetAttr \".ro\" 1;\n{}\tsetAttr \".tg[0].tor\" -type \"double3\" 30 40 50 ;\nconnectAttr \"obj.ro\" \"obj_parentConstraint1.cro\";\n",
+        constraint("obj_parentConstraint1", "obj", "tgt", "tgtW0", true)
+    );
+    let (mut s, w) = load(&body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "obj.r"), &[30.0, 40.0, 50.0], "the same three angles");
+}
+
+fn spline_chain(extra: &str) -> String {
+    format!("createNode joint -n \"j1\";\ncreateNode joint -n \"j2\" -p \"j1\";\n\tsetAttr \".t\" -type \"double3\" 2 0 0 ;\ncreateNode joint -n \"j3\" -p \"j2\";\n\tsetAttr \".t\" -type \"double3\" 2 0 0 ;\ncreateNode transform -n \"c\";\ncreateNode nurbsCurve -n \"cShape\" -p \"c\";\n\tsetAttr \".cc\" -type \"nurbsCurve\" \n\t\t1 1 0 no 3\n\t\t2 0 1\n\t\t2\n\t\t0 0 0\n\t\t4 0 0\n\t\t;\ncreateNode transform -n \"up\";\n\tsetAttr \".r\" -type \"double3\" 90 0 0 ;\ncreateNode ikHandle -n \"h\";\n\tsetAttr \".roc\" yes;\n\tsetAttr \".dtce\" yes;\n\tsetAttr \".dwut\" 4;\n{extra}createNode ikEffector -n \"e\" -p \"j2\";\ncreateNode ikSplineSolver -n \"ikSplineSolver\";\nconnectAttr \"j1.msg\" \"h.hsj\";\nconnectAttr \"e.hp\" \"h.hee\";\nconnectAttr \"ikSplineSolver.msg\" \"h.hsv\";\nconnectAttr \"cShape.ws\" \"h.ic\";\nconnectAttr \"j3.tx\" \"e.tx\";\nconnectAttr \"up.wm\" \"h.dwum\";\nconnectAttr \"up.wm\" \"h.dwue\";\n")
+}
+
+#[test]
+fn spline_ik_advanced_twist_follows_its_up_objects() {
+    // Up, Y in the up object's space, is world Z there, so the joints roll 90 about X.
+    let (mut s, w) = load(&spline_chain(""));
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "j1.r"), &[90.0, 0.0, 0.0], "start");
+    assert_near(world_at(&mut s, "j3"), &[4.0, 0.0, 0.0], "on the curve");
+}
+
+#[test]
+fn spline_ik_twist_can_come_from_a_ramp() {
+    let body = format!("{}createNode ramp -n \"rp\";\n\tsetAttr -s 2 \".cel\";\n\tsetAttr \".cel[0].ep\" 0;\n\tsetAttr \".cel[0].ec\" -type \"float3\" 0 0 0 ;\n\tsetAttr \".cel[1].ep\" 1;\n\tsetAttr \".cel[1].ec\" -type \"float3\" 1 0 0 ;\nconnectAttr \"rp.oc\" \"h.dtra\";\n", spline_chain("\tsetAttr \".dtvt\" 2;\n\tsetAttr \".dtrm\" 40;\n"));
+    let (mut s, w) = load(&body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "j1.r"), &[90.0, 0.0, 0.0], "none at the start");
+    assert_near(get(&mut s, "j2.r"), &[40.0, 0.0, 0.0], "all of the ramp at the last joint, on top of the first");
+}
+
+#[test]
+fn a_unit_conversion_with_a_factor_of_its_own_scales() {
+    let body = "createNode transform -n \"a\";\n\tsetAttr \".tx\" 10;\ncreateNode transform -n \"b\";\ncreateNode unitConversion -n \"tenth\";\n\tsetAttr \".cf\" 0.1;\nconnectAttr \"a.tx\" \"tenth.i\";\nconnectAttr \"tenth.o\" \"b.tx\";\ncreateNode transform -n \"c\";\ncreateNode unitConversion -n \"toDegrees\";\n\tsetAttr \".cf\" 0.017453292519943295;\nconnectAttr \"a.tx\" \"toDegrees.i\";\nconnectAttr \"toDegrees.o\" \"c.rx\";\ncreateNode transform -n \"d\";\ncreateNode unitConversion -n \"twoAndAHalf\";\n\tsetAttr \".cf\" 0.043633231299858237;\nconnectAttr \"a.tx\" \"twoAndAHalf.i\";\nconnectAttr \"twoAndAHalf.o\" \"d.rx\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "b.tx"), &[1.0], "a tenth");
+    assert_near(get(&mut s, "c.rx"), &[10.0], "only a change of units");
+    assert_near(get(&mut s, "d.rx"), &[25.0], "2.5 degrees per unit");
+    let (out, _) = aztek_scene::ma_file::write_text(&mut s, "u.ma", None);
+    let mut b = Session::new();
+    let w = read_text(&mut b, &out, false);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut b, "b.tx"), &[1.0], "after a save");
+    assert_near(get(&mut b, "d.rx"), &[25.0], "after a save");
+}
+
+#[test]
+fn a_preferred_angle_comes_from_the_file_and_goes_back_to_it() {
+    let body = "createNode joint -n \"a\";\ncreateNode joint -n \"b\" -p \"a\";\n\tsetAttr \".t\" -type \"double3\" 2 0 0 ;\n\tsetAttr \".pa\" -type \"double3\" 0 -60 0 ;\ncreateNode joint -n \"c\" -p \"b\";\n\tsetAttr \".t\" -type \"double3\" 2 0 0 ;\ncreateNode ikHandle -n \"h\";\n\tsetAttr \".t\" -type \"double3\" 3 0 0 ;\ncreateNode ikEffector -n \"e\" -p \"b\";\ncreateNode ikRPsolver -n \"ikRPsolver\";\nconnectAttr \"a.msg\" \"h.hsj\";\nconnectAttr \"e.hp\" \"h.hee\";\nconnectAttr \"ikRPsolver.msg\" \"h.hsv\";\nconnectAttr \"c.tx\" \"e.tx\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "b.pa"), &[0.0, -60.0, 0.0], "read");
+    let first = get(&mut s, "b.worldMatrix");
+    let (out, _) = aztek_scene::ma_file::write_text(&mut s, "p.ma", None);
+    assert!(out.contains("setAttr \".pa\" -type \"double3\" 0 -60 0 ;"), "{out}");
+    let mut b = Session::new();
+    let w = read_text(&mut b, &out, false);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut b, "b.worldMatrix"), &first, "solves the same way after a save");
+}
+
+#[test]
+fn an_aim_with_a_zero_up_vector_turns_the_shortest_way() {
+    let body = "createNode transform -n \"tgt\";\n\tsetAttr \".t\" -type \"double3\" 1 0 1 ;\ncreateNode transform -n \"obj\";\ncreateNode aimConstraint -n \"ac\" -p \"obj\";\n\taddAttr -dcb 0 -ci true -sn \"w0\" -ln \"tgtW0\" -dv 1 -at \"double\";\n\tsetAttr \".a\" -type \"double3\" 0 0 1 ;\n\tsetAttr \".wu\" -type \"double3\" 0 0 0 ;\nconnectAttr \"tgt.t\" \"ac.tg[0].tt\";\nconnectAttr \"tgt.pm\" \"ac.tg[0].tpm\";\nconnectAttr \"ac.w0\" \"ac.tg[0].tw\";\nconnectAttr \"obj.t\" \"ac.ct\";\nconnectAttr \"ac.crx\" \"obj.rx\";\nconnectAttr \"ac.cry\" \"obj.ry\";\nconnectAttr \"ac.crz\" \"obj.rz\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "obj.r"), &[0.0, 45.0, 0.0], "about Y alone");
+}
+
+#[test]
+fn a_target_weight_can_come_from_a_utility_node() {
+    let body = format!(
+        "createNode transform -n \"tgt\";\n\tsetAttr \".t\" -type \"double3\" 5 0 0 ;\ncreateNode transform -n \"sw\";\n\taddAttr -ci true -sn \"on\" -ln \"on\" -at \"double\";\ncreateNode condition -n \"cd\";\n\tsetAttr \".ct\" -type \"float3\" 1 0 0 ;\n\tsetAttr \".cf\" -type \"float3\" 0 0 0 ;\n\tsetAttr \".st\" 1;\ncreateNode transform -n \"obj\";\n\tsetAttr \".t\" -type \"double3\" 0 7 0 ;\n{}\tsetAttr \".rst\" -type \"double3\" 0 7 0 ;\nconnectAttr \"sw.on\" \"cd.ft\";\nconnectAttr \"cd.ocr\" \"obj_parentConstraint1.w0\";\n",
+        constraint("obj_parentConstraint1", "obj", "tgt", "tgtW0", true)
+    );
+    let (mut s, w) = load(&body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "obj.t"), &[0.0, 7.0, 0.0], "off: at rest");
+    s.run("setAttr", json!({"args": ["sw.on", 1.0]})).unwrap();
+    assert_near(get(&mut s, "obj.t"), &[5.0, 0.0, 0.0], "on: on the target");
+}
+
+#[test]
+fn a_single_chain_handle_keeps_the_rotation_it_was_stored_with() {
+    let body = "createNode joint -n \"j1\";\n\tsetAttr \".r\" -type \"double3\" 0 0 0 ;\ncreateNode joint -n \"j2\" -p \"j1\";\n\tsetAttr \".t\" -type \"double3\" 2 0 0 ;\ncreateNode transform -n \"grp\";\ncreateNode ikHandle -n \"h\" -p \"grp\";\n\tsetAttr \".t\" -type \"double3\" 2 0 0 ;\n\tsetAttr \".r\" -type \"double3\" 30 0 0 ;\ncreateNode ikEffector -n \"e\" -p \"j1\";\ncreateNode ikSCsolver -n \"ikSCsolver\";\nconnectAttr \"j1.msg\" \"h.hsj\";\nconnectAttr \"e.hp\" \"h.hee\";\nconnectAttr \"ikSCsolver.msg\" \"h.hsv\";\nconnectAttr \"j2.tx\" \"e.tx\";\nconnectAttr \"j2.ty\" \"e.ty\";\nconnectAttr \"j2.tz\" \"e.tz\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "j1.r"), &[0.0, 0.0, 0.0], "as stored, the handle at 30 degrees");
+    // Turning the handle about the chain turns the chain by as much.
+    s.run("setAttr", json!({"args": ["h.rx", 75.0]})).unwrap();
+    assert_near(world_at(&mut s, "j2"), &[2.0, 0.0, 0.0], "still reaches the handle");
+    assert_near(get(&mut s, "j1.r"), &[45.0, 0.0, 0.0], "turned as the handle did");
+}
+
+#[test]
+fn a_scale_constraint_on_a_mirrored_target_has_z_negative() {
+    let body = "createNode transform -n \"mirror\";\n\tsetAttr \".s\" -type \"double3\" 1 1 -1 ;\ncreateNode transform -n \"tgt\" -p \"mirror\";\ncreateNode transform -n \"obj\";\ncreateNode scaleConstraint -n \"sc\" -p \"obj\";\n\taddAttr -dcb 0 -ci true -k true -sn \"w0\" -ln \"tgtW0\" -dv 1 -min 0 -at \"double\";\n\tsetAttr \".o\" -type \"double3\" 1 1 -1 ;\nconnectAttr \"tgt.s\" \"sc.tg[0].ts\";\nconnectAttr \"tgt.pm\" \"sc.tg[0].tpm\";\nconnectAttr \"sc.w0\" \"sc.tg[0].tw\";\nconnectAttr \"sc.csx\" \"obj.sx\";\nconnectAttr \"sc.csy\" \"obj.sy\";\nconnectAttr \"sc.csz\" \"obj.sz\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "obj.s"), &[1.0, 1.0, 1.0], "the offset cancels the mirror");
+}
+
+#[test]
+fn matrix_nodes_have_maya_short_names() {
+    let body = "createNode transform -n \"src\";\n\tsetAttr \".t\" -type \"double3\" 3 0 0 ;\n\tsetAttr \".r\" -type \"double3\" 0 0 90 ;\ncreateNode pickMatrix -n \"pick\";\n\tsetAttr \".rot\" no;\ncreateNode blendMatrix -n \"bm\";\n\tsetAttr \".tgt[0].wgt\" 0.5;\ncreateNode aimMatrix -n \"am\";\n\tsetAttr \".sm\" 0;\ncreateNode transform -n \"aimAt\";\n\tsetAttr \".t\" -type \"double3\" 0 0 4 ;\ncreateNode setRange -n \"sr\";\n\tsetAttr \".m\" -type \"float3\" 10 0 0 ;\n\tsetAttr \".om\" -type \"float3\" 2 0 0 ;\n\tsetAttr \".v\" -type \"float3\" 1 0 0 ;\ncreateNode decomposeMatrix -n \"dp\";\ncreateNode decomposeMatrix -n \"db\";\ncreateNode decomposeMatrix -n \"da\";\ncreateNode transform -n \"out\";\nconnectAttr \"src.wm\" \"pick.imat\";\nconnectAttr \"pick.tmat\" \"dp.imat\";\nconnectAttr \"pick.tmat\" \"bm.tgt[0].tmat\";\nconnectAttr \"bm.omat\" \"db.imat\";\nconnectAttr \"aimAt.wm\" \"am.pmat\";\nconnectAttr \"am.tmat\" \"da.imat\";\nconnectAttr \"sr.ox\" \"out.tx\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "dp.or"), &[0.0, 0.0, 0.0], "no rotation picked");
+    assert_near(get(&mut s, "dp.ot"), &[3.0, 0.0, 0.0], "translation picked");
+    assert_near(get(&mut s, "db.ot"), &[1.5, 0.0, 0.0], "half way");
+    assert_near(get(&mut s, "da.or"), &[0.0, -90.0, 0.0], "X aimed along Z");
+    assert_near(get(&mut s, "out.tx"), &[5.0], "setRange's outValueX");
+}
+
+#[test]
+fn a_pair_blend_rotate_mode_takes_one_input() {
+    let body = "createNode pairBlend -n \"pb\";\n\tsetAttr \".w\" 0.25;\n\tsetAttr \".rm\" 2;\n\tsetAttr \".txm\" 1;\n\tsetAttr \".ir1\" -type \"double3\" 10 0 0 ;\n\tsetAttr \".ir2\" -type \"double3\" 20 0 0 ;\n\tsetAttr \".it1\" -type \"double3\" 1 1 0 ;\n\tsetAttr \".it2\" -type \"double3\" 3 3 0 ;\ncreateNode transform -n \"obj\";\nconnectAttr \"pb.or\" \"obj.r\";\nconnectAttr \"pb.ot\" \"obj.t\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(get(&mut s, "obj.r"), &[20.0, 0.0, 0.0], "input 2 only");
+    assert_near(get(&mut s, "obj.t"), &[1.0, 1.5, 0.0], "input 1 only on X, blended on Y");
+}
+
+#[test]
+fn ik_blend_can_be_driven_by_a_switch() {
+    let body = "createNode joint -n \"j1\";\ncreateNode joint -n \"j2\" -p \"j1\";\n\tsetAttr \".t\" -type \"double3\" 2 0 0 ;\ncreateNode transform -n \"sw\";\n\taddAttr -ci true -k true -sn \"ik\" -ln \"ik\" -dv 1 -at \"double\";\ncreateNode ikHandle -n \"h\";\n\tsetAttr \".t\" -type \"double3\" 0 2 0 ;\ncreateNode ikEffector -n \"e\" -p \"j1\";\ncreateNode ikRPsolver -n \"ikRPsolver\";\nconnectAttr \"j1.msg\" \"h.hsj\";\nconnectAttr \"e.hp\" \"h.hee\";\nconnectAttr \"ikRPsolver.msg\" \"h.hsv\";\nconnectAttr \"j2.tx\" \"e.tx\";\nconnectAttr \"sw.ik\" \"h.ikb\";\n";
+    let (mut s, w) = load(body);
+    assert!(w.is_empty(), "{w:?}");
+    assert_near(world_at(&mut s, "j2"), &[0.0, 2.0, 0.0], "IK on");
+    s.run("setAttr", json!({"args": ["sw.ik", 0.0]})).unwrap();
+    assert_near(world_at(&mut s, "j2"), &[2.0, 0.0, 0.0], "IK off");
+}

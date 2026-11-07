@@ -43,6 +43,8 @@ pub struct NodeType {
     /// Its outputs don't depend on where its parent is, so they may drive that parent: a follicle's outTranslate moves the
     /// transform above it.
     pub free_of_parent: bool,
+    /// Its compute reads only its declared attrs, so one added to a node of this type orders nothing. DAG nodes are like this anyway.
+    pub ignores_added_attrs: bool,
 }
 
 impl fmt::Debug for NodeType {
@@ -141,6 +143,25 @@ pub fn registered(t: &Arc<NodeType>) -> Arc<NodeType> {
     t.user_of.clone().unwrap_or_else(|| t.clone())
 }
 
+const IMPLICIT_MESSAGE_DOC: &str = "Links this node to others by connection; carries no value.";
+
+/// The `message` every node type has.
+pub fn message_attr() -> AttrDef {
+    AttrDef {
+        name: "message".into(),
+        short_name: "msg".into(),
+        ty: crate::plug::PlugType::Int,
+        default_value: PlugValue::Int(0),
+        flags: flags::OUTPUT | flags::HIDDEN | flags::MESSAGE,
+        doc: IMPLICIT_MESSAGE_DOC.into(),
+        ..Default::default()
+    }
+}
+
+fn is_implicit_message(a: &AttrDef) -> bool {
+    a.name == "message" && a.doc == IMPLICIT_MESSAGE_DOC
+}
+
 pub mod types {
     use super::*;
 
@@ -169,13 +190,21 @@ pub mod types {
             .as_ref()
             .map(|b| b.attrs.clone())
             .unwrap_or_default();
-        let base_count = ty.base.as_ref().map(|b| b.attrs.len()).unwrap_or(0);
+        // The base's message stays last: it isn't counted in the attr indices a type's own attrs follow on from.
+        if ty.attrs.last().is_some_and(is_implicit_message) {
+            ty.attrs.pop();
+        }
+        let base_count = ty.attrs.len();
         for own in ty.own_attrs.clone() {
             // An own attr named like a base one overrides it in place (a different default, say), keeping indices.
             match ty.attrs.iter().position(|a| a.name == own.name) {
                 Some(i) if ty.base.is_some() && i < base_count => ty.attrs[i] = own,
                 _ => ty.attrs.push(own),
             }
+        }
+        // Every node in Maya has a message plug, whatever its type declares.
+        if !ty.attrs.iter().any(|a| a.name == "message") {
+            ty.attrs.push(message_attr());
         }
         let ty = Arc::new(ty);
         r.types.insert(ty.name.clone(), ty.clone());

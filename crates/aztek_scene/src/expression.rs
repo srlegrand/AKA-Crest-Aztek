@@ -116,10 +116,10 @@ fn lex(src: &str) -> Result<Vec<(Tok, usize, usize)>, String> {
                 out.push((Tok::Op("."), i, i + 1));
                 i += 1;
             }
-        } else if word_start(c) || (c == b'.' && b.get(i + 1).is_some_and(|x| x.is_ascii_alphabetic())) {
+        } else if (word_start(c) && !src[i..].starts_with("||")) || (c == b'.' && b.get(i + 1).is_some_and(|x| x.is_ascii_alphabetic())) {
             let start = i;
             i += 1;
-            while i < b.len() && (word_char(b[i]) || (b[i] == b':' && b.get(i + 1).is_some_and(|x| x.is_ascii_alphabetic() || *x == b'_') && b.get(i - 1).is_some_and(|x| x.is_ascii_alphanumeric()) && !space_before_colon(src, i))) {
+            while i < b.len() && !src[i..].starts_with("||") && (word_char(b[i]) || (b[i] == b':' && b.get(i + 1).is_some_and(|x| x.is_ascii_alphabetic() || *x == b'_') && b.get(i - 1).is_some_and(|x| x.is_ascii_alphanumeric()) && !space_before_colon(src, i))) {
                 i += 1;
             }
             out.push((Tok::Word(src[start..i].to_string()), start, i));
@@ -412,6 +412,14 @@ impl Parser<'_> {
         }
         if self.is_op("{") {
             out.extend(self.block()?);
+            return Ok(());
+        }
+        // A MEL command among the statements, which Maya runs as it evaluates. A compute can't set attributes: the value is worked out and dropped.
+        if self.is_word("setAttr") {
+            self.next();
+            self.next();
+            self.expression()?;
+            self.eat(";");
             return Ok(());
         }
         if self.is_word("break") || self.is_word("continue") {
@@ -1183,10 +1191,11 @@ pub fn register_types() {
             attr("object", "obj", PlugType::String, PlugValue::String(String::new()), store),
             attr("alwaysEvaluate", "ae", PlugType::Int, PlugValue::Int(1), store),
             unit,
-            attr("input", "in", PlugType::Float, PlugValue::Float(0.0), flags::INPUT | flags::ARRAY | flags::HIDDEN),
+            attr("input", "in", PlugType::Float, PlugValue::Float(0.0), store | flags::ARRAY | flags::HIDDEN),
             attr("output", "out", PlugType::Float, PlugValue::Float(0.0), flags::OUTPUT | flags::ARRAY | flags::HIDDEN),
             attr("radianSlots", "rds", PlugType::String, PlugValue::String(String::new()), store | flags::HIDDEN),
             attr("animated", "ani", PlugType::Int, PlugValue::Int(0), store),
+            attr("objectMsg", "obm", PlugType::Int, PlugValue::Int(0), flags::INPUT | flags::HIDDEN | flags::MESSAGE),
         ],
         create: Some(Arc::new(|| Box::new(Expression::default()))),
         ..Default::default()

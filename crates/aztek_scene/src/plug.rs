@@ -256,6 +256,8 @@ pub mod flags {
     pub const CODE: u32 = 1 << 14;
     /// With FILE, an image: editors offer thumbnails and the image library tied to the attr.
     pub const IMAGE: u32 = 1 << 15;
+    /// A message plug: a link between nodes that carries no value, so it orders nothing and dirties nothing.
+    pub const MESSAGE: u32 = 1 << 16;
 }
 
 #[derive(Clone, Debug)]

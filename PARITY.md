@@ -451,11 +451,52 @@ Shallower than Maya:
 - Nothing here has been compared with Maya running. The checks are against values Maya saved at rest; posed results are only checked to be
   plausible and the same after saving. Whether Maya opens what Aztek writes is unchecked.
 - Follicle hair, simulation and most of its attributes are ignored: it is a point and frame. `pu` and `pv` are clamped to 0 to 1.
-- Spline IK ignores advanced twist (`.dwut`, `.dwum`, `.dwue`), and stretch comes only from what the rig wires up.
+- Spline IK stretch comes only from what the rig wires up. Advanced twist: see the next section.
 - blendWeighted ignores `.w`. A periodic curve's skin weights cover its first lap only.
 - A mesh named the same as its transform needs a path: `hair|hair`, as in Maya.
 - A wire reads driver curves by sampling; `.sc` (scale) on a wire is not used.
 - A rest error of 5.3 on one mesh of that rig is unexplained. It is probably the blend targets the file has on at weight 1, but this has not been shown.
+### Three more production rigs (07/11/2026)
+
+A second production rig (Maya 2023, 11,936 nodes), a third (Maya 2020, 4,516 nodes, 161 MB, its spine on a ramp and matrix nodes) and a fourth (Maya 2019, AdvancedSkeleton style, 8,146 nodes, 68 expressions). None of their data is in the repo; each fault below has a small hand-written file in `tests/rig_files.rs`. `load_ma` now also compares constraints with the rotation Maya last stored (`.lr`), which are posed results Maya computed. `rig_pose` tries controls and says what moved and how long it took.
+
+| | second | third | fourth |
+|---|---|---|---|
+| open, before | 47.4 s, 4050 warnings | 11.6 s, 88 | 7.7 s, 200 |
+| open, now | 5.3 s, 0 | 3.7 s, 0 | 4.6 s, 2 |
+| influences off their bind, before | 126 of 244 | 202 of 975 | 67 of 411 |
+| now | 0 | 10, explained below | 0 |
+| rest error on final meshes, now | 0.000 | 0.000 but the tongue | 0.000 |
+| stored channels that differ, now | 15, none on a skin | 0 | 0 |
+
+Faults found, all general:
+
+- Opening ran an evaluation for every constraint; 3,500 passes took 42 of the 47 s. Evaluation is held while constraints are made.
+- Dependency is closer to per plug. `parentMatrix`, `parentInverseMatrix` and `transMinusRotatePivot` depend on the parent or the pivots alone. An attribute added to a DAG node or a utility node, and a DAG node's visibility and display settings, order nothing and are filled in last. A position's constraint reads a target's `tt`, `trp`, `trt` and `tpm`, a scale constraint its `ts` and `tpm`. That removed every refusal of the form "would create a cycle" on these rigs.
+- `message` exists on every node, shows in `listAttr`, and neither orders nor dirties anything. Added message attributes, multis among them, are read and saved. `controller` holds real connections, as Maya wires them.
+- Long strings are written `("a" + "b")`, and the brackets were taken for the value, so most long expressions ran as nothing. `||` lexed as a DAG path; an expression can hold `setAttr x.y (expr);`, whose value is worked out and dropped.
+- Target weights driven by a utility node were dropped without a word, as were `ikBlend` and most handle channels. `AZTEK_MA_DROPS=1` now lists what a file held that was not read.
+- `unitConversion` was always skipped. A factor beyond radians and degrees is now kept: 0.1, -1, 2.5 degrees per unit. The node is written with the factor as Aztek reads it, so 0.0436 comes back as 2.5.
+- Offsets (`.o`, `.tg[k].tor`) are in the driven object's rotate order. A scale constraint on a mirrored target has Z negative. An aim with a zero `wu` turns the shortest way. A constraint drives only the channels the file wires. `nodeState` and offset can be driven, and a node blocked from the start holds its rest values. `interpType` is read and saved.
+- `.cp[k]` on a curve with history is a move on top of it. A curve fed straight by another curve keeps the connection. Deformer membership on curves (`cv[...]`) reaches the weights. `pointOnCurveInfo.top` is a share of the parameter range. Edit points exist (`eps[k].yve`). A wrap can be driven by a curve, each point keeping its offset from the nearest CV.
+- `multiplyDivide.input1` starts at 0. `pickMatrix`, `aimMatrix`, `blendMatrix` and `setRange` have Maya's short names; a blendMatrix target has `useMatrix`. `pairBlend` has its modes. `ramp`, `motionPath`, `makeNurbsSquare`, `extrude` and `reverseSurface` come from files. Transform limits read and can be driven (`mntl`, `mxtl`, `xtxe`). `.pa` is read and saved, where saving used to lose it. A single chain handle's rotation means its difference from the file's pose.
+- Spline IK advanced twist: up types, world up axis, vectors and matrices, Total, Start/End and Ramp values. The bone's way out of the joint counts as forward, whatever `dForwardAxis` says, as a mirrored chain at rest shows.
+- `createColorSet` passes through. `deleteComponent` and `polyDelEdge` apply to the stored mesh. Renderer nodes (RenderMan, Arnold) are quiet and left out on saving. Images are also looked for in `Textures` beside the scene.
+
+Looked at: all four rigs posed through arm IK and FK, legs, spine, head, jaw and fingers, each reaching the final meshes, and back at rest to 0.0000. Screenshots at rest and posed, textured, under Xvfb. Saved and reopened: 0 warnings on the second and third, and on the fourth 0 where it had 2, as what it can't represent is dropped by the save.
+
+Shallower than Maya, most noticeable first:
+
+- The fourth rig's `poseInterpolator` nodes are not read, so the corrective shapes on elbows and wrists don't fire. Nothing stands in for them and they are lost on saving.
+- Its `SquintRightToLeftBS`, a blendShape on a lattice, is not read: the left squint lattice doesn't follow the right. A lattice has no deformers on it here.
+- Per change, measured over 30 changes: 13 to 127 ms on the second and third rigs and 29 to 206 ms on the fourth, the top of each range being the root control. A change to an attribute that computes nothing, such as a visibility switch on the main control, still recomputes everything below that node: 65 to 90 ms there.
+- Saved and reopened, the fourth rig under an arm IK pose differs by 8 on one proxy mesh's transform and 0.1 on twist joints, the third by 0.09 on a shoulder under a spine pose, the second by 0.05 on a finger joint under an FK arm pose. Cause not found. Other poses tried agree to 0.01.
+- The second rig has 15 stored rotations that differ, on spline IK joints not on a skin: up to 11 degrees on one thumb guide, 95 on one wrist joint. The wrist's up locators reach a rotation Maya's `.lr` disagrees with by 120 degrees, unexplained: the constraint's parent would have to be ignored for Maya's number to come out.
+- `.lr` is sometimes old: a constraint at weight 0 keeps the last value. Those differences are noise, and the check only points at places to look.
+- The third rig's tongue is 204 units off its bind at rest. Its constraint's `.lr` holds the same 25 degrees, so Maya had it there too.
+- `dForwardAxis` and the Closest up axes are not used as such; closest is taken as positive. `setAttr` in an expression has no effect. Faces and edges deleted by history are matched by number against the stored mesh, which has only been seen on proxy meshes.
+- `distanceDimShape` labels draw even when the shape's parents are hidden.
+
 ### Remaining rigging, animation, NURBS and general commands (07/11/2026)
 
 Flags and short names come from the command reference for Maya 2024; no copy of Maya was run. In `rig_extra.rs`, `anim_extra.rs`, `model_extra.rs`, `general_cmds.rs`, `nurbs_ops.rs` and `aztek_host/src/host_general.rs`.

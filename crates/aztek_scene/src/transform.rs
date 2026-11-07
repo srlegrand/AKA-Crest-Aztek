@@ -325,6 +325,8 @@ impl DagNode {
             let local = d.matrix(Transform::MATRIX);
             d.set_output(Transform::INVERSE_MATRIX, safe_inverse(&local));
             d.set_output(Transform::XFORM_MATRIX, local);
+            let tmrp = -(d.vec3(Transform::ROTATE_PIVOT) + d.vec3(Transform::ROTATE_PIVOT_TRANSLATE));
+            d.set_output(Transform::TRANS_MINUS_ROTATE_PIVOT, PlugValue::Vec3(tmrp));
             let rot = euler_to_matrix(d.vec3(Transform::ROTATE), RotateOrder::from_index(d.int(Transform::ROTATE_ORDER)));
             let q = glam::DQuat::from_mat4(&rot);
             for (i, v) in [q.x, q.y, q.z, q.w].into_iter().enumerate() {
@@ -615,7 +617,9 @@ impl Transform {
     pub const SELECT_HANDLE: usize = DagNode::COUNT + 27;
     /// Min, max, min enable, max enable for translate, then rotate, then scale: twelve Vec3s.
     pub const LIMITS: usize = DagNode::COUNT + 28;
-    pub const COUNT: usize = DagNode::COUNT + 40;
+    pub const TRANS_MINUS_ROTATE_PIVOT: usize = DagNode::COUNT + 40;
+    pub const SPECIFIED_MANIP_LOCATION: usize = DagNode::COUNT + 41;
+    pub const COUNT: usize = DagNode::COUNT + 42;
 
     /// Holds translate, rotate and scale inside their enabled limits, as they are pulled.
     pub fn apply_limits(d: &mut NodeData) {
@@ -835,8 +839,8 @@ impl Transform {
                 bool_in("displayScalePivot", "dsp", false, "Draw the scale pivot."),
                 bool_in("displayLocalAxis", "dla", false, "Draw the local axes."),
                 vec3_named("selectHandle", "hdl", DVec3::ZERO, unkeyable, ["selectHandleX", "selectHandleY", "selectHandleZ"], ["hdlx", "hdly", "hdlz"], "Where the selection handle sits."),
-                limit("minTransLimit", "mnt", -1.0, ["minTransXLimit", "minTransYLimit", "minTransZLimit"], ["mtxl", "mtyl", "mtzl"]),
-                limit("maxTransLimit", "mxt", 1.0, ["maxTransXLimit", "maxTransYLimit", "maxTransZLimit"], ["xtxl", "xtyl", "xtzl"]),
+                limit("minTransLimit", "mntl", -1.0, ["minTransXLimit", "minTransYLimit", "minTransZLimit"], ["mtxl", "mtyl", "mtzl"]),
+                limit("maxTransLimit", "mxtl", 1.0, ["maxTransXLimit", "maxTransYLimit", "maxTransZLimit"], ["xtxl", "xtyl", "xtzl"]),
                 limit("minTransLimitEnable", "mtle", 0.0, ["minTransXLimitEnable", "minTransYLimitEnable", "minTransZLimitEnable"], ["mtxe", "mtye", "mtze"]),
                 limit("maxTransLimitEnable", "xtle", 0.0, ["maxTransXLimitEnable", "maxTransYLimitEnable", "maxTransZLimitEnable"], ["xtxe", "xtye", "xtze"]),
                 limit("minRotLimit", "mnrl", -45.0, ["minRotXLimit", "minRotYLimit", "minRotZLimit"], ["mrxl", "mryl", "mrzl"]),
@@ -847,6 +851,16 @@ impl Transform {
                 limit("maxScaleLimit", "mxsl", 1.0, ["maxScaleXLimit", "maxScaleYLimit", "maxScaleZLimit"], ["xsxl", "xsyl", "xszl"]),
                 limit("minScaleLimitEnable", "msle", 0.0, ["minScaleXLimitEnable", "minScaleYLimitEnable", "minScaleZLimitEnable"], ["msxe", "msye", "msze"]),
                 limit("maxScaleLimitEnable", "xsle", 0.0, ["maxScaleXLimitEnable", "maxScaleYLimitEnable", "maxScaleZLimitEnable"], ["xsxe", "xsye", "xsze"]),
+                vec3_out("transMinusRotatePivot", "tmrp", ["transMinusRotatePivotX", "transMinusRotatePivotY", "transMinusRotatePivotZ"], ["tmrx", "tmry", "tmrz"]),
+                AttrDef {
+                    name: "specifiedManipLocation".into(),
+                    short_name: "sml".into(),
+                    ty: PlugType::Int,
+                    default_value: PlugValue::Int(0),
+                    flags: flags::INPUT | flags::HIDDEN | flags::MESSAGE,
+                    doc: "The motion path or similar node the manipulator follows.".into(),
+                    ..Default::default()
+                },
             ],
             create: Some(Arc::new(|| Box::new(Transform))),
             // The Unreal live link's identity, dropped with the link: older scene files load without it.
