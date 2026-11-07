@@ -20,6 +20,11 @@ QTabWidget::pane { border: none; }
 QTabBar::tab { background: #3a3a3a; padding: 3px 10px; border: 1px solid #2b2b2b; border-bottom: none; }
 QTabBar::tab:selected { background: #5d5d5d; }
 QTabWidget#shelfTabs QTabBar::tab { padding: 1px 8px; font-size: 8pt; }
+QPushButton#feelButton { background: #ff8a00; color: #101010; font-weight: bold; border: 1px solid #ffc27a; border-radius: 3px; padding: 1px 10px; margin: 1px 2px; }
+QPushButton#feelButton:hover { background: #ffa533; }
+QPushButton#feelButton:pressed { background: #e07400; }
+QLabel#feedbackWarning { background: #b00020; color: #ffffff; font-weight: bold; padding: 6px; border-radius: 3px; }
+QPushButton#feedbackSubmit { font-weight: bold; padding: 3px 12px; }
 QLineEdit { background: #2b2b2b; border: 1px solid #222; padding: 1px 3px; selection-background-color: #5285a6; }
 QLineEdit:read-only { background: #393939; }
 QLineEdit#channelValue { background: #2b2b2b; border: none; }

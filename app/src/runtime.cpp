@@ -5,6 +5,7 @@
 #include "grapheditor.h"
 #include "dopesheet.h"
 #include "aztek.h"
+#include "feedback.h"
 #include "host.h"
 #include "markingmenu.h"
 #include "panels.h"
@@ -147,6 +148,7 @@ void MainWindow::build_runtime() {
     r("ToolSettingsWindow", "Windows", "Tool Settings", [this] { show_tool_settings(); });
     r("ScriptEditor", "Windows", "Script Editor", [this] { show_script_editor(); });
     r("GraphEditor", "Windows", "Graph Editor", [this] { show_graph_editor(); });
+    r("AztekFeedback", "Help", "This doesn't feel right!", [this] { open_feedback(this); });
     r("DopeSheetEditor", "Windows", "Dope Sheet", [this] { show_dope_sheet(); });
     r("NodeEditorWindow", "Windows", "Node Editor", [this] { show_node_editor(); });
     r("SetDrivenKeyOptions", "Windows", "Set Driven Key", [this] { show_set_driven_key(); });

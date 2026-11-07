@@ -198,6 +198,11 @@ ShelfBar::ShelfBar(std::function<void(const QString&, const QString&)> run, QWid
     connect(tabs_, &QTabWidget::currentChanged, this, [](int i) { QSettings().setValue("shelves/current", i); });
 }
 
+void ShelfBar::set_corner(QWidget* w) {
+    tabs_->setUsesScrollButtons(true);
+    tabs_->setCornerWidget(w, Qt::TopRightCorner);
+}
+
 void ShelfBar::save() const {
     QSettings().setValue("shelves/json", QJsonDocument(shelves_).toJson(QJsonDocument::Compact));
 }

@@ -66,6 +66,7 @@ add_executable(aztek WIN32
   app/src/panelmenus.cpp
   app/src/appmenus.cpp
   app/src/prefswindow.cpp
+  app/src/feedback.cpp
   app/src/editors.cpp
   app/src/attreditor.cpp
   app/src/colorchooser.cpp

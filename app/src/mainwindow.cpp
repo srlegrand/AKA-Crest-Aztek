@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include "aztek.h"
+#include "feedback.h"
 #include "host.h"
 #include "icons.h"
 #include "markingmenu.h"
@@ -97,6 +98,7 @@ MainWindow::MainWindow() {
     }, shelf_holder);
     shelf_capture() = [this](QAction* a) { add_to_shelf(a); };
     shelf_holder->addWidget(shelf_bar_);
+    shelf_bar_->set_corner(make_feedback_button(shelf_bar_));
     build_toolbox();
     build_docks();
     build_bottom();
@@ -651,6 +653,7 @@ void MainWindow::build_menu_set(const QString& set) {
         set_menus_.append(m);
     }
     auto* help = new QMenu("Help", this);
+    help->addAction("This doesn't feel right!", [this] { open_feedback(this); });
     help->addAction("About Aztek", [this] { show_about(this); });
     mb->addMenu(help);
     set_menus_.append(help);
