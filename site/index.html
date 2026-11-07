@@ -20,6 +20,7 @@
   <a class="brand" href="#"><img src="img/aztek-icon.png" alt="" width="28" height="28"><span>Aztek</span></a>
   <nav>
     <a href="#features">Features</a>
+    <a href="#feedback">Feedback</a>
     <a href="#download">Download</a>
     <a href="#licence">Licence</a>
     <a href="https://github.com/srlegrand/Aztek">GitHub</a>
@@ -37,6 +38,8 @@
       <a class="btn" href="https://github.com/srlegrand/Aztek">Source on GitHub</a>
       <a class="btn" href="https://github.com/srlegrand/Aztek/fork">Fork it on GitHub</a>
     </div>
+    <p class="dl-note"><span id="dl-detected">Builds for Windows and Linux.</span>
+      <a href="#download">All downloads: Windows installer and zip, Ubuntu 24.04 and 22.04, Rocky Linux 9 and 8, other Linux</a></p>
     <p class="build-line" id="build-line"></p>
   </div>
 </section>
@@ -51,6 +54,22 @@
       in 13 to 44 ms per change.</figcaption>
   </figure>
 </section>
+
+<section class="feedback" id="feedback">
+  <div class="fb-copy">
+    <span class="fb-pill">This doesn't feel right!</span>
+    <h2>Anything off? One button.</h2>
+    <p>Aztek should feel like second nature to anyone who has spent years in a 3D package. If something doesn't work, or
+      works but doesn't feel quite right (a hotkey, a drag, a default, a menu in the wrong place), press the orange button
+      at the right of the shelf bar.</p>
+    <p>Say what you did and what you expected; that's the whole report. Add a screenshot you can draw on, or a copy of the
+      scene, if it helps. It opens a filled-in GitHub issue in your browser, so every rough edge anyone notices ends up in
+      one <a href="https://github.com/srlegrand/Aztek/issues">public list</a>. Nothing is sent until you press Submit there.</p>
+  </div>
+  <img src="img/feedback.png" alt="The This doesn't feel right! window over the main window" loading="lazy">
+</section>
+
+<div class="fret" aria-hidden="true"></div>
 
 <section class="features" id="features">
   <h2>What's in it</h2>
@@ -252,11 +271,15 @@ build.bat -Run               # Windows</code></pre>
     main.href = document.getElementById('dl-windows').href;
     main.textContent = 'Download for Windows';
     document.getElementById('dl-windows').classList.add('mine');
+    document.getElementById('dl-detected').textContent =
+      'This button is the Windows installer, picked because you are on Windows.';
   } else if (isLinux) {
     main.dataset.from = 'dl-linux';
     main.href = document.getElementById('dl-linux').href;
     main.textContent = 'Download for Linux';
     document.getElementById('dl-linux').classList.add('mine');
+    document.getElementById('dl-detected').textContent =
+      'This button is the Ubuntu 24.04 package, picked because you are on Linux.';
   }
   fetch('https://api.github.com/repos/srlegrand/Aztek/releases/tags/latest')
     .then(function (r) { return r.ok ? r.json() : null; })

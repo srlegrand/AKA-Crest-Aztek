@@ -20,6 +20,29 @@ Website: [srlegrand.github.io/Aztek](https://srlegrand.github.io/Aztek/). Downlo
 A production character rig, opened from its `.ma` file and posed: 414 joints, 37 skinClusters, 17
 blendShapes, 82 IK handles, follicles, ribbons and wires. It opens in about 3 seconds and responds in 13 to 44 ms per change.
 
+## This doesn't feel right!
+
+Aztek should feel like second nature to anyone who has spent years in a 3D package. If something doesn't work, or works but
+doesn't feel quite right (a hotkey, a drag, a default, a menu in the wrong place), press the orange **This doesn't feel
+right!** button at the far right of the shelf bar. Say what you did and what you expected; that's the whole report. It opens a filled-in
+GitHub issue, so every rough edge anyone notices ends up in one public list.
+
+![The This doesn't feel right! window over the main window](docs/feedback.png)
+
+It is also under Help > This doesn't feel right!, and the `AztekFeedback` runtime command. Optionally add:
+
+- a screenshot of the app, which you can draw on with a pen, arrows, rectangles and text;
+- a zipped `.ma` copy of the current scene. Your scene stays as it is, and the copy has a generic name. It holds the names of everything in
+  the scene and may hold file paths. Referenced files and textures are not included.
+
+Both are off by default and ask you to confirm. **Reports are public: never include work under NDA or anything confidential. If you do, it
+is at your own risk.**
+
+The app makes no network requests. "Open on GitHub" opens a filled-in issue page in your browser, puts the picture on the clipboard (Ctrl+V
+in the description box) and shows the folder holding the attachments, under `feedback/` in the app's data location, so the zip can be dragged
+in. You need a GitHub account, and nothing is public until you press Submit on that page. The window shows exactly what the page will be
+filled in with. GitHub takes files up to 25 MB and images up to 10 MB.
+
 ## What's in it
 
 - **Polygon modelling:** the standard polygon commands with construction history; Quad Draw, Multi-Cut, Insert and Offset Edge
@@ -215,23 +238,6 @@ The command line and the Script Editor take MEL (`polyCube -w 2 -sx 3; select -r
 
 `aztek.cmds` is the module of record; the compatibility modules map onto it, so existing scripts run unchanged. Python plug-ins load
 with `loadPlugin`. C++ plug-ins can't load.
-
-## This doesn't feel right!
-
-The orange button at the far right of the shelf bar (also Help > This doesn't feel right!, or the `AztekFeedback` runtime command) is the
-quick way to report something that behaves differently from what you expect. Write what you did and what you expected, and optionally add:
-
-- a screenshot of the app, which you can draw on with a pen, arrows, rectangles and text;
-- a zipped `.ma` copy of the current scene. Your scene stays as it is, and the copy has a generic name. It holds the names of everything in
-  the scene and may hold file paths. Referenced files and textures are not included.
-
-Both are off by default and ask you to confirm. **Reports are public: never include work under NDA or anything confidential. If you do, it
-is at your own risk.**
-
-The app makes no network requests. "Open on GitHub" opens a filled-in issue page in your browser, puts the picture on the clipboard (Ctrl+V
-in the description box) and shows the folder holding the attachments, under `feedback/` in the app's data location, so the zip can be dragged
-in. You need a GitHub account, and nothing is public until you press Submit on that page. The window shows exactly what the page will be
-filled in with. GitHub takes files up to 25 MB and images up to 10 MB.
 
 ## Compatibility
 
