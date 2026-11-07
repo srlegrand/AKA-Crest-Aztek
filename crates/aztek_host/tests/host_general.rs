@@ -115,3 +115,49 @@ fn display_scales_reach_the_prefs_the_view_reads() {
     assert_eq!(c.mel("toggleAxis -q -o;"), json!(true));
     c.mel("toggleAxis -v 1;");
 }
+
+/// Scripts reach these through MEL's own argument handling, with short flags and query forms.
+#[test]
+fn scene_commands_from_mel() {
+    prefs_dir("melforms");
+    let mut c = Core::new();
+    assert_eq!(c.mel("flexor -q -l;"), json!(["jointLattice", "boneLattice", "sculpt"]));
+    c.mel("polyCylinder -r 1 -h 8 -sh 8 -sa 8 -ax 1 0 0 -n limb;");
+    c.mel("select -cl; joint -p -4 0 0 -n j1; joint -p 0 0 0 -n j2; joint -p 4 0 0 -n j3;");
+    c.mel("skinCluster j1 limb;");
+    c.mel("select j2;");
+    assert_eq!(c.mel("flexor -typ \"jointLattice\" -aj;"), json!(["jointLattice1"]));
+    c.mel("jointLattice -e -cr 2.5 jointLattice1;");
+    assert_eq!(c.mel("jointLattice -q -cr jointLattice1;"), json!(2.5));
+    assert_eq!(c.mel("jointLattice -q -j jointLattice1;"), json!("j2"));
+    let made = c.mel("flexor -typ \"sculpt\" -dc \"sculpt -mxd 4.0\" -aj j2;");
+    assert_eq!(made, json!(["sculpt1"]));
+    assert_eq!(c.mel("getAttr sculpt1.maximumDisplacement;"), json!(4.0));
+
+    c.mel("xformConstraint -t \"surface\";");
+    assert_eq!(c.mel("xformConstraint -q -t;"), json!("surface"));
+    c.mel("timeCode -psh 1;");
+    assert_eq!(c.mel("timeCode -q -psh;"), json!(1.0));
+    assert_eq!(c.mel("ghosting -q -m;"), json!("preAndPost"));
+    c.mel("ikSystemInfo -gsh 0;");
+    assert_eq!(c.mel("ikSystemInfo -q -gsh;"), json!(false));
+    c.mel("ikSystemInfo -gsh 1;");
+
+    c.mel("polyCube -n bx;");
+    c.mel("instanceable -a 0 bx;");
+    assert_eq!(c.mel("instanceable -q bx;"), json!([false]));
+    assert!(c.mel_checked("instance bx;").is_err());
+
+    c.mel("curve -d 3 -p 0 0 0 -p 1 1 0 -p 2 1 0 -p 3 0 0 -n cv1;");
+    c.mel("curve -d 3 -p 0 4 0 -p 1 5 0 -p 2 5 0 -p 3 4 0 -n cv2;");
+    let r = c.mel("blend2 cv1 cv2;");
+    assert_eq!(r.as_array().map(Vec::len), Some(2), "{r}");
+    assert_eq!(c.mel("bezierInfo -afc 4;"), json!(1));
+
+    c.mel("stringArrayIntersector si1;");
+    c.mel("stringArrayIntersector -e -i {\"a\", \"b\"} si1;");
+    c.mel("stringArrayIntersector -e -i {\"b\", \"c\"} si1;");
+    assert_eq!(c.mel("stringArrayIntersector -q si1;"), json!(["b"]));
+    c.mel("dataStructure -fmt \"raw\" -asString \"name=melSt:int32=ID\";");
+    assert_eq!(c.mel("dataStructure -n \"melSt\" -q -lmn;"), json!(["ID"]));
+}
