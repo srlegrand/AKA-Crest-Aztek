@@ -14,6 +14,7 @@ target and status, including where it differs from Maya; [docs/COMMANDS.md](docs
 - **NURBS:** curves (CV and EP tools, rebuild, attach, detach, offset) and surfaces (primitives, loft, revolve, extrude,
   boundary, birail, `nurbsToPoly`), with CVs as components.
 - **UVs:** projections, unfold, layout, cut and sew, UV Editor.
+- **Materials and textures:** lambert, blinn, phong, phongE and surfaceShader with file textures and place2dTexture, assigned to objects or faces; Textured mode (6) in the viewport; Hypershade lists; the image behind the UV Editor.
 - **Rigging:** joints (orient, mirror, insert, segment scale compensate), RP, SC and spline IK, every constraint, smooth
   skin with weight painting, mirror and copy, dual quaternion; lattice, wrap, wire, delta mush, softMod, nonlinears,
   clusters, blend shapes; a HumanIK subset (skeleton, definition, control rig, retargeting).

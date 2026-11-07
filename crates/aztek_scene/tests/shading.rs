@@ -475,3 +475,17 @@ fn exporting_an_object_takes_its_material_and_leaves_others() {
     assert!(text.contains("createNode shadingEngine -n \"keptSG\";"), "{text}");
     assert!(!text.contains("\"left\""), "{text}");
 }
+
+/// A surface keeps its shading group through a save, and saving a scene warns about nothing it writes.
+#[test]
+fn a_surface_keeps_its_group_through_a_save_and_default_cameras_raise_no_warning() {
+    let mut s = scene();
+    run(&mut s, "nurbsPlane", json!({"name": "ribbon"}));
+    assert!(run(&mut s, "sets", json!({"query": true, "args": ["initialShadingGroup"]})).to_string().contains("ribbonShape"));
+    let (text, warnings) = aztek_scene::ma_file::write_text(&mut s, "a.ma", None);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let mut back = Session::new();
+    let w = aztek_scene::ma_file::read_text(&mut back, &text, false);
+    assert!(w.is_empty(), "{w:?}");
+    assert!(run(&mut back, "sets", json!({"query": true, "args": ["initialShadingGroup"]})).to_string().contains("ribbonShape"));
+}

@@ -1088,7 +1088,6 @@ void MainWindow::open_file(const QString& path) {
         r.removeAll(path);
         r.prepend(path);
         s.setValue("recentFiles", r.mid(0, 10));
-        for (ViewportWidget* v : panels_->views()) v->set("frame", "\"all\"");
     }
     update_title();
 }
@@ -1302,7 +1301,6 @@ void MainWindow::run_startup(const QString& script, const QString& screenshot) {
                 else
                     mel(src);
             }
-            for (ViewportWidget* v : panels_->views()) v->set("frame", "\"all\"");
         });
     }
     if (!screenshot.isEmpty()) {

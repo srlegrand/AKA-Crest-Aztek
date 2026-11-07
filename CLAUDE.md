@@ -70,7 +70,7 @@ Checking the UI without a display: run under Xvfb and look at the pictures.
 
     xvfb-run -a -s "-screen 0 1700x1050x24" ./build/aztek --script scene.mel --screenshot out.png
 
-`--script` runs MEL or Python at start; `--screenshot` saves the main window (viewports included) and quits. For
+`--script` runs MEL or Python at start and leaves the camera where the script or file put it (`viewFit -all` frames); `--screenshot` saves the main window (viewports included) and quits. For
 interaction (marking menus, drags, separate editor windows) drive a real Xvfb with xdotool and grab the screen with
 ImageMagick `import -window root`. `AZTEK_ECHO=1` prints the script history to stderr. Runtime commands such as
 `GraphEditor;`, `UVEditor;`, `FourViewLayout;`, `JointTool;`, `MoveTool;` let a script open editors and set tools.

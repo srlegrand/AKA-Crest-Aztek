@@ -491,6 +491,8 @@ Found and left: after `select shape`, `ls -sl` still lists the earlier component
 
 ### Materials, texturing and viewport textures (07/11/2026)
 
+On the real rig above: `Body.png` and `Eyes.png` draw on the character from beside the scene despite their `D:/` paths, the missing `waitress.bmp` gives one warning, the textures stay on the skin when arm IK, arm FK and fingers are posed, and saving and reopening keeps the members of `initialShadingGroup`, NURBS ribbons included. Opening a file keeps the camera it saved rather than framing everything.
+
 Nodes (`aztek_scene/src/shading.rs`): `lambert`, `reflect` (abstract), `phong`, `blinn`, `phongE`, `anisotropic`,
 `surfaceShader`, `standardSurface`, `shadingEngine` (an `objectSet`), `materialInfo`, `file`, `place2dTexture`, `bump2d`,
 with Maya's long and short names and defaults; `ls -type lambert` finds the ones built on it. Every scene has `lambert1`,

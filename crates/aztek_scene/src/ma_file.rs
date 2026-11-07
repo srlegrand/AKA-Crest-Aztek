@@ -3164,6 +3164,10 @@ impl Writer<'_> {
             if ty == "nurbsSurface" {
                 self.write_nurbs_surface(id);
                 self.write_nurbs_chain(id, crate::surfaces::SurfaceShape::CREATE);
+                if !self.s.graph.node(id).is_some_and(|n| n.bool(DagNode::INTERMEDIATE_OBJECT)) {
+                    let path = self.s.graph.path(id);
+                    self.write_membership(id, &path, 0);
+                }
             }
             if ty == "camera" {
                 self.write_camera(id);
@@ -4080,8 +4084,8 @@ pub fn write_text(s: &mut Session, file_name: &str, only: Option<&[NodeId]>) -> 
             // Intermediate shapes: geometry is baked.
         } else if matches!(ty, crate::nurbs_nodes::TO_POINTS | crate::nurbs_nodes::FROM_POINTS | "ikEffector" | "ikRPsolver" | "ikSCsolver" | "ikSplineSolver" | "ikSystem") || ty == crate::history::TWEAK_TYPE {
             // Written as Maya's connections and tweak nodes with their shape, and with each IK handle.
-        } else if matches!(n.name(), "defaultLightSet" | "defaultObjectSet") {
-            // Every scene has these.
+        } else if matches!(n.name(), "defaultLightSet" | "defaultObjectSet") || crate::cameras::is_default_camera(&w.s.graph, id) {
+            // Every scene has these; the default cameras are written on their own.
         } else if !n_is_baked(&t) {
             *unwritten.entry(ty.to_string()).or_default() += 1;
         }
