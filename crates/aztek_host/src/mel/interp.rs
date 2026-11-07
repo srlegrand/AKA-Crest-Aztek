@@ -115,6 +115,11 @@ pub fn run(core: &mut Core, src: &str) -> Result<J, String> {
 }
 
 /// A callback's run: no echo and no result lines, its print output kept. The error comes back to the caller.
+/// Whether a global procedure of this name has been defined.
+pub fn has_global_proc(core: &Core, name: &str) -> bool {
+    core.mel_state.global_procs.contains_key(name)
+}
+
 /// As `run_callback`, with the script's value: nothing echoed, and what it prints is printed.
 pub fn call_for_value(core: &mut Core, src: &str) -> Result<J, String> {
     core.mel_state.running += 1;

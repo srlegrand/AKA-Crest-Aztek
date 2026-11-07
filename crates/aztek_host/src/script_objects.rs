@@ -470,6 +470,21 @@ fn editor_template(a: &Args) -> CmdResult {
     Ok(Value::Null)
 }
 
+/// The Attribute Editor's layout for a node, from a script's `AE<type>Template` procedure; empty with no such procedure.
+/// `arg` is the type and the node, with a space between.
+pub fn ae_template(core: &mut crate::core::Core, arg: &str) -> Value {
+    let Some((ty, node)) = arg.split_once(' ') else { return json!([]) };
+    let name = format!("AE{ty}Template");
+    if !crate::mel::has_global_proc(core, &name) {
+        return json!([]);
+    }
+    take_template();
+    if let Err(m) = crate::mel::call_for_value(core, &format!("{name} \"{node}\";")) {
+        core.push(format!("// Error: {m} //"), crate::core::LineKind::Error);
+    }
+    Value::Array(take_template())
+}
+
 /// What the last template said, and forgets it.
 pub fn take_template() -> Vec<Value> {
     with(|o| std::mem::take(&mut o.template))

@@ -565,6 +565,19 @@ fn paint_contexts_act_on_what_the_brush_takes() {
 }
 
 #[test]
+fn attribute_editor_templates_run_by_type() {
+    let mut c = Core::new();
+    ok(&mut c, "polyCube -n box;");
+    assert_eq!(aztek_host::script_objects::ae_template(&mut c, "transform box"), json!([]));
+    ok(&mut c, "global proc AEtransformTemplate(string $n) { editorTemplate -bsl; editorTemplate -bl \"Mine\"; editorTemplate -ac \"translateX\"; editorTemplate -el; editorTemplate -s \"caching\"; editorTemplate -esl; }");
+    let t = aztek_host::script_objects::ae_template(&mut c, "transform box");
+    assert_eq!(t[0]["title"], "Mine");
+    assert_eq!(t[1]["attr"], "translateX");
+    assert_eq!(t[3]["kind"], "suppress");
+    errors(&mut c);
+}
+
+#[test]
 fn menu_items_say_what_they_are() {
     let mut c = Core::new();
     ok(&mut c, "window w -mb 1; menu m; menuItem -l \"Do\" one; menuItem -ob 1 box; menuItem -cb 1 chk;");
