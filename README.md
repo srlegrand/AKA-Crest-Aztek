@@ -36,6 +36,8 @@ blendShapes, 82 IK handles, follicles, ribbons and wires. It opens in about 3 se
   ![A character rig opened from a .ma file](docs/rig-file.png)
 - **Scripting:** MEL (procedures, arrays, control flow, backticks), Python, `maya.api.OpenMaya`, Python plug-ins with
   `MPxCommand` and `MPxNode`; `scriptJob`, `scriptNode` and `evalDeferred`.
+
+  ![A MEL script in the Script Editor building cubes with expressions, then playing them](docs/scripting.gif)
 - **Script-built interface:** `window`, layouts, controls, menus and dialogs from MEL or Python become Qt widgets;
   attribute-bound controls, `AE<type>Template` procedures, `workspaceControl` docking, editors and panels created by script.
 - **Playblast** to images or, through ffmpeg, to a movie.
