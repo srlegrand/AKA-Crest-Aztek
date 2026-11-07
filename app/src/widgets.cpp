@@ -266,6 +266,11 @@ public:
     }
 protected:
     void mouseReleaseEvent(QMouseEvent* e) override {
+        if ((e->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier)) == (Qt::ControlModifier | Qt::ShiftModifier) && shelf_capture()) {
+            if (auto* a = parent() ? property("rowAction").value<QAction*>() : nullptr) shelf_capture()(a);
+            while (QWidget* p = QApplication::activePopupWidget()) p->close();
+            return;
+        }
         bool box = box_->geometry().adjusted(-4, -4, 4, 4).contains(e->position().toPoint());
         // Close every open menu before running, as a normal item would.
         while (QWidget* p = QApplication::activePopupWidget()) p->close();
@@ -296,7 +301,14 @@ OptionRow::OptionRow(const QString& label, const QString& shortcut, std::functio
 }
 
 QWidget* OptionRow::createWidget(QWidget* parent) {
-    return new RowWidget(label_, shortcut_, run_, options_, parent);
+    auto* w = new RowWidget(label_, shortcut_, run_, options_, parent);
+    w->setProperty("rowAction", QVariant::fromValue(static_cast<QAction*>(this)));
+    return w;
+}
+
+std::function<void(QAction*)>& shelf_capture() {
+    static std::function<void(QAction*)> f;
+    return f;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -329,6 +341,17 @@ void TimeSlider::set_keys(const QVector<double>& k) {
     update();
 }
 
+void TimeSlider::set_breakdowns(const QVector<double>& k) {
+    if (k == breakdowns_) return;
+    breakdowns_ = k;
+    update();
+}
+
+QString TimeSlider::range_text() const {
+    double a = qMin(range_a_, range_b_), b = qMax(range_a_, range_b_);
+    return QString("%1:%2").arg(a).arg(b);
+}
+
 double TimeSlider::frame_at(int x) const {
     double w = qMax(1, width() - 16);
     return start_ + (x - 8) / w * (end_ - start_);
@@ -357,12 +380,20 @@ void TimeSlider::paintEvent(QPaintEvent*) {
         if (major) p.drawText(QPointF(x + 2, height() - 12), QString::number(fr));
     }
     double fw = qMax(2.0, w / span);
-    // Keys on the selection: red bars.
-    for (double k : keys_) {
-        if (k < start_ || k > end_) continue;
-        double kx = 8 + (k - start_) / span * w;
-        p.fillRect(QRectF(kx - qMax(1.0, fw * 0.25), 3, qMax(2.0, fw * 0.5), height() - 6), QColor(204, 40, 40));
+    // The range selected with Shift-drag, red as in Maya.
+    if (range_a_ != range_b_) {
+        double a = 8 + (qMin(range_a_, range_b_) + move_by_ - start_) / span * w;
+        double b = 8 + (qMax(range_a_, range_b_) + move_by_ - start_) / span * w;
+        p.fillRect(QRectF(a, 0, b - a, height()), QColor(200, 60, 60, 110));
     }
+    // Keys on the selection: red bars; breakdowns green.
+    if (ticks_shown_)
+        for (double k : keys_) {
+            if (k < start_ || k > end_) continue;
+            double kx = 8 + (k - start_) / span * w;
+            double kw = qMax(double(tick_width_), fw * 0.5);
+            p.fillRect(QRectF(kx - kw * 0.5, 3, kw, height() - 6), breakdowns_.contains(k) ? QColor(60, 190, 80) : QColor(204, 40, 40));
+        }
     double x = 8 + (time_ - start_) / span * w;
     p.fillRect(QRectF(x - fw / 2, 0, fw, height()), QColor(210, 210, 210, 120));
     p.setPen(QColor(230, 230, 230));
@@ -370,11 +401,56 @@ void TimeSlider::paintEvent(QPaintEvent*) {
 }
 
 void TimeSlider::mousePressEvent(QMouseEvent* e) {
-    set_time(frame_at(int(e->position().x())));
+    double fr = std::round(frame_at(int(e->position().x())));
+    if (e->button() == Qt::RightButton) {
+        emit contextMenuAt(e->globalPosition().toPoint());
+        return;
+    }
+    if (e->modifiers() & Qt::ShiftModifier) {
+        selecting_ = true;
+        range_a_ = fr;
+        range_b_ = fr + 1;
+        update();
+        return;
+    }
+    double lo = qMin(range_a_, range_b_), hi = qMax(range_a_, range_b_);
+    if (range_a_ != range_b_ && fr >= lo && fr <= hi) {
+        moving_ = true;
+        move_from_ = fr;
+        move_by_ = 0;
+        return;
+    }
+    range_a_ = range_b_ = 0;
+    set_time(fr);
 }
 
 void TimeSlider::mouseMoveEvent(QMouseEvent* e) {
-    if (e->buttons()) set_time(frame_at(int(e->position().x())));
+    if (!e->buttons()) return;
+    double fr = std::round(frame_at(int(e->position().x())));
+    if (selecting_) {
+        range_b_ = fr >= range_a_ ? fr + 1 : fr;
+        update();
+    } else if (moving_) {
+        move_by_ = fr - move_from_;
+        update();
+    } else {
+        set_time(fr);
+    }
+}
+
+void TimeSlider::mouseReleaseEvent(QMouseEvent*) {
+    if (moving_ && move_by_ != 0) {
+        double lo = qMin(range_a_, range_b_), hi = qMax(range_a_, range_b_);
+        emit rangeMoved(lo, hi, move_by_);
+        range_a_ += move_by_;
+        range_b_ += move_by_;
+    }
+    moving_ = false;
+    move_by_ = 0;
+    selecting_ = false;
+    double lo = qMin(range_a_, range_b_), hi = qMax(range_a_, range_b_);
+    ask("timeControl", QJsonObject{{"edit", true}, {"rangeArray", lo != hi ? QJsonArray{lo, hi} : QJsonArray{}}});
+    update();
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -456,7 +532,10 @@ CommandLine::CommandLine(QWidget* parent) : QWidget(parent) {
     lang_->setText("MEL");
     lang_->setObjectName("cmdLang");
     lang_->setToolTip("Command language: click to switch between MEL and Python");
-    connect(lang_, &QToolButton::clicked, this, [this] { lang_->setText(lang_->text() == "MEL" ? "Python" : "MEL"); });
+    connect(lang_, &QToolButton::clicked, this, [this] {
+        lang_->setText(lang_->text() == "MEL" ? "Python" : "MEL");
+        pos_ = histories_[lang_->text()].size();
+    });
     input_ = new QLineEdit(this);
     input_->setObjectName("cmdInput");
     input_->installEventFilter(this);
@@ -474,9 +553,10 @@ CommandLine::CommandLine(QWidget* parent) : QWidget(parent) {
     connect(input_, &QLineEdit::returnPressed, this, [this] {
         QString src = input_->text().trimmed();
         if (src.isEmpty()) return;
-        history_.removeAll(src);
-        history_.append(src);
-        pos_ = history_.size();
+        QStringList& hist = histories_[lang_->text()];
+        hist.removeAll(src);
+        hist.append(src);
+        pos_ = hist.size();
         input_->clear();
         if (lang_->text() == "Python")
             python(src);
@@ -495,138 +575,23 @@ void CommandLine::show_result(const QString& text, bool error) {
 bool CommandLine::eventFilter(QObject* o, QEvent* e) {
     if (o == input_ && e->type() == QEvent::KeyPress) {
         auto* k = static_cast<QKeyEvent*>(e);
-        if (k->key() == Qt::Key_Up && !history_.isEmpty()) {
-            pos_ = qMax(0, pos_ - 1);
-            input_->setText(history_[pos_]);
+        const QStringList& hist = histories_[lang_->text()];
+        if (k->key() == Qt::Key_Escape) {
+            input_->clearFocus();
             return true;
         }
-        if (k->key() == Qt::Key_Down && !history_.isEmpty()) {
-            pos_ = qMin(int(history_.size()), pos_ + 1);
-            input_->setText(pos_ < history_.size() ? history_[pos_] : QString());
+        if (k->key() == Qt::Key_Up && !hist.isEmpty()) {
+            pos_ = qBound(0, pos_ - 1, int(hist.size()) - 1);
+            input_->setText(hist[pos_]);
+            return true;
+        }
+        if (k->key() == Qt::Key_Down && !hist.isEmpty()) {
+            pos_ = qMin(int(hist.size()), pos_ + 1);
+            input_->setText(pos_ < hist.size() ? hist[pos_] : QString());
             return true;
         }
     }
     return QWidget::eventFilter(o, e);
-}
-
-// ---------------------------------------------------------------------------------------------------------------------
-// Hotbox
-
-Hotbox::Hotbox(const QList<QMenu*>& menus, QWidget* parent) : QWidget(parent, Qt::Popup | Qt::FramelessWindowHint) {
-    setAttribute(Qt::WA_TranslucentBackground);
-    auto* grid = new QGridLayout(this);
-    grid->setSpacing(4);
-    int cols = 7;
-    for (int i = 0; i < menus.size(); ++i) {
-        auto* b = new QToolButton(this);
-        b->setText(menus[i]->title().remove('&'));
-        b->setMenu(menus[i]);
-        b->setPopupMode(QToolButton::InstantPopup);
-        b->setObjectName("hotboxButton");
-        b->setMinimumWidth(96);
-        grid->addWidget(b, i / cols, i % cols);
-    }
-}
-
-void Hotbox::popup(QPoint global) {
-    adjustSize();
-    move(global - QPoint(width() / 2, height() / 2));
-    show();
-}
-
-void Hotbox::paintEvent(QPaintEvent*) {
-    QPainter p(this);
-    p.setRenderHint(QPainter::Antialiasing);
-    p.setBrush(QColor(40, 40, 40, 200));
-    p.setPen(Qt::NoPen);
-    p.drawRoundedRect(rect(), 6, 6);
-}
-
-// ---------------------------------------------------------------------------------------------------------------------
-// Preferences
-
-Preferences::Preferences(QWidget* parent) : QDialog(parent) {
-    setWindowTitle("Preferences");
-    QSettings s;
-    auto* lay = new QHBoxLayout(this);
-    auto* cats = new QListWidget(this);
-    cats->addItems({"Interface", "Display", "Settings", "Undo"});
-    cats->setFixedWidth(130);
-    auto* pages = new QStackedWidget(this);
-    lay->addWidget(cats);
-    auto* right = new QVBoxLayout();
-    right->addWidget(pages, 1);
-    lay->addLayout(right, 1);
-
-    // Interface
-    auto* ui = new QWidget(pages);
-    auto* uf = new QFormLayout(ui);
-    auto* font_size = new QSpinBox(ui);
-    font_size->setRange(7, 16);
-    font_size->setValue(s.value("prefs/fontSize", 9).toInt());
-    uf->addRow("Interface font size (pt):", font_size);
-    auto* help = new QCheckBox(ui);
-    help->setChecked(s.value("prefs/helpLine", true).toBool());
-    uf->addRow("Show help line:", help);
-    pages->addWidget(ui);
-
-    // Display
-    auto* disp = new QWidget(pages);
-    auto* df = new QFormLayout(disp);
-    auto* bg = new QDoubleSpinBox(disp);
-    bg->setRange(0, 1);
-    bg->setSingleStep(0.02);
-    bg->setDecimals(3);
-    bg->setValue(s.value("prefs/background", 0.36).toDouble());
-    df->addRow("Viewport background (grey):", bg);
-    auto* manip = new QDoubleSpinBox(disp);
-    manip->setRange(0.25, 4);
-    manip->setSingleStep(0.25);
-    manip->setValue(s.value("prefs/manipSize", 1.0).toDouble());
-    df->addRow("Manipulator size:", manip);
-    pages->addWidget(disp);
-
-    // Settings
-    auto* set = new QWidget(pages);
-    auto* sf = new QFormLayout(set);
-    auto* ch = new QCheckBox(set);
-    ch->setChecked(s.value("prefs/constructionHistory", true).toBool());
-    sf->addRow("Construction history on at start:", ch);
-    auto* units = new QComboBox(set);
-    units->addItem("centimeter");
-    units->setEnabled(false);
-    sf->addRow("Working units, linear:", units);
-    auto* up = new QComboBox(set);
-    up->addItem("Y");
-    up->setEnabled(false);
-    sf->addRow("World coordinate system, up axis:", up);
-    pages->addWidget(set);
-
-    // Undo
-    auto* undo = new QWidget(pages);
-    auto* unf = new QFormLayout(undo);
-    auto* infinite = new QCheckBox(undo);
-    infinite->setChecked(true);
-    infinite->setEnabled(false);
-    unf->addRow("Infinite undo:", infinite);
-    pages->addWidget(undo);
-
-    connect(cats, &QListWidget::currentRowChanged, pages, &QStackedWidget::setCurrentIndex);
-    cats->setCurrentRow(0);
-    auto* bb = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
-    right->addWidget(bb);
-    connect(bb, &QDialogButtonBox::rejected, this, &QDialog::reject);
-    connect(bb, &QDialogButtonBox::accepted, this, [=] {
-        QSettings s2;
-        s2.setValue("prefs/fontSize", font_size->value());
-        s2.setValue("prefs/helpLine", help->isChecked());
-        s2.setValue("prefs/background", bg->value());
-        s2.setValue("prefs/manipSize", manip->value());
-        s2.setValue("prefs/constructionHistory", ch->isChecked());
-        emit changed();
-        accept();
-    });
-    resize(620, 360);
 }
 
 } // namespace az
