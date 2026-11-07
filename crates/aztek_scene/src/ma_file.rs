@@ -248,6 +248,8 @@ struct MaNode {
     default: bool,
     sets: Vec<SetAttr>,
     adds: Vec<AddAttr>,
+    /// lockNode -l 1.
+    locked: bool,
 }
 
 impl MaNode {
@@ -348,6 +350,13 @@ struct Doc {
     ang: f64,
     fps: Option<f64>,
     warnings: Vec<String>,
+    /// file -r: path, namespace, reference node, deferred.
+    refs: Vec<(String, String, Option<String>, bool)>,
+    /// parent -s -add: the shape and the transform it's also under.
+    instances: Vec<(String, String)>,
+    /// Connections with a node of a reference.
+    ref_conns: Vec<(String, String)>,
+    up_z: bool,
 }
 
 fn linear_unit(s: &str) -> Option<f64> {
@@ -437,7 +446,7 @@ impl Doc {
     }
 
     fn parse(text: &str) -> Doc {
-        let mut d = Doc { nodes: Vec::new(), by_name: HashMap::new(), conns: Vec::new(), lin: 1.0, ang: 1.0, fps: None, warnings: Vec::new() };
+        let mut d = Doc { nodes: Vec::new(), by_name: HashMap::new(), conns: Vec::new(), lin: 1.0, ang: 1.0, fps: None, warnings: Vec::new(), refs: Vec::new(), instances: Vec::new(), ref_conns: Vec::new(), up_z: false };
         let mut lex = Lexer::new(text);
         let mut st = Vec::new();
         let mut current: Option<usize> = None;
@@ -483,6 +492,9 @@ impl Doc {
                         if let Some(name) = plain_args(&st, &["-ne", "-noExpand", "-r", "-add"]).last() {
                             if let Some(i) = d.find_or_default(name) {
                                 current = Some(i);
+                            } else if name.contains(':') {
+                                // A node from a reference: its edits are applied once the reference is in.
+                                current = Some(d.add_node(MaNode { name: name.to_string(), default: true, ..Default::default() }));
                             }
                         }
                     }
@@ -491,11 +503,28 @@ impl Doc {
                 "currentUnit" => d.current_unit(&st),
                 "file" => {
                     if st.iter().any(|t| matches!(t.text(), Some("-r") | Some("-reference"))) {
+                        let after = |flags: &[&str]| st.iter().position(|t| matches!(t, Tok::Word(w) if flags.contains(&w.as_str()))).and_then(|i| st.get(i + 1)).and_then(Tok::text).map(str::to_string);
+                        let ns = after(&["-ns", "-namespace"]).unwrap_or_default();
+                        let rfn = after(&["-rfn", "-referenceNode"]);
+                        let deferred = st.iter().position(|t| matches!(t, Tok::Word(w) if w == "-dr" || w == "-deferReference")).and_then(|i| st.get(i + 1)).and_then(Tok::num).is_some_and(|v| v != 0.0);
                         let path = st.iter().rev().find_map(|t| match t {
                             Tok::Str(s) => Some(s.clone()),
                             _ => None,
                         });
-                        d.warnings.push(format!("reference skipped: {}", path.unwrap_or_default()));
+                        if let Some(path) = path {
+                            d.refs.push((path, ns, rfn, deferred));
+                        }
+                    }
+                }
+                "lockNode" => {
+                    let off = st.iter().position(|t| matches!(t, Tok::Word(w) if w == "-l" || w == "-lock")).and_then(|i| st.get(i + 1)).and_then(Tok::num) == Some(0.0);
+                    if let Some(i) = current {
+                        d.nodes[i].locked = !off;
+                    }
+                }
+                "upAxis" => {
+                    if st.iter().any(|t| t.text() == Some("z") || t.text() == Some("Z")) {
+                        d.up_z = true;
                     }
                 }
                 _ => {}
@@ -504,8 +533,19 @@ impl Doc {
         for (a, b) in raw_conns {
             let (Some((sn, sa)), Some((dn, da))) = (a.split_once('.'), b.split_once('.')) else { continue };
             // Plugs on default nodes the file never touched are of no interest: only nodes it knows connect.
+            let from_ref = |d: &Doc, n: &str| n.contains(':') && d.find(n).is_none_or(|i| d.nodes[i].default);
+            if from_ref(&d, sn) || from_ref(&d, dn) {
+                d.ref_conns.push((a.clone(), b.clone()));
+                continue;
+            }
             let (Some(src), Some(dst)) = (d.find(sn), d.find(dn)) else { continue };
             d.conns.push(Conn { src, src_attr: sa.to_string(), dst, dst_attr: da.to_string() });
+        }
+        // The script node Maya keeps a Z up scene's axis in.
+        if let Some(n) = d.by_name.get("upAxisScriptNode").and_then(|v| v.first()).map(|&i| &d.nodes[i]) {
+            if n.text(&["b", "before"]).is_some_and(|b| b.contains("upAxis -ax \"z\"") || b.contains("!= \"z\"")) {
+                d.up_z = true;
+            }
         }
         d
     }
@@ -616,7 +656,10 @@ impl Doc {
     fn parent(&mut self, st: &[Tok]) {
         let flagged = |names: &[&str]| st.iter().any(|t| t.text().is_some_and(|x| names.contains(&x)));
         if flagged(&["-add", "-addObject"]) || flagged(&["-s", "-shape"]) {
-            self.warnings.push("instances (parent -add) are not represented".to_string());
+            let plain = plain_args(st, &["-s", "-shape", "-add", "-addObject", "-r", "-relative", "-a", "-absolute", "-nc", "-noConnections"]);
+            if let [shape, parent, ..] = plain.as_slice() {
+                self.instances.push((shape.to_string(), parent.to_string()));
+            }
             return;
         }
         let plain = plain_args(st, &["-r", "-relative", "-a", "-absolute", "-nc", "-noConnections", "-w", "-world"]);
@@ -962,9 +1005,14 @@ const XFORM_CHANNELS: &[&str] = &[
     "inheritsTransform", "displayHandle", "displayRotatePivot", "displayScalePivot", "displayLocalAxis", "selectHandle", "template", "lodVisibility", "hiddenInOutliner",
 ];
 
+/// Rigging and animation nodes that are all attributes and connections.
+const PLAIN_NODES: &[&str] = &["container", "controller", "timeWarp", "hierarchyTreeNode", "curveFromMeshEdge", "characterMap", "keyingGroup"];
+/// The same under a transform.
+const PLAIN_SHAPES: &[&str] = &["distanceDimShape", "paramDimension", "annotationShape", "dropoffLocator"];
+
 /// Nodes written and read attribute by attribute, with their connections: utility nodes and expressions.
 fn is_plain_node(ty: &str) -> bool {
-    ty == "expression" || (ty != "unitConversion" && crate::utility_nodes::classification(ty).is_some())
+    ty == "expression" || (ty != "unitConversion" && crate::utility_nodes::classification(ty).is_some()) || PLAIN_NODES.contains(&ty) || PLAIN_SHAPES.contains(&ty)
 }
 const LINEAR_CHANNELS: &[&str] = &["translate", "rotatePivot", "scalePivot", "rotatePivotTranslate", "scalePivotTranslate"];
 const ANGLE_CHANNELS: &[&str] = &["rotate", "rotateAxis", "jointOrient"];
@@ -1357,6 +1405,7 @@ impl Build<'_> {
         }
         match n.ty.as_str() {
             "transform" | "joint" | "locator" | "nurbsCurve" | "nurbsSurface" | "camera" => true,
+            ty if PLAIN_SHAPES.contains(&ty) => true,
             "mesh" => !n.truth(&["io", "intermediateObject"]).unwrap_or(false),
             _ => false,
         }
@@ -1474,12 +1523,16 @@ impl Build<'_> {
         let n = &self.doc.nodes[i];
         self.used[i] = true;
         let Some(t) = types::find(&n.ty) else { return };
-        let id = match self.s.graph.create_node(&t, &n.name, NO_NODE, false) {
-            Ok(id) => id,
-            Err(e) => {
-                self.warnings.push(format!("{}: {e}", n.name));
-                return;
-            }
+        let id = match self.ids[i] {
+            // A shape create_dag made under its transform.
+            Some(id) => id,
+            None => match self.s.graph.create_node(&t, &n.name, NO_NODE, false) {
+                Ok(id) => id,
+                Err(e) => {
+                    self.warnings.push(format!("{}: {e}", n.name));
+                    return;
+                }
+            },
         };
         self.ids[i] = Some(id);
         let node_path = self.s.graph.path(id);
@@ -2169,6 +2222,53 @@ impl Build<'_> {
         })
     }
 
+    /// Shapes under a second transform: a mesh of its own there, an instance of the first.
+    fn instances(&mut self) {
+        for (shape, parent) in &self.doc.instances {
+            let g = &mut self.s.graph;
+            let found = (g.find(shape).ok().flatten(), g.find(parent).ok().flatten());
+            let (Some(src), Some(tr)) = found else {
+                self.warnings.push(format!("instance of {shape} under {parent}: no such object"));
+                continue;
+            };
+            if !crate::components::is_mesh(g, src) {
+                self.warnings.push(format!("instance of {shape}: only meshes are instanced here"));
+                continue;
+            }
+            let name = crate::dag::shape_name(&g.node(tr).unwrap().name().to_string());
+            let t = types::find("mesh").unwrap();
+            let made = g.create_node(&t, &name, tr, false).map_err(|e| e.to_string()).and_then(|m| crate::instancing::connect_instance(g, src, m).map_err(|e| e.to_string()));
+            if let Err(e) = made {
+                self.warnings.push(format!("instance of {shape}: {e}"));
+            }
+        }
+    }
+
+    /// The lines after `file -r` that change a referenced node.
+    fn reference_edits(&mut self) {
+        for n in self.doc.nodes.iter().filter(|n| n.default && n.name.contains(':')) {
+            let Ok(Some(id)) = self.s.graph.find(&n.name) else { continue };
+            let path = self.s.graph.path(id);
+            for set in &n.sets {
+                if set.values.is_empty() {
+                    continue;
+                }
+                let text: Vec<String> = set.path.iter().map(|seg| seg.name.clone()).collect();
+                let Ok(p) = self.s.graph.plug(&format!("{path}.{}", text.join("."))) else { continue };
+                let def = self.s.graph.attr(&p).clone();
+                if let Some(v) = plug_value(&def, p.component, &set.values, 1.0) {
+                    let _ = self.s.graph.set_value(p, v);
+                }
+            }
+        }
+        for (a, b) in &self.doc.ref_conns {
+            let g = &mut self.s.graph;
+            if let (Ok(x), Ok(y)) = (g.plug(a), g.plug(b)) {
+                let _ = g.connect(&x, &y, true);
+            }
+        }
+    }
+
     fn report_unused(&mut self) {
         let mut by_type: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
         for (i, n) in self.doc.nodes.iter().enumerate() {
@@ -2397,6 +2497,15 @@ fn build(s: &mut Session, doc: &Doc, import: bool) -> Vec<String> {
     for i in 0..count {
         b.apply_locks(i);
     }
+    b.instances();
+    b.reference_edits();
+    for i in 0..count {
+        if doc.nodes[i].locked {
+            if let Some(id) = b.ids[i] {
+                b.s.graph.set_node_locked(id, true);
+            }
+        }
+    }
     b.report_unused();
     let warnings = std::mem::take(&mut b.warnings);
     let g = &mut s.graph;
@@ -2435,7 +2544,18 @@ fn playback_from_script(s: &mut Session, script: &MaNode) {
 pub fn read_text(s: &mut Session, text: &str, import: bool) -> Vec<String> {
     register_types();
     let doc = Doc::parse(text);
-    let warnings = build(s, &doc, import);
+    let mut before = Vec::new();
+    for (path, ns, rfn, deferred) in &doc.refs {
+        if let Err(e) = crate::references::from_ma(s, path, ns, rfn.as_deref(), *deferred) {
+            before.push(e);
+        }
+    }
+    if doc.up_z && !import {
+        s.extras.up_axis_z = true;
+        crate::system_cmds::rotate_cameras(s, true);
+    }
+    let mut warnings = build(s, &doc, import);
+    warnings.extend(before);
     for w in &warnings {
         log::warn!("{w}");
     }
@@ -2806,7 +2926,7 @@ impl Writer<'_> {
         if crate::cameras::is_default_camera(&self.s.graph, id) {
             return false;
         }
-        t.name == "transform" || t.is_a("joint") || t.is_a("locator") || t.is_a("ikHandle") || t.is_a("camera")
+        t.name == "transform" || t.is_a("joint") || t.is_a("locator") || t.is_a("ikHandle") || t.is_a("camera") || PLAIN_SHAPES.contains(&t.name.as_str())
     }
 
     fn write_dag(&mut self, id: NodeId) {
@@ -2816,8 +2936,24 @@ impl Writer<'_> {
                 let n = self.s.graph.node(id).unwrap();
                 (n.name().to_string(), n.ty().name.clone())
             };
+            // An instance is its source's shape under one more transform, as Maya has it.
+            if ty == "mesh" && crate::instancing::kind(&self.s.graph, id) == crate::instancing::Kind::Instance {
+                let src = crate::instancing::source(&self.s.graph, id);
+                if src != id && self.dag_written(src) {
+                    let (a, b) = (self.s.graph.full_path(src), self.s.graph.path(parent));
+                    self.pending.push(format!("parent -s -nc -r -add {} {};\n", quoted(&a), quoted(&b)));
+                    return;
+                }
+            }
             self.create_line(&ty, &name, parent);
             self.write_channels(id);
+            if is_plain_node(&ty) {
+                let text = self.plain_attr_lines(id);
+                self.out.push_str(&text);
+            }
+            if self.s.graph.node(id).is_some_and(|n| n.is_locked()) {
+                let _ = writeln!(self.out, "\tlockNode -l 1 ;");
+            }
             if ty == "mesh" {
                 self.write_mesh(id, &name, parent);
             }
@@ -3310,9 +3446,20 @@ impl Writer<'_> {
     fn write_plain(&mut self, id: NodeId) {
         let g = &self.s.graph;
         let n = g.node(id).unwrap();
+        let mut text = format!("createNode {} -n {};\n", n.ty().name, quoted(&g.path(id)));
+        if n.is_locked() {
+            text.push_str("\tlockNode -l 1 ;\n");
+        }
+        text.push_str(&self.plain_attr_lines(id));
+        self.out.push_str(&text);
+    }
+
+    /// A node's stored attributes that differ from their defaults, as setAttr lines.
+    fn plain_attr_lines(&self, id: NodeId) -> String {
+        let g = &self.s.graph;
+        let n = g.node(id).unwrap();
         let t = n.type_arc().clone();
-        let path = g.path(id);
-        let mut text = format!("createNode {} -n {};\n", t.name, quoted(&path));
+        let mut text = String::new();
         let line = |p: &PlugRef, v: &PlugValue, out: &mut String| {
             let name = g.plug_name(p);
             let attr = name.split_once('.').map_or("", |x| x.1);
@@ -3356,7 +3503,7 @@ impl Writer<'_> {
                 }
             }
         }
-        self.out.push_str(&text);
+        text
     }
 
     fn write_connections(&mut self) {
@@ -3520,10 +3667,13 @@ pub fn write_text(s: &mut Session, file_name: &str, only: Option<&[NodeId]>) -> 
     register_types();
     s.graph.evaluate();
     let g = &s.graph;
-    let keep = match only {
+    let mut keep = match only {
         Some(list) => closure(g, list),
-        None => g.nodes().into_iter().collect(),
+        None => g.nodes().into_iter().collect::<HashSet<NodeId>>(),
     };
+    // What a reference brought in is written as the reference.
+    keep.retain(|&id| g.node(id).is_some_and(|n| n.reference_id() == 0));
+    let (ref_head, ref_tail) = crate::references::ma_statements(s);
     let used: HashSet<String> = g.nodes().iter().filter_map(|&id| g.node(id).map(|n| n.name().to_string())).collect();
     let roots = g.roots().to_vec();
     let mut w = Writer { s, out: String::new(), conns: Vec::new(), shading: Vec::new(), warnings: Vec::new(), used, keep, preferred: HashMap::new(), pending: Vec::new(), solvers: HashSet::new() };
@@ -3554,6 +3704,7 @@ pub fn write_text(s: &mut Session, file_name: &str, only: Option<&[NodeId]>) -> 
     let _ = writeln!(w.out, "currentUnit -l centimeter -a degree -t {};", time_unit_name(fps));
     let _ = writeln!(w.out, "fileInfo \"application\" \"aztek\";");
     let _ = writeln!(w.out, "fileInfo \"version\" \"{}\";", env!("CARGO_PKG_VERSION"));
+    w.out.push_str(&ref_head);
 
     for r in roots {
         w.write_dag(r);
@@ -3593,6 +3744,8 @@ pub fn write_text(s: &mut Session, file_name: &str, only: Option<&[NodeId]>) -> 
             w.write_pose(id);
         } else if ty == crate::display_layers::TYPE_NAME {
             w.write_layer(id);
+        } else if ty == crate::references::REF_NODE_TYPE {
+            let _ = writeln!(w.out, "createNode reference -n {};", quoted(n.name()));
         } else if ty == skin::SKIN_TYPE || ty == "ikSolve" {
             // Written with their mesh and handle.
         } else if crate::deform::is_deformer(ty) || ty == "deformHandle" {
@@ -3614,6 +3767,14 @@ pub fn write_text(s: &mut Session, file_name: &str, only: Option<&[NodeId]>) -> 
     }
 
     w.write_connections();
+    w.out.push_str(&ref_tail);
+
+    // Maya keeps a Z up scene's axis in this script node.
+    if w.s.extras.up_axis_z {
+        let _ = writeln!(w.out, "createNode script -n \"upAxisScriptNode\";");
+        let _ = writeln!(w.out, "\tsetAttr \".b\" -type \"string\" \"string $currentAxis = `upAxis -q -ax`; if ($currentAxis != \\\"z\\\") {{ upAxis -ax \\\"z\\\"; viewSet -home persp; }}\";");
+        let _ = writeln!(w.out, "\tsetAttr \".st\" 2;");
+    }
 
     // Maya keeps the playback range in this script node.
     let r = anim::range();
@@ -3726,6 +3887,8 @@ pub fn write_file(s: &mut Session, path: &str, format: Format, only: Option<&[No
             s.graph.evaluate();
             let mut doc = crate::scene_file::serialize(&s.graph, false);
             let r = anim::range();
+            doc["references"] = Value::Array(crate::references::to_doc(s));
+            doc["upAxis"] = json!(if s.extras.up_axis_z { "z" } else { "y" });
             doc["playbackOptions"] = json!({"minTime": r.min, "maxTime": r.max, "animationStartTime": r.anim_start, "animationEndTime": r.anim_end, "framesPerSecond": anim::fps(), "currentTime": anim::frame(&s.graph)});
             let text = serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())?;
             std::fs::write(path, text).map_err(|e| format!("{path}: {e}"))?;
@@ -3767,6 +3930,14 @@ pub fn open_scene(s: &mut Session, path: &str) -> Result<Vec<String>, String> {
                 let _ = s.run("currentTime", json!({"args": [t]}));
             }
         }
+        if doc.get("upAxis").and_then(Value::as_str) == Some("z") {
+            s.extras.up_axis_z = true;
+            crate::system_cmds::rotate_cameras(s, true);
+        }
+        let mut w = w;
+        if let Some(list) = doc.get("references").and_then(Value::as_array) {
+            w.extend(crate::references::restore(s, list));
+        }
         w
     };
     let _ = s.run("flushUndo", json!({}));
@@ -3794,10 +3965,19 @@ fn file_command(s: &mut Session, a: &Args) -> CmdResult {
     let type_flag = a.get("type").and_then(Value::as_str).filter(|t| !t.is_empty()).map(str::to_string);
 
     if a.bool("query") {
+        if let Some(v) = crate::references::file_query(s, a, path_arg.as_deref()) {
+            return Ok(v);
+        }
         return Ok(file_query(s, a, path_arg.as_deref()));
     }
-    if a.bool("reference") || a.bool("loadReference") {
-        fail!("file: references are not supported");
+    if let Some(r) = crate::references::file_flags(s, a) {
+        return r;
+    }
+    if a.bool("reference") {
+        let Some(path) = path_arg else { fail!("file: -reference needs a path") };
+        let rfn = a.get("referenceNode").and_then(Value::as_str);
+        let r = crate::references::create(s, &path, &a.string("namespace", ""), rfn, a.bool("deferReference")).map_err(aztek_ops::CommandError::new)?;
+        return Ok(json!(r));
     }
     if let Some(t) = &type_flag {
         s.scene_type = Some(Format::of_type(t)?);
@@ -3921,12 +4101,18 @@ pub fn register(c: &mut Commands<Session>) {
         .flag(FlagDef::new("options", "op", ArgType::Any, Value::Null, "File translator options. Accepted for Maya scripts."))
         .flag(b("force", "f", "Don't ask about unsaved changes. Nothing asks here."))
         .flag(b("query", "q", "Query mode."))
+        .flag(FlagDef::new("queried", "", ArgType::List, Value::Null, "Flags asked about in query mode."))
         .flag(b("sceneName", "sn", "Query: the scene's path; empty when untitled."))
         .flag(b("shortName", "shn", "Query: with -sceneName, the file name alone."))
         .flag(b("exists", "ex", "Query: whether the file (or the scene's file) exists."))
         .flag(b("modified", "mf", "Query: whether the scene has edits."))
-        .flag(b("reference", "r", "Not supported; refused."))
-        .flag(b("loadReference", "lr", "Not supported; refused."))
+        .flag(b("reference", "r", "Bring the file in as a reference under -ns. Query: the referenced files."))
+        .flag(FlagDef::new("loadReference", "lr", ArgType::Any, Value::Null, "Load a reference, by its reference node (or the path argument); loaded already, it reloads."))
+        .flag(FlagDef::new("unloadReference", "ur", ArgType::Any, Value::Null, "Unload a reference, by its reference node (or the path argument)."))
+        .flag(b("removeReference", "rr", "Remove the reference named by the path argument."))
+        .flag(t("referenceNode", "rfn", "The reference node's name, or with -q ask for it."))
+        .flag(FlagDef::new("deferReference", "dr", ArgType::Any, Value::Null, "Add the reference unloaded."))
+        .flag(FlagDef::new("referenceDepthInfo", "rdi", ArgType::Int, Value::Null, "Accepted for Maya scripts."))
         .flag(b("prompt", "pmt", "Accepted for Maya scripts."))
         .flag(b("ignoreVersion", "iv", "Accepted for Maya scripts."))
         .flag(b("preserveReferences", "pr", "Accepted for Maya scripts."))
@@ -3936,6 +4122,6 @@ pub fn register(c: &mut Commands<Session>) {
         .flag(b("expressions", "exp", "Accepted for Maya scripts."))
         .flag(b("shader", "sh", "Accepted for Maya scripts."))
         .flag(b("returnNewNodes", "rnn", "Accepted for Maya scripts."))
-        .flag(t("namespace", "ns", "Accepted for Maya scripts.")),
+        .flag(t("namespace", "ns", "The namespace a reference goes under.")),
     );
 }

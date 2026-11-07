@@ -614,6 +614,9 @@ fn register_scene(c: &mut Commands<Session>) {
                     if g.node(d).unwrap().reference_id() != 0 {
                         fail!("delete: '{}' comes from a reference; remove or unload the reference instead", g.path(d));
                     }
+                    if g.node(d).unwrap().is_locked() {
+                        fail!("delete: cannot delete locked node '{}'", g.path(d));
+                    }
                 }
             }
             let mut ghosts = Vec::new();
@@ -652,6 +655,9 @@ fn register_scene(c: &mut Commands<Session>) {
             let id = node_named(g, &target)?;
             if g.node(id).unwrap().reference_id() != 0 {
                 fail!("rename: '{target}' comes from a reference and keeps its name");
+            }
+            if g.node(id).unwrap().is_locked() {
+                fail!("rename: cannot rename locked node '{target}'");
             }
             rename_node(g, id, &new_name)?;
             Ok(json!(g.path(id)))
@@ -729,6 +735,7 @@ fn register_scene(c: &mut Commands<Session>) {
     c.register(
         Cmd::new("newScene", "Clear the scene. Not undoable.", |s, _| {
             s.graph.clear();
+            s.extras = Default::default();
             crate::anim::set_frame(&mut s.graph, crate::anim::range().min);
             Ok(Value::Null)
         })
