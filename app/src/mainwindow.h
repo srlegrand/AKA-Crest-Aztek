@@ -229,8 +229,14 @@ private:
     QDockWidget* attr_dock_ = nullptr;
     Hotbox* hotbox_ = nullptr;
     QString tool_ = "select";
-    QString last_command_;
-    QJsonObject last_call_;
+    /// What G does again, and what it's called. Only what changed the scene counts: opening a window or selecting doesn't.
+    std::function<void()> last_repeat_;
+    QString last_repeat_label_;
+    bool repeating_ = false;
+    double menu_mark_ = 0;
+    void watch_menus();
+    void run_repeatable(const QString& label, const std::function<void()>& fn);
+    void note_repeat(const QString& label, const std::function<void()>& fn, double undo_before);
     qint64 space_down_ms_ = 0;
     bool space_held_ = false;
     bool pivot_mode_ = false;

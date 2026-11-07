@@ -78,10 +78,16 @@ bool MainWindow::run_command(const QString& command) {
     if (command.isEmpty()) return false;
     auto it = runtime_.find(command);
     if (it != runtime_.end()) {
-        it->fn();
+        if (command == "RepeatLast" || command == "Undo" || command == "Redo") {
+            it->fn();
+            return true;
+        }
+        // A copy: the command may rebuild this table.
+        auto fn = it->fn;
+        run_repeatable(command, fn);
         return true;
     }
-    mel(command);
+    run_repeatable(command, [this, command] { mel(command); });
     return true;
 }
 

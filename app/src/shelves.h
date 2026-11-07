@@ -19,6 +19,10 @@ public:
     void open_editor();
     // A widget at the far right of the tab row. Tabs that don't fit scroll; it stays.
     void set_corner(QWidget* w);
+protected:
+    void resizeEvent(QResizeEvent* e) override;
+
+public:
     // Reads Maya's shelf_Name.mel into a new shelf: its shelfButton blocks.
     void import_mel(const QString& path);
     void rebuild();
@@ -30,6 +34,8 @@ private:
     void button_menu(QPoint global, int shelf, int item);
     void edit_item(int shelf, int item);
     std::function<void(const QString&, const QString&)> run_;
+    QWidget* corner_ = nullptr;
+    void place_corner();
     QTabWidget* tabs_;
     QJsonArray shelves_;
     friend class ShelfPage;

@@ -268,11 +268,9 @@ build.bat -Run               # Windows</code></pre>
         if (hit) link.href = hit.browser_download_url;
       });
       if (main.dataset.from) main.href = document.getElementById(main.dataset.from).href;
-      var d = new Date(rel.published_at);
-      var dd = String(d.getUTCDate()).padStart(2, '0'), mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-      var sha = (rel.target_commitish || '').slice(0, 7);
-      document.getElementById('build-line').textContent =
-        'Latest build ' + dd + '/' + mm + '/' + d.getUTCFullYear() + (/^[0-9a-f]{7}$/.test(sha) ? ', commit ' + sha : '');
+      // The release is replaced in place, so what it was built from is in its notes.
+      var made = /Built from ([0-9a-f]{7})[0-9a-f]* on ([0-9\/]+ [0-9:]+ UTC)/.exec(rel.body || '');
+      if (made) document.getElementById('build-line').textContent = 'Latest build ' + made[2] + ', commit ' + made[1];
     })
     .catch(function () {});
 })();

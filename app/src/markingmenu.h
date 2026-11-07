@@ -18,6 +18,8 @@ struct MarkItem {
 class MarkingMenu : public QWidget {
     Q_OBJECT
 public:
+    /// What a picked item runs inside, so G can repeat it.
+    static std::function<void(const QString&, const std::function<void()>&)>& around();
     static void show_at(QPoint global, const QList<MarkItem>& items);
 protected:
     void paintEvent(QPaintEvent*) override;

@@ -34,6 +34,7 @@
 #include <QLineEdit>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPointer>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QPainter>
@@ -92,13 +93,20 @@ MainWindow::MainWindow() {
     shelf_holder->setObjectName("shelf");
     shelf_holder->setMovable(false);
     shelf_bar_ = new ShelfBar([this](const QString& code, const QString& lang) {
-        if (lang == "python") python(code);
-        else if (lang == "menu") run_menu_path(code);
-        else mel(code);
+        run_repeatable(code, [this, code, lang] {
+            if (lang == "python") python(code);
+            else if (lang == "menu") run_menu_path(code);
+            else mel(code);
+        });
     }, shelf_holder);
+    MarkingMenu::around() = [this](const QString& label, const std::function<void()>& fn) {
+        if (label.startsWith("Repeat") || label == "Undo" || label == "Redo") fn();
+        else run_repeatable(label, fn);
+    };
     shelf_capture() = [this](QAction* a) { add_to_shelf(a); };
     shelf_holder->addWidget(shelf_bar_);
     shelf_bar_->set_corner(make_feedback_button(shelf_bar_));
+    watch_menus();
     build_toolbox();
     build_docks();
     build_bottom();
@@ -140,7 +148,7 @@ MainWindow::MainWindow() {
 
 QAction* MainWindow::cmd(QMenu* m, const QString& label, const QString& command, const QJsonObject& call, const QString& shortcut, bool options) {
     bool ok = has_command(command);
-    auto run = [this, command, call, options] {
+    auto run = [this, command, call, options, label] {
         QJsonObject c = call;
         // An option box's remembered settings apply to the plain item too, as in Maya.
         if (options) {
@@ -148,9 +156,7 @@ QAction* MainWindow::cmd(QMenu* m, const QString& label, const QString& command,
             for (auto it = saved.begin(); it != saved.end(); ++it)
                 if (!c.contains(it.key())) c[it.key()] = it.value();
         }
-        last_command_ = command;
-        last_call_ = c;
-        exec(command, c);
+        run_repeatable(label, [command, c] { exec(command, c); });
     };
     QAction* a;
     if (options && ok) {
@@ -1004,6 +1010,30 @@ void MainWindow::refresh_state() {
     update_title();
 }
 
+/// Notes the scene's state as a menu opens, so that what a menu item did can be told when it's triggered.
+class MenuWatcher : public QObject {
+public:
+    MenuWatcher(double* mark, std::function<double()> now, QObject* parent) : QObject(parent), mark_(mark), now_(std::move(now)) {}
+    bool eventFilter(QObject* o, QEvent* e) override {
+        if (e->type() == QEvent::Show && qobject_cast<QMenu*>(o)) *mark_ = now_();
+        return false;
+    }
+
+private:
+    double* mark_;
+    std::function<double()> now_;
+};
+
+void MainWindow::watch_menus() {
+    qApp->installEventFilter(new MenuWatcher(&menu_mark_, [this] { return state()["undoId"].toDouble(); }, this));
+    connect(menuBar(), &QMenuBar::triggered, this, [this](QAction* a) {
+        QString text = a->text().section('\t', 0, 0);
+        if (text.startsWith("Repeat") || text.startsWith("Undo") || text.startsWith("Redo") || text == last_repeat_label_) return;
+        QPointer<QAction> held(a);
+        note_repeat(text, [held] { if (held) held->trigger(); }, menu_mark_);
+    });
+}
+
 void MainWindow::update_title() {
     QString file = state()["file"].toString();
     setWindowTitle(QString("Aztek - %1%2").arg(file.isEmpty() ? "untitled" : file, state()["modified"].toBool() ? "*" : ""));
@@ -1015,6 +1045,11 @@ ViewportWidget* MainWindow::active_view() const {
 
 void MainWindow::set_tool(const QString& tool) {
     if (tool != tool_) last_tool_ = tool_;
+    // G goes back to the last tool, other than the four everyone's a key away from.
+    if (!repeating_ && !QStringList{"select", "move", "rotate", "scale"}.contains(tool)) {
+        last_repeat_ = [this, tool] { set_tool(tool); };
+        last_repeat_label_ = tool;
+    }
     tool_ = tool;
     if (tool_buttons_.contains(tool)) tool_buttons_[tool]->setChecked(true);
     for (ViewportWidget* v : panels_->views()) v->set("tool", "\"" + tool + "\"");
@@ -1075,7 +1110,29 @@ void MainWindow::set_mode(const QString& mode) {
 }
 
 void MainWindow::repeat_last() {
-    if (!last_command_.isEmpty()) exec(last_command_, last_call_);
+    if (!last_repeat_) return;
+    // Copied: what runs may be what's replaced.
+    auto fn = last_repeat_;
+    repeating_ = true;
+    fn();
+    repeating_ = false;
+}
+
+void MainWindow::run_repeatable(const QString& label, const std::function<void()>& fn) {
+    double before = state()["undoId"].toDouble();
+    fn();
+    note_repeat(label, fn, before);
+}
+
+void MainWindow::note_repeat(const QString& label, const std::function<void()>& fn, double undo_before) {
+    if (repeating_) return;
+    QJsonObject now = state();
+    if (now["undoId"].toDouble() == undo_before) return;
+    QString what = now["undoLabel"].toString();
+    for (const char* no : {"select", "hilite", "undo", "redo", "currentTime"})
+        if (what.startsWith(no)) return;
+    last_repeat_ = fn;
+    last_repeat_label_ = label;
 }
 
 bool MainWindow::confirm_unsaved() {
