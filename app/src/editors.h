@@ -1,9 +1,13 @@
 // The smaller editor windows of the Windows and Modify menus, and the In-View Editor.
 #pragma once
+#include <QHash>
 #include <QFrame>
 #include <QString>
 
 class QVBoxLayout;
+
+class QDoubleSpinBox;
+class QCheckBox;
 
 namespace az {
 
@@ -23,8 +27,13 @@ public:
     // The newest history node of the lead selection; hides when there's none.
     void show_last();
     bool show_fields();
+    // The numbers again after the scene changed, as a handle drag changes them.
+    void update_values();
 private:
     QVBoxLayout* body_;
+    QString shown_node_;
+    QHash<QString, QDoubleSpinBox*> spins_;
+    QHash<QString, QCheckBox*> boxes_;
     QWidget* rows_ = nullptr;
 };
 

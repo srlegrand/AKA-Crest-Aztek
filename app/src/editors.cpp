@@ -865,10 +865,34 @@ private:
 } // namespace
 
 // The rows the node's table names. False when it names none.
+void InViewEditor::update_values() {
+    if (!isVisible()) return;
+    QJsonObject info = query("nodeManip").toObject();
+    if (info["node"].toString() != shown_node_) {
+        if (!shown_node_.isEmpty() && !info["fields"].toArray().isEmpty()) show_fields();
+        return;
+    }
+    for (const QJsonValue& fv : info["fields"].toArray()) {
+        QJsonObject f = fv.toObject();
+        QString plug = f["plug"].toString();
+        if (auto* s = spins_.value(plug)) {
+            if (s->hasFocus() || std::abs(s->value() - f["value"].toDouble()) < 1e-9) continue;
+            QSignalBlocker block(s);
+            s->setValue(f["value"].toDouble());
+        } else if (auto* b = boxes_.value(plug)) {
+            QSignalBlocker block(b);
+            b->setChecked(f["value"].toDouble() != 0);
+        }
+    }
+}
+
 bool InViewEditor::show_fields() {
     QJsonObject info = query("nodeManip").toObject();
     QJsonArray fields = info["fields"].toArray();
     if (fields.isEmpty()) return false;
+    shown_node_ = info["node"].toString();
+    spins_.clear();
+    boxes_.clear();
     delete rows_;
     rows_ = new QWidget(this);
     auto* form = new QFormLayout(rows_);
@@ -889,6 +913,7 @@ bool InViewEditor::show_fields() {
             auto* box = new QCheckBox(f["label"].toString(), rows_);
             box->setChecked(f["value"].toDouble() != 0);
             connect(box, &QCheckBox::toggled, box, [plug](bool on) { exec("setAttr", QJsonObject{{"args", QJsonArray{plug, on ? 1 : 0}}}); });
+            boxes_[plug] = box;
             form->addRow(box);
             continue;
         }
@@ -904,6 +929,7 @@ bool InViewEditor::show_fields() {
         connect(e, &QDoubleSpinBox::valueChanged, e, [plug, is_int](double v) {
             exec("setAttr", QJsonObject{{"args", QJsonArray{plug, is_int ? QJsonValue(qint64(v)) : QJsonValue(v)}}});
         });
+        spins_[plug] = e;
         form->addRow(new DragLabel(f["label"].toString(), plug, lo, hi, is_int, e, rows_), e);
     }
     body_->addWidget(rows_);
@@ -918,6 +944,7 @@ bool InViewEditor::show_fields() {
 
 void InViewEditor::show_last() {
     if (show_fields()) return;
+    shown_node_.clear();
     QJsonArray inputs = query("channelBox").toObject()["inputs"].toArray();
     if (inputs.isEmpty()) {
         hide();

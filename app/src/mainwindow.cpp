@@ -118,6 +118,7 @@ MainWindow::MainWindow() {
     in_view_ = new InViewEditor(panels_);
 
     connect(Host::get(), &Host::sceneChanged, this, &MainWindow::refresh_state);
+    connect(Host::get(), &Host::sceneChanged, in_view_, &InViewEditor::update_values);
     connect(Host::get(), &Host::sceneChanged, this, &MainWindow::update_title);
     connect(Host::get(), &Host::logLines, this, [this](const QJsonArray& lines) {
         if (script_editor_) script_editor_->append(lines);
