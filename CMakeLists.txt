@@ -56,6 +56,7 @@ add_executable(aztek WIN32
   app/src/uveditor.cpp
   app/src/toolsettings.cpp
   app/src/dopesheet.cpp
+  app/src/nodeeditor.cpp
   app/src/resources.qrc
   $<$<PLATFORM_ID:Windows>:app/icons/aztek.rc>)
 add_dependencies(aztek aztek_host_build)

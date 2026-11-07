@@ -91,7 +91,16 @@ pub(crate) fn with_table(mut cmd: Cmd, table_of: &str, defaults: &[(&str, Value)
         }
         // A short name another flag of the command holds would take that flag's calls.
         let short = if cmd.flags.iter().any(|f| f.short_name == short) { "" } else { short };
-        cmd = cmd.flag(fl(long, short, arg_type(ty), def, "See the command reference."));
+        let mut flag = fl(long, short, arg_type(ty), def, "See the command reference.");
+        // Multi-use flags with a set size, so their values stop there and arguments may follow.
+        flag.arity = match long {
+            "edgepoint" | "edgeLoopPath" | "edgeRingPath" | "edgeBorderPath" | "edgeLoopPattern" | "edgeRingPattern" | "edgeBorderPattern"
+            | "edgeLoopOrBorderPattern" | "shortestEdgePath" | "shortestEdgePathUV" | "shortestFacePath" => 2,
+            "facepoint" => 4,
+            "point" => 3,
+            _ => 0,
+        };
+        cmd = cmd.flag(flag);
     }
     for (long, short, ty) in [
         ("constructionHistory", "ch", ArgType::Bool),

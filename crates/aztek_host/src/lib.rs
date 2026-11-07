@@ -8,6 +8,8 @@ mod gpu;
 pub mod mel;
 #[cfg(feature = "python")]
 mod python;
+#[cfg(feature = "python")]
+mod python_api;
 mod query;
 mod render;
 pub mod tools;
@@ -169,6 +171,7 @@ pub extern "C" fn aztek_query(what: *const c_char, arg: *const c_char) -> *mut c
             "outliner" => query::outliner(c, arg == "shapes"),
             "channelBox" => query::channel_box(c),
             "animCurves" => query::anim_curves(c, &arg),
+            "nodeGraph" => query::node_graph(c, &arg),
             "uiRequests" => core::take_ui_requests(),
             "uvData" => query::uv_data(c),
             "attributeEditor" => query::attribute_editor(c, &arg),
@@ -373,7 +376,7 @@ pub extern "C" fn aztek_view_mouse(id: i32, kind: i32, button: i32, x: f64, y: f
 pub extern "C" fn aztek_view_wheel(id: i32, delta: f64) {
     with(|h| {
         if let Some(v) = h.views.get_mut(&id) {
-            v.wheel(delta);
+            v.wheel(&mut h.core, delta);
         }
     })
 }

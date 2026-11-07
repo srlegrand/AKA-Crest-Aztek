@@ -18,6 +18,8 @@ use aztek_scene::Session;
 use ash::vk;
 use glam::{DMat3, DMat4, DVec2, DVec3, Vec3};
 
+use aztek_scene::surfaces::{self, SurfaceShape};
+
 use crate::camera::{CamKind, Camera};
 use crate::gpu::{Buffer, Gpu};
 use crate::render::{c8, Kind, LineVertex, Push, Renderer, ShadedVertex};
@@ -46,12 +48,19 @@ fn visible(g: &Graph, id: NodeId) -> bool {
     true
 }
 
-/// Every visible, non-intermediate mesh shape with its evaluated mesh.
+/// Every visible, non-intermediate mesh shape with its evaluated mesh, and each NURBS surface with its tessellation.
 pub fn gather(g: &mut Graph) -> Vec<DrawItem> {
     g.evaluate();
     let mut out = Vec::new();
     for id in g.nodes() {
         let Some(n) = g.node(id) else { continue };
+        if n.ty().is_a("nurbsSurface") && !n.bool(DagNode::INTERMEDIATE_OBJECT) && visible(g, id) {
+            if let Some(mesh) = n.data().mesh(SurfaceShape::OUT_MESH).cloned() {
+                let world = n.data().matrix(DagNode::WORLD_MATRIX);
+                out.push(DrawItem { shape: id, xf: aztek_scene::dag::transform_of(g, id), world, mesh, smooth: 0 });
+            }
+            continue;
+        }
         if !n.ty().is_a("mesh") || n.bool(DagNode::INTERMEDIATE_OBJECT) || !visible(g, id) {
             continue;
         }
@@ -97,6 +106,8 @@ pub enum Tool {
     CurveCv,
     /// EP Curve Tool: clicks place edit points; Enter makes the curve.
     CurveEp,
+    Sculpt,
+    InsertJoint,
     MultiCut,
     InsertLoop,
     OffsetLoop,
@@ -335,7 +346,9 @@ impl Viewport {
                 entry.sel_key = u64::MAX;
                 // Tint reuses the triangle vertex buffer; rebuilt with the selection key below.
             }
-            let selected = sel.contains(&it.xf) || sel.contains(&it.shape);
+            // A surface's tessellation is only shaded: isoparms and CVs are drawn with the rig lines.
+            let is_surface = surfaces::is_surface(g, it.shape);
+            let selected = !is_surface && (sel.contains(&it.xf) || sel.contains(&it.shape));
             let hilited = selected && mode != ComponentMode::Object;
             let comps: &[u32] = if hilited { components::selected(g, it.shape, mode) } else { &[] };
             let comp_set: std::collections::HashSet<u32> = comps.iter().copied().collect();
@@ -371,7 +384,7 @@ impl Viewport {
                         WIRE
                     }
                 };
-                let want_lines = selected || self.wireframe || self.wire_on_shaded || (entry.display.is_some() && self.smooth_cage);
+                let want_lines = !is_surface && (selected || self.wireframe || self.wire_on_shaded || (entry.display.is_some() && self.smooth_cage));
                 if want_lines {
                     let mut lv = Vec::new();
                     for e in 0..m.edge_capacity() {
@@ -576,10 +589,11 @@ impl Viewport {
     /// The brush's ring on the surface and its normal line, in red as Maya draws it.
     fn draw_brush(&mut self, gpu: &mut Gpu, r: &Renderer, s: &Session) {
         let Some((c, n)) = self.brush else { return };
-        if self.tool != Tool::PaintSkin {
-            return;
-        }
-        let radius = s.paint_ctx.radius;
+        let radius = match self.tool {
+            Tool::PaintSkin => s.paint_ctx.radius,
+            Tool::Sculpt => s.sculpt_ctx.size,
+            _ => return,
+        };
         let (u, w) = n.any_orthonormal_pair();
         let mut v = Vec::new();
         let col = c8([230, 40, 40, 255]);
@@ -600,11 +614,13 @@ impl Viewport {
         gpu.drop_buffer(b);
     }
 
-    /// The selected skinned mesh under a pixel, for the brush: (item, world point, world normal).
+    /// The selected skinned mesh under a pixel, for the brush (any selected mesh when sculpting): (item, world point, world
+    /// normal).
     pub fn brush_hit(&mut self, s: &Session, items: &[DrawItem], px: DVec2) -> Option<(usize, DVec3, DVec3)> {
         let g = &s.graph;
         let sel = g.selection();
-        let picked: Vec<usize> = (0..items.len()).filter(|&i| (sel.contains(&items[i].xf) || sel.contains(&items[i].shape)) && aztek_scene::skin::skin_of(g, items[i].shape).is_some()).collect();
+        let any = self.tool == Tool::Sculpt;
+        let picked: Vec<usize> = (0..items.len()).filter(|&i| (sel.contains(&items[i].xf) || sel.contains(&items[i].shape)) && (any || aztek_scene::skin::skin_of(g, items[i].shape).is_some())).collect();
         let list: Vec<DrawItem> = picked
             .iter()
             .map(|&i| DrawItem { shape: items[i].shape, xf: items[i].xf, world: items[i].world, mesh: items[i].mesh.clone(), smooth: 0 })
@@ -658,7 +674,7 @@ impl Viewport {
             return None;
         }
         let sel = g.selection();
-        let hil: Vec<usize> = (0..items.len()).filter(|&i| sel.contains(&items[i].xf)).collect();
+        let hil: Vec<usize> = (0..items.len()).filter(|&i| sel.contains(&items[i].xf) && !surfaces::is_surface(g, items[i].shape)).collect();
         if mode == ComponentMode::Face {
             let hit_items: Vec<DrawItem> = hil
                 .iter()
@@ -804,15 +820,50 @@ impl Viewport {
             r.draw(gpu, &b, None, v.len() as u32);
             gpu.drop_buffer(b);
         }
-        // CVs of the selected curves in a component mode, and of curves with dispCV on, with the hull.
+        // Surfaces draw isoparms rather than their tessellation's wire: when selected, in wireframe and wire on shaded.
+        let mut wires = Vec::new();
+        for id in g.nodes() {
+            let Some(n) = g.node(id) else { continue };
+            if !n.ty().is_a("nurbsSurface") || n.bool(DagNode::INTERMEDIATE_OBJECT) || !visible(g, id) {
+                continue;
+            }
+            let xf = aztek_scene::dag::transform_of(g, id);
+            let picked = sel.contains(&xf) || sel.contains(&id);
+            if !picked && !self.wireframe && !self.wire_on_shaded {
+                continue;
+            }
+            let c = if components::mode(g) != ComponentMode::Object && picked {
+                UNSEL_EDGE
+            } else if lead == Some(xf) || lead == Some(id) {
+                LEAD
+            } else if picked {
+                SELECTED
+            } else {
+                override_color(g, id).unwrap_or(WIRE)
+            };
+            for (a, b) in surfaces::wire_lines(n) {
+                wires.push(LineVertex { pos: a.as_vec3().to_array(), color: c8(c) });
+                wires.push(LineVertex { pos: b.as_vec3().to_array(), color: c8(c) });
+            }
+        }
+        if !wires.is_empty() {
+            let b = gpu.buffer_with(vk::BufferUsageFlags::VERTEX_BUFFER, &wires);
+            r.bind(gpu, Kind::Lines);
+            r.set_line_width(gpu, (1.5 * scale) as f32);
+            r.push(gpu, &push(self.view_proj(), DMat4::IDENTITY, self.cam.view(), [1.0; 4], 1.5e-3, 1.0));
+            r.draw(gpu, &b, None, wires.len() as u32);
+            gpu.drop_buffer(b);
+        }
+        // CVs of the selected curves and surfaces in a component mode, and of those with dispCV on, with the hull.
         let mode = components::mode(g);
         let mut points = Vec::new();
         let mut hull = Vec::new();
-        for (shape, xf, world_cvs) in curve_cvs(g) {
+        for (shape, xf, world_cvs, stride) in curve_cvs(g) {
             let hilited = mode == ComponentMode::Vertex && (sel.contains(&xf) || sel.contains(&shape));
             let n = g.node(shape);
-            let disp = n.is_some_and(|n| n.data().bool(aztek_scene::curves::CurveShape::DISP_CV));
-            let disp_hull = n.is_some_and(|n| n.data().bool(aztek_scene::curves::CurveShape::DISP_HULL));
+            let (disp_cv, disp_hull) = if stride.is_some() { (SurfaceShape::DISP_CV, SurfaceShape::DISP_HULL) } else { (aztek_scene::curves::CurveShape::DISP_CV, aztek_scene::curves::CurveShape::DISP_HULL) };
+            let disp = n.is_some_and(|n| n.data().bool(disp_cv));
+            let disp_hull = n.is_some_and(|n| n.data().bool(disp_hull));
             if !hilited && !disp {
                 continue;
             }
@@ -822,9 +873,32 @@ impl Viewport {
                 points.push(LineVertex { pos: p.as_vec3().to_array(), color: c8(c) });
             }
             if disp_hull || hilited {
-                for w in world_cvs.windows(2) {
-                    hull.push(LineVertex { pos: w[0].as_vec3().to_array(), color: c8([120, 60, 120, 255]) });
-                    hull.push(LineVertex { pos: w[1].as_vec3().to_array(), color: c8([120, 60, 120, 255]) });
+                let mut seg = |a: DVec3, b: DVec3| {
+                    hull.push(LineVertex { pos: a.as_vec3().to_array(), color: c8([120, 60, 120, 255]) });
+                    hull.push(LineVertex { pos: b.as_vec3().to_array(), color: c8([120, 60, 120, 255]) });
+                };
+                match (stride, n.and_then(surfaces::drawn_surface)) {
+                    (Some(nv), Some(s)) => {
+                        let nu = world_cvs.len() / nv.max(1);
+                        let at = |u: usize, v: usize| world_cvs[u * nv + v];
+                        for u in 0..nu {
+                            let ends = if s.form_v == aztek_geo::nurbs::Form::Periodic { nv } else { nv.saturating_sub(1) };
+                            for v in 0..ends {
+                                seg(at(u, v), at(u, (v + 1) % nv));
+                            }
+                        }
+                        for v in 0..nv {
+                            let ends = if s.form_u == aztek_geo::nurbs::Form::Periodic { nu } else { nu.saturating_sub(1) };
+                            for u in 0..ends {
+                                seg(at(u, v), at((u + 1) % nu, v));
+                            }
+                        }
+                    }
+                    _ => {
+                        for w in world_cvs.windows(2) {
+                            seg(w[0], w[1]);
+                        }
+                    }
                 }
             }
         }
@@ -845,12 +919,12 @@ impl Viewport {
         }
     }
 
-    /// The CV of a hilited curve nearest a pixel.
+    /// The CV of a hilited curve or surface nearest a pixel.
     fn pick_cv(&self, g: &Graph, px: DVec2) -> Option<(NodeId, usize)> {
         let screen = self.screen();
         let sel = g.selection();
         let mut best: Option<(f64, NodeId, usize)> = None;
-        for (shape, xf, cvs) in curve_cvs(g) {
+        for (shape, xf, cvs, _) in curve_cvs(g) {
             if !sel.contains(&xf) && !sel.contains(&shape) {
                 continue;
             }
@@ -876,7 +950,10 @@ impl Viewport {
         }
         if components::mode(g) == ComponentMode::Vertex {
             if let Some((shape, i)) = self.pick_cv(g, px) {
-                return vec![format!("{}.cv[{i}]", g.path(aztek_scene::dag::transform_of(g, shape)))];
+                return vec![cv_name(&g.path(aztek_scene::dag::transform_of(g, shape)), i, surfaces::id_stride(g, shape).map(|s| s as usize))];
+            }
+            if let Some(hit) = self.pick_lattice_point(g, px) {
+                return vec![hit];
             }
         }
         match self.pick_component(s, items, px) {
@@ -890,6 +967,24 @@ impl Viewport {
             }
             None => Vec::new(),
         }
+    }
+
+    /// The control point of a selected lattice nearest px, within a few pixels.
+    fn pick_lattice_point(&self, g: &Graph, px: DVec2) -> Option<String> {
+        let screen = self.screen();
+        let mut best: Option<(f64, String)> = None;
+        for (xf, shape, dims, pts) in selected_lattices(g) {
+            for (i, p) in pts.iter().enumerate() {
+                let Some(q) = screen.project(*p) else { continue };
+                let d = (q - px).length();
+                if d < 10.0 && best.as_ref().is_none_or(|b| d < b.0) {
+                    let name = components::grid_strings(&g.path(xf), dims, &[i as u32], true);
+                    best = name.into_iter().next().map(|n| (d, n));
+                }
+            }
+            let _ = shape;
+        }
+        best.map(|b| b.1)
     }
 
     /// Draws the pre-selection highlight: the component under the cursor in red.
@@ -937,6 +1032,14 @@ impl Viewport {
         let mode = components::mode(g);
         let screen = self.screen();
         let mut out = Vec::new();
+        if mode == ComponentMode::Vertex {
+            for (xf, _, dims, pts) in selected_lattices(g) {
+                let ids: Vec<u32> = (0..pts.len() as u32).filter(|&i| screen.project(pts[i as usize]).is_some_and(inside)).collect();
+                if !ids.is_empty() {
+                    out.extend(components::grid_strings(&g.path(xf), dims, &ids, false));
+                }
+            }
+        }
         if mode == ComponentMode::Object {
             for it in rig_items(g) {
                 if it.segs.iter().any(|(a, b)| screen.project(*a).is_some_and(inside) || screen.project(*b).is_some_and(inside)) {
@@ -945,13 +1048,13 @@ impl Viewport {
             }
         }
         if mode == ComponentMode::Vertex {
-            for (shape, xf, cvs) in curve_cvs(g) {
+            for (shape, xf, cvs, stride) in curve_cvs(g) {
                 if !g.selection().contains(&xf) && !g.selection().contains(&shape) {
                     continue;
                 }
                 for (i, p) in cvs.iter().enumerate() {
                     if screen.project(*p).is_some_and(inside) {
-                        out.push(format!("{}.cv[{i}]", g.path(xf)));
+                        out.push(cv_name(&g.path(xf), i, stride));
                     }
                 }
             }
@@ -965,7 +1068,7 @@ impl Viewport {
                         out.push(g.path(it.xf));
                     }
                 }
-                _ if !g.selection().contains(&it.xf) => {}
+                _ if !g.selection().contains(&it.xf) || surfaces::is_surface(g, it.shape) => {}
                 ComponentMode::Vertex => {
                     let ids: Vec<Index> = (0..m.point_capacity()).filter(|&p| m.point_valid(p) && proj(p).is_some_and(inside)).collect();
                     push_ranges(&mut out, &g.path(it.xf), "vtx", &ids);
@@ -1014,7 +1117,7 @@ impl Viewport {
         let g = &s.graph;
         let (mut sum, mut n) = (DVec3::ZERO, 0.0);
         for it in items {
-            if !g.selection().contains(&it.xf) {
+            if !g.selection().contains(&it.xf) || surfaces::is_surface(g, it.shape) {
                 continue;
             }
             let ids = components::selected(g, it.shape, mode);
@@ -1028,7 +1131,7 @@ impl Viewport {
             }
         }
         if mode == ComponentMode::Vertex {
-            for (shape, _, cvs) in curve_cvs(g) {
+            for (shape, _, cvs, _) in curve_cvs(g) {
                 for &i in components::selected(g, shape, mode) {
                     if let Some(p) = cvs.get(i as usize) {
                         sum += *p;
@@ -1483,16 +1586,42 @@ fn override_color(g: &Graph, id: NodeId) -> Option<[u8; 4]> {
     None
 }
 
-/// Each visible curve shape, its transform and its CVs in world space, one lap for a periodic curve.
-fn curve_cvs(g: &Graph) -> Vec<(NodeId, NodeId, Vec<DVec3>)> {
+/// A component string for a CV by its id: `cv[i]`, or `cv[u][v]` on a surface with `stride` CVs along V.
+fn cv_name(path: &str, i: usize, stride: Option<usize>) -> String {
+    match stride {
+        Some(s) => format!("{path}.cv[{}][{}]", i / s.max(1), i % s.max(1)),
+        None => format!("{path}.cv[{i}]"),
+    }
+}
+
+/// Each visible curve and surface shape, its transform and its CVs in world space, one lap for a periodic direction. A
+/// surface also gives its count along V, which divides the ids into cv[u][v].
+fn curve_cvs(g: &Graph) -> Vec<(NodeId, NodeId, Vec<DVec3>, Option<usize>)> {
     let mut out = Vec::new();
     for id in g.nodes() {
         let Some(n) = g.node(id) else { continue };
-        if !n.ty().is_a("nurbsCurve") || n.bool(DagNode::INTERMEDIATE_OBJECT) || !visible(g, id) {
+        // Types first: only DAG nodes have the intermediate attribute.
+        if !(n.ty().is_a("nurbsCurve") || n.ty().is_a("nurbsSurface")) || n.bool(DagNode::INTERMEDIATE_OBJECT) || !visible(g, id) {
             continue;
         }
-        let Some(c) = aztek_scene::curves::drawn_curve(n) else { continue };
-        out.push((id, aztek_scene::dag::transform_of(g, id), c.distinct_cvs().to_vec()));
+        if n.ty().is_a("nurbsCurve") {
+            let Some(c) = aztek_scene::curves::drawn_curve(n) else { continue };
+            out.push((id, aztek_scene::dag::transform_of(g, id), c.distinct_cvs().to_vec(), None));
+        } else if n.ty().is_a("nurbsSurface") {
+            let Some((cvs, stride)) = surfaces::drawn_cvs(n) else { continue };
+            out.push((id, aztek_scene::dag::transform_of(g, id), cvs, Some(stride)));
+        }
+    }
+    out
+}
+
+/// The selected lattices: transform, shape, grid size and points in world space.
+fn selected_lattices(g: &Graph) -> Vec<(NodeId, NodeId, [u32; 3], Vec<DVec3>)> {
+    let mut out = Vec::new();
+    for &xf in g.selection() {
+        let Some(shape) = aztek_scene::dag::shape_of_type(g, xf, "lattice") else { continue };
+        let Some((d, pts)) = aztek_scene::deform_lattice::world_points(g, shape) else { continue };
+        out.push((xf, shape, [d[0] as u32, d[1] as u32, d[2] as u32], pts));
     }
     out
 }
@@ -1540,13 +1669,47 @@ pub fn rig_items(g: &Graph) -> Vec<RigItem> {
             out.push(RigItem { node: id, color: override_color(g, id).unwrap_or([70, 110, 220, 255]), segs });
         } else if ty.is_a("deformHandle") {
             let kind = ty.attr_index("deformerType").map(|i| n.data().string(i).to_string()).unwrap_or_default();
-            out.push(RigItem { node: id, color: [200, 120, 230, 255], segs: aztek_scene::deform::handle_lines(&kind, &w) });
+            // A cluster's handle sits on its pivot.
+            let at = w * glam::DMat4::from_translation(n.data().vec3(Transform::ROTATE_PIVOT));
+            out.push(RigItem { node: id, color: [200, 120, 230, 255], segs: aztek_scene::deform::handle_lines(&kind, &at) });
         } else if ty.is_a("nurbsCurve") {
             if n.bool(DagNode::INTERMEDIATE_OBJECT) {
                 continue;
             }
             let color = override_color(g, id).unwrap_or([10, 10, 110, 255]);
             out.push(RigItem { node: aztek_scene::dag::transform_of(g, id), color, segs: aztek_scene::curves::curve_lines(n) });
+        } else if ty.is_a("softModHandle") {
+            let at = w * glam::DMat4::from_translation(n.data().vec3(aztek_scene::transform::Shape::COUNT));
+            out.push(RigItem { node: aztek_scene::dag::transform_of(g, id), color: [200, 120, 230, 255], segs: aztek_scene::deform::handle_lines("softMod", &at) });
+        } else if ty.is_a("baseLattice") {
+            out.push(RigItem { node: aztek_scene::dag::transform_of(g, id), color: [130, 70, 150, 255], segs: aztek_scene::deform_lattice::box_lines(&w) });
+        } else if ty.is_a("lattice") {
+            let Some((dims, pts)) = aztek_scene::deform_lattice::world_points(g, id) else { continue };
+            let mut segs = aztek_scene::deform_lattice::grid_lines(dims, &pts);
+            let cross = |p: DVec3, k: f64, segs: &mut Vec<(DVec3, DVec3)>| {
+                for ax in [DVec3::X, DVec3::Y, DVec3::Z] {
+                    segs.push((p - ax * k, p + ax * k));
+                }
+            };
+            // A control point's mark, scaled to the lattice.
+            let k = pts.first().zip(pts.get(1)).map_or(0.05, |(a, b)| (*a - *b).length() * 0.04).max(1e-4);
+            for p in &pts {
+                cross(*p, k, &mut segs);
+            }
+            out.push(RigItem { node: aztek_scene::dag::transform_of(g, id), color: [200, 120, 230, 255], segs });
+            // Selected points show in vertex mode. No node: this is a highlight, and it mustn't pick or take selection colours.
+            if components::mode(g) == ComponentMode::Vertex {
+                let picked = components::selected(g, id, ComponentMode::Vertex);
+                if !picked.is_empty() {
+                    let mut segs = Vec::new();
+                    for p in picked.iter().filter_map(|&i| pts.get(i as usize)) {
+                        cross(*p, k * 2.5, &mut segs);
+                    }
+                    out.push(RigItem { node: aztek_scene::NO_NODE, color: [255, 200, 60, 255], segs });
+                }
+            }
+        } else if ty.is_a("motionTrailShape") {
+            out.push(RigItem { node: aztek_scene::dag::transform_of(g, id), color: [220, 200, 80, 255], segs: aztek_scene::motion_path::trail_lines(n) });
         } else if ty.is_a("ikHandle") {
             let k = 0.4;
             let segs = vec![

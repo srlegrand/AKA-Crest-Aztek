@@ -42,6 +42,8 @@ ToolSettings::ToolSettings(QWidget* parent) : Panel(parent) {
     joint_page_ = build_joint_page();
     curve_page_ = build_curve_page();
     stack_->addWidget(curve_page_);
+    sculpt_page_ = build_sculpt_page();
+    stack_->addWidget(sculpt_page_);
     stack_->addWidget(transform_page_);
     stack_->addWidget(paint_page_);
     stack_->addWidget(joint_page_);
@@ -106,6 +108,49 @@ QWidget* ToolSettings::build_transform_page() {
     v->addLayout(form);
     v->addStretch(1);
     return w;
+}
+
+QWidget* ToolSettings::build_sculpt_page() {
+    auto* w = new QWidget(this);
+    auto* v = new QVBoxLayout(w);
+    v->setContentsMargins(0, 0, 0, 0);
+    auto* form = new QFormLayout();
+    auto set = [this](const char* flag, const QJsonValue& val) {
+        if (loading_) return;
+        QJsonObject c{{"edit", true}};
+        c[flag] = val;
+        exec_quiet("sculptMeshCacheCtx", c);
+        Host::get()->poke();
+    };
+    sculpt_tool_ = new QComboBox(w);
+    sculpt_tool_->addItems({"sculpt", "smooth", "relax", "grab", "pinch", "flatten", "foamy", "spray", "repeat", "imprint", "wax", "scrape", "fill", "knife", "smear", "bulge", "amplify", "freeze"});
+    connect(sculpt_tool_, &QComboBox::currentTextChanged, this, [set](const QString& t) { set("sculptTool", t); });
+    form->addRow("Brush:", sculpt_tool_);
+    sculpt_size_ = slider_row(form, "Size:", 0.001, 20.0, 0.05, [set](double x) { set("size", x); });
+    sculpt_strength_ = slider_row(form, "Strength:", 0.0, 1.0, 0.05, [set](double x) { set("strength", x); });
+    sculpt_invert_ = new QCheckBox("Invert", w);
+    connect(sculpt_invert_, &QCheckBox::toggled, this, [set](bool on) { set("invert", on); });
+    form->addRow("", sculpt_invert_);
+    sculpt_sym_ = new QCheckBox("Symmetry across X", w);
+    connect(sculpt_sym_, &QCheckBox::toggled, this, [set](bool on) { set("symmetry", on); });
+    form->addRow("", sculpt_sym_);
+    auto* clear = new QPushButton("Unfreeze All", w);
+    connect(clear, &QPushButton::clicked, this, [] { exec_quiet("sculptMeshCacheCtx", QJsonObject{{"edit", true}, {"clearFreeze", true}}); });
+    form->addRow("", clear);
+    v->addLayout(form);
+    v->addStretch(1);
+    return w;
+}
+
+void ToolSettings::refresh_sculpt() {
+    loading_ = true;
+    auto q = [](const char* flag) { return ask("sculptMeshCacheCtx", QJsonObject{{"query", true}, {"queried", QJsonArray{flag}}}); };
+    sculpt_tool_->setCurrentText(q("sculptTool").toString());
+    if (!sculpt_size_->hasFocus()) sculpt_size_->setValue(q("size").toDouble());
+    if (!sculpt_strength_->hasFocus()) sculpt_strength_->setValue(q("strength").toDouble());
+    sculpt_invert_->setChecked(q("invert").toBool());
+    sculpt_sym_->setChecked(q("symmetry").toBool());
+    loading_ = false;
 }
 
 QWidget* ToolSettings::build_curve_page() {
@@ -200,6 +245,9 @@ void ToolSettings::set_tool(const QString& tool) {
     if (tool == "paintSkin") {
         title_->setText("Paint Skin Weights Tool");
         stack_->setCurrentWidget(paint_page_);
+    } else if (tool == "sculpt") {
+        title_->setText("Sculpting Tools");
+        stack_->setCurrentWidget(sculpt_page_);
     } else if (tool == "joint") {
         title_->setText("Joint Tool");
         stack_->setCurrentWidget(joint_page_);
@@ -217,7 +265,8 @@ void ToolSettings::set_tool(const QString& tool) {
 
 void ToolSettings::refresh() {
     if (tool_ == "paintSkin") refresh_paint();
-    else if (tool_ != "joint" && !tool_.startsWith("curve")) refresh_transform();
+    else if (tool_ == "sculpt") refresh_sculpt();
+    else if (stack_->currentWidget() == transform_page_) refresh_transform();
 }
 
 void ToolSettings::refresh_transform() {

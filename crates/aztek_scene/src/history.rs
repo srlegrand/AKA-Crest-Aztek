@@ -552,7 +552,13 @@ pub fn delete_history(g: &mut Graph, mesh: NodeId) -> CmdResult<bool> {
     let doomed = upstream_nodes(g, &base);
     g.disconnect(&base);
     g.set_value(base, value)?;
+    let drivers = crate::deform::orphan_drivers(g, &doomed);
     for id in doomed {
+        if g.node(id).is_some() {
+            g.delete_node(id)?;
+        }
+    }
+    for id in drivers {
         if g.node(id).is_some() {
             g.delete_node(id)?;
         }
@@ -606,20 +612,27 @@ pub fn register(c: &mut Commands<Session>) {
              at the bottom.",
             |s, a| {
                 let g = &s.graph;
+                let ty = a.get("type").and_then(Value::as_str);
+                let wanted = |id: NodeId| ty.is_none_or(|t| g.node(id).is_some_and(|n| n.ty().is_a(t)));
                 let mut out = Vec::new();
                 for name in objects(s, a) {
                     let Some(id) = g.find(&name)? else { aztek_ops::fail!("listHistory: no object named {name}") };
                     let Some(m) = components::as_mesh(g, id) else { continue };
-                    out.push(json!(g.path(m)));
+                    if wanted(m) {
+                        out.push(json!(g.path(m)));
+                    }
                     for h in history_of(g, m) {
-                        out.push(json!(g.path(h)));
+                        if wanted(h) {
+                            out.push(json!(g.path(h)));
+                        }
                     }
                 }
                 Ok(Value::Array(out))
             },
         )
         .undoable(false)
-        .positional("objects"),
+        .positional("objects")
+        .flag(FlagDef::new("type", "typ", ArgType::String, Value::Null, "Only nodes of this type or a type derived from it (geometryFilter for every deformer).")),
     );
     register_types(c);
 }

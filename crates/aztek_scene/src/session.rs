@@ -49,10 +49,20 @@ pub struct Session {
     pub key_clipboard: crate::anim_edit::KeyClipboard,
     /// selectKey's keys: curve and frame.
     pub key_selection: Vec<(NodeId, f64)>,
+    /// The curves' states the Graph Editor's buffer holds (bufferCurve).
+    pub buffer_curves: std::collections::HashMap<NodeId, crate::anim::Keys>,
+    /// The characters keys go to when nothing is selected (currentCharacters).
+    pub current_characters: Vec<NodeId>,
     /// The live surface: what Quad Draw and snapping draw on.
     pub live_surface: Vec<NodeId>,
     /// polyOptions' display settings, polySelectConstraint's state and polyClipboard's contents.
     pub poly_state: crate::mesh_edit::maya_poly::PolyState,
+    /// The sculpting tools' settings.
+    pub sculpt_ctx: crate::sculpt::SculptCtx,
+    /// The scene's file, what `file -q -sn` returns. None while untitled.
+    pub scene_path: Option<String>,
+    /// The file type asked for with `file -type`, for the next save.
+    pub scene_type: Option<crate::ma_file::Format>,
 }
 
 impl Default for Session {
@@ -75,8 +85,13 @@ impl Session {
             paint_ctx: Default::default(),
             key_clipboard: Default::default(),
             key_selection: Vec::new(),
+            buffer_curves: Default::default(),
+            current_characters: Vec::new(),
             live_surface: Vec::new(),
             poly_state: Default::default(),
+            sculpt_ctx: Default::default(),
+            scene_path: None,
+            scene_type: None,
         };
         crate::commands::register(&mut s.commands);
         crate::components::register(&mut s.commands);
@@ -98,20 +113,56 @@ impl Session {
         crate::anim::register(&mut s.commands);
         crate::uv_ops::register(&mut s.commands);
         crate::rig::register(&mut s.commands);
+        crate::constraint::register(&mut s.commands);
+        crate::ik::register(&mut s.commands);
         crate::skin::register(&mut s.commands);
         crate::deform::register(&mut s.commands);
         crate::curves::register(&mut s.commands);
+        crate::surfaces::register(&mut s.commands);
+        crate::sculpt::register(&mut s.commands);
+        crate::cameras::register(&mut s.commands);
+        crate::deform_lattice::register(&mut s.commands);
+        crate::deform_soft::register(&mut s.commands);
+        crate::deform_mush::register(&mut s.commands);
+        crate::deform_wrap::register(&mut s.commands);
+        crate::deform_wire::register(&mut s.commands);
+        crate::deform_cmds::register(&mut s.commands);
         crate::maya_cmds::register(&mut s.commands);
         crate::maya_core::register(&mut s.commands);
         // After the modules above: these replace or extend commands they registered.
         crate::mesh_edit::maya_poly::register(&mut s.commands);
+        crate::ma_file::register(&mut s.commands);
         // Last: history node types take their attributes from the commands registered above.
         crate::history::register(&mut s.commands);
         crate::instancing::install(&mut s.graph);
         crate::duplicate::install(&mut s.graph);
         crate::anim::install(&mut s.graph);
+        crate::deform_wire::install(&mut s.graph);
+        crate::rig::install(&mut s.graph);
         s.load_naming_policy();
         s
+    }
+
+    /// An empty session to hold the place of a real one moved elsewhere for a moment: no scene, no commands.
+    pub fn hollow() -> Self {
+        Session {
+            graph: Graph::new(),
+            commands: Commands::default(),
+            walk_ghosts: WalkGhosts::default(),
+            pending_compounds: BTreeMap::new(),
+            naming_prefs: json!({}),
+            last_op: Default::default(),
+            paint_ctx: Default::default(),
+            key_clipboard: Default::default(),
+            key_selection: Vec::new(),
+            live_surface: Vec::new(),
+            poly_state: Default::default(),
+            sculpt_ctx: Default::default(),
+            scene_path: Default::default(),
+            scene_type: Default::default(),
+            buffer_curves: Default::default(),
+            current_characters: Default::default(),
+        }
     }
 
     pub fn register(&mut self, def: CommandDef<Session>) {
@@ -174,5 +225,6 @@ impl CommandHost for Session {
     fn top_level_finished(&mut self, name: &str, call: &Value, source: CallSource, ok: bool) {
         crate::components::command_finished(&mut self.graph, name, source, ok);
         crate::last_op::command_finished(self, name, call, source, ok);
+        crate::motion_path::after_command(self, name, ok);
     }
 }

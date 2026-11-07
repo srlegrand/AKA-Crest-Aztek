@@ -45,11 +45,13 @@ pub struct Camera {
     pub hfov: f64,
     /// Orthographic view width in world units.
     pub ortho_width: f64,
+    /// Looking straight on, no perspective. Default views are; so may any camera be.
+    pub orthographic: bool,
 }
 
 impl Camera {
     pub fn new(kind: CamKind) -> Camera {
-        let mut c = Camera { kind, coi: DVec3::ZERO, yaw: 0.0, pitch: 0.0, distance: 1000.0, hfov: 54.43, ortho_width: 30.0 };
+        let mut c = Camera { kind, coi: DVec3::ZERO, yaw: 0.0, pitch: 0.0, distance: 1000.0, hfov: 54.43, ortho_width: 30.0, orthographic: kind != CamKind::Persp };
         match kind {
             CamKind::Persp => c.look_from(DVec3::new(28.0, 21.0, 28.0)),
             CamKind::Top => {
@@ -62,7 +64,7 @@ impl Camera {
     }
 
     pub fn ortho(&self) -> bool {
-        self.kind != CamKind::Persp
+        self.orthographic
     }
 
     pub fn look_from(&mut self, eye: DVec3) {

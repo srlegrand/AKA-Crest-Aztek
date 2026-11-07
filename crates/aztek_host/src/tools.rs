@@ -160,6 +160,7 @@ impl View {
     /// A mouse event for the current modelling tool. None when it isn't one of them.
     pub fn tool_mouse(&mut self, core: &mut Core, kind: i32, button: i32, px: DVec2, mods: i32, items: &[DrawItem]) -> Option<bool> {
         match self.vp.tool {
+            Tool::InsertJoint => Some(self.insert_joint(core, kind, button, px)),
             Tool::MultiCut => Some(self.multi_cut(core, kind, button, px, mods, items)),
             Tool::InsertLoop => Some(self.insert_loop(core, kind, button, px, items)),
             Tool::OffsetLoop => Some(self.offset_loop(core, kind, button, px, items)),
@@ -215,6 +216,49 @@ impl View {
         self.ts.cut_world.pop();
         self.ts.dots.pop();
         self.tool_preview_clear();
+    }
+
+    /// Insert Joint Tool: a drag from a joint places a new one on the way to its child, sliding along the bone.
+    fn insert_joint(&mut self, core: &mut Core, kind: i32, button: i32, px: DVec2) -> bool {
+        match kind {
+            0 if button == 1 => {
+                let Some(j) = self.vp.pick_rig(&core.s.graph, px).filter(|&j| aztek_scene::rig::is_joint(&core.s.graph, j)) else { return false };
+                let name = core.s.graph.path(j);
+                if let Ok(v) = core.exec("insertJoint", json!({"args": [name]})) {
+                    let made = v.as_str().map(str::to_string).or_else(|| v.get(0).and_then(Value::as_str).map(str::to_string));
+                    if let Some(n) = made {
+                        if let Ok(Some(id)) = core.s.graph.find(&n) {
+                            self.ts.edge = Some((id, 0, 0.0));
+                            self.ts.press = Some(px);
+                        }
+                    }
+                }
+                true
+            }
+            1 => {
+                let (Some((j, ..)), Some(_)) = (self.ts.edge, self.ts.press) else { return false };
+                let g = &mut core.s.graph;
+                g.evaluate();
+                let Some(kid) = g.children(j).iter().copied().find(|&k| aztek_scene::rig::is_joint(g, k)) else { return false };
+                let parent = g.parent(j);
+                let a = aztek_scene::rig::world(g, parent).w_axis.truncate();
+                let b = aztek_scene::rig::world(g, kid).w_axis.truncate();
+                let screen = self.vp.screen();
+                let (Some(pa), Some(pb)) = (screen.project(a), screen.project(b)) else { return false };
+                let (t, _) = seg_t(px, pa, pb);
+                let at = a.lerp(b, t.clamp(0.02, 0.98));
+                let name = g.path(j);
+                self.apply_preview(core, "joint", json!({"args": [name], "edit": true, "position": at.to_array()}));
+                true
+            }
+            2 if button == 1 => {
+                self.ts.press = None;
+                self.ts.edge = None;
+                self.commit_preview(core);
+                true
+            }
+            _ => false,
+        }
     }
 
     fn multi_cut(&mut self, core: &mut Core, kind: i32, button: i32, px: DVec2, mods: i32, items: &[DrawItem]) -> bool {

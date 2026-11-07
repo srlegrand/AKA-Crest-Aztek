@@ -13,6 +13,7 @@ aztek_core = { path = "../aztek_core" }
 aztek_geo = { path = "../aztek_geo" }
 aztek_ops = { path = "../aztek_ops" }
 aztek_scene = { path = "../aztek_scene" }
+aztek_undo = { path = "../aztek_undo" }
 glam.workspace = true
 serde_json.workspace = true
 log.workspace = true
@@ -22,6 +23,7 @@ raw-window-handle = "0.6"
 gpu-allocator = { version = "0.28", default-features = false, features = ["vulkan", "std"] }
 naga = { version = "27", features = ["glsl-in", "spv-out"] }
 bytemuck = { version = "1", features = ["derive"] }
+stacker = "0.1"
 pyo3 = { version = "0.30", optional = true }
 
 [features]

@@ -107,6 +107,12 @@ pub fn flatten_component(g: &mut Graph, s: &str) -> Vec<String> {
     let Some((kind, inner)) = comp.split_once('[') else { return vec![s.to_string()] };
     let inner = inner.trim_end_matches(']');
     let Ok(Some(id)) = g.find(obj) else { return vec![s.to_string()] };
+    if let Some(sh) = crate::surfaces::as_surface(g, id) {
+        g.evaluate();
+        let Some(ids) = crate::surfaces::parse_cv_ranges(g, sh, inner) else { return vec![s.to_string()] };
+        let stride = crate::surfaces::id_stride(g, sh).unwrap_or(1);
+        return crate::surfaces::format_cvs_flat(&ids, stride).into_iter().map(|c| format!("{obj}.{c}")).collect();
+    }
     if let Some(c) = crate::curves::as_curve(g, id) {
         let count = crate::curves::local_curve(g, c).map(|k| k.distinct_cvs().len() as u32).unwrap_or(0);
         let mut out = Vec::new();
@@ -121,6 +127,9 @@ pub fn flatten_component(g: &mut Graph, s: &str) -> Vec<String> {
             }
         }
         return out;
+    }
+    if let Some(strings) = grid_component(g, id, obj, kind, inner, true) {
+        return strings;
     }
     let Some(mesh) = components::as_mesh(g, id) else { return vec![s.to_string()] };
     let Some(m) = components::mesh_of(g, mesh) else { return vec![s.to_string()] };
@@ -149,9 +158,26 @@ pub fn flatten_component(g: &mut Graph, s: &str) -> Vec<String> {
     out
 }
 
+/// A lattice's pt[s][t][u] as component strings.
+fn grid_component(g: &Graph, id: NodeId, obj: &str, kind: &str, inner: &str, flat: bool) -> Option<Vec<String>> {
+    if kind != "pt" {
+        return None;
+    }
+    let node = components::point_node(g, id)?;
+    let dims = components::point_grid(g, node)?;
+    Some(components::grid_strings(obj, dims, &components::grid_ids(dims, inner)?, flat))
+}
+
 fn compress_component(g: &mut Graph, s: &str) -> String {
     let Some((obj, comp)) = s.split_once('.') else { return s.to_string() };
     let Some((kind, inner)) = comp.split_once('[') else { return s.to_string() };
+    if let Ok(Some(id)) = g.find(obj) {
+        if let Some(strings) = grid_component(g, id, obj, kind, inner.trim_end_matches(']'), false) {
+            if strings.len() == 1 {
+                return strings.into_iter().next().unwrap();
+            }
+        }
+    }
     if inner.starts_with('*') {
         let flat = flatten_component(g, s);
         if let (Some(a), Some(b)) = (flat.first(), flat.last()) {

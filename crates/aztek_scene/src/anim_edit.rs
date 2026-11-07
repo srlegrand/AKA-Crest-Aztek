@@ -46,7 +46,7 @@ pub struct ClipEntry {
 // Driven curves
 
 /// The input of animCurveUL/UA/UU: what a driven key curve evaluates at.
-pub const INPUT: usize = 4;
+pub const INPUT: usize = anim::BASE_ATTRS;
 
 pub struct DrivenCurve;
 
@@ -54,7 +54,7 @@ impl NodeBehavior for DrivenCurve {
     fn compute(&mut self, _ctx: &EvalContext, d: &mut NodeData) {
         let at = d.float(INPUT);
         let v = match d.value(anim::KEYS) {
-            PlugValue::Data(Some(k)) => k.as_any().downcast_ref::<Keys>().map(|k| k.eval(at, anim::infinity(d.int(PRE)), anim::infinity(d.int(POST)))),
+            PlugValue::Data(Some(k)) => k.as_any().downcast_ref::<Keys>().map(|k| k.eval_mode(at, anim::infinity(d.int(PRE)), anim::infinity(d.int(POST)), d.bool(anim::WEIGHTED))),
             _ => None,
         };
         d.set_output(OUTPUT, PlugValue::Float(v.unwrap_or(0.0)));
@@ -263,12 +263,13 @@ fn curves_for(s: &Session, a: &Args, cmd: &str) -> CmdResult<Vec<(PlugRef, NodeI
 fn copy_keys(s: &mut Session, a: &Args) -> CmdResult {
     let curves = curves_for(s, a, "copyKey")?;
     let range = anim::time_range(a)?;
+    let pick = crate::anim_keys::KeyPick::new(s, a)?;
     let mut clip = KeyClipboard::default();
     let (mut lo, mut hi) = (f64::MAX, f64::MIN);
     let mut n = 0;
     for (p, c) in &curves {
         let k = keys_of(&s.graph, *c);
-        let picked: Vec<Key> = k.keys.iter().filter(|x| anim::in_range(range, x.t)).copied().collect();
+        let picked: Vec<Key> = k.keys.iter().enumerate().filter(|(i, x)| pick.hits(*c, *i, x)).map(|(_, x)| *x).collect();
         if picked.is_empty() {
             continue;
         }
@@ -372,13 +373,11 @@ pub fn register(c: &mut Commands<Session>) {
     register_types();
 
     c.register(
-        Cmd::new("copyKey", "Copy keys of objects or channels to the key clipboard; -t limits them. Returns how many.", copy_keys)
+        crate::anim_keys::pick_flags(Cmd::new("copyKey", "Copy keys of objects or channels to the key clipboard; -t limits them. Returns how many.", copy_keys))
             .undoable(false)
             .positional("objects, plugs or curves (the selection when none)")
-            .flag(f("attribute", "at", ArgType::Any, "Channel name(s)."))
-            .flag(f("time", "t", ArgType::Any, "A frame or range \"10:20\"."))
+            .flag(f("selected", "sl", ArgType::Bool, "Copy the keys selectKey selected."))
             .flag(f("option", "o", ArgType::String, "keys (the default) or curve."))
-            .flag(f("hierarchy", "hi", ArgType::String, "Accepted for Maya scripts."))
             .flag(f("clipboard", "cb", ArgType::String, "Accepted for Maya scripts.")),
     );
 
@@ -401,11 +400,11 @@ pub fn register(c: &mut Commands<Session>) {
         .flag(f("clipboard", "cb", ArgType::String, "Accepted for Maya scripts.")),
     );
 
-    c.register(modes(
+    c.register(modes(crate::anim_keys::pick_flags(
         Cmd::new(
             "selectKey",
-            "Select keys, for the commands that take -sl. -t limits them; -add, -rm and -tgl change the selection; -cl clears it. \
-             -q -kc counts them.",
+            "Select keys, for the commands that take -sl. -t limits them; -add, -rm and -tgl change the selection, -r (the default) \
+             replaces it; -cl clears it. -uk picks keys off multiples of a time. Returns how many keys it touched. -q -kc counts them.",
             |s, a| {
                 if a.bool("clear") {
                     s.key_selection.clear();
@@ -415,21 +414,30 @@ pub fn register(c: &mut Commands<Session>) {
                     return Ok(json!(s.key_selection.len()));
                 }
                 let curves = curves_for(s, a, "selectKey")?;
-                let range = anim::time_range(a)?;
-                let (add, rm, tgl) = (a.bool("add"), a.bool("remove"), a.bool("toggle"));
+                let pick = crate::anim_keys::KeyPick::new(s, a)?;
+                let unsnapped = a.get("unsnappedKeys").and_then(Value::as_f64);
+                let (add, rm, tgl) = (a.bool("addTo"), a.bool("remove"), a.bool("toggle"));
                 if !(add || rm || tgl) {
                     s.key_selection.clear();
                 }
                 let mut n = 0;
                 for (_, c) in curves {
-                    for k in keys_of(&s.graph, c).keys.iter().filter(|x| anim::in_range(range, x.t)) {
-                        let e = (c, k.t);
+                    for (i, k) in keys_of(&s.graph, c).keys.iter().enumerate() {
+                        if !pick.hits(c, i, k) {
+                            continue;
+                        }
+                        if let Some(m) = unsnapped {
+                            let m = if m > 0.0 { m } else { 1.0 };
+                            if ((k.t / m) - (k.t / m).round()).abs() < 1e-6 {
+                                continue;
+                            }
+                        }
                         let has = s.key_selection.iter().position(|x| x.0 == c && (x.1 - k.t).abs() < 1e-6);
                         match (has, rm, tgl) {
                             (Some(i), true, _) | (Some(i), _, true) => {
                                 s.key_selection.remove(i);
                             }
-                            (None, false, _) => s.key_selection.push(e),
+                            (None, false, _) => s.key_selection.push((c, k.t)),
                             _ => {}
                         }
                         n += 1;
@@ -437,30 +445,39 @@ pub fn register(c: &mut Commands<Session>) {
                 }
                 Ok(json!(n))
             },
-        )
+        ))
         .undoable(false)
         .positional("objects, plugs or curves (the selection when none)")
-        .flag(f("attribute", "at", ArgType::Any, "Channel name(s)."))
-        .flag(f("time", "t", ArgType::Any, "A frame or range."))
-        .flag(f("add", "add", ArgType::Bool, "Add to the selection."))
+        .flag(f("addTo", "add", ArgType::Bool, "Add to the selection."))
         .flag(f("remove", "rm", ArgType::Bool, "Remove from the selection."))
         .flag(f("toggle", "tgl", ArgType::Bool, "Toggle in the selection."))
+        .flag(f("replace", "r", ArgType::Bool, "Replace the selection (the default)."))
         .flag(f("clear", "cl", ArgType::Bool, "Clear the selection."))
+        .flag(f("keyframe", "k", ArgType::Bool, "Select the keys themselves (the default)."))
+        .flag(f("inTangent", "it", ArgType::Bool, "Accepted for Maya scripts: selects the keys."))
+        .flag(f("outTangent", "ot", ArgType::Bool, "Accepted for Maya scripts: selects the keys."))
+        .flag(f("unsnappedKeys", "uk", ArgType::Float, "Only keys not on a multiple of this time (1 when 0)."))
+        .flag(f("selected", "sl", ArgType::Bool, "Work on the keys already selected."))
         .flag(f("keyframeCount", "kc", ArgType::Bool, "Query: how many selected.")),
     ));
 
     c.register(
-        Cmd::new(
+        crate::anim_keys::pick_flags(Cmd::new(
             "scaleKey",
             "Scale keys in time about -tp (-ts) and in value about -vp (-vs). -t limits them. Returns how many.",
             |s, a| {
                 let curves = curves_for(s, a, "scaleKey")?;
-                let range = anim::time_range(a)?;
+                let pick = crate::anim_keys::KeyPick::new(s, a)?;
                 let (ts, tp, vs, vp) = (a.float("timeScale", 1.0), a.float("timePivot", 0.0), a.float("valueScale", 1.0), a.float("valuePivot", 0.0));
                 let mut n = 0;
                 for (_, c) in curves {
                     let mut k = keys_of(&s.graph, c);
-                    for key in k.keys.iter_mut().filter(|x| anim::in_range(range, x.t)) {
+                    let mut i = 0;
+                    for key in k.keys.iter_mut() {
+                        i += 1;
+                        if !pick.hits(c, i - 1, key) {
+                            continue;
+                        }
                         key.t = tp + (key.t - tp) * ts;
                         key.v = vp + (key.v - vp) * vs;
                         key.in_slope *= vs / ts.abs().max(1e-9);
@@ -472,10 +489,9 @@ pub fn register(c: &mut Commands<Session>) {
                 }
                 Ok(json!(n))
             },
-        )
+        ))
         .positional("objects, plugs or curves (the selection when none)")
-        .flag(f("attribute", "at", ArgType::Any, "Channel name(s)."))
-        .flag(f("time", "t", ArgType::Any, "A frame or range."))
+        .flag(f("selected", "sl", ArgType::Bool, "Scale the keys selectKey selected."))
         .flag(f("timeScale", "ts", ArgType::Float, "Time scale."))
         .flag(f("timePivot", "tp", ArgType::Float, "Time pivot."))
         .flag(f("valueScale", "vs", ArgType::Float, "Value scale."))
@@ -483,18 +499,23 @@ pub fn register(c: &mut Commands<Session>) {
     );
 
     c.register(
-        Cmd::new(
+        crate::anim_keys::pick_flags(Cmd::new(
             "snapKey",
             "Move keys to whole multiples of -tm (1 by default), and to multiples of -vm if given.",
             |s, a| {
                 let curves = curves_for(s, a, "snapKey")?;
-                let range = anim::time_range(a)?;
+                let pick = crate::anim_keys::KeyPick::new(s, a)?;
                 let tm = a.float("timeMultiple", 1.0);
                 let vm = a.float("valueMultiple", 0.0);
                 let mut n = 0;
                 for (_, c) in curves {
                     let mut k = keys_of(&s.graph, c);
-                    for key in k.keys.iter_mut().filter(|x| anim::in_range(range, x.t)) {
+                    let mut i = 0;
+                    for key in k.keys.iter_mut() {
+                        i += 1;
+                        if !pick.hits(c, i - 1, key) {
+                            continue;
+                        }
                         if tm > 0.0 {
                             key.t = (key.t / tm).round() * tm;
                         }
@@ -508,10 +529,9 @@ pub fn register(c: &mut Commands<Session>) {
                 }
                 Ok(json!(n))
             },
-        )
+        ))
         .positional("objects, plugs or curves (the selection when none)")
-        .flag(f("attribute", "at", ArgType::Any, "Channel name(s)."))
-        .flag(f("time", "t", ArgType::Any, "A frame or range."))
+        .flag(f("selected", "sl", ArgType::Bool, "Snap the keys selectKey selected."))
         .flag(f("timeMultiple", "tm", ArgType::Float, "Snap time to multiples of this."))
         .flag(f("valueMultiple", "vm", ArgType::Float, "Snap value to multiples of this.")),
     );

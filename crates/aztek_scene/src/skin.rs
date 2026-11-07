@@ -730,11 +730,11 @@ fn f(name: &str, short: &str, ty: ArgType, doc: &str) -> FlagDef {
 }
 
 /// Whether query mode asked about a flag.
-fn asked(a: &Args, name: &str) -> bool {
+pub(crate) fn asked(a: &Args, name: &str) -> bool {
     a.bool(name) || a.get("queried").and_then(Value::as_array).is_some_and(|q| q.iter().any(|x| x == name))
 }
 
-fn modes(c: Cmd) -> Cmd {
+pub(crate) fn modes(c: Cmd) -> Cmd {
     c.flag(f("edit", "e", ArgType::Bool, "Edit mode."))
         .flag(f("query", "q", ArgType::Bool, "Query mode."))
         .flag(f("queried", "", ArgType::List, "Flags asked about in query mode."))
